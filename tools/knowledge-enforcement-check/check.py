@@ -53,6 +53,18 @@ wired にできないようにした（tools/sendback-check/ci/sendback-protecti
 .github/workflows/pr-body-protection.yml の schedule でも走るジョブから tools/pr-body-check/protection.mjs を呼ぶ項目と、REQUIRED_PR_WORKFLOW の
 .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs を呼ぶ項目の両方がないと wired にできないようにした
 （tools/pr-body-check/ci/pr-body-protection.yml を写した protection と、ci/pr-body-engine.yml を写した engine-test のジョブで満たす）。
+議決 D-0100（Issue #1196。起票時の番号は D-0071）で、K-0012 の issue 1122・1196 の解決策と K-0006 の issue 906 の解決策（同じ check.mjs を使う
+マージ前の必須チェック pr-body-check）を REQUIRED_PR に挙げ、REQUIRED_PR_WORKFLOW の .github/workflows/pr-body-check.yml の pull_request でも走るジョブから
+tools/pr-body-check/check.mjs を呼ぶ項目がないと wired にできないようにした（tools/pr-body-check/ci/pr-body-check.yml を写した pr-body-check のジョブで満たす）。
+K-0012 の 2 つは REQUIRED_PR_ALSO で .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs
+（(12) が merge_step の待ちを確かめる）を呼ぶ項目も求め、下の「Engine の merge_step の照合」も通らないと wired にできない。
+
+Engine の merge_step の照合（議決 D-0100（起票時の番号は D-0071）、Issue #1196）: REQUIRED_ENGINE_WAIT の解決策（K-0012 の issue 1122・1196）が
+wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の版の Engine の orchestrator/dispatcher/supervisor.py で、merge_step が
+body_recheck_pending（tools/pr-body-check/engine/pr-body-recheck.patch で足す、直した本文の pr-body-check を待つ関数）を定義どおりに呼んでいることを
+構文木で照らし、呼んでいなければ engine_unwired で落とす。Engine は --engine か ENGINE_DIR の全履歴のチェックアウトから版のファイルを取り出す。
+Engine のチェックアウトがない・写しや ENGINE_REF がない・版がない・読めないときは照らせないとして engine_unverifiable（<HoldUncheckable の kind>）で落とす。
+Engine に差分を入れて ENGINE_REF を上げる前に、ワークフローの写しだけで wired: true にする変更を止める。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
@@ -147,6 +159,26 @@ REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043
 # (知見の id, 解決策の issue) → REQUIRED_PR の検査を呼ぶジョブがあることを求めるワークフロー（議決 D-0070（起票時の番号は D-0067）、Issue #1182。
 # ひな形 tools/pr-body-check/ci/pr-body-engine.yml の写しのほかで engine.test.mjs を走らせても、必須のチェック pr-body-engine-test の写しとは読めないため）
 REQUIRED_PR_WORKFLOW = {("K-0001", 1182): f"{WORKFLOWS}/pr-body-engine.yml"}
+# 知見 K-0012 の本文の直しのあとの再検査と、同じ check.mjs を使う K-0006 の見出しの検査を、1 つのマージ前の必須チェック pr-body-check にする
+# （議決 D-0100（起票時の番号は D-0071）、Issue #1196。ひな形 tools/pr-body-check/ci/pr-body-check.yml の写しでないと、Engine の supervisor が待つ
+# チェックの名前とワークフローの道に合わない）。K-0012 の 2 つは Engine の merge_step の待ちも求める（REQUIRED_PR_ALSO・REQUIRED_ENGINE_WAIT）
+PR_BODY_CHECK = "tools/pr-body-check/check.mjs"
+PR_BODY_CHECK_WORKFLOW = f"{WORKFLOWS}/pr-body-check.yml"
+PR_BODY_ENGINE_TEST = "tools/pr-body-check/engine.test.mjs"
+PR_BODY_ENGINE_WORKFLOW = f"{WORKFLOWS}/pr-body-engine.yml"
+PR_BODY_RECHECK = (("K-0012", 1122), ("K-0012", 1196))
+for _key in (*PR_BODY_RECHECK, ("K-0006", 906)):
+    REQUIRED_PR[_key] = (PR_BODY_CHECK, "D-0100")
+    REQUIRED_PR_WORKFLOW[_key] = PR_BODY_CHECK_WORKFLOW
+# (知見の id, 解決策の issue) → REQUIRED_PR に加えて pull_request のジョブから呼ぶことを求める (検査, ワークフロー, 議決) の列（議決 D-0100、Issue #1196）
+REQUIRED_PR_ALSO = {key: ((PR_BODY_ENGINE_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"),) for key in PR_BODY_RECHECK}
+# (知見の id, 解決策の issue)。wired: true にするには、ENGINE_REF の Engine の merge_step が待ちの関数を呼んでいることを求める（議決 D-0100、Issue #1196）
+REQUIRED_ENGINE_WAIT = set(PR_BODY_RECHECK)
+ENGINE_SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
+ENGINE_MERGE_STEP = "merge_step"
+ENGINE_RECHECK_WAIT = "body_recheck_pending"
+ENGINE_UNWIRED = "engine_unwired"
+ENGINE_UNVERIFIABLE = "engine_unverifiable"
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
@@ -467,37 +499,42 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
 
 def check_pull_request(k: dict, repo: Path) -> list[str]:
     """REQUIRED_PR の解決策が wired: true なら、pull_request のジョブから検査を呼ぶ wired_by を求める（議決 D-0043、Issue #1103）。
-    REQUIRED_PR_WORKFLOW に挙げた解決策は、そのワークフローのジョブを指す項目だけを数える（議決 D-0070、Issue #1182）"""
+    REQUIRED_PR_WORKFLOW に挙げた解決策は、そのワークフローのジョブを指す項目だけを数える（議決 D-0070、Issue #1182）。
+    REQUIRED_PR_ALSO に挙げた解決策は、そこに挙げた検査とワークフローの組もそれぞれ求める（議決 D-0100、Issue #1196）"""
     f, e = k.get("_file", str(k.get("id"))), []
     read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
         if not isinstance(s, dict) or s.get("wired") is not True:
             continue
-        required = REQUIRED_PR.get((k.get("id"), s.get("issue")))
+        key = (k.get("id"), s.get("issue"))
+        required = REQUIRED_PR.get(key)
         if required is None:
             continue
-        target, decision = required
-        workflow = REQUIRED_PR_WORKFLOW.get((k.get("id"), s.get("issue")))
-        ok = False
-        for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
-            if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+        for target, workflow, decision in ((required[0], REQUIRED_PR_WORKFLOW.get(key), required[1]), *REQUIRED_PR_ALSO.get(key, ())):
+            if pr_job_calls(s, repo, read, target, workflow):
                 continue
-            if workflow is not None and norm("", w["workflow"]) != workflow:
-                continue
-            try:
-                doc = load_yaml(repo / w["workflow"])
-            except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
-                continue
-            if isinstance(doc, dict) and has_pull_request(doc) and job_calls(doc, w["job"], target, read, off_event("pull_request")):
-                ok = True
-                break
-        if not ok:
             where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
             place = workflow or f"{WORKFLOWS}/ のワークフロー"
             e.append(f"{where}: wired にするには wired_by に、on.pull_request のある {place} で pull_request でも走るジョブから"
                      f" {target} を呼ぶ項目が要る（ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。議決 {decision}）")
     return e
+
+
+def pr_job_calls(s: dict, repo: Path, read, target: str, workflow: str | None) -> bool:
+    """解決策の wired_by に、pull_request でも走るジョブから target を呼ぶ項目があるか（workflow を渡したらそのワークフローの項目だけを数える）"""
+    for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
+        if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+            continue
+        if workflow is not None and norm("", w["workflow"]) != workflow:
+            continue
+        try:
+            doc = load_yaml(repo / w["workflow"])
+        except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
+            continue
+        if isinstance(doc, dict) and has_pull_request(doc) and job_calls(doc, w["job"], target, read, off_event("pull_request")):
+            return True
+    return False
 
 
 def check_required_runs(k: dict, repo: Path) -> list[str]:
@@ -644,8 +681,8 @@ def check_head_record(k: dict, comments: str | None, cache: dict | None = None, 
 
 
 class HoldUncheckable(Exception):
-    """review_by の先送りの照合で、前の版・ENGINE_REF・Engine の欄を読めず照らせないこと。kind は読めなかったものの種類
-    （base_unreadable・engine_missing・engine_ref_invalid・engine_ref_missing・finished_unreadable・fields_unreadable）"""
+    """review_by の先送りの照合と Engine の merge_step の照合で、前の版・ENGINE_REF・Engine の中身を読めず照らせないこと。kind は読めなかったものの種類
+    （base_unreadable・engine_missing・engine_ref_invalid・engine_ref_missing・finished_unreadable・fields_unreadable・supervisor_unreadable）"""
 
     def __init__(self, kind: str, detail: str):
         super().__init__(f"{kind}: {detail}")
@@ -683,14 +720,19 @@ def base_knowledge(repo: Path, base: str, rel: str):
 
 def conflict_engine_ref(repo: Path) -> tuple[str, str]:
     """EngineFinishedTest を走らせる CI の ENGINE_REF と、読んだファイル（写しがあれば写し、なければひな形）。読めなければ HoldUncheckable"""
-    for rel in CONFLICT_CHECK_WORKFLOWS:
+    return engine_ref(repo, CONFLICT_CHECK_WORKFLOWS)
+
+
+def engine_ref(repo: Path, rels: tuple[str, ...]) -> tuple[str, str]:
+    """rels のうち最初にあるファイルの ENGINE_REF と、読んだファイル。読めなければ HoldUncheckable"""
+    for rel in rels:
         p = repo / rel
         if p.is_file():
             refs = ENGINE_REF_RE.findall(p.read_text(encoding="utf-8"))
             if len(refs) != 1 or not re.fullmatch(r"[0-9a-f]{40}", refs[0]):
                 raise HoldUncheckable("engine_ref_invalid", f"{rel} の ENGINE_REF が 40 桁のコミット SHA の 1 行でない（{refs!r}）")
             return refs[0], rel
-    raise HoldUncheckable("engine_ref_invalid", f"ENGINE_REF を読むファイル（{'・'.join(CONFLICT_CHECK_WORKFLOWS)}）がない")
+    raise HoldUncheckable("engine_ref_invalid", f"ENGINE_REF を読むファイル（{'・'.join(rels)}）がない")
 
 
 def finished_fields_required(repo: Path) -> tuple[str, ...]:
@@ -763,6 +805,54 @@ def check_review_by_hold(k: dict, repo: Path, base: str | None, engine: Path | N
                 f" {' と '.join(required)} がなく、{CONFLICT_EVENTS_TEST} の EngineFinishedTest が todo のまま。"
                 "review_by を延ばすだけで期限切れの失敗を先送りしない。Engine を直して ENGINE_REF を上げてから延ばす（議決 D-0067）"]
     return []
+
+
+def engine_merge_waits(engine: Path, ref: str) -> bool:
+    """ref の版の Engine の supervisor.py で、merge_step が body_recheck_pending を呼び、その関数がモジュールの直下に定義されているか。
+    Engine のチェックアウト（全履歴）から版のファイルを取り出して構文木で見る（取り込まない）。読めなければ HoldUncheckable"""
+    if git(engine, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine のチェックアウト（{engine}）に ENGINE_REF {ref} の版がない（fetch-depth: 0 で取る）")
+    src = git(engine, "show", f"{ref}:{ENGINE_SUPERVISOR}")
+    if src.returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine の {ref} の版に {ENGINE_SUPERVISOR} がない")
+    try:
+        tree = ast.parse(src.stdout)
+    except SyntaxError as x:
+        raise HoldUncheckable("supervisor_unreadable", f"Engine の {ref} の版の {ENGINE_SUPERVISOR} を読めない（{x}）") from x
+    defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    if ENGINE_RECHECK_WAIT not in defs or ENGINE_MERGE_STEP not in defs:
+        return False
+    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == ENGINE_RECHECK_WAIT
+               for n in ast.walk(defs[ENGINE_MERGE_STEP]))
+
+
+def check_engine_wait(k: dict, repo: Path, engine: Path | None, cache: dict | None = None) -> list[str]:
+    """REQUIRED_ENGINE_WAIT の解決策が wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の Engine の merge_step が
+    body_recheck_pending を呼んでいることを求める（議決 D-0100（起票時の番号は D-0071）、Issue #1196）。
+    落とす行には種類の名前を添える（ENGINE_UNWIRED、照らせないときは ENGINE_UNVERIFIABLE と HoldUncheckable の kind）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    cache = {} if cache is None else cache
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True or (k.get("id"), s.get("issue")) not in REQUIRED_ENGINE_WAIT:
+            continue
+        if "result" not in cache:
+            try:
+                if engine is None:
+                    raise HoldUncheckable("engine_missing", "Engine のチェックアウトを --engine か ENGINE_DIR で渡す")
+                ref, rel = engine_ref(repo, (PR_BODY_ENGINE_WORKFLOW,))
+                cache["result"] = (engine_merge_waits(engine, ref), ref, rel, None)
+            except HoldUncheckable as x:
+                cache["result"] = (None, None, None, x)
+        waits, ref, rel, x = cache["result"]
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        if x is not None:
+            e.append(f"{where}: {ENGINE_UNVERIFIABLE}（{x.kind}）: wired にするには ENGINE_REF の Engine の {ENGINE_MERGE_STEP} が"
+                     f" {ENGINE_RECHECK_WAIT} を呼んでいることを照らす（{x.detail}。照らせないときは落とす。議決 D-0100）")
+        elif not waits:
+            e.append(f"{where}: {ENGINE_UNWIRED}: ENGINE_REF（{ref}。{rel}）の Engine の {ENGINE_SUPERVISOR} の {ENGINE_MERGE_STEP} が"
+                     f" {ENGINE_RECHECK_WAIT} を呼んでいない。tools/pr-body-check/engine/pr-body-recheck.patch を Engine に入れて ENGINE_REF を上げてから"
+                     " wired にする（議決 D-0100）")
+    return e
 
 
 def merge_base(repo: Path, base: str) -> str | None:
@@ -846,10 +936,11 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    repo, decisions, heads, bases = Path(a.repo), {}, {}, {}
+    repo, decisions, heads, bases, waits = Path(a.repo), {}, {}, {}, {}
     errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
               + check_head_record(k, a.head_comments, heads)
               + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)
+              + check_engine_wait(k, repo, Path(a.engine) if a.engine else None, waits)
               + check_solution_fields(k, repo, a.base, bases)]
     rows = [row(k) for k in items]
     if a.json:

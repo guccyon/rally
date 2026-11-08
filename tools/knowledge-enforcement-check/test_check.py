@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -1007,6 +1008,190 @@ class PrBodyEngineWiringTest(unittest.TestCase):
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 1182）: wired にするには", errors[0])
         self.assertIn(self.ENGINE_WF, errors[0])
+
+
+class PrBodyRecheckWiringTest(unittest.TestCase):
+    """K-0012 の issue 1122・1196 と K-0006 の issue 906 の解決策は、.github/workflows/pr-body-check.yml の pull_request のジョブから check.mjs を
+    呼ばないと wired にできない。K-0012 の 2 つは、.github/workflows/pr-body-engine.yml の pull_request のジョブから engine.test.mjs を呼び、
+    その ENGINE_REF の Engine の merge_step が body_recheck_pending を呼んでいることも求める（議決 D-0100（起票時の番号は D-0071）、Issue #1196）。
+    Engine は一時の git リポジトリに supervisor.py だけを置いて作る"""
+
+    CHECK = "tools/pr-body-check/check.mjs"
+    ENGINE_TEST = "tools/pr-body-check/engine.test.mjs"
+    CHECK_TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-check.yml"
+    ENGINE_TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-engine.yml"
+    RECHECK_PATCH = REPO / "tools/pr-body-check/engine/pr-body-recheck.patch"
+    CHECK_WF = ".github/workflows/pr-body-check.yml"
+    ENGINE_WF = ".github/workflows/pr-body-engine.yml"
+    OTHER = ".github/workflows/pr-body.yml"
+    WIRED_BY = ((CHECK_WF, "pr-body-check", CHECK), (ENGINE_WF, "engine-test", ENGINE_TEST))
+    WAITS = ("def merge_step(cur, rules, manifests):\n    for p in prs:\n        if body_fix_pending(cur, p):\n            continue\n"
+             "        if body_recheck_pending(cur, p, sha):\n            continue\n        merge(p)\n\n\n"
+             "def body_fix_pending(cur, pr_url):\n    return False\n\n\ndef body_recheck_pending(cur, pr_url, sha):\n    return None\n")
+    LEGACY = ("def merge_step(cur, rules, manifests):\n    for p in prs:\n        if body_fix_pending(cur, p):\n            continue\n        merge(p)\n\n\n"
+              "def body_fix_pending(cur, pr_url):\n    return False\n")
+
+    @staticmethod
+    def git(cwd: Path, *args: str) -> str:
+        return subprocess.run(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", *args], cwd=cwd,
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def tmp(self) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        return Path(t.name)
+
+    def engine(self, text: str) -> tuple[Path, str]:
+        """supervisor.py を text にした版の Engine と、その SHA"""
+        d = self.tmp()
+        self.git(d, "init", "-q")
+        f = d / check.ENGINE_SUPERVISOR
+        f.parent.mkdir(parents=True)
+        f.write_text(text, encoding="utf-8")
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "-m", "v")
+        return d, self.git(d, "rev-parse", "HEAD")
+
+    def repo(self, ref: str = "0" * 40, files: dict[str, str | None] | None = None) -> Path:
+        """2 つのひな形をそのまま写したリポジトリ（pr-body-engine.yml の写しの ENGINE_REF は ref）。files の値が None ならそのファイルを置かない"""
+        d = self.tmp()
+        engine_wf = check.ENGINE_REF_RE.sub(f"  ENGINE_REF: {ref}", self.ENGINE_TEMPLATE.read_text(encoding="utf-8"))
+        base = {self.CHECK: "", self.ENGINE_TEST: "", self.CHECK_WF: self.CHECK_TEMPLATE.read_text(encoding="utf-8"), self.ENGINE_WF: engine_wf}
+        for rel, text in {**base, **(files or {})}.items():
+            if text is None:
+                continue
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def item(self, kid="K-0012", issue=1196, wired_by=WIRED_BY, wired=True) -> dict:
+        return {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": wf, "job": job, "runs": runs} for wf, job, runs in wired_by]}]}}
+
+    def errors(self, d: Path, engine: Path | None, **kw) -> list[str]:
+        item = self.item(**kw)
+        return check.check_pull_request(item, d) + check.check_wiring(item, d) + check.check_engine_wait(item, d, engine)
+
+    def test_対象に挙げてある(self):
+        for key in (("K-0012", 1122), ("K-0012", 1196), ("K-0006", 906)):
+            self.assertEqual(check.REQUIRED_PR[key], (self.CHECK, "D-0100"), key)
+            self.assertEqual(check.REQUIRED_PR_WORKFLOW[key], self.CHECK_WF, key)
+        for key in (("K-0012", 1122), ("K-0012", 1196)):
+            self.assertEqual(check.REQUIRED_PR_ALSO[key], ((self.ENGINE_TEST, self.ENGINE_WF, "D-0100"),), key)
+        self.assertEqual(check.REQUIRED_ENGINE_WAIT, {("K-0012", 1122), ("K-0012", 1196)})
+        self.assertNotIn(("K-0006", 906), check.REQUIRED_PR_ALSO)
+
+    def test_ひな形の名前は_Engine_の差分が待つものと合う(self):
+        patch = self.RECHECK_PATCH.read_text(encoding="utf-8")
+        self.assertIn(f'+BODY_CHECK_WORKFLOW = "{self.CHECK_WF}"', patch)
+        self.assertIn(f"+def {check.ENGINE_RECHECK_WAIT}(", patch)
+        self.assertIn(f"+        if {check.ENGINE_RECHECK_WAIT}(", patch)
+
+    def test_2_つのひな形の写しと待つ_Engine_なら通る(self):
+        eng, sha = self.engine(self.WAITS)
+        d = self.repo(sha)
+        for issue in (1122, 1196):
+            self.assertEqual(self.errors(d, eng, issue=issue), [], issue)
+        # K-0006 の issue 906 は pr-body-check の写しだけで足り、Engine を見ない
+        self.assertEqual(self.errors(d, None, kid="K-0006", issue=906, wired_by=self.WIRED_BY[:1]), [])
+
+    def test_pr_body_check_の項目がないかほかのワークフローでは落ちる(self):
+        eng, sha = self.engine(self.WAITS)
+        for kid, issue in (("K-0012", 1196), ("K-0006", 906)):
+            e = self.errors(self.repo(sha), eng, kid=kid, issue=issue, wired_by=self.WIRED_BY[1:])
+            self.assertEqual(len(e), 1, e)
+            self.assertIn(f"on.pull_request のある {self.CHECK_WF} で", e[0])
+            self.assertIn(self.CHECK, e[0])
+            self.assertIn("議決 D-0100", e[0])
+        d = self.repo(sha, {self.OTHER: self.CHECK_TEMPLATE.read_text(encoding="utf-8")})
+        e = self.errors(d, eng, wired_by=((self.OTHER, "pr-body-check", self.CHECK), self.WIRED_BY[1]))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.CHECK_WF, e[0])
+
+    def test_pull_request_を外すか_check_mjs_を呼ばない写しでは落ちる(self):
+        eng, sha = self.engine(self.WAITS)
+        text = self.CHECK_TEMPLATE.read_text(encoding="utf-8")
+        no_pr = text.replace("on:\n  pull_request:\n    types: [opened, synchronize, reopened, edited]\n", "on:\n  workflow_dispatch:\n", 1)
+        self.assertNotEqual(no_pr, text)
+        e = self.errors(self.repo(sha, {self.CHECK_WF: no_pr}), eng)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.pull_request", e[0])
+        no_call = text.replace("node tools/pr-body-check/check.mjs", "node tools/pr-body-check/followers.mjs", 1)
+        self.assertNotEqual(no_call, text)
+        e = self.errors(self.repo(sha, {self.CHECK_WF: no_call}), eng)
+        self.assertEqual(len([x for x in e if "wired にするには" in x]), 1, e)
+
+    def test_K_0012_は_engine_test_の項目がないと落ちる(self):
+        eng, sha = self.engine(self.WAITS)
+        e = self.errors(self.repo(sha), eng, wired_by=self.WIRED_BY[:1])
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"on.pull_request のある {self.ENGINE_WF} で", e[0])
+        self.assertIn(self.ENGINE_TEST, e[0])
+
+    def test_merge_step_が待たない_Engine_では落ちる(self):
+        for text in (self.LEGACY,
+                     # 関数はあるが merge_step から呼ばない
+                     self.LEGACY + "\n\ndef body_recheck_pending(cur, pr_url, sha):\n    return None\n",
+                     # 呼ぶが関数を定義していない
+                     self.WAITS.split("\n\n\ndef body_fix_pending")[0] + "\n",
+                     # 別の関数の中でだけ呼ぶ
+                     self.LEGACY + "\n\ndef other(cur):\n    body_recheck_pending(cur, 1, 2)\n\n\ndef body_recheck_pending(cur, pr_url, sha):\n    return None\n"):
+            eng, sha = self.engine(text)
+            e = self.errors(self.repo(sha), eng)
+            self.assertEqual(len(e), 1, e)
+            for part in (f"issue 1196）: {check.ENGINE_UNWIRED}:", sha, self.ENGINE_WF, "pr-body-recheck.patch", "議決 D-0100"):
+                self.assertIn(part, e[0])
+
+    def test_照らせなければ落とす(self):
+        eng, sha = self.engine(self.WAITS)
+        cases = {"engine_missing": (self.repo(sha), None),
+                 "engine_ref_invalid": (self.repo(sha, {self.ENGINE_WF: None}), eng),
+                 "engine_ref_missing": (self.repo("1" * 40), eng)}
+        for kind, (d, engine) in cases.items():
+            e = [x for x in self.errors(d, engine) if check.ENGINE_UNVERIFIABLE in x]
+            self.assertEqual(len(e), 1, (kind, e))
+            self.assertIn(f"{check.ENGINE_UNVERIFIABLE}（{kind}）", e[0])
+        broken, bsha = self.engine("def merge_step(:\n")
+        e = self.errors(self.repo(bsha), broken)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"{check.ENGINE_UNVERIFIABLE}（supervisor_unreadable）", e[0])
+
+    def test_配線していない解決策とほかの解決策は_Engine_を見ない(self):
+        d = self.repo(files={self.CHECK_WF: None, self.ENGINE_WF: None})
+        self.assertEqual(self.errors(d, None, wired=False), [])
+        self.assertEqual(check.check_engine_wait(self.item(kid="K-0001", issue=1182), d, None), [])
+
+    @unittest.skipUnless(os.environ.get("ENGINE_DIR"), "ENGINE_DIR（Engine のチェックアウト）がない")
+    def test_本物の_Engine_は差分を当てると待ち_当てる前は待たない(self):
+        src = Path(os.environ["ENGINE_DIR"]) / check.ENGINE_SUPERVISOR
+        events = Path(os.environ["ENGINE_DIR"]) / "definitions/events.yaml"
+        d = self.tmp()
+        self.git(d, "init", "-q")
+        for f, rel in ((src, check.ENGINE_SUPERVISOR), (events, "definitions/events.yaml")):
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(f, d / rel)
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "-m", "before")
+        before = self.git(d, "rev-parse", "HEAD")
+        if f"def {check.ENGINE_RECHECK_WAIT}(" not in src.read_text(encoding="utf-8"):
+            self.assertFalse(check.engine_merge_waits(d, before))
+            self.git(d, "apply", str(self.RECHECK_PATCH))
+            self.git(d, "commit", "-q", "-am", "after")
+        self.assertTrue(check.engine_merge_waits(d, self.git(d, "rev-parse", "HEAD")))
+
+    def test_main_で落とす(self):
+        eng, sha = self.engine(self.LEGACY)
+        d = self.repo(sha)
+        MainTest.write(None, d, "K-0012.yaml", "id: K-0012\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1196, wired: true, verified: false, wired_by: ["
+                       f"{{workflow: {self.CHECK_WF}, job: pr-body-check, runs: {self.CHECK}}}, "
+                       f"{{workflow: {self.ENGINE_WF}, job: engine-test, runs: {self.ENGINE_TEST}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out), "--engine", str(eng)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn(f"issue 1196）: {check.ENGINE_UNWIRED}", errors[0])
 
 
 class DecisionTest(unittest.TestCase):

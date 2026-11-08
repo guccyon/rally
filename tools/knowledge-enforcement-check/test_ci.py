@@ -482,6 +482,7 @@ def scope_targets(items: list[dict]) -> list[str]:
     out = [f"{check.ROOT}/K-0010.yaml", check.KNOWLEDGE_CHECK, ".github/workflows/conflict-check.yml", COPY_REL]
     out += list(check.REQUIRED_SCHEDULE.values()) + [wf for wf, _ in check.REQUIRED_SCHEDULE_WORKFLOW.values()]
     out += [t for t, _ in check.REQUIRED_PR.values()] + [t for ts in check.REQUIRED_RUNS.values() for t in ts]
+    out += [x for reqs in check.REQUIRED_PR_ALSO.values() for t, wf, _ in reqs for x in (t, wf)]
     for k in items:
         for s in check.solutions(k):
             for w in (s.get("wired_by") if isinstance(s, dict) and isinstance(s.get("wired_by"), list) else []):
