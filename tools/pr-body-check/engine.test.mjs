@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { FIRST_SUMMARY, ISSUE, PASSING_REPORTS, PR_URL, REASONS, continuationSummary, legacyBody, newPrBody } from "./c0005.mjs";
 import { checkBody } from "./check.mjs";
 import { gate } from "./gate.mjs";
+import { checkEvents } from "./recheck.mjs";
 
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -356,3 +357,123 @@ for (const [label, report] of PASSING_REPORTS) {
     assert.equal(body.match(/^## 概要$/gm)?.length, 1, "「## 概要」が重なった");
   });
 }
+
+// (11) 本文の直しのあとの再検査を待つ supervisor（知見 K-0012 の担保。議決 D-0050 の ci_check の案、Issue #1122）。差分は engine/pr-body-recheck.patch。
+// ENGINE_DIR の Engine の写しに当て（もう body_recheck_pending があれば当てずに写す）、supervisor.py の body_fix_pending・body_recheck_pending を
+// engine_harness.py --body-recheck で merge_step と同じ順に動かす。入力は事例 C-0006（PR #821）の記録の順（本文の直し job 4299 を 14:24:41 に積み、
+// 検査役の承認 14:25:02、pr.body_amended 14:25:04、マージ 14:25:06）。GitHub の pr-body-check の実行は時刻と結果だけを真似る
+const RECHECK_PATCH = fileURLToPath(new URL("./engine/pr-body-recheck.patch", import.meta.url));
+const RECHECK_FILES = ["orchestrator/dispatcher/supervisor.py", "definitions/events.yaml"];
+const URL_821 = "https://github.com/guccyon/rally/pull/821";
+
+/** ENGINE_DIR の Engine の写しに engine/pr-body-recheck.patch を当てる（もう当たっていれば写すだけ）。写しの場所を返す。 */
+function recheckEngine() {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-recheck-engine-"));
+  for (const f of RECHECK_FILES) {
+    mkdirSync(dirname(join(dir, f)), { recursive: true });
+    copyFileSync(join(engineDir, f), join(dir, f));
+  }
+  if (!readFileSync(join(dir, RECHECK_FILES[0]), "utf8").includes("def body_recheck_pending(")) {
+    try {
+      execFileSync("git", ["apply", RECHECK_PATCH], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      assert.fail(`engine/pr-body-recheck.patch が Engine（${engineDir}）に当たらない。今の Engine に合わせて作り直す: ${e.stderr || e.message}`);
+    }
+  }
+  return dir;
+}
+
+let recheckDir;
+/** C-0006 の本文の直し（job 4299）を、state で終わらせた入力に over を重ねて supervisor の判断を返す。 */
+function supervisorRecheck(over = {}, state = "succeeded") {
+  recheckDir ??= recheckEngine();
+  const inp = { pr_url: URL_821, head_sha: "s1", events: [], check_runs: [],
+    jobs: [{ id: 4299, kind: "body_fix", state, enqueued_at: "2026-11-06T14:24:41+09:00", started_at: null }], ...over };
+  try {
+    return JSON.parse(execFileSync("python3", ["-I", harness, "--body-recheck", recheckDir], { input: JSON.stringify(inp), encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"] }));
+  } catch (e) {
+    assert.fail(`engine_harness.py --body-recheck が動かない: ${e.stderr || e.message}`);
+  }
+}
+
+/** GitHub の check-runs の 1 件（pr-body-check）。 */
+const bodyCheckRun = (started_at, status = "completed", conclusion = "success") =>
+  ({ name: "pr-body-check", started_at, status, conclusion: status === "completed" ? conclusion : null, html_url: `https://github.com/guccyon/rally/runs/${started_at}` });
+/** 直す前の本文で走った pr-body-check（PR を開いたとき）と、直した本文の編集（pull_request edited）で走った pr-body-check。 */
+const BEFORE_FIX = bodyCheckRun("2026-11-06T05:10:00Z");
+const AFTER_FIX = (status, conclusion) => bodyCheckRun("2026-11-06T05:25:05Z", status, conclusion);
+
+test("(11) 再検査を待つ supervisor（engine/pr-body-recheck.patch）は、merge_step でマージより前に、本文の直しの終わりと直した本文の pr-body-check を待つ", { skip }, () => {
+  const r = supervisorRecheck({}, "running");
+  assert.equal(r.order.merge_step, true, "supervisor.py に merge_step がない");
+  assert.equal(r.order.before_merge, true, `merge_step で body_fix_pending と body_recheck_pending を待つ（if …: continue）のがマージより前にない: ${JSON.stringify(r.order)}`);
+  assert.match(readFileSync(join(recheckDir, "definitions/events.yaml"), "utf8"), /^ {2}supervisor\.body_rechecked:$/m, "events.yaml に supervisor.body_rechecked がない");
+});
+
+test("(11) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ", { skip }, () => {
+  const r = supervisorRecheck({ check_runs: [BEFORE_FIX] }, "running");
+  assert.equal(r.fix_pending, true);
+  assert.deepEqual(r.gh, [], "直している間に GitHub を引いた");
+});
+
+test("(11) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）", { skip }, () => {
+  const cases = [
+    [{ check_runs: [BEFORE_FIX] }, /待ち（直しのあとに走っていない）/],
+    [{ check_runs: [] }, /待ち（直しのあとに走っていない）/],
+    [{ check_runs: [BEFORE_FIX, AFTER_FIX("in_progress")] }, /待ち（in_progress）/],
+    [{ check_runs: [AFTER_FIX("completed", "failure"), BEFORE_FIX] }, /通らない（failure）/],
+    [{ check_runs: [AFTER_FIX("completed", "cancelled")] }, /通らない（cancelled）/],
+    [{ workflow_error: 500, check_runs: [AFTER_FIX()] }, /読めない（500）/],
+  ];
+  for (const [over, reason] of cases) {
+    const r = supervisorRecheck(over);
+    assert.equal(r.fix_pending, false);
+    assert.match(r.reason ?? "", reason, JSON.stringify(over));
+    assert.deepEqual(r.events, [], `通っていないのに再検査を記録した: ${JSON.stringify(over)}`);
+  }
+});
+
+test("(11) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る", { skip }, () => {
+  const r = supervisorRecheck({ check_runs: [BEFORE_FIX, AFTER_FIX()] });
+  assert.equal(r.reason, null);
+  assert.equal(r.events.length, 1);
+  const [ev] = r.events;
+  assert.equal(ev.name, "supervisor.body_rechecked");
+  assert.deepEqual({ ...ev.payload, check_run: undefined, started_at: undefined },
+    { pr_url: URL_821, head_sha: "s1", gate: "pr-body-check", job_id: 4299, check_run: undefined, started_at: undefined });
+  assert.equal(ev.payload.started_at, AFTER_FIX().started_at, "直す前の本文の実行を再検査に数えた");
+  // 記録したあとは GitHub を引かずに待たない（同じ直しで 1 回）
+  const again = supervisorRecheck({ events: [ev], check_runs: [] });
+  assert.equal(again.reason, null);
+  assert.deepEqual(again.gh, []);
+  // C-0006 の記録の順に、supervisor が残す再検査を挟んだ列は recheck.mjs に通る（挟まない列が落ちることは recheck.test.mjs が確かめる）
+  const pr = { pr_url: URL_821 };
+  const events = [
+    { name: "job.enqueued", job_id: 4299, payload: { ...pr, by: "judge", kind: "body_fix" } },
+    { name: "pr.body_amended", job_id: 4299, payload: { ...pr, defects: 1 } },
+    { name: ev.name, payload: ev.payload },
+    { name: "supervisor.inspector_approved", payload: { ...pr, head_sha: "s1" } },
+    { name: "supervisor.merged", payload: { ...pr, head_sha: "s1" } },
+  ];
+  assert.deepEqual(checkEvents(events).errors, []);
+  assert.deepEqual(checkEvents(events.filter((e) => e.name !== ev.name)).errors.map((e) => e.rule), ["merged_without_body_recheck"]);
+});
+
+test("(11) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）", { skip }, () => {
+  for (const state of ["failed", "cancelled"]) {
+    const r = supervisorRecheck({ check_runs: [AFTER_FIX()] }, state);
+    assert.match(r.reason ?? "", new RegExp(`${state} で終わった`));
+    assert.deepEqual(r.stoppages, [{ key: `body_recheck:${URL_821}`, category: "human" }]);
+    assert.deepEqual(r.events, []);
+  }
+});
+
+test("(11) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）", { skip }, () => {
+  const none = supervisorRecheck({ jobs: [] });
+  assert.deepEqual([none.fix_pending, none.reason, none.gh], [false, null, []]);
+  const other = supervisorRecheck({ workflow: false });
+  assert.equal(other.reason, null);
+  assert.deepEqual(other.events, []);
+  assert.equal(other.gh.length, 1, "ワークフローがないのに pr-body-check の結果を引いた");
+});

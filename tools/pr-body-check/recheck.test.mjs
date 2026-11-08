@@ -82,6 +82,16 @@ test("直した本文を再検査してからマージすれば通る（検査�
   assert.deepEqual(checkEvents(waited).errors, []);
 });
 
+test("supervisor が直した本文の pr-body-check を確かめて残した supervisor.body_rechecked も再検査に数える（議決 D-0050、Issue #1122）", () => {
+  const rechecked = (pr_url) => ({ name: "supervisor.body_rechecked", payload: { pr_url, head_sha: "s1", gate: "pr-body-check", job_id: 4299 } });
+  // C-0006 の列で、pr.body_amended のあと supervisor の再検査を挟んでからマージすれば通る
+  const waited = before(c0006(), "supervisor.merged", rechecked(URL_821));
+  assert.deepEqual(checkEvents(waited).errors, []);
+  // 直す前に残した再検査とほかの PR の再検査は数えない
+  assert.deepEqual(rules(checkEvents(before(c0006(), "pr.body_amended", rechecked(URL_821)))), ["merged_without_body_recheck"]);
+  assert.deepEqual(rules(checkEvents(before(c0006(), "supervisor.merged", rechecked(URL_659)))), ["merged_without_body_recheck"]);
+});
+
 test("直す前の検査や、ほかの PR の検査は再検査に数えない", () => {
   // C-0006 の gate.evaluated（14:23:16）は直す前なので、それだけでは通らない（上の C-0006 のテスト）。ほかの PR の検査を挟んでも落ちる
   assert.deepEqual(rules(checkEvents(before(c0006(), "supervisor.merged", recheck(URL_659)))), ["merged_without_body_recheck"]);

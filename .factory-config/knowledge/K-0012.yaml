@@ -47,4 +47,26 @@ enforcement:
       decided_by: committee:D-0033
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0050 の ci_check の案（D-0033 の ci_check の案と同じ線）を入れた。別の検査は作らず、K-0006 の #906 と同じ tools/pr-body-check/check.mjs を
+        1 つのマージ前の必須チェックにまとめた。ひな形 tools/pr-body-check/ci/pr-body-check.yml（ジョブとチェックの名前 pr-body-check）は pull_request の
+        opened・synchronize・reopened に加えて edited でも走り、head_sha の変わらない本文だけの直し（pr.body_amended）のあとの本文も照らす。
+        必須のチェックだけでは、直しのジョブが終わってから edited のチェックが始まるまでの間に前の本文で通ったチェックのままマージでき、Engine の今の
+        body_fix_pending は検査役の承認の中で直しの順番待ちと作業中しか見ないので、Engine の supervisor に入れる差分 tools/pr-body-check/engine/pr-body-recheck.patch を足した。
+        merge_step がマージの前に body_fix_pending と body_recheck_pending を待ち、body_recheck_pending は最後の body_fix のジョブが成功で終わっていれば、
+        そのジョブが走り始めたより後に始まった pr-body-check が success で終わるまで待って supervisor.body_rechecked を残し、失敗か取り消しで終わっていれば
+        停止（body_recheck:<PR の URL>、human）を開いて待つ。直しの終わりは pr.body_amended ではなくジョブの状態で見る。recheck.mjs は supervisor.body_rechecked も再検査に数える。
+        engine.test.mjs の (11) で、Engine（/work/engine の 57069a8）の写しに差分を当て、C-0006（PR #821）の記録の順（body_fix の job 4299 を 14:24:41 に積み、
+        マージ 14:25:06）を入力に、直しが走っている間・直しのあとに pr-body-check が走っていない・実行中・落ちた間は待ち、通ったら supervisor.body_rechecked を残して
+        その列が recheck.mjs に通ること、直しの失敗では人に回すこと、直しのない PR とワークフローを持たない製品では待たないことを確かめた。
+        merge_step の待ちを外す・直しのあとに始まったかを見ない・失敗を通す書き換えで (11) が落ちることも確かめた。ci.test.mjs でひな形の形
+        （edited を含む types、絞り込み・if:・continue-on-error がない、本文を env で渡す、名前が Engine の待つものと合う）を見張る。
+        GitHub の実行は時刻と結果を真似たもので、本物のイベント列や本物の PR では走らせていない。ワークフローの写し（.github/workflows/pr-body-check.yml）と
+        必須のチェック、Engine への差分の取り込みは建設者の権限なのでまだ入っておらず、配線されておらず効き目は確かめていない
+      issue: 1122
+      at: 2026-11-08
+      decided_by: committee:D-0050
+      wired: false
+      verified: false
 decided_by: committee:D-0033
