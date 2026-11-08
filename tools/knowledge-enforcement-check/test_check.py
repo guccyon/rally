@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -1105,7 +1106,7 @@ class ReviewByHoldTest(unittest.TestCase):
         eng, (sha,) = self.engine(self.LEGACY)
         e = self.errors(self.repo(sha, "2027-01-05"), eng)
         self.assertEqual(len(e), 1, e)
-        for s in ("K-0010.yaml: review_by を 2026-12-05 から 2027-01-05 へ動かす", sha, "EngineFinishedTest が todo のまま", "議決 D-0067"):
+        for s in ("K-0010.yaml: review_by_hold: review_by を 2026-12-05 から 2027-01-05 へ動かす", sha, "EngineFinishedTest が todo のまま", "議決 D-0067"):
             self.assertIn(s, e[0])
 
     def test_review_by_を読めなくしても延ばしたとみなす(self):
@@ -1129,15 +1130,26 @@ class ReviewByHoldTest(unittest.TestCase):
     def test_照らせなければ落とす(self):
         eng, (sha,) = self.engine(self.LEGACY)
         other, (missing,) = self.engine(["state", "exit"])   # cost_usd を持つ job.finished がない（engine_harness.py が読めない）
-        cases = {"Engine を渡さない": (self.repo(sha, "2027-01-05"), None, "--engine か ENGINE_DIR"),
-                 "Engine に版がない": (self.repo(missing, "2027-01-05"), eng, f"ENGINE_REF {missing} の版がない"),
-                 "欄を読めない": (self.repo(missing, "2027-01-05"), other, "finished が落ちた"),
-                 "ENGINE_REF が SHA でない": (self.repo("main", "2027-01-05"), eng, "40 桁のコミット SHA")}
-        for name, (d, engine, msg) in cases.items():
+        no_fields = self.repo(sha, "2027-01-05")
+        (no_fields / check.CONFLICT_EVENTS_TEST).write_text("X = 1\n", encoding="utf-8")
+        cases = {"Engine を渡さない": (self.repo(sha, "2027-01-05"), None, "engine_missing", "--engine か ENGINE_DIR"),
+                 "Engine に版がない": (self.repo(missing, "2027-01-05"), eng, "engine_ref_missing", f"ENGINE_REF {missing} の版がない"),
+                 "欄を読めない": (self.repo(missing, "2027-01-05"), other, "finished_unreadable", "finished が落ちた"),
+                 "ENGINE_REF が SHA でない": (self.repo("main", "2027-01-05"), eng, "engine_ref_invalid", "40 桁のコミット SHA"),
+                 "FINISHED_FIELDS がない": (no_fields, eng, "fields_unreadable", "FINISHED_FIELDS がない")}
+        for name, (d, engine, kind, msg) in cases.items():
             e = self.errors(d, engine)
             self.assertEqual(len(e), 1, name)
+            self.assertIn(f"K-0010.yaml: review_by_unverifiable（{kind}）: ", e[0], name)
             self.assertIn("照らせない", e[0], name)
             self.assertIn(msg, e[0], name)
+
+    def test_照らせないこと以外の例外は照らせないに混ぜない(self):
+        """実装の不具合（KeyError など）は review_by_unverifiable の行にせず、そのまま上げる（指摘 ARCH-007）"""
+        eng, (sha,) = self.engine(self.LEGACY)
+        d = self.repo(sha, "2027-01-05")
+        with mock.patch.object(check, "engine_finished_legacy", side_effect=KeyError("fields")), self.assertRaises(KeyError):
+            self.errors(d, eng)
 
     def test_前の版を渡さない_前の版にない_ほかの知見は見ない(self):
         _, (sha,) = self.engine(self.LEGACY)
@@ -1151,6 +1163,7 @@ class ReviewByHoldTest(unittest.TestCase):
         _, (sha,) = self.engine(self.LEGACY)
         e = self.errors(self.repo(sha, self.BEFORE), None, base="origin/none")
         self.assertEqual(len(e), 1, e)
+        self.assertIn("K-0010.yaml: review_by_unverifiable（base_unreadable）: ", e[0])
         self.assertIn("前の版 origin/none がリポジトリにない", e[0])
 
     def test_main_で落とす(self):

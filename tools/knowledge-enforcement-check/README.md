@@ -35,7 +35,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `REQUIRED_PR` の解決策（`K-0010` の issue 1035・1103、`K-0004` の issue 986・1059）が `wired: true` なのに、`wired_by` に pull_request のジョブからその検査（`tools/conflict-check/test_events.py`、`tools/knowledge-enforcement-check/check.py`）を呼ぶ項目がない（下の「PR ごとの配線の必須」）
 - `REQUIRED_RUNS` の解決策（`K-0010` の issue 1034・1100）が `wired: true` なのに、`wired_by` に 1 つのジョブから `tools/conflict-check/test_watch.py`・`test_engine.py` をすべて呼ぶ項目がない（下の「呼ぶ検査の必須」）
 - `decided_by` を書いた解決策で、`committee:D-NNNN` の形でない、`.factory-config/knowledge/committee/D-NNNN.yaml` がないか読めない、その議決の `enforcement` に同じ知見の id（`knowledge`）と同じ種類（`solution_kind` が解決策の `kind`）の案がない（`decision_mismatch`。下の「議決との照合」）
-- `--base` を渡したとき、`K-0010` の `review_by` を前の版より後ろへ動かす（日付でなくすのも含む）のに、`ENGINE_REF` の Engine で `tools/conflict-check/test_events.py` の `EngineFinishedTest` が todo のまま（`job.finished` に `agent_resumed` も `agent_tier` もない）か、それを照らせない（下の「review_by の先送りの照合」）
+- `--base` を渡したとき、`K-0010` の `review_by` を前の版より後ろへ動かす（日付でなくすのも含む）のに、`ENGINE_REF` の Engine で `tools/conflict-check/test_events.py` の `EngineFinishedTest` が todo のまま（`job.finished` に `agent_resumed` も `agent_tier` もない）（`review_by_hold`）か、それを照らせない（`review_by_unverifiable`。下の「review_by の先送りの照合」）
 
 ## 配線先の照合
 
@@ -99,7 +99,9 @@ branch protection の必須のチェックは PR の `GITHUB_TOKEN` では読め
 
 - 前の版の `.factory-config/knowledge/K-0010.yaml` の `review_by` より、作業ツリーの `review_by` が後ろか（日付として読めなくしたのも後ろへ動かしたとみなす）。同じか前なら見ない。前の版にファイルがない・前の版の `review_by` が日付でないときも見ない
 - 後ろへ動かすなら、`tools/conflict-check/ci/conflict-check.yml`（写し `.github/workflows/conflict-check.yml` があれば写し）の `ENGINE_REF` の版の Engine を、`--engine`（なければ環境変数 `ENGINE_DIR`）の全履歴のチェックアウトから取り出し（`orchestrator/dispatcher/dispatcher.py` だけ）、`tools/conflict-check/engine_harness.py` の `finished` で `job.finished` の欄を読む。求める欄は `test_events.py` の `FINISHED_FIELDS` を構文木から読む（定義は 1 か所）。どちらの欄もなければ（`EngineFinishedTest` が todo になる形）落とす。片方だけを出す版は `EngineFinishedTest` そのものが落ちるので、ここでは落とさない
-- 前の版が読めない・Engine のチェックアウトを渡さない・その版がない・`ENGINE_REF` が 40 桁の SHA の 1 行でない・欄を読めないときは、照らせないとして落とす
+- 前の版が読めない（`base_unreadable`）・Engine のチェックアウトを渡さない（`engine_missing`）・`ENGINE_REF` が 40 桁の SHA の 1 行でないか読むファイルがない（`engine_ref_invalid`）・Engine にその版かその版の `dispatcher.py` がない（`engine_ref_missing`）・`engine_harness.py` の `finished` が落ちたか出力に欄がない（`finished_unreadable`）・`FINISHED_FIELDS` を読めない（`fields_unreadable`）ときは、照らせないとして落とす
+
+落とす行には種類の名前を添える。Engine が今の形のまま延ばしたときは `K-0010.yaml: review_by_hold: …`、照らせないときは `K-0010.yaml: review_by_unverifiable（<上の括弧の種類>）: …`。照らせないことは専用の例外（`HoldUncheckable`）だけで受けるので、実装の不具合（`KeyError` など）は照らせないの行に混ざらずにそのまま上がる。
 
 `--base` を渡さない手元の実行では見ない。`test_check.py` の `ReviewByHoldTest` が、一時の git リポジトリに作った Engine（欄を出さない版・片方だけ・両方の版）と `K-0010` の前後の版で、延ばさなければ見ない・延ばして今の形なら落ちる・欄を出す版なら通る・写しの `ENGINE_REF` を先に見る・照らせなければ落ちることを確かめる。
 
