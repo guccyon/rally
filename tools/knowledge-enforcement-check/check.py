@@ -123,6 +123,10 @@ ENGINE_DIR の全履歴のチェックアウトから版の dispatcher.py を取
 solution_fields_missing で落とす（未記入の解決策を残したまま知見を直す変更セットを止める）。変えていない知見の未記入は見ない。
 未記入の解決策のある知見で分かれ目を求められない・その版を読めないときは solution_fields_unverifiable で落とす。
 
+写しの配線の記録（議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）: .github/workflows/knowledge-enforcement.yml（ひな形の写し）が
+実在するのに、MIRROR_WIRED の解決策（K-0004 の issue 1063・1144。engine-test のジョブ）が wired: true でない（false・未記入・真偽でない値）なら
+mirror_unwired で落とす。建設者が写したあとに記録の更新が遅れて、未配線と表示され続けるずれを止める。写しがなければ見ない。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -206,6 +210,11 @@ REQUIRES_CHECK_UNWIRED = "requires_check_unwired"
 KNOWLEDGE_ENFORCEMENT_WORKFLOW = f"{WORKFLOWS}/knowledge-enforcement.yml"
 KNOWLEDGE_GATE = (KNOWLEDGE_CHECK, KNOWLEDGE_ENFORCEMENT_WORKFLOW, "D-0072")
 KNOWLEDGE_GATE_UNWIRED = "knowledge_gate_unwired"
+# (知見の id, 解決策の issue)。KNOWLEDGE_ENFORCEMENT_WORKFLOW（ひな形の写し）が実在するなら wired: true であることを求める
+# （議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226。写したあとに記録の更新が遅れて、engine-test が PR ごとに走っているのに未配線と出続けるずれを止める）
+MIRROR_WIRED = (("K-0004", 1063), ("K-0004", 1144))
+MIRROR_WIRED_DECISION = "D-0080"
+MIRROR_UNWIRED = "mirror_unwired"
 # 知見 K-0012 の本文の直しのあとの再検査（issue 1122・1196）は Engine の merge_step の待ちも求める（REQUIRED_ENGINE_WAIT。議決 D-0100（起票時の番号は D-0071）、Issue #1196）
 PR_BODY_ENGINE_WORKFLOW = f"{WORKFLOWS}/pr-body-engine.yml"
 PR_BODY_RECHECK = (("K-0012", 1122), ("K-0012", 1196))
@@ -604,6 +613,23 @@ def check_knowledge_gate(k: dict, repo: Path) -> list[str]:
         e.append(f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {KNOWLEDGE_GATE_UNWIRED}: wired にするには wired_by に、"
                  f"on.pull_request のある {workflow} で pull_request でも走るジョブから {target} を呼ぶ項目が要る"
                  f"（wired: true の解決策はどれも、この検査が PR ごとに走っていないと wired と読ませない。議決 {decision}）")
+    return e
+
+
+def check_mirror_wired(k: dict, repo: Path) -> list[str]:
+    """KNOWLEDGE_ENFORCEMENT_WORKFLOW が実在するのに、MIRROR_WIRED の解決策が wired: true でない（false・未記入・真偽でない値）なら
+    mirror_unwired で落とす（議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）。
+    写しがなければ見ない。wired: true にしたあとの wired_by の照合は check_wiring・check_pull_request・check_knowledge_gate が行う"""
+    if not (repo / KNOWLEDGE_ENFORCEMENT_WORKFLOW).is_file():
+        return []
+    f, e = k.get("_file", str(k.get("id"))), []
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or (k.get("id"), s.get("issue")) not in MIRROR_WIRED or s.get("wired") is True:
+            continue
+        now = f"wired: {s['wired']!r}" if "wired" in s else "未記入"
+        e.append(f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {MIRROR_UNWIRED}: {KNOWLEDGE_ENFORCEMENT_WORKFLOW} が"
+                 f"あるのに wired が true でない（{now}）。写した PR で wired: true にし、wired_by に engine-test のジョブの"
+                 f" test_engine_patch.py と enforcement のジョブの check.py の項目を書く（議決 {MIRROR_WIRED_DECISION}）")
     return e
 
 
@@ -1023,7 +1049,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
     repo, decisions, heads, bases, waits = Path(a.repo), {}, {}, {}, {}
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_knowledge_gate(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_knowledge_gate(k, repo) + check_mirror_wired(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
               + check_head_record(k, a.head_comments, heads)
               + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)
               + check_engine_wait(k, repo, Path(a.engine) if a.engine else None, waits)
