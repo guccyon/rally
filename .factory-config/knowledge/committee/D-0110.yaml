@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0110
+pr: https://github.com/guccyon/rally/pull/1292
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0074 の 2 つ目の test の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、過去の議決とも README の決まりとも矛盾しません。
+  - 足した項目は D-0074 の enforcement の test の案（recheck.mjs の数え方を pr-body-check と本文の rubric
+    の gate に絞り、本文と関係のない gate.evaluated だけを挟んだ列で merged_without_body_recheck を確かめる）と中身が合っており、D-0050・D-0074・D-0109
+    の票が持ち越してきた「gate は問わず」の抜け道にようやく応えています。
+  - C-0006 の本文の直し（14:25:04）とマージ（14:25:06）の時刻は issue 1053 の項目の書きぶりと一致し、supervisor.body_rechecked
+    を数えることも issue 1122 の項目と食い違いません。
+  - 本文の構成の rubric を PR-002 とする書き方は K-0005・K-0006・K-0001 での PR-002 の扱いと揃っており、新しい用語や業務ルールは足していません。
+  - issue 1053 の項目の what には今も「gate は問わず」と元の数え方が書かれているので、記録は消さずに残すとしても、次に K-0012 を直す変更セットで
+    issue 1206 で絞ったことが分かる書き添えを入れてください。
+  - '配線も本物のイベント列での確かめもまだないので、wired: false・verified: false と hypothesis のままが妥当で、C-0003
+    を evidence に足すかどうかと statement の「根拠の 2 件では」の書き分けは、次に statement か evidence を直す変更セットで応えてください。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0074 を指していて、D-0074 の pr は PR #1202 です。中身も
+    D-0074 の 2 つ目の案（gate を問わない数え方を本文の gate に絞り、本文と関係のない gate だけを挟む列で落とす）と合っているので、議決まで辿れます。'
+  - 'テストの列に使った本文の直し 14:25:04 とマージ 14:25:06 は、事例記録 C-0006（PR #821）の書きぶりと一致しています。'
+  - 'recheck.mjs はまだどこからも呼ばれておらず、recheck.test.mjs も PR ごとには走っていないと書いてあり、wired: false・verified:
+    false としているので、効き目を言い過ぎていません。'
+  - 担保の記録を 1 件足しただけで statement・evidence・confidence は変えていません。本物のイベント列での確かめもまだないので、K-0012
+    の確かさは hypothesis のままが妥当です。
+  - 数える対象に足した supervisor.body_rechecked のイベントと rubric の checked の項目は、事例記録で実際に記録された形かがこの差分からは辿れません。配線するときに本物の記録で出ることを確かめてください。
+  - 差分にあるのは議決・Issue・PR の番号、イベント名、時刻、ファイルの道だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 足した test の項目は D-0074 の 2 つ目の案（recheck.mjs の数え方を本文を見た gate に絞り、本文と関係のない gate.evaluated
+    だけを挟んだ列が merged_without_body_recheck で落ちることを確かめる）にそのまま沿っており、D-0050 と D-0074 の反対票が挙げた抜け道を決定論の線で塞いでいます。
+  - 落ちる列（overlay・L1・PR-002 を見ていない rubric・checked のない rubric）と通る列（pr-body-check か PR-002
+    を見た rubric）を両方置き、数え方を元に戻す書き換えと checked に何かあれば数える書き換えでテストが落ちることも確かめているので、線ははっきりしていて弱める書き換えにも強いです。
+  - ただし what には、本文を見た検査が落ちた（結果が fail の）gate.evaluated を再検査に数えるかが書かれておらず、直した本文で pr-body-check
+    が落ちたあとにマージした列が通ってしまう抜けが残りうるので、テストの列で塞ぐべきです。
+  - BODY_RUBRIC_IDS は Engine の core-gates/rubric.yaml の PR-002 を手で写した一覧なので、Engine
+    で本文の rubric の id が変わったり増えたりすると、再検査を数えなくなる、あるいは見落とすずれが黙って起きます。
+  - 'recheck.mjs はどこからも呼ばれておらず、recheck.test.mjs も写しの engine-test がないので PR ごとに走っていないと書いて
+    wired: false・verified: false にしているのは正しく、配線は issue 1131・1205 の解決策の建設者の作業で揃えるのが筋です。'
+  - 担保の記録を 1 件足しただけで本物のイベント列での確かめもないので、K-0012 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0074 の 2 つ目の test の案（本文と関係のない gate を再検査に数えない）を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence・invalidate_when は変えていないので、主張の範囲は広がっていません。
+  - D-0050 と D-0074 の反対票が挙げた「gate を問わず数える」抜け道に、overlay・L1・PR-002 を見ていない rubric・checked
+    のない rubric の 4 通りの反例の列で応えていて、元に戻す書き換えと checked に何かあれば数える書き換えでテストが落ちることも確かめているので、線は反例に耐えています。
+  - 残る反例として、pr.body_amended より前に走り始めて後で記録された pr-body-check や PR-002 の rubric の gate.evaluated
+    は、直す前の本文を見ていても数えられてしまうので、次に K-0012 を直すときは engine 側の body_recheck_pending と同じく「直しのあとに始まった検査」に絞るか、絞らない理由を書いてください。
+  - C-0003 と C-0006 では OV-001 も本文の見出しを見る rubric なのに BODY_RUBRIC_IDS は PR-002 だけなので、OV-001
+    だけで再検査した列は止めすぎになり、PR-002 は state が candidate なので外されると rubric での再検査が数えられなくなる点も、次の変更セットで書き分けてください。
+  - 'recheck.mjs はどこからも呼ばれず recheck.test.mjs も PR ごとに走っていないと書いて wired: false・verified:
+    false にしているので、担保の効き目を言い過ぎておらず、K-0012 の確かさは hypothesis のままが妥当です。'
+  - 差分にあるのは PR 番号・Issue 番号・gate 名・rubric の id・時刻・ファイルの道だけで、利用者を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: 'recheck.test.mjs に、C-0006（PR #821）の列の pr.body_amended（14:25:04）のあとに gate:
+    "pr-body-check" の結果が fail の gate.evaluated と、PR-002 を見て fail した rubric の gate.evaluated
+    だけを挟んでから supervisor.merged が来る列を足し、merged_without_body_recheck で落ちることを確かめる。そのために
+    recheck.mjs の isBodyCheck を、本文を見て通った検査だけを数える形にする。結果を問わない形に戻す書き換えでこのテストが落ちることも確かめる。'
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: 'K-0005 の Issue #1121 の解決策と同じく ENGINE_DIR（CI=true では飛ばさない）の Engine の core-gates/rubric.yaml
+    を読み、recheck.mjs の BODY_RUBRIC_IDS が、PR 本文を対象にする rubric の id の一覧（今は PR-002）とちょうど一致するかを
+    recheck.test.mjs で照らす。一覧から PR-002 を外した写しと、本文の rubric を足した Engine の写しで落ちることを確かめる。'
