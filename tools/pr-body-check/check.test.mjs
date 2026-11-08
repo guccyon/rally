@@ -166,7 +166,8 @@ test("定義を検証しても元のデータは凍結しない", () => {
 test("必須の見出しが欠けると外れる", () => {
   const errors = checkBody(NEW_PR.replace("## 対応内容\n- getBooking を足した\n\n", ""));
   assert.deepEqual(errors.map((e) => [e.rule, e.heading, e.line]), [["missing_required", "対応内容", null]]);
-  assert.deepEqual(rules("本文に見出しがない\n").sort(), ["missing_required", "missing_required"]);
+  // 見出しのない文から始まるので、本文の先頭の外れ（K-0016）も 1 件
+  assert.deepEqual(rules("本文に見出しがない\n").sort(), ["head_not_first_heading", "missing_required", "missing_required"]);
 });
 
 test("必須でない見出しは省いてよい", () => {
@@ -181,7 +182,8 @@ test("定義の見出しの順が違うと外れる（C-0003 の PR #396 のよ�
 });
 
 test("順の違いは、戻った見出しのたびに 1 件ずつ数える", () => {
-  assert.deepEqual(rules("## 知見\n\n## 概要\n\n## 対応内容\n").map(String), ["template_order", "template_order"]);
+  // 「## 知見」から始まるので、本文の先頭の外れ（K-0016）も 1 件
+  assert.deepEqual(rules("## 知見\n\n## 概要\n\n## 対応内容\n").map(String), ["head_not_first_heading", "template_order", "template_order"]);
 });
 
 test("重なりの 2 回目は順の違いに数えない", () => {

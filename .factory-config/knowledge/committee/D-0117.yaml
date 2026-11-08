@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0117
+pr: https://github.com/guccyon/rally/pull/1305
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0016 に足した enforcement.solutions は、議決 D-0078 の K-0016 の ci_check の案（gate.mjs
+    を最初の本文の組み立てにも広げ、先頭が ## 概要 でなければ落とし、C-0008・C-0006 の形をテストにする）とそのまま合っており、decided_by:
+    committee:D-0078 と issue: 1219 も筋が通っています。'
+  - '「Issue #1219 の起票時の番号は D-0077」という書き方は README.md の D-0077（起票時は D-0075）と同じ慣例に沿っており、番号のずれによる矛盾ではありません。'
+  - 'wired: false と verified: false を書き、README.md の「すべての解決策に書いた知見」の一覧に K-0016 を足したのは
+    README.md の決まり（D-0034・D-0052・D-0071）と合っており、INDEX.md の担保の列が deterministic になるのも
+    README.md の「enforcement.level のまま出る」という説明どおりです。'
+  - D-0078 の整合の票が求めた related への K-0001 の追加と、既存の検査（K-0006 の ci_check・K-0001 の関所）との違いの書き分けがまだなく、今回の解決策は
+    K-0001 の関所と engine/pr-body-gate.patch を共有して広げているので、次に K-0016 を直す変更セットで related
+    に K-0001 を足し、K-0001 の patch_stale の見張りや engine.test.mjs の (10) への影響を K-0001 の扱いとして添えてください。
+  - 'この解決策が配線されると K-0016 の invalidate_when の 1 つ目に当たるので、wired: true にする変更セットで status
+    を再確認してください。'
+  - specs/ の用語や業務ルールを新しく定めるものはなく、確かさは配線も効き目の確認もまだなので hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0016 の enforcement.solutions は decided_by: committee:D-0078 を指していて、D-0078 は
+    PR #1212 の議決であり、K-0016 の ci_check の提案（gate.mjs を最初の本文の組み立てにも広げ、## 概要 で始まらない先頭を落とす）も記録されているので、議決の記録まで辿れます。'
+  - 'what に書かれた fixture の形（job 3324 の「  - テストで次を確かめます。」から始まる報告、Closes の直後に見出しのない箇条書きが来る本文、job
+    3873 の ## 概要 の前に 1 文が付いた報告、C-0006 の冒頭の段落と ## 対応内容 の欠け）は、C-0008 と C-0006 の「出来事」と「なぜなぜ」の記述と一致しています。'
+  - '「Issue #1219 の起票時の番号は D-0077」という書き添えは手元の committee/ では確かめられないので、Issue #1219 のリンクを議決か事例に残しておくと辿りやすくなります。'
+  - 'テストは事例の形から作った fixture と偽の gh で確かめただけで、本物の記録では効き目を確かめていないので、wired: false・verified:
+    false と書いたのは正直で妥当です。'
+  - 原因の場所（実装役の書き出しか、Engine の組み立てか）はまだ確かめられておらず、担保も配線されていないので、確かさは hypothesis のままが妥当で、上げる材料はありません。
+  - 差分に出てくるのは PR・Issue・job の番号、道の名前と、実装役が書いた報告の断片だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は議決 D-0078 の ci_check の案（gate.mjs を最初の PR 本文の組み立てにも当て、先頭が ## 概要 でなければ落とす）を
+    K-0016 の enforcement.solutions に記録したもので、中身は案とそろっており担保の観点で採ってよいです。'
+  - head_not_first_heading は「Closes・Refs・未完了の行と空行を除いた最初の行が template.json の最初の見出しか」で白黒がつき、C-0008
+    と C-0006 の 4 つの形を fixture にして落ちること、## 概要 から始まる本文が通ることを確かめているので、線ははっきりしています。
+  - '解決策が tools/pr-body-check/gate.test.mjs と engine.test.mjs と ci/pr-body-engine.yml
+    に頼っているのに requires_check がなく、K-0001・K-0012 の同じ検査の項目とそろっていないので、あとで pull_request
+    で走るジョブがないまま wired: true にしても check.py が落とせません。'
+  - 'wired: false と verified: false を正直に書いていて、enforcement.level を deterministic にしても
+    check.py の表示では 未配線 と出るので、担保済みと見誤る心配は小さいです。'
+  - 配線も効き目の確認もまだで、事例も 2 件だけなので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は D-0078 で決めた K-0016 の ci_check の案を enforcement.solutions に書き、level を deterministic
+    にして、INDEX.md と README.md の一覧を合わせただけで、statement・scope・確かさは変えていないので、範囲は広がっていません。
+  - 'wired: false・verified: false を正直に書いていて、K-0001・K-0006・K-0014 と同じく未配線の deterministic
+    として扱われるので、効き目を言い過ぎてはいません。'
+  - '反例として、head_not_first_heading は Closes #N・Refs #N・**未完了**: の行しか除かないので、Fixes #N
+    や Part of #N のような行から正しく始まる本文も落として body_fix を余計に積むおそれがあり、配線する前に除く行の決め方を template.json
+    の側で決めておくのが望ましいです。'
+  - '検査は gate.mjs を通して続きのジョブも含むすべての PR 本文にかかり、K-0016 の scope（request_form: ticket、dev.describe）より広く効くので、ticket
+    以外の頼み方の本文で外れが出ないかを、配線したあとの記録で確かめてください。'
+  - '配線されると invalidate_when の 1 つ目（組み立てたあとに先頭を機械で確かめるようになった）に当たるので、wired: true にする変更セットで
+    K-0016 の status をどうするかを一緒に決めてください。'
+  - D-0078 の反対の票が求めた roles を implement に絞る直しは今回も入っていないので、次に K-0016 の statement か scope
+    を直すときに入れてください。確かさは事例 2 件で欠けた場所も確かめていないので hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0016
+  level: deterministic
+  solution_kind: schema
+  proposal: 'K-0016 の issue 1219 の解決策に requires_check を足す（runs: tools/pr-body-check/gate.test.mjs
+    と tools/pr-body-check/engine.test.mjs、workflow: .github/workflows/pr-body-engine.yml）。こうすると、pull_request
+    で走るジョブからそれらを呼ぶ wired_by がないまま wired: true にしたときに、check.py が requires_check_unwired
+    で落とすようになる。'
+- knowledge: K-0016
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が pr-body-gate.patch を Engine に入れて ENGINE_REF を上げ、ci/pr-body-engine.yml
+    を .github/workflows/ に写して必須のチェックにする。そのうえで、engine.test.mjs の (13) が手元の Engine そのもので通ることと、本物のジョブで
+    ## 概要 から始まらない最初の本文に body_fix が積まれたことを cases/ に残してから、wired と verified を true にする。'

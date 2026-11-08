@@ -28,4 +28,29 @@ related: [K-0005, K-0006, K-0009]
 invalidate_when:
   - "summary.md から本文を組み立てたあとに、先頭が ## 概要 で始まるか、その前に文が混じっていないかを機械で確かめるようになった"
   - "実装役の会話の記録と summary.md を突き合わせ、欠けが実装役の書き出しの側だと分かった（その場合は Engine の組み立てではなく実装役への指示の知見に直す）"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: ci_check
+      what: >-
+        議決 D-0078（Issue #1219 の起票時の番号は D-0077。PR #1212）の ci_check の案を入れた。tools/pr-body-check/check.mjs に head_not_first_heading を足し、本文の先頭（空行と、
+        Closes #N・Refs #N の行と、途中終了の **未完了**: の行を除く）の最初の行が template.json の最初の見出し（## 概要）でなければ落とす
+        （見出しのない文・箇条書き・ほかの見出し・### 概要・コードブロックのどれから始まっても外れ）。K-0001 の関所 tools/pr-body-check/gate.mjs は
+        checkBody を使うので、続きのジョブの本文でも同じく落ち、body_fix の指摘（PR-002、「PR 本文 N 行目」）になる。
+        Engine に当てる差分 tools/pr-body-check/engine/pr-body-gate.patch を広げ、worker/entrypoint.sh が報告（summary.md）から組んだ最初の本文（PR_BODY）を
+        gh pr create の前に関所に照らし、外れたら作業を失わないよう組んだ本文のまま PR を作って、作った PR の URL に直した body_fix の入力を
+        FACTORY_RESULT の body_gate（new_pr: true）と引き継ぎに残し、dispatcher の run_job が続きのジョブでない結果の body_gate も act_on_body_gate に回して
+        判定役を待たずに body_fix を積むようにした（2・3 は人に回す）。tools/pr-body-check/k0016.mjs が事例 C-0008（job 3324 の「  - テストで次を確かめます。」から
+        始まる報告、Closes の直後に見出しのない箇条書きが来て ## 概要 が後ろにある本文、job 3873 の ## 概要 の前に 1 文が付いた報告）と C-0006（冒頭の段落と
+        ## 対応内容 が欠けた報告）の形を組み、gate.test.mjs で、それから組んだ最初の本文（未完了の印と Refs の形も）が head_not_first_heading で落ち
+        （job 3873 の形はほかの rule では落ちない）、CLI が 1 を返し、## 概要 から始まる本文は通ることを確かめた。engine.test.mjs の (14)(15) で、
+        差分を当てた手元の Engine（9f5f0be）の写しの新しい PR の作成の節を偽の gh で動かし、4 つの形で関所が 1 を返して PR を 1 回作り body_fix が積まれること、
+        ## 概要 から始まる本文では関所が 0 を返して body_gate を残さないことを確かめた。(13) は Engine そのものが gh pr create の前に関所を呼ぶかを見る必須のテストで、
+        関所を呼ばない手元の Engine では落ちる（差分を当てた Engine 全体の写しを ENGINE_DIR にすると通る）。差分を Engine に入れて ENGINE_REF を上げること、
+        ci/pr-body-engine.yml を .github/workflows/ に写して必須のチェックにすることは建設者が行うので、まだ配線されておらず効き目は確かめていない
+      issue: 1219
+      at: 2026-11-08
+      decided_by: committee:D-0078
+      wired: false
+      verified: false
 decided_by: committee:D-0078
