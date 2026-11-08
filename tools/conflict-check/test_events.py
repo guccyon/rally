@@ -18,6 +18,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
+from unittest import mock
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -252,6 +255,22 @@ class MissingConflictFilesTest(unittest.TestCase):
             self.assertIsNotNone(schema.field_error(schema.load()["continue.enqueued"]["fields"]["conflict_files"], bad), bad)   # 判定は schema.py と同じ
         # 形どおりでなくても、その場の conflict.files があれば今までどおり通る
         self.assertEqual(recorded(stream([{"inline": [], "files": ["a.ts"]}])), Counter())
+
+    def test_conflict_filesの定義を読めなければDefsErrorでコマンドは終了コード2(self):
+        # 項目がない・YAML として読めない定義は schema.DefsError に包む（素の KeyError・YAMLError を漏らさない）
+        cases = ({}, {"continue.enqueued": {"required": [], "required_when": [], "fields": {}}}, yaml.YAMLError("壊れた定義"))
+        self.addCleanup(events._inline_spec.cache_clear)
+        for case in cases:
+            events._inline_spec.cache_clear()
+            load = mock.Mock(side_effect=case) if isinstance(case, Exception) else mock.Mock(return_value=case)
+            with mock.patch.object(schema, "load", load):
+                with self.assertRaises(schema.DefsError, msg=case):
+                    events.records_from_events(stream([{"inline": ["a.ts"]}]))
+                events._inline_spec.cache_clear()
+                err = StringIO()
+                with redirect_stderr(err):
+                    self.assertEqual(events.main(["--events", str(C0007)]), 2, case)
+                self.assertIn("conflict-files.yaml", err.getvalue())
 
     def test_continue_enqueuedのconflict_filesはworker_logやbackfillより先に見る(self):
         self.assertEqual(recorded(stream([{"inline": ["a.ts"], "files": ["a.ts"], "late": True},

@@ -81,9 +81,17 @@ def _tier(enq: dict, started: dict, finished: dict) -> str | None:
 @functools.cache
 def _inline_spec() -> tuple:
     """conflict-files.yaml の continue.enqueued の conflict_files の形と、それを照らす schema.field_error。
-    形の判定は schema.py が持つ（schema.py がこのモジュールを取り込むので、使うときに取り込む）。定義を読めなければ schema.DefsError か OSError"""
+    形の判定は schema.py が持つ（schema.py がこのモジュールを取り込むので、使うときに取り込む）。定義のファイルを読めなければ OSError、
+    YAML として読めない・形が違う・continue.enqueued の conflict_files の項目がなければ schema.DefsError"""
     import schema
-    return schema.load()["continue.enqueued"]["fields"][INLINE], schema.field_error
+    try:
+        defs = schema.load()
+    except yaml.YAMLError as e:
+        raise schema.DefsError(f"YAML として読めない: {e}") from e
+    spec = defs.get("continue.enqueued", {}).get("fields", {}).get(INLINE)
+    if spec is None:
+        raise schema.DefsError(f"continue.enqueued.fields.{INLINE} がない")
+    return spec, schema.field_error
 
 
 def _inline_files(payload: dict) -> list[str] | None:
@@ -195,6 +203,7 @@ def main(argv: list[str]) -> int:
     def arg(name: str) -> str | None:
         return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
 
+    import schema   # schema.py がこのモジュールを取り込むので、使うときに取り込む（_inline_spec と同じ）
     path, config = arg("--events"), Path(arg("--config") or policy.DEFAULT_CONFIG)
     if not path:
         print("conflict-check: --events <イベントの JSON か JSONL> を渡す", file=sys.stderr)
@@ -206,7 +215,7 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         _inline_spec()
-    except (OSError, yaml.YAMLError, ValueError, KeyError) as e:   # schema.DefsError は ValueError
+    except (OSError, schema.DefsError) as e:
         print(f"conflict-check: conflict-files.yaml の continue.enqueued の {INLINE} を読めない: {e}", file=sys.stderr)
         return 2
     try:
