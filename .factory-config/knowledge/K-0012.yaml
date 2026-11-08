@@ -34,7 +34,8 @@ enforcement:
         議決 D-0033（Issue #1053 の起票時の番号は D-0032。PR #1051）の test の案を入れた。tools/pr-body-check/recheck.mjs が、古い順の制御プレーンのイベント列で、
         同じ PR の supervisor.merged より前に pr.body_amended があり、そのあと本文の検査（gate.evaluated。gate は問わず、検査役の rubric も
         gate: "pr-body-check" で記録した決定論の検査も数える）がないまま来たら merged_without_body_recheck、積んだ本文の直し（job.enqueued の kind が body_fix）が
-        終わる（pr.body_amended か pr.body_amend_failed。job_id で結ぶ）前に来たら merged_before_body_fix_finished で落とす（終了コード 1。読めなければ 2）。
+        終わる（pr.body_amended か pr.body_amend_failed。job_id で結ぶ）前に来たら merged_before_body_fix_finished で落とす。
+        直しが失敗で終わり（pr.body_amend_failed）、そのあと直しが成功しないまま来たら merged_after_body_fix_failed で落とす（人の判断で足した。終了コード 1。読めなければ 2）。
         recheck.test.mjs で、C-0006（PR #821）の記録の順（inspector_approved 14:25:02、body_amended 14:25:04、merged 14:25:06）を組み直した列が
         merged_without_body_recheck で、C-0005（PR #659）の記録の順（body_fix の job 3308 を積み、merged 20:08:43 のあと body_amended 20:08:50）を組み直した列が
         merged_before_body_fix_finished で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめた。C-0005 はマージが直しの終わりより前なので、

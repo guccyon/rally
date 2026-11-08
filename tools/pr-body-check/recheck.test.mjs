@@ -102,10 +102,25 @@ test("job_id のない記録でも、積んだ直しと終わりを古い順に�
   const strip = (events) => events.map(({ job_id, ...e }) => e);
   assert.deepEqual(rules(checkEvents(strip(c0005()))), ["merged_before_body_fix_finished"]);
   assert.deepEqual(rules(checkEvents(strip(c0006()))), ["merged_without_body_recheck"]);
-  // 直しが失敗で終わっても、終わりとして数える（失敗のままのマージは採用欠陥の後続の検査 tools/sendback-check が見る）
+});
+
+test("本文の直しが失敗で終わったあと、直しが成功しないままマージしたら落ちる", () => {
   const failed = c0005().map((e) => (e.name === "pr.body_amended" ? { ...e, name: "pr.body_amend_failed" } : e));
   const merged = failed.find((e) => e.name === "supervisor.merged");
-  assert.deepEqual(checkEvents([...without(failed, "supervisor.merged"), merged]).errors, []);
+  const afterFailure = [...without(failed, "supervisor.merged"), merged];
+  const r = checkEvents(afterFailure);
+  assert.deepEqual(rules(r), ["merged_after_body_fix_failed"]);
+  assert.match(r.errors[0].message, /job 3308/);
+  // job_id のない記録でも同じ
+  assert.deepEqual(rules(checkEvents(afterFailure.map(({ job_id, ...e }) => e))), ["merged_after_body_fix_failed"]);
+  // C-0005 の順（失敗の終わりがマージの後）なら、終わる前のマージとして落ちる
+  assert.deepEqual(rules(checkEvents(failed)), ["merged_before_body_fix_finished"]);
+  // 失敗のあと直し直して成功し、再検査してからマージすれば通る
+  const pr = { pr_url: URL_659 };
+  const retried = [...without(failed, "supervisor.merged"),
+    { name: "job.enqueued", job_id: 3315, payload: { ...pr, kind: "body_fix" } },
+    { name: "pr.body_amended", job_id: 3315, payload: pr }, recheck(URL_659), merged];
+  assert.deepEqual(checkEvents(retried).errors, []);
 });
 
 test("CLI: 終了コード 0・1・2 と --json", () => {

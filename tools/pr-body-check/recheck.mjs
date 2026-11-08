@@ -8,6 +8,7 @@
 //   - pr.body_amended（本文の直しが終わった）のあと、本文の検査（gate.evaluated）がないまま supervisor.merged が来た（merged_without_body_recheck。事例 C-0006）
 //   - 本文の直し（job.enqueued の kind が body_fix）を積んだのに、その終わり（pr.body_amended か pr.body_amend_failed）より前に
 //     supervisor.merged が来た（merged_before_body_fix_finished。事例 C-0005 は、直しの終わりがマージの 7 秒後）
+//   - 本文の直しが失敗で終わり（pr.body_amend_failed）、そのあと直しが成功しないまま supervisor.merged が来た（merged_after_body_fix_failed）
 // 本文の検査は gate.evaluated で数える。gate は問わない（検査役の rubric も、pr-body-check を gate: "pr-body-check" で記録したものも数える）。
 // 本文の直しの積みと終わりは job_id で結ぶ。終わりに job_id がなければ同じ PR の古いものから、積んだ側に job_id がなければ job_id のないものと結ぶ。
 
@@ -35,7 +36,7 @@ export function checkEvents(events, prUrl) {
   for (const e of events) {
     const pr = prOf(e);
     if (!pr || (prUrl && pr !== prUrl)) continue;
-    if (!byPr.has(pr)) byPr.set(pr, { pendingFixes: [], amendedUnchecked: null });
+    if (!byPr.has(pr)) byPr.set(pr, { pendingFixes: [], amendedUnchecked: null, fixFailed: null });
     const st = byPr.get(pr);
     if (isBodyFixEnqueued(e)) {
       st.pendingFixes.push(e.job_id ?? null);
@@ -43,7 +44,7 @@ export function checkEvents(events, prUrl) {
       let i = e.job_id != null ? st.pendingFixes.indexOf(e.job_id) : 0;
       if (i < 0) i = st.pendingFixes.indexOf(null);   // 積んだ側に job_id がなかった
       if (i >= 0) st.pendingFixes.splice(i, 1);
-      if (e.name === "pr.body_amended") st.amendedUnchecked = e;
+      if (e.name === "pr.body_amended") { st.amendedUnchecked = e; st.fixFailed = null; } else st.fixFailed = e;
     } else if (BODY_CHECK_EVENTS.includes(e.name)) {
       st.amendedUnchecked = null;
     } else if (e.name === "supervisor.merged") {
@@ -52,6 +53,11 @@ export function checkEvents(events, prUrl) {
         const jobs = st.pendingFixes.map((j) => (j == null ? "job ?" : `job ${j}`)).join("・");
         errors.push({ rule: "merged_before_body_fix_finished", pr_url: pr,
           message: `本文の直し（${jobs}）が終わる前に supervisor.merged が来た（直していない本文のままマージした）` });
+      }
+      if (st.fixFailed) {
+        const job = st.fixFailed.job_id != null ? `（job ${st.fixFailed.job_id}）` : "";
+        errors.push({ rule: "merged_after_body_fix_failed", pr_url: pr,
+          message: `本文の直し${job}が失敗で終わり（pr.body_amend_failed）、直しが成功しないまま supervisor.merged が来た（直していない本文のままマージした）` });
       }
       if (st.amendedUnchecked) {
         const job = st.amendedUnchecked.job_id != null ? `（job ${st.amendedUnchecked.job_id}）` : "";

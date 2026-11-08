@@ -69,9 +69,9 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
 |---|---|
 | `merged_without_body_recheck` | `pr.body_amended` のあと、本文の検査（`gate.evaluated`）がないまま `supervisor.merged` が来た（事例 `C-0006`、PR #821: 直し 14:25:04、マージ 14:25:06） |
 | `merged_before_body_fix_finished` | `job.enqueued`（`kind: body_fix`）のあと、その終わり（`pr.body_amended` か `pr.body_amend_failed`）より前に `supervisor.merged` が来た（事例 `C-0005`、PR #659: マージ 20:08:43、直し 20:08:50） |
+| `merged_after_body_fix_failed` | 本文の直しが失敗で終わり（`pr.body_amend_failed`）、そのあと直しが成功（`pr.body_amended`）しないまま `supervisor.merged` が来た |
 
 - 本文の検査は `gate.evaluated` で数え、`gate` は問わない（検査役の `rubric` も、`check.mjs` の結果を `gate: "pr-body-check"` で記録したものも数える）。直す前の検査とほかの PR の検査は数えない
-- 直しが失敗で終わった（`pr.body_amend_failed`）あとのマージは外さない。採用欠陥が直っていないことは `tools/sendback-check` が見る
 - 終了コード: 0 = 通る、1 = 外れた、2 = イベント列を読めなかった。標準出力に外れごとに「PR の URL rule: 理由」と、最後に件数の 1 行。`--json` は `{ ok, errors: [{ rule, pr_url, message }] }`
 - まだどこからも呼んでいない（CI にも Engine にも配線していない）。テストは `npm test` で走る
 
