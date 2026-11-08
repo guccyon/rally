@@ -13,6 +13,9 @@ test_engine.py から呼ぶ。policy.py の線（参照の実装）ではなく�
   イベント列から開いた停止と、同じイベント列でもう一度回したときに開き直したか（同じ key は開き直さない）を返す
 - finished（記録の欄）: orchestrator/dispatcher/dispatcher.py が、ワーカーを動かし終えたジョブに出す job.finished（cost_usd を持つもの）の
   payload の欄を構文木から読んで返す（動かさない。議決 D-0030・Issue #1035）。test_events.py が、Engine が agent_resumed と解き方の tier を出すかを見る
+- handoff（記録の欄）: dispatcher.py が出す handoff.saved の payload の欄を、finished と同じく構文木から読んで返す（動かさない。
+  知見 K-0014 の担保。議決 D-0076・Issue #1213）。test_schema.py が、conflict-files.yaml の handoff.saved の required_when の欄（continue_reason）を
+  Engine が出していて、衝突の続きの handoff.saved に conflict_files の要る線が Engine のイベントに効くかを見る
 
 supervisor.py は読み込むと DB と GitHub に繋ぐので、使う関数だけを構文木から取り出して、偽の cursor と停止・GitHub の差し替えを渡して動かす。
 entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは一時ファイルの置き場（/work/cl.* を一時ディレクトリに）だけ。
@@ -22,6 +25,7 @@ entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは
   python3 engine_harness.py resume <Engine のチェックアウト>
   python3 engine_harness.py watch <Engine のチェックアウト> --events <イベントの JSON か JSONL>
   python3 engine_harness.py finished <Engine のチェックアウト>
+  python3 engine_harness.py handoff <Engine のチェックアウト>
   python3 engine_harness.py --check <Engine のチェックアウト>   # 取り出せるかだけを見る（取り出せなければ終了コード 1）
 """
 from __future__ import annotations
@@ -278,20 +282,33 @@ def watch(engine: Path, events_path: Path) -> dict:
 
 
 # ------------------------------------------------------------------ finished
-def finished(engine: Path) -> dict:
-    """dispatcher.py の record_event(cur, "job.finished", corr, job_id, {...}) のうち、ワーカーを動かし終えたもの（payload に cost_usd を持つ）の
-    payload の欄を返す。payload が辞書の式でない（変数や関数で組む）か、そういう呼び出しがなければ読めないので落とす"""
+def _payload_keys(engine: Path, name: str) -> list[list[str]]:
+    """dispatcher.py の record_event(cur, name, corr, job_id, {...}) ごとの payload の欄。payload が辞書の式でない（変数や関数で組む）なら落とす"""
     path = _need(engine, DISPATCHER)
     calls = [n for n in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
              if isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", None)) == "record_event"
-             and len(n.args) >= 2 and isinstance(n.args[1], ast.Constant) and n.args[1].value == "job.finished"]
+             and len(n.args) >= 2 and isinstance(n.args[1], ast.Constant) and n.args[1].value == name]
     if any(len(c.args) < 5 or not isinstance(c.args[4], ast.Dict) for c in calls):
-        raise SystemExit(f"Engine の {DISPATCHER} の job.finished の payload が辞書の式でない（出し方が変わったら engine_harness.py を合わせる）")
-    keys = [[k.value for k in c.args[4].keys if isinstance(k, ast.Constant)] for c in calls]
-    ran = [k for k in keys if "cost_usd" in k]
+        raise SystemExit(f"Engine の {DISPATCHER} の {name} の payload が辞書の式でない（出し方が変わったら engine_harness.py を合わせる）")
+    return [[k.value for k in c.args[4].keys if isinstance(k, ast.Constant)] for c in calls]
+
+
+def finished(engine: Path) -> dict:
+    """dispatcher.py の record_event(cur, "job.finished", corr, job_id, {...}) のうち、ワーカーを動かし終えたもの（payload に cost_usd を持つ）の
+    payload の欄を返す。payload が辞書の式でない（変数や関数で組む）か、そういう呼び出しがなければ読めないので落とす"""
+    ran = [k for k in _payload_keys(engine, "job.finished") if "cost_usd" in k]
     if not ran:
         raise SystemExit(f"Engine の {DISPATCHER} に、cost_usd を持つ job.finished がない（出し方が変わったら engine_harness.py を合わせる）")
     return {"fields": sorted({f for k in ran for f in k})}
+
+
+def handoff(engine: Path) -> dict:
+    """dispatcher.py の record_event(cur, "handoff.saved", corr, job_id, {...}) の payload の欄を、呼び出しごとに返す。
+    payload が辞書の式でないか、そういう呼び出しがなければ読めないので落とす（黙って照らさずに通さない）"""
+    calls = _payload_keys(engine, "handoff.saved")
+    if not calls:
+        raise SystemExit(f"Engine の {DISPATCHER} に handoff.saved がない（出し方が変わったら engine_harness.py を合わせる）")
+    return {"calls": [sorted(k) for k in calls]}
 
 
 # ------------------------------------------------------------------ worker
@@ -414,6 +431,8 @@ def main(argv: list[str]):
         out = watch(Path(argv[1]), Path(argv[3]))
     elif len(argv) == 2 and argv[0] == "finished":
         out = finished(Path(argv[1]))
+    elif len(argv) == 2 and argv[0] == "handoff":
+        out = handoff(Path(argv[1]))
     else:
         raise SystemExit(__doc__)
     json.dump(out, sys.stdout, ensure_ascii=False)

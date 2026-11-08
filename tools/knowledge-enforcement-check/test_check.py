@@ -956,8 +956,8 @@ class SendbackHeartbeatScheduleTest(unittest.TestCase):
         self.assertEqual(self.errors(self.repo("on:\n  workflow_dispatch:\njobs: {}\n"), wired=False), [])
 
 class ConflictSchemaScheduleTest(unittest.TestCase):
-    """K-0014 の issue 1136・1207 の解決策は .github/workflows/conflict-schema.yml の schedule でも走るジョブから schema.py を呼ばないと
-    wired にできない（議決 D-0101（起票時の番号は D-0073）、Issue #1207）"""
+    """K-0014 の issue 1136・1207・1213 の解決策は .github/workflows/conflict-schema.yml の schedule でも走るジョブから schema.py を呼ばないと
+    wired にできない（議決 D-0101（起票時の番号は D-0073）、Issue #1207。issue 1213 は議決 D-0076（起票時の番号は D-0074）、Issue #1213）"""
 
     SCHEMA = "tools/conflict-check/schema.py"
     TEMPLATE = REPO / "tools/conflict-check/ci/conflict-schema.yml"
@@ -982,13 +982,13 @@ class ConflictSchemaScheduleTest(unittest.TestCase):
         return check.check_schedule(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
-        for issue in (1136, 1207):
+        for issue, decision in ((1136, "D-0101"), (1207, "D-0101"), (1213, "D-0076")):   # issue 1213 は議決 D-0076（起票時の番号は D-0074）
             self.assertEqual(check.REQUIRED_SCHEDULE[("K-0014", issue)], self.SCHEMA)
-            self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0014", issue)], (self.WF, "D-0101"))
+            self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0014", issue)], (self.WF, decision))
             self.assertNotIn(("K-0014", issue), check.REQUIRED_PR)
 
     def test_ひな形をそのまま写した_conflict_schema_なら通る(self):
-        for issue in (1136, 1207):
+        for issue in (1136, 1207, 1213):
             self.assertEqual(self.errors(self.repo({self.WF: self.template()}), issue), [])
 
     def test_別の名前のワークフローでは落ちる(self):

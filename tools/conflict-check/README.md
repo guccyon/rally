@@ -90,7 +90,7 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 - `fixtures/c0007-pr290-pr295-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0007.md`）にある事実だけを Engine のイベントの形に組み直したもの。id・head_sha・ブランチ名は仮の値。PR #295 の 3 回の tier・費用・agent_resumed は事例記録にないので置かない
 - 2026-11-08 の Engine（`main` の `57069a8`）は、`conflict.files` を `continue.enqueued` や `pr.conflicted` には載せず、ジョブが終わってからワーカーのログから記録する（`dispatcher.py` の `process_learn.record_conflict_files`、`source: worker_log`）。この記録は積んだ時点のものではないので、今の Engine の記録はすべて `missing_conflict_files` で落ちる（K-0014 が指す欠けがまだ残っている）。Engine が積むときに `conflict.files` を記録する（議決 `D-0049` の schema の案。`continue.enqueued`・`pr.conflicted`・handoff に衝突したファイルを必須の項目にする）のは建設者。イベントを出してこの検査を走らせる配線も建設者
 - 本物のイベント列に対しては、ひな形 `ci/conflict-schema.yml` の `conflict-record` のジョブが毎日と手動で走らせる（下の「直近の窓に積まれた衝突の続きのジョブの定期の照合」。議決 `D-0076`、Issue #1214）
-- handoff は制御プレーンのイベント列にないので、この検査では見ない。`pr.conflicted` の `conflict_files` も見ない（続きのジョブとは `job_id` で結べないため。欄があるかは `schema.py` が見る）
+- handoff（`handoff.saved`）はこの検査では見ない（積んだ時点ではなくジョブの終わりに出るため）。衝突の続きの `handoff.saved` に衝突したファイルが載っているかは `schema.py` が見る（下の「衝突したファイルの列の定義」。議決 `D-0076`、Issue #1213）。`pr.conflicted` の `conflict_files` も見ない（続きのジョブとは `job_id` で結べないため。欄があるかは `schema.py` が見る）
 
 制御プレーンから出すときの例（その PR の conflict の続きのジョブと、それに結ぶジョブのイベント）:
 
@@ -167,6 +167,7 @@ supervisor への配線（建設者が入れる）: `merge_step` の `ci_failure
 - 定義は `conflict-files.yaml`（Engine の `definitions/events.yaml` の `events` と同じ形の抜き書き。`required`・`required_when`・`fields`）。`schema.py` はこの定義か、`--defs` で渡した Engine の `events.yaml` でイベント列を照らし、外れがあれば終了コード 1、記録か定義を読めなければ 2
 - Engine は別のリポジトリなので、Engine の定義に同じ欄を足す差分を `engine/conflict-files.patch` に置いた。`test_schema.py` の `EngineDefsTest` が、Engine のチェックアウトの `definitions/events.yaml` の写しに差分を当て（もう入っていればそのまま）、Engine の定義が `conflict-files.yaml` とそろうことを確かめる。Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
 - C-0005 の流れ（`fixtures/c0005-pr659-events.json`）は、今の Engine の形どおりイベントに衝突したファイルが載らず（`conflict.files` を `job_id` で結ぶだけ）、`pr.conflicted` と `continue.enqueued`（reason=conflict）のすべてが `missing_field` で落ちる
+- handoff は `events.py` の `missing_conflict_files` では見ず、事例記録の fixtures にも `handoff.saved` がないので、`test_schema.py` の `EngineHandoffTest` が Engine の `orchestrator/dispatcher/dispatcher.py` の `handoff.saved` の payload の欄を `engine_harness.py handoff` で構文木から読み（動かさない）、`conflict-files.yaml` の `required_when` の欄（`continue_reason`）を Engine が出していること（欄の名前がずれると、衝突の続きの `handoff.saved` が `conflict_files` なしで黙って通るため）と、その欄の形のイベントが衝突の続きなら `conflict_files` がない・空の列で落ち、載せれば通り、衝突でない続きと続きでないジョブでは要らないことを確かめる（議決 `D-0076`（Issue #1213 の起票時の番号は `D-0074`。PR #1203）、Issue #1213）。payload が辞書の式でないか `handoff.saved` を出す呼び出しがなければ落ちる。Engine のチェックアウトの渡し方と飛ばし方は `EngineDefsTest` と同じ
 
 配線は建設者が入れる。差分を Engine に当てることと、Engine がこの欄を載せてイベントを出すこと（`pr_events.py` の `pr.conflicted` は GitHub の `mergeable_state` からしか衝突を知らないので、衝突したファイルを求める手順が要る。`continuation.enqueue` と `dispatcher.py` の `handoff.saved` も同じ）、欄がない・空のイベントを出さないこと、`schema.py` を定期に走らせること（下の「直近の窓のイベント列の定期の照合」）が要る。入るまでは `K-0014` の解決策は `wired: false`・`verified: false`。
 
