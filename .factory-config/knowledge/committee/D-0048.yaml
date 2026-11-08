@@ -1,0 +1,85 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0048
+pr: https://github.com/guccyon/rally/pull/1128
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0012 に enforcement を足し、INDEX.md の担保の列を context から deterministic に変えるだけで、statement・scope・confidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」の決まりに合っています。
+  - 足した test の解決策は D-0033 の K-0012 向けの test の案（pr.body_amended のあとに本文の検査がないまま supervisor.merged
+    が来たら落とす）に対応し、C-0005 を捕まえるために「body_fix の終わりより前のマージ」も外れにした広げ方は、K-0012 の statement
+    と invalidate_when の 1 つ目の範囲の中に収まっていて矛盾しません。
+  - 'wired: false・verified: false と what の「CI からも supervisor からも呼んでおらず効き目は確かめていない」が一致し、INDEX.md
+    が wired: false でも enforcement.level のまま deterministic と出ることは README の移行の決まりどおりです。'
+  - 配線も効き目の確かめもまだなので invalidate_when はどちらも満たされず、K-0012 は active・hypothesis のままが妥当で、確かさを変える理由はありません。
+  - D-0033 の K-0012 向けの ci_check の案（K-0006 の check.mjs を pr.body_amended でも起動して必須チェックにする）はまだ
+    solutions に入っておらず、K-0006 の未配線の ci_check と同じ手段なので、配線するときは両方の知見の solutions を同じ変更セットで揃えてください。
+  - D-0033 の整合の票が求めた C-0003 を根拠に足すかどうかと「直し漏れが残った記録はまだない」の書き分けは、この PR では手つかずなので、次に
+    K-0012 の statement か evidence を直す変更セットで応えてください。また、README の wired・verified を書き終えた知見の一覧にも
+    K-0012 を足すとよいです。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0012 に足した test の項目は decided_by: committee:D-0033 を指し、D-0033 の pr が PR #1051
+    で、enforcement の 2 つ目に同じ test の案があるので、議決まで辿れます。'
+  - テストの列に使った時刻と job（C-0006 の inspector_approved 14:25:02・body_amended 14:25:04・merged
+    14:25:06、C-0005 の job 3308・merged 20:08:43・本文の直し 20:08:50）は、どれも事例記録 C-0006・C-0005
+    の書きぶりと一致しています。
+  - '列は事例記録から組み直したもので本物のイベント列では走らせておらず、CI にも supervisor にも配線していないと書き、wired: false・verified:
+    false にしているので、効き目を言い過ぎていません。'
+  - 担保の記録を足しただけで statement・evidence・confidence は変えておらず、効き目の確かめもないので、確かさは hypothesis
+    のままが妥当です。
+  - 'INDEX.md の担保の列が deterministic になったのは README の決まり（Engine の表示が揃うまで enforcement.level
+    をそのまま出す）どおりで、実際は未配線であることは K-0012 の wired: false で辿れます。'
+  - 差分にあるのは PR 番号・Issue 番号・job 番号・イベント名・時刻だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0012 の enforcement は D-0033 の test の案を入れたもので、C-0006 と C-0005 の順をイベント列に組み直して
+    2 つの外れ（merged_without_body_recheck・merged_before_body_fix_finished）で落ち、正しい列は通ることを確かめているので、線ははっきりしていて採ってよいです。
+  - C-0005 が「pr.body_amended のあと」の線だけでは引っかからないことに気づいて直しの終わりを待たないマージも外れにした判断は、事例の記録に合っていて線の引き方として妥当です。
+  - 'wired: false・verified: false と正直に書き、配線されていないことと本物のイベント列で走らせていないことを what に残しているので、D-0033
+    の求めと README の決まりに合っています。'
+  - ただし recheck.test.mjs を走らせる CI も recheck.mjs の呼び出し元もないので、今のままでは書き換えで線が壊れても気づけず、INDEX.md
+    の担保の列が deterministic と出るのは実態より強く見えます。
+  - D-0033 の ci_check の案（tools/pr-body-check/check.mjs を pr.body_amended でも起動してマージ前の必須チェックにする）はまだ入っておらず、K-0006
+    の未配線の ci_check と同じ手段なので、配線は両方まとめて進めるのがよいです。
+  - 害が出た記録はまだなく、本物のイベント列での確かめもないので、K-0012 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0033 の test の案を入れた記録を 1 件足しただけで、statement・scope・confidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。
+  - '記録には「本物のイベント列では走らせていない」「CI からも supervisor からも呼んでいない」と書かれ、wired: false・verified:
+    false になっているので、担保の効き目を言い過ぎてはいません。'
+  - 反例として、recheck.mjs は pr.body_amended のあとの gate.evaluated を「gate は問わず」再検査として数えるため、本文と関係のないコードの検査が直しのあとに
+    1 回走るだけで、本文を再検査しないマージを通してしまいます。次に K-0012 を直すときは、本文を見る gate（pr-body-check と PR-002
+    などの本文の rubric）に絞るか、絞らない理由を書いてください。
+  - merged_without_body_recheck は body_fix 以外から来た pr.body_amended（続きのジョブの summary
+    の追記など）でも落とすので、K-0012 の scope（採用した指摘を直す body_fix）より広い線です。invalidate_when の 2 つ目とは合いますが、その広さを意図したのかを
+    what に書き添えるとよいです。
+  - C-0005 では線を 1 本足して直しの終わりを待たないマージも外れにしたと書かれていて、案のままでは根拠の事例を捕まえられなかったことを正直に記録しており、反例への手当てになっています。
+  - 'INDEX.md の担保の列が wired: false のまま deterministic と出るのは README が今は許している表示ですが、K-0012
+    は配線されておらず、確かさも hypothesis のままにすべきです。'
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'recheck.test.mjs を .github/workflows/ の job で走らせ、wired_by にその job と tools/pr-body-check/recheck.test.mjs
+    の道を書いて wired: true にする。fixtures には C-0003（最後の body_fix の job 572 のあと検査を通さずにマージ）の列も足す。'
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/pr-body-check/recheck.mjs を Engine の supervisor が supervisor.merged
+    を出す前に、その PR のイベント列で呼び、終了コードが 0 でなければマージを止める。あわせて K-0006 と共有の check.mjs を pull_request
+    の edited と pr.body_amended でも起動して必須チェックにする。配線のあと本物のイベント列で過去の PR #659・#821 が落ちることを確かめて
+    verified: true にする。'
