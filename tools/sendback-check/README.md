@@ -114,16 +114,19 @@ PR ごとに Engine を固定した版（`ENGINE_REF`）でチェックアウト
 - `wiring-order` のジョブは `ci.test.mjs` も走らせる。`.github/workflows/sendback-engine.yml` の写しが `ENGINE_REF` の行のほかで `ci/sendback-engine.yml` とずれていれば落ちる（写しがなければその場合は飛ばす）。ワークフローを直すときは先に `ci/sendback-engine.yml` を直してから写し直す
 - `ci.test.mjs` は、`ci/sendback-engine.yml` が必須のチェックにできる形かも見る（議決 `D-0017`、Issue #969）。`on` が絞り込み（`paths`・`branches`・`types`）のない `pull_request` だけで、`if:` と `continue-on-error` がなく、`wiring-order` のジョブが `order.mjs` と `ci.test.mjs` を、`engine-test` のジョブが `ENGINE_DIR` を向けて `engine.test.mjs` を走らせること。写しとのずれも見るので、見張りを外す・飛ばす変更はひな形と写しを一緒に直しても `wiring-order` で落ちる。GitHub Actions（`GITHUB_ACTIONS=true`）では写しが `.github/workflows/sendback-engine.yml` にないと落ちる（別の名前に写すとずれを見張れないため）
 - `ci.test.mjs` は、`ENGINE_REF` の行を変える PR（Engine を上げる PR）で `engine-test` が必ず走り、その版の Engine を確かめる形かも見る（議決 `D-0028`、Issue #1024）。`paths`・`paths-ignore` で絞ると写しを含めても書き方しだいで走らない PR が出るので、絞り込みの中身は問わず上の見張りで外れにする。そのほかに、`ENGINE_REF` がワークフローの `env` に 1 行だけあること（ジョブや手順の `env`・`GITHUB_ENV` で上書きしない。ずれの比べ方は `ENGINE_REF` の行を無視するので、2 行目で上書きされると見逃すため）、`engine-test` に `needs` がないこと（待つジョブが落ちると飛ばされる）、最初の手順が `ENGINE_REF` の見張りで、Engine を取る手順の `ref` が `${{ env.ENGINE_REF }}` であることを、ひな形と写しの両方で見る
-- 写したら、branch protection で `engine-test` と `wiring-order` を必須のチェックにする。写しを消す・ジョブの名前を変える PR は、必須のチェックが報告されないのでそこで止まる。写すこと・必須にすること・PR #395 と同じ入力で本物の判定が起こさないことが CI で通った記録を Issue #948 に残すことは建設者が行い、そのあとで `K-0004` の `enforcement.solutions` の what を「効き目を確かめた」に直す。必須にしたことは下の `protection.mjs` を `required-checks` のジョブで PR ごとに照らす
+- 写したら、branch protection で `engine-test` と `wiring-order` のジョブが報告するチェック（`sendback-engine-test` と `sendback-wiring-order`。ジョブの `name:`）を必須のチェックにする。写しを消す・ジョブの名前を変える PR は、必須のチェックが報告されないのでそこで止まる。写すこと・必須にすること・PR #395 と同じ入力で本物の判定が起こさないことが CI で通った記録を Issue #948 に残すことは建設者が行い、そのあとで `K-0004` の `enforcement.solutions` の what を「効き目を確かめた」に直す。必須にしたことは下の `protection.mjs` を `required-checks` のジョブで PR ごとに照らす
+- チェックの名前を id のまま（`engine-test`・`wiring-order`）にしないのは、`tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml` にも `engine-test` のジョブがあり、同じ名前だと必須のチェックの「engine-test」がどちらの報告でも満たされるため。その形では、写しを消しても、別のワークフローで `check.mjs --events` を `engine.test.mjs` を待たずに走らせても（別のワークフローの間は `needs` で待てないので、`order.mjs` の `engine_test_not_required` は見ない）マージが止まらない（議決 `D-0038`、Issue #1083）。`ci.test.mjs` が、ひな形の 2 つのジョブの `name:` がこの名前であることと、ほかのツールのひな形（`tools/*/ci/`）と `.github/workflows/` のどのジョブもこの名前を報告しないことを見て、外れたら落とす
 
 ### 必須のチェックの照合（`protection.mjs`）
 
-写しを消す PR（写しがなければ `wiring-order` も走らない）や、`ci.test.mjs` ごと見張りを書き換える PR は、`engine-test` と `wiring-order` が必須のチェックで報告されないことでしか止まらない。必須にし忘れると見張りを外す PR がそのまま通り、ジョブに `name:` があるのに id で必須にすると、報告されない名前を待ってすべての PR が止まる（議決 `D-0026`、Issue #1018）。`protection.mjs` が、`.github/workflows/sendback-engine.yml` の 2 つのジョブが報告するチェックの名前と、既定のブランチの必須のチェックを照らす。
+写しを消す PR（写しがなければ `wiring-order` も走らない）や、`ci.test.mjs` ごと見張りを書き換える PR は、`engine-test` と `wiring-order` のチェック（`sendback-engine-test`・`sendback-wiring-order`）が必須のチェックで報告されないことでしか止まらない。別のワークフローで `check.mjs --events` を `engine.test.mjs` を待たずに走らせる形も、同じ設定でしか止まらない（議決 `D-0038`）。必須にし忘れると見張りを外す PR がそのまま通り、ジョブに `name:` があるのに id で必須にすると、報告されない名前を待ってすべての PR が止まる（議決 `D-0026`、Issue #1018）。`protection.mjs` が、`.github/workflows/sendback-engine.yml` の 2 つのジョブが報告するチェックの名前と、既定のブランチの必須のチェックを照らす。
 
 | rule | 外れる状態 |
 |---|---|
 | `workflow_not_copied` | `.github/workflows/sendback-engine.yml` がないか、`engine-test`・`wiring-order` のジョブがない |
-| `required_check_missing` | そのジョブが報告するチェックの名前（ジョブの `name:` があればそれ、なければ id）が必須のチェックにない |
+| `check_name_changed` | そのジョブが報告するチェックの名前（ジョブの `name:` があればそれ、なければ id）が `sendback-engine-test`・`sendback-wiring-order` でない（ひな形と写しのずれは `ci.test.mjs` が見る） |
+| `required_check_missing` | そのチェックの名前が必須のチェックにない（id の `engine-test`・`wiring-order` だけを必須にしたときも） |
+| `check_name_shared` | 同じチェックの名前を `.github/workflows/` のほかのジョブも報告する。どちらの報告でも必須のチェックが満たされ、写しを消しても、別のワークフローの `check.mjs --events` のジョブがその名前を名乗っても止まらない（議決 `D-0038`、Issue #1083） |
 | `protection_unreadable` | `required-checks` の手順で `gh api` がブランチか rulesets の JSON を読めない（`protection.mjs` ではなくワークフローの手順が出す） |
 
 - `ci/sendback-engine.yml` の `required-checks` のジョブが PR ごとに走らせる（議決 `D-0040`、Issue #1091）。必須にし忘れたり、あとで必須から外したりしても、人の手順に頼らずにそこで落ちる。`gh api repos/{owner}/{repo}/branches/main`（ブランチの JSON。`protection.required_status_checks` に必須のチェックの要約がある）と `gh api repos/{owner}/{repo}/rules/branches/main`（rulesets）を取り、2 つとも `--protection` に渡す。どちらも PR の `GITHUB_TOKEN`（`contents: read`）で読める。`branches/main/protection` は管理者の権限が要り PR の `GITHUB_TOKEN` では読めないので使わない（手で走らせるときは渡してもよい）

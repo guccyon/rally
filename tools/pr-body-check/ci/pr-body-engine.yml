@@ -5,7 +5,7 @@
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-engine.yml に写す。
 # engine.test.mjs の (3) に todo はないので、関所を呼ばない Engine の版では落ちる。engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げるのと同じ PR で写し、engine-test を必須のチェックにする（議決 D-0019）。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（tools/sendback-check/ci/sendback-engine.yml と同じ版にそろえる。上げるときはテストが通ることを確かめる）。
-# engine-test が報告するチェックの名前は pr-body-engine-test（ジョブの name:）。sendback-engine.yml の engine-test と同じ名前だと、必須のチェックの
+# engine-test が報告するチェックの名前は pr-body-engine-test（ジョブの name:）。id のままの engine-test（knowledge-enforcement.yml も報告する）と同じ名前だと、必須のチェックの
 # 「engine-test」がどちらの報告でも満たされ、この写しを消しても止まらないため（議決 D-0032、Issue #1037）。
 # ci.test.mjs（このテストの中で走る）が、形・ENGINE_REF・sendback-engine.yml との版のずれ・写しとのずれを見張り、
 # protection.mjs で建設者が必須のチェックに入っているかを照らす（README の「配線の手順（建設者）」）。

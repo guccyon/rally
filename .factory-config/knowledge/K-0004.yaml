@@ -533,6 +533,24 @@ enforcement:
       decided_by: committee:D-0037
       wired: false
       verified: false
+    - kind: config
+      what: >-
+        議決 D-0038（PR #1082）の config の案（ci/sendback-engine.yml を .github/workflows/ に写し、engine-test と wiring-order を branch protection の
+        必須チェックに入れて、別のワークフローの間で check.mjs --events が engine.test.mjs を待たない形を設定で止め、本物の配線の PR で落ちる・通ることを
+        記録してから wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。ci/knowledge-enforcement.yml にも id のままの
+        engine-test のジョブがあり、どちらも写すと必須のチェックの「engine-test」はどちらの報告でも満たされるので、写しを消しても、別のワークフローの
+        check.mjs --events のジョブが同じ名前を名乗っても設定で止まらなかった。ci/sendback-engine.yml の 2 つのジョブに name:（sendback-engine-test・
+        sendback-wiring-order）を付け、必須にするのはこの名前とした。tools/sendback-check/protection.mjs に、写しのチェックの名前がこの名前でない
+        check_name_changed と、.github/workflows/ のほかのジョブが同じ名前を報告する check_name_shared を足し（id の engine-test・wiring-order だけを
+        必須にした形は required_check_missing）、ci.test.mjs（wiring-order で PR ごとに走る）で、ひな形の name: と、ほかのツールのひな形（tools/*/ci/）と
+        .github/workflows/ のどのジョブもこの名前を報告しないことを見て、外れたら落とす。名前を外す・id に戻す・ほかのワークフローで名乗る形で外れ、
+        ほかのひな形と並べた形で通ることを確かめた。.github/workflows/ への写し、branch protection の必須のチェックに入れること、protection.mjs の結果と
+        本物の配線の PR で落ちる・通る実行を Issue #948 に記録することは建設者が行う（権限設定はワーカーが触れない）ので、この解決策も未配線・未確認
+      issue: 1083
+      at: 2026-11-08
+      decided_by: committee:D-0038
+      wired: false
+      verified: false
     - kind: test
       what: >-
         議決 D-0038 の test の案（D-0026 の 2 つ目の案。check.mjs --events が GITHUB_ACTIONS=true のときどの呼び方を経ても自分で order.mjs の見張りを先に走らせ、

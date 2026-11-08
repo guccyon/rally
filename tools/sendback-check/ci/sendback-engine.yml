@@ -5,7 +5,10 @@
 # engine.test.mjs に todo が残っているか、engine.test.mjs を走らせる手順がないときに落ちる（Engine は要らない）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-engine.yml に写す。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、engine.test.mjs が通ることを確かめる）。
-# 写したら branch protection で engine-test と wiring-order を必須のチェックにする（議決 D-0014、Issue #960）。
+# 写したら branch protection で engine-test と wiring-order のジョブ（が報告するチェック）を必須のチェックにする（議決 D-0014、Issue #960）。
+# 2 つのジョブが報告するチェックの名前は sendback-engine-test と sendback-wiring-order（ジョブの name:）。id のままの engine-test は
+# ci/knowledge-enforcement.yml の engine-test も報告するので、必須のチェックの「engine-test」がどちらの報告でも満たされ、この写しを消しても、
+# 別のワークフローで check.mjs --events を engine.test.mjs を待たずに走らせても止まらないため（議決 D-0038、Issue #1083）。
 # ENGINE_REF は 40 桁のコミット SHA に限る。ブランチ名やタグは動くので、同じ PR でも結果が変わる。engine-test の最初の手順
 # （どのチェックアウトよりも前）で確かめ、違えば Engine を取らずに落とす（議決 D-0014、Issue #960。テストは ci.test.mjs）。
 # wiring-order は ci.test.mjs も走らせ、.github/workflows/sendback-engine.yml の写しが ENGINE_REF の行のほかでこのファイルとずれたら落とす。
@@ -36,6 +39,7 @@ env:
 
 jobs:
   wiring-order:
+    name: sendback-wiring-order
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +75,7 @@ jobs:
           node tools/sendback-check/protection.mjs --protection protection-branch.json --protection protection-rules.json --summary "$GITHUB_STEP_SUMMARY"
 
   engine-test:
+    name: sendback-engine-test
     runs-on: ubuntu-latest
     steps:
       - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）
