@@ -1,13 +1,13 @@
-// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017）。
+// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, loadRepo, parseTapReport, REPO_ROOT, runsEngineTest, todoLines } from "./order.mjs";
+import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, isMainModule, loadRepo, parseTapReport, REPO_ROOT, runningFrom, runsEngineTest, skipLines, todoLines } from "./order.mjs";
 
 const orderScript = fileURLToPath(new URL("./order.mjs", import.meta.url));
 const checkScript = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -46,6 +46,15 @@ test("今の engine.test.mjs には basis の場合の todo が残っていて�
   assert.deepEqual(todoLines("// todo のうちに配線しない\nconst x = 1;"), []);
   assert.deepEqual(todoLines("test('x', { todo: true }, () => {});"), [1]);
   assert.deepEqual(todoLines("\ntest.todo('x');"), [2]);
+});
+
+test("skipLines は todoLines と同じ数え方で skip を数え、Engine のチェックアウトがないときの { skip } は数えない（議決 D-0041、Issue #1093）", () => {
+  // 今の engine.test.mjs には、写しを作れないときの legacy_basis_not_found の t.skip が 1 行ある
+  const lines = engineTestNow.split(/\r?\n/);
+  assert.deepEqual(skipLines(engineTestNow).map((n) => lines[n - 1].trim().slice(0, 7)), ["t.skip("]);
+  assert.deepEqual(skipLines("// t.skip('x') は注釈\ntest('x', { skip }, () => {});\nconst skip = false;"), []);
+  assert.deepEqual(skipLines("test('x', { skip: 'legacy_basis_not_found' }, () => {});"), [1]);
+  assert.deepEqual(skipLines("\ntest.skip('x');\nt.skip ('y');"), [2, 3]);
 });
 
 test("check.mjs --events を呼ぶ手順を見つける（道・working-directory・行の継ぎ）", () => {
@@ -313,7 +322,7 @@ test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) �
 // engine.test.mjs の手順やジョブを飛ばせる・落ちても通る形にした写しと、check.mjs --events のジョブが engine-test を待たない写し（議決 D-0025、Issue #1017）
 
 const ENGINE_STEP = "      - name: Engine の本物の判定のテスト（K-0004）\n";
-const ENGINE_JOB = "  engine-test:\n    runs-on: ubuntu-latest\n";
+const ENGINE_JOB = "  engine-test:\n    name: sendback-engine-test\n    runs-on: ubuntu-latest\n";
 const stepWith = (key) => template.replace(ENGINE_STEP, `${ENGINE_STEP}        ${key}\n`);
 const jobWith = (key) => template.replace(ENGINE_JOB, `${ENGINE_JOB}    ${key}\n`);
 /** engine.test.mjs を走らせたことにならない写し */
@@ -336,7 +345,7 @@ test("engine.test.mjs の手順かジョブに continue-on-error か if: を付�
   // continue-on-error: false はゲートのまま。ほかの手順・ジョブ（wiring-order）の continue-on-error・if: は見ない
   assert.ok(runsEngineTest(stepWith("continue-on-error: false")));
   assert.ok(runsEngineTest(jobWith("continue-on-error: ${{ false }}")));
-  assert.ok(runsEngineTest(template.replace("  wiring-order:\n    runs-on: ubuntu-latest\n", "  wiring-order:\n    if: false\n    runs-on: ubuntu-latest\n")));
+  assert.ok(runsEngineTest(template.replace("  wiring-order:\n    name: sendback-wiring-order\n", "  wiring-order:\n    name: sendback-wiring-order\n    if: false\n")));
   // run の中の文字（シェルの if など）は手順の鍵に数えない
   assert.ok(runsEngineTest(template.replace("          rc=0\n", "          if: true\n          rc=0\n")));
   // jobs: のない手順だけの写しでも、手順の continue-on-error は見る
@@ -387,4 +396,143 @@ test("CLI: order.mjs --repo は engine.test.mjs を待たない配線と、conti
   assert.equal(ungated.status, 1);
   assert.match(ungated.stdout, /^::error title=sendback-check engine_test_not_wired::/m);
   assert.equal(run(fixture({ "sendback-engine.yml": sameWorkflow() }, ENGINE_TEST_FIXED)).status, 0);
+});
+
+// check.mjs --events の実行時の守り（議決 D-0026 の 2 つ目の案・D-0038、Issue #1084）。GitHub Actions（GITHUB_ACTIONS=true）では、どの呼び方で
+// 起動されても check.mjs が記録を読む前に自分で配線の順序を見張り、.github/workflows/ に呼ぶ手順を見つけられなくても動いていること自体を配線と数える
+
+/** 静的な辿りでは見つからない呼び方（別の言語の中で道と --events を組み立てる）で check.mjs --events を呼ぶワークフロー */
+const HIDDEN_WORKFLOW = `name: hidden
+on:
+  pull_request:
+jobs:
+  hidden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -c "import subprocess, sys; sys.exit(subprocess.run(['node', 'tools/sendback-check/ch' + 'eck.mjs', '--ev' + 'ents', 'e.json']).returncode)"
+`;
+
+/** 配線の状態ごとのリポジトリの写し（rule は落とす rule。null なら通る） */
+const RUNTIME_STATES = [
+  ["engine.test.mjs に todo が残る", { "sendback-engine.yml": template, "hidden.yml": HIDDEN_WORKFLOW }, engineTestNow, "engine_test_todo"],
+  ["engine.test.mjs が未配線", { "hidden.yml": HIDDEN_WORKFLOW }, ENGINE_TEST_FIXED, "engine_test_not_wired"],
+  ["ワークフローがひとつもない", {}, ENGINE_TEST_FIXED, "engine_test_not_wired"],
+  ["手順に continue-on-error: true", { "sendback-engine.yml": UNGATED_TEMPLATES["手順に continue-on-error: true"], "hidden.yml": HIDDEN_WORKFLOW },
+    ENGINE_TEST_FIXED, "engine_test_not_wired"],
+  ["ジョブに continue-on-error: true", { "sendback-engine.yml": UNGATED_TEMPLATES["ジョブに continue-on-error: true"], "hidden.yml": HIDDEN_WORKFLOW },
+    ENGINE_TEST_FIXED, "engine_test_not_wired"],
+  ["手順に if: github.event_name == 'push'", { "sendback-engine.yml": UNGATED_TEMPLATES["手順に if: github.event_name == 'push'"],
+    "hidden.yml": HIDDEN_WORKFLOW }, ENGINE_TEST_FIXED, "engine_test_not_wired"],
+  ["ジョブに if: false", { "sendback-engine.yml": UNGATED_TEMPLATES["ジョブに if: false"], "hidden.yml": HIDDEN_WORKFLOW },
+    ENGINE_TEST_FIXED, "engine_test_not_wired"],
+  ["順序を守った配線", { "sendback-engine.yml": template, "hidden.yml": HIDDEN_WORKFLOW }, ENGINE_TEST_FIXED, null],
+];
+
+const TOOL_DIR = dirname(checkScript);
+/** 呼び方を変えた起動。どれも check.mjs --events を ev（イベントの JSON）で動かす。out は --json の出力先 */
+const LAUNCHERS = {
+  "node で絶対の道": (ev) => ["node", [checkScript, "--events", ev]],
+  "tools/sendback-check から相対の道": (ev) => ["node", ["check.mjs", "--events", ev], TOOL_DIR],
+  "引数の順序を変えて --events=": (ev, out) => ["node", [checkScript, "--json", out, `--events=${ev}`]],
+  "npm run check --": (ev) => ["npm", ["run", "--silent", "check", "--", "--events", ev], TOOL_DIR],
+  "npm --prefix で根から": (ev) => ["npm", ["--prefix", "tools/sendback-check", "run", "--silent", "check", "--", "--events", ev], REPO_ROOT],
+  "シェルの eval と変数": (ev) => ["bash", ["-c", 'cmd="node \\"$0\\" --ev""ents \\"$1\\""; eval "$cmd"', checkScript, ev]],
+  "node のラッパー（子のプロセス）": (ev) => ["node", ["-e",
+    "const r = require('node:child_process').spawnSync(process.execPath, process.argv.slice(1), { stdio: 'inherit' }); process.exit(r.status)",
+    checkScript, "--events", ev]],
+  "シンボリックリンク": (ev, out, box) => ["node", [linkTo(join(box, "link.mjs")), "--events", ev]],
+  "空白と日本語の入った道のシンボリックリンク": (ev, out, box) => ["node", [linkTo(join(box, "sendback 見張り", "チェック.mjs")), "--events", ev]],
+};
+
+function linkTo(path) {
+  mkdirSync(dirname(path), { recursive: true });
+  symlinkSync(checkScript, path);
+  return path;
+}
+
+/** 写しの root を GITHUB_WORKSPACE にし、呼び方 launcher で check.mjs --events を GitHub Actions として動かす */
+function launch(launcher, root, events = [{ name: "supervisor.judge_enqueued", payload: { pr_url: "https://example.test/pull/1", head_sha: "h1" } }],
+  env = {}) {
+  const box = mkdtempSync(join(tmpdir(), "sendback-launch-"));
+  const ev = join(box, "events.json");
+  writeFileSync(ev, typeof events === "string" ? events : JSON.stringify(events));
+  const [cmd, args, cwd] = launcher(ev, join(box, "out.json"), box);
+  return spawnSync(cmd, args, { cwd: cwd ?? box, encoding: "utf8",
+    env: { ...process.env, GITHUB_ACTIONS: "true", GITHUB_WORKSPACE: root, GITHUB_WORKFLOW_REF: "", GITHUB_JOB: "", ...env } });
+}
+
+test("実行時の守り: 写しのワークフローは静的な辿りでは check.mjs --events を呼ぶと見つからない（見つかる形では守りを確かめられない）", () => {
+  assert.ok(!callsEventsCheck(HIDDEN_WORKFLOW));
+  assert.deepEqual(rules(checkOrder({ workflows: [wf("hidden.yml", HIDDEN_WORKFLOW)], engineTest: engineTestNow })), []);
+});
+
+test("実行時の守り: checkOrder に running を渡すと、呼ぶ手順が見つからなくても配線したと数えて todo・未配線・continue-on-error・if: で落とす", () => {
+  const running = runningFrom({ GITHUB_WORKFLOW_REF: "guccyon/rally/.github/workflows/hidden.yml@refs/pull/1/merge", GITHUB_JOB: "hidden" });
+  assert.deepEqual(running, { workflow: ".github/workflows/hidden.yml", job: "hidden" });
+  assert.deepEqual(runningFrom({}), { workflow: null, job: null });
+  for (const [name, workflows, engineTest, rule] of RUNTIME_STATES) {
+    const r = checkOrder({ workflows: Object.entries(workflows).map(([p, t]) => wf(p, t)), engineTest, running });
+    assert.deepEqual(rules(r).filter((x) => x === rule), rule ? [rule] : [], name);
+    if (rule === null) assert.deepEqual(r.errors, [], name);
+    else assert.match(r.errors.find((e) => e.rule === rule).message, /^GitHub Actions で動いている check\.mjs --events（\.github\/workflows\/hidden\.yml の hidden）/, name);
+  }
+  // engine.test.mjs がない写しも todo として落とす
+  assert.deepEqual(rules(checkOrder({ workflows: [wf("sendback-engine.yml", template)], engineTest: null, running: runningFrom({}) })),
+    ["engine_test_todo"]);
+});
+
+test("実行時の守り: どの呼び方で起動しても、check.mjs --events は GitHub Actions で配線の順序を見張り、外れていれば ::error と終了コード 1 で落ちる", () => {
+  const roots = RUNTIME_STATES.map(([name, workflows, engineTest, rule]) => [name, fixture(workflows, engineTest), rule]);
+  for (const [how, launcher] of Object.entries(LAUNCHERS)) {
+    for (const [name, root, rule] of roots) {
+      const r = launch(launcher, root);
+      const label = `${how}・${name}: ${r.stdout}${r.stderr}`;
+      assert.match(r.stdout, /^sendback-check: head 1 個・/m, `${label}（main が走っていない）`);
+      if (rule === null) {
+        assert.equal(r.status, 0, label);
+        assert.doesNotMatch(r.stdout, /::error/, label);
+      } else {
+        assert.equal(r.status, 1, label);
+        assert.match(r.stdout, new RegExp(`^::error title=sendback-check ${rule}::GitHub Actions で動いている check\\.mjs --events`, "m"), label);
+      }
+    }
+  }
+});
+
+test("実行時の守り: 見張りは記録を読む前に走り、記録が外れても読めなくても配線の順序の ::error を先に出す", () => {
+  const root = fixture({ "hidden.yml": HIDDEN_WORKFLOW }, engineTestNow);
+  const node = LAUNCHERS["node で絶対の道"];
+  const env = { GITHUB_WORKFLOW_REF: "guccyon/rally/.github/workflows/hidden.yml@refs/pull/1/merge", GITHUB_JOB: "hidden" };
+  // 直すもののない差し戻し（followup_without_defect）の記録でも、配線の順序の外れが先に出る
+  const pr = "https://example.test/pull/1";
+  const r = launch(node, root, [{ name: "supervisor.judge_enqueued", payload: { pr_url: pr, head_sha: "h1" } },
+    { name: "sendback.filed", payload: { origin_pr: pr } }], env);
+  assert.equal(r.status, 1);
+  const lines = r.stdout.split("\n").filter((l) => l.startsWith("::error"));
+  assert.deepEqual(lines.map((l) => l.match(/sendback-check (\w+)::/)[1]), ["engine_test_todo", "engine_test_not_wired", "followup_without_defect"]);
+  assert.match(lines[0], /check\.mjs --events（\.github\/workflows\/hidden\.yml の hidden）/);
+  // 記録を読めなくても（終了コード 2）、配線の順序の外れは出す
+  const unreadable = launch(node, root, "{ 壊れた", env);
+  assert.equal(unreadable.status, 2);
+  assert.match(unreadable.stdout, /^::error title=sendback-check engine_test_todo::/m);
+  assert.match(unreadable.stderr, /^sendback-check: 記録を読めなかった: /m);
+  // GitHub Actions の外では見張らない（手元で記録だけを照らす使い方はそのまま）
+  assert.equal(launch(node, root, undefined, { GITHUB_ACTIONS: "" }).status, 0);
+  // --record（--events でない）は GitHub Actions でも見張らない
+  const box = mkdtempSync(join(tmpdir(), "sendback-launch-"));
+  writeFileSync(join(box, "r.json"), JSON.stringify({ judgments: [], followups: [] }));
+  assert.equal(spawnSync("node", [checkScript, "--record", join(box, "r.json")],
+    { env: { ...process.env, GITHUB_ACTIONS: "true", GITHUB_WORKSPACE: root }, encoding: "utf8" }).status, 0);
+});
+
+test("実行時の守り: 起動の判定は実の道で比べ、シンボリックリンクや空白・日本語の入った道でも main を走らせる", () => {
+  const box = mkdtempSync(join(tmpdir(), "sendback-main-"));
+  const link = linkTo(join(box, "道 に 空白", "チェック.mjs"));
+  const url = new URL("./check.mjs", import.meta.url).href;
+  assert.ok(isMainModule(url, checkScript));
+  assert.ok(isMainModule(url, link));
+  assert.ok(!isMainModule(url, orderScript));
+  assert.ok(!isMainModule(url, undefined));
+  assert.ok(!isMainModule(url, join(box, "ない.mjs")));
 });

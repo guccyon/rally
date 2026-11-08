@@ -6,7 +6,7 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 |---|---|---|---|---|---|---|---|---|
 | K-0001 | 4 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 続きのジョブ（continue。既定ブランチとの衝突の解消など）の報告が、既存の PR 本文への追記になることが実装役に伝わらず、 Engine も見出しの階層 |
 | K-0003 | 4 | causal | hypothesis | active | context | 2026-11-01 | 2026-12-01 | judge の verdict「adopt」は「仮決めを認める」と「欠陥を直す対象にする」の 2 つの意味で使われ、incident の adopted に区別 |
-| K-0005 | 4 | causal | hypothesis | active | context | 2026-11-07 | 2026-12-07 | PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002）・リポジトリの決まり（CLAUDE.md の PR の説明 |
+| K-0005 | 4 | causal | hypothesis | active | deterministic | 2026-11-07 | 2026-12-07 | PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002）・リポジトリの決まり（CLAUDE.md の PR の説明 |
 | K-0007 | 4 | causal | hypothesis | draft | context | 2026-11-04 | 2026-12-04 | 続きの job（continue）が PR 本文に書く自分の報告で、既定ブランチの取り込みやコミットの状態を head を確かめずに書くと、 報告を書いた時点の |
 | K-0009 | 4 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 検査の採用済みの指摘（PR-002 など）と、本文を直す役（body_fix）が決めた本文の書き方の決まりが、次に PR 本文を書き足す役 （続きのジョブの s |
 | K-0011 | 4 | causal | hypothesis | active | deterministic | 2026-11-07 | 2026-12-07 | 判定役（judge）のジョブの入力に、検査役の指摘が根拠として引く rubric（PR-002・OV-001 など）の本文が入っていないと、 判定役は指摘の根拠 |

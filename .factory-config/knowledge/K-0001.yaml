@@ -118,4 +118,56 @@ enforcement:
       decided_by: committee:D-0032
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0044 の ci_check の案（建設者が engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げ、ci/pr-body-engine.yml を写して
+        pr-body-engine-test を必須のチェックにし、tools/pr-body-check/protection.mjs を既定のブランチへの push と定期のジョブから呼ぶ）のうち、
+        ワーカーの権限で入れられる分を入れた。ひな形 tools/pr-body-check/ci/pr-body-protection.yml が、branch protection を読める権限のトークン
+        （シークレット PR_BODY_PROTECTION_TOKEN）で main の古い形と rulesets の両方を gh api で読み、protection.mjs に 2 つとも渡して
+        （--protection を何度でも渡せるようにした）、main への push・毎日・手動で照らす。workflow_not_copied・check_name_changed・
+        required_check_missing・check_name_shared のどれかで落ちて Issue を開くか更新し、読めなければ protection_unreadable で落ちる。
+        check_name_shared は、ほかのワークフローが偶然 pr-body-engine-test を名乗った場合も意図して落とす（どちらの報告でも必須のチェックが満たされ、
+        写しを消しても止まらないため。誤検知ではない）。ci.test.mjs が、このひな形の形（PR では走らない・トークンは読む手順だけ）と、手順を偽の gh で
+        動かして 4 つの外れ方のどれでも落ちて Issue を開くことを確かめる。tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE にこの解決策を
+        足したので、schedule のジョブから protection.mjs を呼ぶ wired_by がないと wired にできない。手元の Engine（476573e）では (3) が落ちることを
+        確かめたが、engine/pr-body-gate.patch がもう当たらず (4)〜(10) も落ちる。今の ENGINE_REF（9fee9c2）の版は手元になく走らせていない。
+        差分を Engine に入れること・写すこと・必須にすること・本物の続きのジョブでの記録は建設者が行うので（tools/pr-body-check/README.md の
+        「配線の手順（建設者）」と「定期の照合」）、まだ配線されておらず効き目は確かめていない
+      issue: 1106
+      at: 2026-11-08
+      decided_by: committee:D-0044
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0044（PR #1105）の test の案（D-0032 の案のとおり gate.test.mjs と engine.test.mjs に通る側の写しを足し、続きのジョブの報告が
+        「## 工場の記録」の下の ### に入った本文と ## 見出しのない報告では関所が 0 を返して本文を書くことを必須のテストにする）を入れた。
+        写しのテスト自体は Issue #1038 で入っていた（gate.test.mjs の通る側の 4 件と engine.test.mjs の (10) の 3 件）が、Engine の
+        orchestrator/worker/entrypoint.sh の FACTORY_RESULT の行が変わって（knowledge_selection が足された。Engine 476573e）
+        tools/pr-body-check/engine/pr-body-gate.patch が当たらなくなり、(10) を含む (4)〜(10) が「差分が当たらない」で落ちて、通る側を確かめられていなかった。
+        差分をその Engine に合わせて作り直し（中身は変えず、FACTORY_RESULT の行の文脈だけ）、手元の Engine（476573e）で npm test が (3) のほか全部通り
+        （(3) は関所を呼ばない Engine なので前から落ちる）、差分を当てた Engine の写しを ENGINE_DIR にして CI=true で全部通ることを確かめた。
+        check.mjs で「## 工場の記録」の後ろの ### も外れにする誤検知の書き換えを入れると、gate.test.mjs の通る側の 4 件と engine.test.mjs の (5)・(10) の 3 件を含む
+        10 件が落ちることも確かめた。gate.test.mjs と engine.test.mjs を走らせる CI（tools/pr-body-check/ci/pr-body-engine.yml）はまだ .github/workflows/ に
+        写されておらず（手順は tools/pr-body-check/README.md の「配線の手順（建設者）」）、配線されておらず効き目は確かめていない
+      issue: 1107
+      at: 2026-11-08
+      decided_by: committee:D-0044
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0045 の ci_check の案（建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test を必須のチェックにするとき、
+        同じジョブの node --test で gate.test.mjs・CLI のテスト・engine.test.mjs の (10) が必ず走るようにし、外したら落とす）のうち、ワーカーの権限で入れられる分を入れた。
+        tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）に、gate.test.mjs と engine.test.mjs の (10) が実行の対象から外れていないことの見張りを足した。
+        gate.test.mjs に skip がなく、CLI のテストが 3 件以上（通る側の CLI のテストを含む）あり、通る側の 3 通りの形（c0005.mjs の PASSING_REPORTS。3 通り以上）を回すテストがあること、
+        engine.test.mjs の飛ばしが ENGINE_DIR を渡すと false になる共通の skip の 1 つの宣言だけで、(10) が PASSING_REPORTS を回して { skip } だけを渡すテストであること、
+        どちらにも todo・only・test.skip・t.skip などがないことを見る。ワークフローの側は、道を渡さないことに加えて --test-name-pattern・--test-skip-pattern・--test-only と
+        NODE_OPTIONS での絞り込みも外れにした。外す直し（gate.test.mjs で 9 通り、engine.test.mjs で 8 通り、ワークフローで 5 通り）がどれも外れになり、今のテストのファイルとひな形は
+        通ることを確かめた。ひな形の写しと必須のチェックへの登録は建設者が行うので（tools/pr-body-check/README.md の「配線の手順（建設者）」）、まだ配線されておらず効き目は確かめていない
+      issue: 1109
+      at: 2026-11-08
+      decided_by: committee:D-0045
+      wired: false
+      verified: false
 decided_by: committee:D-0001

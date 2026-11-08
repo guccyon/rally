@@ -1,5 +1,11 @@
-"""watch.py（イベント列で線から外れた PR に衝突の停止を開く見張り）のテスト（知見 K-0010 の担保。議決 D-0030・Issue #1034）。Engine は要らない。
-Engine の本物の stoppage.open_stoppage に渡して動かすのは test_engine.py の (4)"""
+"""watch.py（イベント列で線から外れた PR に衝突の停止を開く見張り）のテスト（知見 K-0010 の担保。議決 D-0030・Issue #1034）。
+EngineFinishedTest のほかは Engine は要らない。Engine の本物の stoppage.open_stoppage に渡して動かすのは test_engine.py の (4)。
+
+EngineFinishedTest は Engine の dispatcher.py の job.finished の欄で組んだイベント列で、watch.py が照らせずに停止を開かなかった外れの件数が
+1 以上なら落とす（議決 D-0042・Issue #1101）。欄の読み方・Engine のチェックアウトの渡し方と飛ばし方・今の形（LEGACY_FINISHED）のときだけの
+「todo:」は test_events.py の EngineFinishedTest と同じ（K-0004 の engine.test.mjs の todo と同じ形）。todo は見逃した件数を理由に添えて
+test_engine.py の todo で数え、知見 K-0010 の review_by を過ぎても Engine が今の形なら落とすのも同じ（議決 D-0043・Issue #1104）
+"""
 from __future__ import annotations
 
 import json
@@ -15,8 +21,10 @@ sys.path.insert(0, str(HERE))
 
 import events  # noqa: E402
 import policy  # noqa: E402
+import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
+import test_events  # noqa: E402   同じ理由で、テストの型はモジュールから読む
 import watch  # noqa: E402
-from test_events import C0005, URL, stream  # noqa: E402
+from test_events import C0005, FINISHED_FIELDS, FULL, URL, engine_shaped, legacy_finished, stream, todo_until_review_by  # noqa: E402
 
 PR659 = "https://github.com/guccyon/rally/pull/659"
 
@@ -121,6 +129,62 @@ class CommandTest(unittest.TestCase):
             self.assertEqual(run(bad).returncode, 2)
             self.assertEqual(run(Path(tmp) / "none.json").returncode, 2)
             self.assertEqual(run(ok, "--config", str(Path(tmp) / "none.yaml")).returncode, 2)
+
+
+# 「照らせないだけの PR には開かない」は、Engine が今の形（job.finished に agent_resumed と解き方の tier を出さない版）のときだけの扱い。
+# それらを出す版の Engine（ENGINE_REF で固定）では、照らせずに開かなかった外れが 1 件以上なら落とす（議決 D-0042・Issue #1101）。
+# 外れは、照らすのに agent_resumed が要る回（2 回目以降の引き継ぎ）と tier が要る回（CHANGELOG だけの衝突をエージェントで解いた）を別の PR に置く
+PLANTED = {
+    "agent_resumed": ("resumed_after_limit", [{"resumed": True, "agent_tier": "tier-large", "files": ["apps/backend/src/x.rs"], "cost": 1.95},
+                                              {"resumed": True, "agent_tier": "tier-large", "files": ["apps/admin-web/src/a.ts"], "cost": 2.4}]),
+    "tier": ("agent_for_mechanical", [{"resumed": False, "agent_tier": "tier-large", "files": ["CHANGELOG.md"], "cost": 1.2}]),
+}
+
+
+def finished_missed(fields: list[str]) -> dict:
+    """Engine が出す欄の job.finished で組んだイベント列で、watch.py が照らせずに停止を開かなかった外れの件数（照らすのに要る項目ごと）。
+    線どおりの PR（test_events.py の FULL）も混ぜ、そこに開いたら落とす"""
+    urls = {k: URL.replace("/1", f"/{n}") for n, k in enumerate(PLANTED, 2)}
+    evs = stream(FULL)
+    for m, (k, (_, attempts)) in enumerate(PLANTED.items(), 1):
+        for e in stream(attempts, url=urls[k]):
+            # stream は PR ごとに job_id を 101 から振るので、job_id で結ぶ job.finished が PR をまたがないようにずらす
+            evs.append({**e, "job_id": e["job_id"] + 100 * m if e["job_id"] is not None else None})
+    for n, e in enumerate(evs, 1):
+        e["id"] = n   # PR ごとに作った列を 1 本にしたので id を振り直す
+    found = {s["pr_url"]: s["rules"] for s in watch.stoppages(policy.load(), engine_shaped(evs, fields))}
+    if URL in found:
+        raise AssertionError(f"線どおりの PR に停止を開いた: {found[URL]}")
+    return {k: 0 if rule in found.get(urls[k], []) else 1 for k, (rule, _) in PLANTED.items()}
+
+
+class FinishedFieldsTest(unittest.TestCase):
+    """下の EngineFinishedTest の線そのものを、Engine なしで確かめる"""
+    NOW = test_events.FinishedFieldsTest.NOW   # 2026-11-07 の Engine（main の 2490db6）の job.finished の欄
+
+    def test_今の形では照らせずに外れを見逃す(self):
+        self.assertTrue(legacy_finished(self.NOW))
+        self.assertEqual(finished_missed(self.NOW), {"agent_resumed": 1, "tier": 1})
+
+    def test_両方を出す版では外れのすべてに停止を開く(self):
+        self.assertEqual(finished_missed(self.NOW + list(FINISHED_FIELDS)), {"agent_resumed": 0, "tier": 0})
+
+    def test_片方だけを出す版ではもう片方の外れを見逃し落ちる側になる(self):
+        self.assertEqual(finished_missed(self.NOW + ["agent_resumed"]), {"agent_resumed": 0, "tier": 1})
+        self.assertEqual(finished_missed(self.NOW + ["agent_tier"]), {"agent_resumed": 1, "tier": 0})
+
+
+@unittest.skipIf(test_engine.SKIP, test_engine.SKIP)
+class EngineFinishedTest(unittest.TestCase):
+    def test_job_finishedにagent_resumedと解き方のtierを出す版のEngineでは外れのすべてに停止を開く(self):
+        fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
+        self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
+        if legacy_finished(fields):
+            m = finished_missed(fields)
+            todo_until_review_by(self, f"見逃した外れ agent_resumed={m['agent_resumed']}・tier={m['tier']}")
+        self.assertEqual(finished_missed(fields), {"agent_resumed": 0, "tier": 0},
+                         f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列で、照らせずに停止を開かなかった外れがある。"
+                         f"{' と '.join(FINISHED_FIELDS)} の両方を出す")
 
 
 if __name__ == "__main__":

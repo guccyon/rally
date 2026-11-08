@@ -1,13 +1,15 @@
 # PR 本文の関所（tools/pr-body-check/gate.mjs）を Engine の本物の本文の組み込みで確かめる（知見 K-0001 の担保。議決 D-0013・D-0019、Issue #956・#975）。決定論（LLM を使わない）。
-# Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向け、tools/pr-body-check のテスト（check.test.mjs・gate.test.mjs・engine.test.mjs）を PR ごとに走らせる。
+# Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向け、tools/pr-body-check のテスト（check.test.mjs・gate.test.mjs・engine.test.mjs・followers.test.mjs など）を PR ごとに走らせる。
+# followers.test.mjs は、見出しの正本（template.json）に Engine の rubric の PR-002 と CLAUDE.md が合っているかを照らし、食い違ったら落ちる（知見 K-0005 の担保。Issue #1121）。Engine の PR-002 が Issue #1121 の時点の形のままのときだけ todo。
 # ENGINE_DIR を渡すので、Engine のチェックアウトがないときや entrypoint.sh から本文を組む節を取り出せないときは飛ばさずに落ちる。
 # PR 本文そのものはここでは見ない（落ちると ci_failed の続きのジョブが積まれ、その summary がまた本文に足されるため。本文は Engine が更新の前に関所に照らす）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-engine.yml に写す。
 # engine.test.mjs の (3) に todo はないので、関所を呼ばない Engine の版では落ちる。engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げるのと同じ PR で写し、engine-test を必須のチェックにする（議決 D-0019）。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（tools/sendback-check/ci/sendback-engine.yml と同じ版にそろえる。上げるときはテストが通ることを確かめる）。
-# engine-test が報告するチェックの名前は pr-body-engine-test（ジョブの name:）。sendback-engine.yml の engine-test と同じ名前だと、必須のチェックの
+# engine-test が報告するチェックの名前は pr-body-engine-test（ジョブの name:）。id のままの engine-test（knowledge-enforcement.yml も報告する）と同じ名前だと、必須のチェックの
 # 「engine-test」がどちらの報告でも満たされ、この写しを消しても止まらないため（議決 D-0032、Issue #1037）。
 # ci.test.mjs（このテストの中で走る）が、形・ENGINE_REF・sendback-engine.yml との版のずれ・写しとのずれを見張り、
+# gate.test.mjs（関所と CLI のテスト）と engine.test.mjs の (10)（通る側の写し）が skip・todo・only・道や名前の絞り込み（NODE_OPTIONS を含む）で外れていないことも見て（議決 D-0045、Issue #1109）、
 # protection.mjs で建設者が必須のチェックに入っているかを照らす（README の「配線の手順（建設者）」）。
 name: pr-body-engine
 

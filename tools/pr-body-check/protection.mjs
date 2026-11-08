@@ -2,12 +2,14 @@
 //
 //   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection
 //   gh api repos/{owner}/{repo}/rules/branches/main > protection.json        # rulesets（どちらの形でもよい）
-//   node protection.mjs --protection protection.json [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   node protection.mjs --protection protection.json [--protection rules.json] [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
 //
 // 関所を呼ばない Engine の版で engine.test.mjs の (3) が落ちても、そのチェックが必須でなければマージは止まらない。写しを消す PR も、
 // 必須のチェックが報告されないことでしか止まらない。branch protection は PR の GITHUB_TOKEN では読めないので、建設者が gh api で取り出した
-// JSON を渡して走らせ、結果を記録する（README の「配線の手順（建設者）」）。branch protection の JSON の読み方は tools/sendback-check/protection.mjs のものを使う。
+// JSON を渡して走らせ、結果を記録する（tools/pr-body-check/README.md の「配線の手順（建設者）」）。branch protection の JSON の読み方と名前の重なりの判定（sharedCheckNames）は tools/sendback-check/protection.mjs のものを使う。
+// 必須のチェックが後で外されたことに気づくよう、ci/pr-body-protection.yml が branch protection を読める権限のトークンで、既定のブランチへの push と
+// 毎日（と手動）で走らせ、外れたら落ちて Issue を開くか更新する（議決 D-0044、Issue #1106）。
 //
 // 見ること:
 //   - 写し（.github/workflows/pr-body-engine.yml）がないか、engine-test のジョブがない（workflow_not_copied）
@@ -15,12 +17,11 @@
 //   - そのチェックの名前が必須のチェックにない（required_check_missing）
 //   - 同じチェックの名前を .github/workflows/ のほかのジョブも報告する（check_name_shared。どちらの報告でも必須のチェックが満たされ、写しを消しても止まらない）
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { jobCheckNames, requiredContexts } from "../sendback-check/protection.mjs";
+import { jobCheckNames, loadWorkflows as loadCopyAndOthers, requiredContexts, sharedCheckNames } from "../sendback-check/protection.mjs";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** 写しの道（リポジトリの根から）。ci.test.mjs が見張るのもこの道。 */
@@ -31,11 +32,12 @@ export const REQUIRED_JOB = "engine-test";
 export const CHECK_NAME = "pr-body-engine-test";
 
 /**
- * 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON を照らす。
+ * 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON を照らす。protections に複数渡すと
+ * （古い形と rulesets の両方など。議決 D-0044、Issue #1106）、どれかで必須のチェックになっていれば必須に数える。
  */
-export function checkProtection({ workflow, others = {}, protection }) {
+export function checkProtection({ workflow, others = {}, protection, protections = [protection] }) {
   const errors = [];
-  const contexts = requiredContexts(protection);
+  const contexts = new Set(protections.flatMap((p) => [...requiredContexts(p)]));
   if (workflow == null) {
     errors.push({ rule: "workflow_not_copied", message: `${COPY} がない（ci/pr-body-engine.yml を写してから必須のチェックにする）` });
     return { contexts: [...contexts], errors };
@@ -54,30 +56,15 @@ export function checkProtection({ workflow, others = {}, protection }) {
     errors.push({ rule: "required_check_missing",
       message: `${REQUIRED_JOB} のジョブ（チェックの名前 ${name}）が必須のチェックにない。関所を呼ばない Engine で落ちてもマージが止まらない` });
   }
-  for (const [path, text] of Object.entries(others)) {
-    for (const [job, other] of jobCheckNames(text)) {
-      if (other === name) {
-        errors.push({ rule: "check_name_shared",
-          message: `${path} の ${job} も同じチェックの名前 ${name} を報告する。どちらの報告でも必須のチェックが満たされ、${COPY} を消しても止まらない` });
-      }
-    }
+  for (const other of sharedCheckNames([name], others)) {
+    errors.push({ rule: "check_name_shared",
+      message: `${other.path} の ${other.job} も同じチェックの名前 ${name} を報告する。どちらの報告でも必須のチェックが満たされ、${COPY} を消しても止まらない` });
   }
   return { contexts: [...contexts], errors };
 }
 
-/** リポジトリの根から、写しとほかのワークフローを読む。 */
-export function loadWorkflows(root) {
-  const dir = join(root, ".github", "workflows");
-  const copy = join(root, COPY);
-  const others = {};
-  if (existsSync(dir)) {
-    for (const f of readdirSync(dir).sort()) {
-      const path = `.github/workflows/${f}`;
-      if (path !== COPY && /\.ya?ml$/.test(f)) others[path] = readFileSync(join(dir, f), "utf8");
-    }
-  }
-  return { workflow: existsSync(copy) ? readFileSync(copy, "utf8") : null, others };
-}
+/** リポジトリの根から、写しとほかのワークフローを読む（読み方は tools/sendback-check/protection.mjs のもの）。 */
+export const loadWorkflows = (root) => loadCopyAndOthers(root, COPY);
 
 export function formatErrors(errors, annotate) {
   return errors.map((e) => annotate ? `::error title=pr-body-check ${e.rule}::${e.message}` : `${e.rule}: ${e.message}`);
@@ -91,13 +78,13 @@ export function renderSummary({ contexts, errors }) {
 }
 
 function main() {
-  const { values } = parseArgs({ options: { protection: { type: "string" }, repo: { type: "string" }, json: { type: "string" },
+  const { values } = parseArgs({ options: { protection: { type: "string", multiple: true }, repo: { type: "string" }, json: { type: "string" },
     summary: { type: "string" } } });
   let result;
   try {
-    if (!values.protection) throw new Error("--protection に branch protection の JSON を渡す");
-    const protection = JSON.parse(readFileSync(values.protection, "utf8"));
-    result = checkProtection({ ...loadWorkflows(values.repo ?? REPO_ROOT), protection });
+    if (!values.protection?.length) throw new Error("--protection に branch protection の JSON を渡す");
+    const protections = values.protection.map((f) => JSON.parse(readFileSync(f, "utf8")));
+    result = checkProtection({ ...loadWorkflows(values.repo ?? REPO_ROOT), protections });
   } catch (e) {
     console.error(`pr-body-check protection: 読めなかった: ${e.message}`);
     process.exit(2);
