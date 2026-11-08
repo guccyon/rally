@@ -52,6 +52,7 @@ curl -i http://127.0.0.1:8080/version   # 200 {"app_version":"0.1.0"}
 | 環境変数 | 意味 |
 |---|---|
 | `DATABASE_URL` | あれば保存先をすべて Postgres にし（`server::router_with_postgres_and_video_call`）、待ち受ける前に `infra::run_migrations` で `infra::MIGRATOR` を当てる。DB に当たっていて自分の知らないマイグレーション（新しい版が当てたもの）は飛ばして起動する（前の版のイメージに戻す Rollback のため。[ADR 0004](../../docs/adr/0004-schema-expand-contract.md) の 1）。DB につなげない・マイグレーションを当てられない（当て済みのものが書き換えられていたなど）ときは、原因を標準エラー出力に書いて 0 以外で終わる。なければ保存先は `application::in_memory` のインメモリ実装で、登録したアカウントや公開した枠はプロセスを止めると消える |
+| `CLOCK_OFFSET_SECONDS` | サーバーの時計を実際より進める秒数（0 以上の整数。ないか空なら 0）。ユースケースが読む時刻（`application::clock::Clock`）だけが進み、DB の `now()` の既定値は進まない。触れる環境（staging）で QA が「翌日」「暦月の境」をまたぐ流れを確かめるためのもので、工場の shipper が `.factory-config/ship.yaml` の `touch.clock_env` で渡す（factory-engine の ADR 0028 の scenario_time）。本番には渡さない。整数でない値では起動しない |
 | `APP_VERSION` | `GET /version`（認証なし）が `{"app_version": "..."}` で返す版。ないか空なら `"unknown"`。出荷した版を確かめる運用の口で、`/healthz` と同じく生徒・本部の API の契約（`specs/contracts`）には載せない |
 
 起動の試験（バイナリを起動して HTTP で確かめる）は `crates/server/tests/startup.rs`。Postgres を使うものは `DATABASE_URL` を設定して `cargo test -p server --test startup -- --include-ignored` で走らせる。
