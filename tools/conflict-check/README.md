@@ -64,27 +64,29 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 | `over_limit` | 同じ PR で `max_attempts_per_pr` を超えて積まれた（今の線では 4 回目以降） |
 | `resumed_after_limit` | `resume_session_until_attempt` より後の回（今の線では 2 回目以降）で agent_resumed=true |
 | `agent_for_mechanical` | 衝突したファイルが `mechanical.paths`（`CHANGELOG.md` と `changelog.d/`）だけなのに、エージェントの tier（tier-large など）で解いた |
-| `missing_conflict_files` | 終わった回（同じ `job_id` の `job.finished` がある）に、同じ `job_id` の `conflict.files` がないか、backfill で後から足されたもの（`payload.source` が `backfill`）しかない（知見 `K-0014` の担保。下の「衝突したファイルの記録の検査」） |
+| `missing_conflict_files` | `continue.enqueued`（reason=conflict）の時点で、同じ `job_id` の `conflict.files` が載っていない。ないか、backfill で後から足されたもの（`payload.source` が `backfill`）か、ジョブが動き出したあと（`job.started` か `job.finished` より後）に記録されたものしかない（知見 `K-0014` の担保。下の「衝突したファイルの記録の検査」） |
 
 - 記録がなく分からない項目（agent_resumed・tier・衝突したファイル）はその rule を照らさず、PR ごとに件数を出す（`--json` では `unknown`）。`pr.conflicted` は衝突した head の数として出す
   - これは Engine が今の形（`job.finished` に `agent_resumed` と解き方の tier（`agent_tier`）を出さない版）のときだけの扱い（議決 `D-0030`、Issue #1035。下の「Engine の job.finished の欄のテスト」）
 - 終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった（JSON・JSONL として読めない、`name` のない件がある、`payload` がオブジェクトでない）
 - 標準出力: 外れた回ごとに `<PR の URL> attempt=<回> job=<job_id> <rule>: 理由` と、PR ごとと全体の件数の行。`--json` は `{ "ok", "prs": [{ "pr_url", "attempts", "conflicted_heads", "unknown", "errors" }] }`
 - `test_events.py` が、`fixtures/c0005-pr659-events.json`（C-0005 の流れ）で 3 つの rule がすべて落ちること（`over_limit` 17 件・`resumed_after_limit` 19 件・`agent_for_mechanical` 19 件）と、線どおりの積み方が通ることを確かめる
-- `fixtures/c0005-pr659-events.json` の 13 回目（衝突したファイルの記録がない回）は `missing_conflict_files` でも落ちる
+- `fixtures/c0005-pr659-events.json` は `missing_conflict_files` でも 20 回すべて落ちる（13 回目は記録がなく、ほかの回は今の Engine と同じく `job.finished` のあとに記録している）
 - `fixtures/c0005-pr659-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0005.md`）にある事実だけを Engine のイベントの形に組み直したもの（制御プレーンの events はワーカーから読めない）。id・job_id・head_sha は仮の値。13 回目は衝突したファイルの記録を置かず、照らせない回にした
 
 ### 衝突したファイルの記録の検査（`missing_conflict_files`）
 
 衝突を解く続きのジョブに、衝突したファイルがその場で記録されていない回を落とす。知見 `K-0014`（記録がないと、同じファイルの衝突が繰り返している型が集計で見えない）の担保で、委員会の議決 `D-0049`（PR #1127）と Issue #1135 で作った。
 
-- 照らすのは `continue.enqueued`（reason=conflict）の回のうち、同じ `job_id` の `job.finished` がある回だけ。Engine の dispatcher は、ジョブが終わったときにワーカーのログ（`[worker] continue conflict` の行）から `conflict.files` を `source: worker_log` で記録する（`process_learn.record_conflict_files`）ので、終わる前の回はまだ照らさない
-- `conflict.files` がない回と、`payload.source` が `backfill`（`factoryctl learn backfill-conflicts` で後から埋めた）のものしかない回を外れにする。`source` のない記録はその場のものとみなす。衝突がなかった回の空の列（`files: []`）は記録があるので通る
+- 線は議決 `D-0049` の test の案どおり「`continue.enqueued`（reason=conflict）の時点で載っているか」。同じ `job_id` の `conflict.files` が、そのジョブの `job.started`・`job.finished` より前（イベント列の順。`id` があれば `id` の順）にあればその場で載ったとみなす
+- 外れにするのは、`conflict.files` がない回、`payload.source` が `backfill`（`factoryctl learn backfill-conflicts` で後から埋めた）のものしかない回、ジョブが動き出したあと（`job.started` か `job.finished` より後）に記録されたものしかない回。`source` のない記録は位置だけで見る。衝突がなかった回の空の列（`files: []`）は、その場で載っていれば通る
+- 終わっていない回・終わらずに止まった回（`job.finished` がない回）も照らす。積んだ時点で載っているはずなので、終わるのを待たない。積んだだけでまだ動き出していない回も、載っていなければ落ちる
 - backfill の中身（衝突したファイル）は、上の 3 つの rule（`agent_for_mechanical` など）にはそのまま使う
 - `continuation.yaml` の線ではないので、`check` ではなく `record_check` が出す。`events.py` のコマンドの終了コード・標準出力・`--json` の `errors` には一緒に出るが、`watch.py` は `check` だけを使うので、記録の欠けだけでは停止を開かない
-- `test_events.py` の `MissingConflictFilesTest` が、`fixtures/c0007-pr290-pr295-events.json`（C-0007 の流れ）が落ち（PR #290 のジョブ 309 は backfill の `conflict.files` だけ、PR #295 のジョブ 318・325・338 は記録なし。4 件）、`conflict.files` をその場で載せた列は通ることを確かめる
+- `test_events.py` の `MissingConflictFilesTest` が確かめること: `fixtures/c0007-pr290-pr295-events.json`（C-0007 の流れ）が落ちる（PR #290 のジョブ 309 は backfill の `conflict.files` だけ、PR #295 のジョブ 318・325・338 は記録なし。4 件）。`conflict.files` を `continue.enqueued` のすぐ後ろに載せた列は通る。今の Engine の形（ジョブの終わりに `worker_log` で記録）の回と、終わらずに止まった回で載っていないものは落ちる
 - `fixtures/c0007-pr290-pr295-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0007.md`）にある事実だけを Engine のイベントの形に組み直したもの。id・head_sha・ブランチ名は仮の値。PR #295 の 3 回の tier・費用・agent_resumed は事例記録にないので置かない
-- 2026-11-08 の Engine（`main` の `57069a8`）は、`conflict.files` を `continue.enqueued` や `pr.conflicted` には載せず、ジョブが終わってから別のイベントで記録する。この検査は、終わった回に `worker_log` の記録があれば「その場で載った」とみなす。`continue.enqueued`・`pr.conflicted`・handoff に衝突したファイルを必須の項目にする案（議決 `D-0049` の schema の案）は Engine の変更なので建設者が入れる。イベントを出してこの検査を走らせる配線も建設者
+- 2026-11-08 の Engine（`main` の `57069a8`）は、`conflict.files` を `continue.enqueued` や `pr.conflicted` には載せず、ジョブが終わってからワーカーのログから記録する（`dispatcher.py` の `process_learn.record_conflict_files`、`source: worker_log`）。この記録は積んだ時点のものではないので、今の Engine の記録はすべて `missing_conflict_files` で落ちる（K-0014 が指す欠けがまだ残っている）。Engine が積むときに `conflict.files` を記録する（議決 `D-0049` の schema の案。`continue.enqueued`・`pr.conflicted`・handoff に衝突したファイルを必須の項目にする）のは建設者。イベントを出してこの検査を走らせる配線も建設者
+- handoff は制御プレーンのイベント列にないので、この検査では見ない。`continue.enqueued` の payload に衝突したファイルの欄を足す形も、欄の名前が決まっていないので読まない（Engine が入れたら別のチケットで合わせる）
 
 制御プレーンから出すときの例（その PR の conflict の続きのジョブと、それに結ぶジョブのイベント）:
 
