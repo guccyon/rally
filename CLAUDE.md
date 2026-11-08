@@ -29,4 +29,4 @@
 ## やってはいけないこと
 
 - 秘密情報・権限設定・決済ロジック・破壊的スキーマ変更に触れること（必要なら作業を止めて理由を書く）
-- `.github/workflows/` の変更（ワーカーの権限にない。建設者が行う）
+- 特権のラインのチケット（ラベル `factory:privileged`）でない作業での `.github/workflows/` の変更（ふつうのワーカーのトークンには権限がない。Engine ADR 0041）。Engine の版上げはワークフローを触らず `.factory-config/engine.lock` の 1 行で行う
