@@ -30,4 +30,27 @@ invalidate_when:
   - "Engine が continuation.yaml の conflict の線を読み、機械的な解消の前に tools/changelog-check/ を通すようになった（その後も同じ PR の機械的な解消が繰り返すかで確かめる）"
   - "線を配線したあとも、直接の書き換えのある PR で機械的な解消が上限に数えられずに繰り返した（原因は配線ではなく線の作り）"
   - "13 回の機械的な解消が、Engine が検査を呼んで通った回だったと分かった（その場合は検査の側の見落としの知見に直す）"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        議決 D-0078（Issue #1220 の起票時の番号は D-0077。PR #1212）の test の案を入れた。tools/conflict-check/events.py に rule mechanical_without_verify を足し、
+        PR の head が mechanical.verify の検査（tools/changelog-check/check.mjs。CHANGELOG.md を直接書き換えていると落ちる）に落ちるのに、
+        mechanical.agent_tier（none。機械的）で衝突を解いた回を終了コード 1 で落とす。制御プレーンの events には検査の結果が載らないので、
+        head ごとの check.mjs の終了コードを --verify（{ PR の URL: { head_sha: 終了コード } }）で渡し、渡さない head は照らさずに件数を出す。
+        検査に落ちた head を CHANGELOG.md だけの衝突でもエージェントで解いた回は、線どおりなので agent_for_mechanical でも落とさない。
+        K-0010 の線（check）なので watch.py の停止にも使われる。あわせて、同じ PR・同じファイルの機械的な解消が max_attempts_per_pr（3 回）を超えたら
+        ファイルごとの回数を出す（外れにはしない）。test_events.py の MechanicalWithoutVerifyTest で、C-0008 の流れ（PR #678 の CHANGELOG.md だけの
+        機械的な解消 13 回。事例記録の事実だけで組んだ fixtures/c0008-pr678-events.json。13 回の head の検査の結果 1 は、直接の書き換えが 3873 まで残ったという
+        事例記録からの読みで、本物の検査の結果ではない）が 13 件落ちて CHANGELOG.md 13 回と出ること、線どおりの積み方（検査に落ちてエージェントの回になり、
+        3 回で停止）なら通ることを確かめた。Engine が機械的に解く前に検査を呼び、その結果をイベントに出すか、この検査に渡す配線は建設者が入れるので、
+        本物のイベント列では確かめておらず、効き目はまだ確かめていない
+      issue: 1220
+      at: 2026-11-08
+      decided_by: committee:D-0078
+      requires_check:
+        - runs: tools/conflict-check/test_events.py
+      wired: false
+      verified: false
 decided_by: committee:D-0078
