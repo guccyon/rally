@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -304,6 +305,19 @@ class RepoTest(unittest.TestCase):
         self.assertEqual(r["unrecorded"], 0)
         self.assertEqual(r["level"], "deterministic")
         self.assertEqual(r["label"], "未配線")
+
+    def test_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
+        """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
+        text = (HERE / "README.md").read_text(encoding="utf-8")
+        ids = r"((?:`K-\d{4,}`・?)+)"
+        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids} の未記入の解決策は", text)
+        self.assertIsNotNone(m, "README.md に「すべての解決策に書いたのは `K-…`。`K-…` の未記入の解決策は」の一覧がない")
+        listed_done, listed_open = (re.findall(r"K-\d{4,}", g) for g in m.groups())
+        rows = [check.row(x) for x in check.load(REPO)]
+        done = [r["id"] for r in rows if r["solutions"] and not r["unrecorded"]]
+        still_open = [r["id"] for r in rows if r["unrecorded"]]
+        self.assertEqual(listed_done, done, "README.md の「すべての解決策に書いた」知見の一覧を K-*.yaml に合わせて直す")
+        self.assertEqual(listed_open, still_open, "README.md の「未記入の解決策が残る」知見の一覧を K-*.yaml に合わせて直す")
 
 
 if __name__ == "__main__":
