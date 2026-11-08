@@ -2,16 +2,19 @@ id: K-0015
 theme: 6
 kind: causal
 statement: >-
-  同じ PR で同じ原因の作業が繰り返されても（同じファイルの機械的な衝突の解消、同じ本文の指摘への body_fix）、回数の上限や
-  「同じことが繰り返されている」と見て原因の直しに切り替える段がないと、繰り返しが続き、元の直し（CHANGELOG.md への直接の書き換えを
-  changelog.d/ に移す、本文の組み立てを直す）が後回しになる（C-0008 では CHANGELOG.md だけの機械的な衝突の解消が 13 回、
-  同じ本文の指摘への body_fix が 5 回続いた）。機械的な解消は 1 回ごとの費用が小さくても、衝突の元が PR の中に残る限り止まらない。
-  ただし、Engine が繰り返しを数えていないのか、数えていても止める線がないのかは材料で確かめていない。
+  衝突の元が PR の中に残っている（PR が CHANGELOG.md を直接書き換えている）とき、エージェントを使わない機械的な衝突の解消が
+  同じ PR・同じファイルで繰り返されても、その回を上限に数えず原因の直しにも切り替えないと、既定ブランチが進むたびに解消が繰り返され、
+  元の直し（changelog.d/ への移動）が後回しになる（C-0008 では CHANGELOG.md だけの機械的な解消が 13 回走り、
+  直接の書き換えは検査の指摘 DOC-002 の review_fix まで残った）。
+  K-0010 の担保の線（.factory-config/continuation.yaml の conflict）は 3 回の上限にエージェントを呼んだ回だけを数え、機械的に解いた回は数えない。
+  そのかわり機械的な解消は K-0002 の検査（tools/changelog-check/）に通ったときだけとし、通らなければエージェントの回にして上限に数える。
+  この線どおりなら、直接の書き換えのある PR は機械的な解消にならず、3 回で人の判断待ちに上がる見込み。線は Engine にまだ配線されておらず、
+  C-0008 の 13 回はその検査を経ない機械的な解消と見られる（Engine が検査を呼んでいないことは材料で確かめていない）。
 scope:
-  work: [dev.build, dev.describe]
-  artifacts: [PR.body]
+  work: [dev.build]
+  files: [CHANGELOG.md, changelog.d/]
   request_form: [ticket]
-  roles: [supervisor, body_fix, judge]
+  roles: [supervisor]
 acts_on: engine
 confidence: hypothesis
 evidence:
@@ -22,8 +25,8 @@ status: draft
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
-related: [K-0010, K-0013, K-0002, K-0009, K-0016]
+related: [K-0010, K-0002, K-0013]
 invalidate_when:
-  - "同じ PR の同じファイルの機械的な衝突の解消が一定の回数を超えたら、原因を直すジョブか人への知らせに切り替わるようになった"
-  - "同じ指摘への body_fix が続いたら、ループを止めて指示役に知らせるようになった"
-  - "上限や切り替えを入れたあとも、同じ PR で同じ原因の繰り返しが減らなかった（原因は回数の線ではなかった）"
+  - "Engine が continuation.yaml の conflict の線を読み、機械的な解消の前に tools/changelog-check/ を通すようになった（その後も同じ PR の機械的な解消が繰り返すかで確かめる）"
+  - "線を配線したあとも、直接の書き換えのある PR で機械的な解消が上限に数えられずに繰り返した（原因は配線ではなく線の作り）"
+  - "13 回の機械的な解消が、Engine が検査を呼んで通った回だったと分かった（その場合は検査の側の見落としの知見に直す）"

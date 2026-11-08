@@ -19,7 +19,7 @@ status: active
 verified_at: 2026-11-05
 review_by: 2026-12-05
 confidentiality: product
-related: [K-0001, K-0006, K-0015, K-0016]
+related: [K-0001, K-0006, K-0016]
 invalidate_when:
   - "continue（conflict/ci_failed）の implement ジョブの入力に、未解消の採用済みの指摘と body_fix が決めた本文の決まりが入るようになった"
   - "続きのジョブの報告が PR 本文に入るときに、決まり（## を足さないなど）が機械で守られるようになった"
