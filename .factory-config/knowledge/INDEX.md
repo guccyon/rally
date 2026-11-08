@@ -11,7 +11,7 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0009 | 4 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 検査の採用済みの指摘（PR-002 など）と、本文を直す役（body_fix）が決めた本文の書き方の決まりが、次に PR 本文を書き足す役 （続きのジョブの s |
 | K-0011 | 4 | causal | hypothesis | active | context | 2026-11-07 | 2026-12-07 | 判定役（judge）のジョブの入力に、検査役の指摘が根拠として引く rubric（PR-002・OV-001 など）の本文が入っていないと、 判定役は指摘の根拠 |
 | K-0014 | 4 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 衝突を解く続きのジョブを積むときに、衝突したファイルを記録しない（pr.conflicted・continue.enqueued・handoff に載せない）と |
-| K-0016 | 4 | causal | hypothesis | active | context | 2026-11-08 | 2026-12-08 | 実装役の報告（handoff の summary.md）から PR 本文を組み立てる受け渡しで、本文の頭（## 概要 と ## 対応内容）が欠けたり、 ## 概 |
+| K-0016 | 4 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 実装役の報告（handoff の summary.md）から PR 本文を組み立てる受け渡しで、本文の頭（## 概要 と ## 対応内容）が欠けたり、 ## 概 |
 | K-0002 | 6 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、  |
 | K-0004 | 6 | causal | hypothesis | active | deterministic | 2026-11-01 | 2026-12-01 | supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」では |
 | K-0006 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、 見出しの順と階層が崩れて新しい差し戻しを生む。同じ |

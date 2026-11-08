@@ -8,7 +8,8 @@
 //   標準出力: 1 のときは body_fix の入力の JSON 1 行。0 のときは何も出さない
 //
 // 呼ぶ場所: Engine の worker/entrypoint.sh が続きのジョブ（pr.head_updated・handoff.saved になる push）で NEW_BODY を組んだあと、
-// gh pr edit の前。README の「Engine に入れること」を参照。
+// gh pr edit の前。報告（summary.md）から最初の PR 本文（PR_BODY）を組んだあと、gh pr create の前（知見 K-0016 の担保。議決 D-0078、Issue #1219。
+// PR がまだないので、外れたら組んだ本文のまま PR を作って body_fix に回す）。README の「Engine に入れること」を参照。
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -22,6 +23,7 @@ const HINT = {
   duplicate_h2: `続きのジョブの報告の ## 見出しを ### 以下に下げて「## ${FACTORY_RECORD}」の下に入れ、本文の上の節と同じ見出しを 2 回置かない`,
   outside_factory_record: `「## ${FACTORY_RECORD}」より後ろの見出しを ### 以下に下げる（その節の下はすべて工場の記録）`,
   continuation_outside_record: `続きのジョブの記録を「## ${FACTORY_RECORD}」の下の ### に移す`,
+  head_not_first_heading: (e) => `本文を「## ${e.heading}」から始める。その前の見出しのない文や箇条書きは定義の見出しの下に入れ、欠けた見出しを足す`,
 };
 
 /** 外れた箇所を body_fix の指摘（Engine の is_body_only が本文だけの指摘と読む location）にする。 */
@@ -31,7 +33,7 @@ export function toDefect(error) {
     severity: "should",
     location: `PR 本文 ${error.line} 行目`,
     evidence: `pr-body-check ${error.rule}: ${error.message}`,
-    remediation_hint: HINT[error.rule],
+    remediation_hint: typeof HINT[error.rule] === "function" ? HINT[error.rule](error) : HINT[error.rule],
   };
 }
 
