@@ -746,18 +746,31 @@ class RepoTest(unittest.TestCase):
         self.assertEqual(r["level"], "deterministic")
         self.assertEqual(r["label"], "未配線")
 
-    def test_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
-        """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
-        text = (HERE / "README.md").read_text(encoding="utf-8")
+    def listed(self, path, tail):
+        """README の「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の 2 つの一覧を取り出す"""
+        text = path.read_text(encoding="utf-8")
         ids = r"((?:`K-\d{4,}`・?)+)"
-        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids} の未記入の解決策は", text)
-        self.assertIsNotNone(m, "README.md に「すべての解決策に書いたのは `K-…`。`K-…` の未記入の解決策は」の一覧がない")
-        listed_done, listed_open = (re.findall(r"K-\d{4,}", g) for g in m.groups())
+        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids}{tail}", text)
+        name = path.relative_to(REPO)
+        self.assertIsNotNone(m, f"{name} に「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の一覧がない")
+        return (re.findall(r"K-\d{4,}", g) for g in m.groups())
+
+    def assert_listed(self, path, tail):
+        listed_done, listed_open = self.listed(path, tail)
         rows = [check.row(x) for x in check.load(REPO)]
         done = [r["id"] for r in rows if r["solutions"] and not r["unrecorded"]]
         still_open = [r["id"] for r in rows if r["unrecorded"]]
-        self.assertEqual(listed_done, done, "README.md の「すべての解決策に書いた」知見の一覧を K-*.yaml に合わせて直す")
-        self.assertEqual(listed_open, still_open, "README.md の「未記入の解決策が残る」知見の一覧を K-*.yaml に合わせて直す")
+        name = path.relative_to(REPO)
+        self.assertEqual(listed_done, done, f"{name} の「すべての解決策に書いた」知見の一覧を K-*.yaml に合わせて直す")
+        self.assertEqual(listed_open, still_open, f"{name} の「未記入の解決策が残る」知見の一覧を K-*.yaml に合わせて直す")
+
+    def test_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
+        """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
+        self.assert_listed(HERE / "README.md", " の未記入の解決策は")
+
+    def test_knowledge_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
+        """.factory-config/knowledge/README.md の同じ 2 つの一覧も、順まで照らす（議決 D-0052、Issue #1138）"""
+        self.assert_listed(REPO / ".factory-config" / "knowledge" / "README.md", " には未記入の解決策が残っていて")
 
 
 if __name__ == "__main__":

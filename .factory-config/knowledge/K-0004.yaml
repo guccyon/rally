@@ -677,6 +677,19 @@ enforcement:
       decided_by: committee:D-0048
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0052（Issue #1138 の起票時の番号は D-0049。PR #1134）の test の案を入れた。tools/knowledge-enforcement-check/test_check.py の
+        README の一覧を照らすテストを、tools/knowledge-enforcement-check/README.md だけでなく .factory-config/knowledge/README.md の
+        「すべての解決策に書いたのは …」「… には未記入の解決策が残っていて」の id の一覧にも当て、check.py が K-*.yaml から数えた結果
+        （解決策があって未記入が 0 件の知見と、未記入が 1 件以上の知見）と順まで一致しなければ落とす。2026-11-07 の時点のままだった
+        knowledge/README.md の一覧（K-0002 を未記入側に残し、K-0005・K-0012 がない）でこのテストが落ちることを確かめ、一覧を今の記録に直した。
+        test_check.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1138
+      at: 2026-11-08
+      decided_by: committee:D-0052
+      wired: false
+      verified: false
     - kind: ci_check
       what: >-
         議決 D-0052 の ci_check の案（建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して branch protection の必須チェックに入れ、
