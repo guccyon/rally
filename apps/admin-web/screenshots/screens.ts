@@ -2,6 +2,8 @@ import type { Page } from "@playwright/test";
 
 import type { Role } from "@/session/session";
 
+import { PREJOIN_STARTS_AT } from "./fixtures";
+
 // キャプチャする画面の一覧。画面を足したり、たどり方（押す文言）を変えたりしたらここを直す。
 // id はファイル名と、前後の比較の突き合わせに使うので変えない（変えると「消えた画面」と「新しい画面」になる）。
 
@@ -11,6 +13,8 @@ export type Screen = {
   /** ログインしておくロール（なければログインしない） */
   role?: Role;
   path: string;
+  /** 開く前の準備（ページの前に差し込むスクリプト等） */
+  prepare?: (page: Page) => Promise<void>;
   /** 開いたあとにする操作（タブを押す等） */
   open?: (page: Page) => Promise<void>;
 };
@@ -26,6 +30,78 @@ const slotSupplyPeriod = (from: string, to: string, shown: string) => async (pag
   await page.getByLabel("終了日").fill(to);
   await page.getByRole("button", { name: "この条件で見る" }).click();
   await page.getByText(shown).waitFor();
+};
+
+type FakeMedia = {
+  /** 開けたら ok、断るなら DOMException の名前（NotAllowedError は許可を断った、NotFoundError は機器がない） */
+  camera: "ok" | "NotAllowedError" | "NotFoundError";
+  mic: "ok" | "NotAllowedError" | "NotFoundError";
+  /** カメラ・マイク・スピーカーを 2 つずつにする（使う機器の欄を撮る） */
+  many: boolean;
+};
+
+// 入室前チェック（coach-prejoin-check*）のカメラ・マイク。撮る端末に本物の機器はなく、映りは毎回同じにしたいので、
+// getUserMedia・enumerateDevices を作り物に差し替える。カメラは止まった絵（人の形と背景）、マイクは無音。
+const fakeMedia = (media: FakeMedia) => async (page: Page) => {
+  await page.addInitScript((options: FakeMedia) => {
+    const devices = navigator.mediaDevices;
+    const list = (kind: MediaDeviceKind, labels: string[]) =>
+      labels.map((label, i) => ({ deviceId: `${kind}-${i + 1}`, groupId: "g", kind, label, toJSON: () => ({}) }));
+    devices.enumerateDevices = async () =>
+      [
+        ...(options.camera === "NotFoundError"
+          ? []
+          : list("videoinput", options.many ? ["内蔵カメラ", "外付けカメラ（USB）"] : ["内蔵カメラ"])),
+        ...(options.mic === "NotFoundError"
+          ? []
+          : list("audioinput", options.many ? ["内蔵マイク", "ヘッドセットのマイク"] : ["内蔵マイク"])),
+        ...list("audiooutput", options.many ? ["内蔵スピーカー", "ヘッドセット"] : ["内蔵スピーカー"]),
+      ] as MediaDeviceInfo[];
+    devices.getUserMedia = async (constraints) => {
+      const outcome = constraints?.video ? options.camera : options.mic;
+      if (outcome !== "ok") throw new DOMException("screenshot", outcome);
+      if (!constraints?.video) return new AudioContext().createMediaStreamDestination().stream;
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280;
+      canvas.height = 720;
+      const draw = () => {
+        const g = canvas.getContext("2d")!;
+        g.fillStyle = "#c9d3cf";
+        g.fillRect(0, 0, 1280, 720);
+        g.fillStyle = "#9fb0aa";
+        g.fillRect(0, 0, 420, 720);
+        g.fillStyle = "#56645f";
+        g.beginPath();
+        g.arc(640, 300, 120, 0, Math.PI * 2);
+        g.fill();
+        g.beginPath();
+        g.ellipse(640, 720, 300, 240, 0, Math.PI, 0);
+        g.fill();
+      };
+      draw();
+      // 止まった絵でも映像の枠が届くよう、同じ絵を描き続ける
+      window.setInterval(draw, 100);
+      return canvas.captureStream(10);
+    };
+  }, media);
+};
+
+/** 通話への参加のタブを開き、開始 5 分前を過ぎた予約（12:03 開始）の入室前チェックを開く。 */
+const openPrejoinCheck = async (page: Page) => {
+  await coachTab("通話への参加")(page);
+  await page.getByRole("button", { name: "入室前チェック" }).click();
+  await page.getByRole("heading", { name: "入室前チェック" }).waitFor();
+};
+
+/** カメラの映りが出るまで待つ。 */
+const waitForCamera = async (page: Page) => {
+  await page.waitForFunction(() => (document.querySelector("video")?.readyState ?? 0) >= 2);
+};
+
+/** 開いたまま開始時刻になる（読み込み直さない）。 */
+const reachStartTime = async (page: Page) => {
+  await page.clock.setFixedTime(PREJOIN_STARTS_AT);
+  await page.getByRole("button", { name: "入室する" }).and(page.locator(":enabled")).waitFor();
 };
 
 export const SCREENS: Screen[] = [
@@ -66,6 +142,66 @@ export const SCREENS: Screen[] = [
     },
   },
   { id: "coach-live", title: "コーチ: 通話への参加", role: "coach", path: "/coach", open: coachTab("通話への参加") },
+  {
+    id: "coach-prejoin-check",
+    title: "コーチ: 入室前チェック（チェック中・開始前。機器が 2 つずつ）",
+    role: "coach",
+    path: "/coach",
+    prepare: fakeMedia({ camera: "ok", mic: "ok", many: true }),
+    open: async (page) => {
+      await openPrejoinCheck(page);
+      await waitForCamera(page);
+      await page.getByRole("combobox", { name: "カメラ" }).waitFor();
+    },
+  },
+  {
+    id: "coach-prejoin-check-ready",
+    title: "コーチ: 入室前チェック（開いたまま開始時刻になった）",
+    role: "coach",
+    path: "/coach",
+    prepare: fakeMedia({ camera: "ok", mic: "ok", many: false }),
+    open: async (page) => {
+      await openPrejoinCheck(page);
+      await waitForCamera(page);
+      await reachStartTime(page);
+    },
+  },
+  {
+    id: "coach-prejoin-check-failed",
+    title: "コーチ: 入室前チェック（入室で 409 slot_not_started）",
+    role: "coach",
+    path: "/coach",
+    prepare: fakeMedia({ camera: "ok", mic: "ok", many: false }),
+    open: async (page) => {
+      await openPrejoinCheck(page);
+      await waitForCamera(page);
+      await reachStartTime(page);
+      await page.getByRole("button", { name: "入室する" }).click();
+      await page.getByRole("alert").filter({ hasText: "開始時刻になっていない" }).waitFor();
+    },
+  },
+  {
+    id: "coach-prejoin-check-denied",
+    title: "コーチ: 入室前チェック（カメラとマイクの許可を断った）",
+    role: "coach",
+    path: "/coach",
+    prepare: fakeMedia({ camera: "NotAllowedError", mic: "NotAllowedError", many: false }),
+    open: async (page) => {
+      await openPrejoinCheck(page);
+      await page.getByText("カメラとマイクが使えません。").waitFor();
+    },
+  },
+  {
+    id: "coach-prejoin-check-nodevice",
+    title: "コーチ: 入室前チェック（カメラがない）",
+    role: "coach",
+    path: "/coach",
+    prepare: fakeMedia({ camera: "NotFoundError", mic: "ok", many: false }),
+    open: async (page) => {
+      await openPrejoinCheck(page);
+      await page.getByText("この PC にカメラが見つかりません。").waitFor();
+    },
+  },
   { id: "coach-reviews", title: "コーチ: 自分の評価", role: "coach", path: "/coach", open: coachTab("自分の評価") },
   { id: "coach-profile", title: "コーチ: 自己紹介", role: "coach", path: "/coach", open: coachTab("自己紹介") },
   {

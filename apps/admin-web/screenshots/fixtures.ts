@@ -112,10 +112,25 @@ function booking(
 const YAMADA = { id: STUDENT_ID, name: "山田 花子" };
 const SATO = { id: STUDENT_ID_2, name: "佐藤 一郎" };
 
+/** 入室前チェックを撮る予約の開始（今の 3 分後。12:03 開始で、11:58 から入室前チェックを開ける）。 */
+export const PREJOIN_STARTS_AT = new Date(NOW.getTime() + 3 * 60_000);
+
 const BOOKINGS: Schemas["CoachBooking"][] = [
   booking(1, SLOTS[0]!.slot, "confirmed", YAMADA),
   booking(2, SLOTS[1]!.slot, "pending", SATO),
   booking(3, SLOTS[3]!.slot, "confirmed", YAMADA),
+  // 入室前チェック（coach-prejoin-check*）。本部の予約の一覧（HQ_BOOKINGS）には入れない
+  booking(
+    4,
+    slot(5, 0.05, {
+      status: "booked",
+      remaining_seats: 0,
+      ends_at: at(0.55),
+      lesson_menu: { lesson_menu_id: MENU_FORE.lesson_menu_id, name: MENU_FORE.name, duration_minutes: 30 },
+    }),
+    "confirmed",
+    SATO,
+  ),
 ];
 
 // 本部の予約の一覧（今日から 7 日）。確定待ちのまま 24 時間以内に始まる予約・確定済み・確定待ち・キャンセル済みを混ぜる。
@@ -418,6 +433,13 @@ export const FIXTURES: Fixture[] = [
   },
   { method: "GET", path: "/coaches/me/slots", body: { slots: SLOTS } satisfies Schemas["CoachSlotList"] },
   { method: "GET", path: "/coaches/me/bookings", body: { bookings: BOOKINGS } satisfies Schemas["CoachBookingList"] },
+  {
+    // 入室前チェックの「入室する」（coach-prejoin-check-failed）。端末の時計が進んでいて、サーバーはまだ開始時刻の前と断る
+    method: "POST",
+    path: "/live-lesson-sessions",
+    status: 409,
+    body: { code: "slot_not_started", message: "予約したスロットの開始時刻より前です" } satisfies Schemas["Error"],
+  },
   { method: "GET", path: "/coaches/me/videos", body: { videos: VIDEOS } satisfies Schemas["CoachVideoList"] },
   {
     method: "GET",

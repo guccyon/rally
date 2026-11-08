@@ -27,6 +27,7 @@ for (const screen of SCREENS) {
       const session = JSON.stringify({ role: screen.role, token: `mock.${screen.role}.screenshot` });
       await page.addInitScript(([key, value]) => window.localStorage.setItem(key!, value!), [SESSION_KEY, session]);
     }
+    if (screen.prepare) await screen.prepare(page);
     await page.goto(screen.path);
     await page.waitForLoadState("networkidle");
     if (screen.open) {
