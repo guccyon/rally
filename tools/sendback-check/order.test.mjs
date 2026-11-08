@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, isMainModule, loadRepo, parseTapReport, REPO_ROOT, runningFrom, runsEngineTest, todoLines } from "./order.mjs";
+import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, isMainModule, loadRepo, parseTapReport, REPO_ROOT, runningFrom, runsEngineTest, skipLines, todoLines } from "./order.mjs";
 
 const orderScript = fileURLToPath(new URL("./order.mjs", import.meta.url));
 const checkScript = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -46,6 +46,15 @@ test("今の engine.test.mjs には basis の場合の todo が残っていて�
   assert.deepEqual(todoLines("// todo のうちに配線しない\nconst x = 1;"), []);
   assert.deepEqual(todoLines("test('x', { todo: true }, () => {});"), [1]);
   assert.deepEqual(todoLines("\ntest.todo('x');"), [2]);
+});
+
+test("skipLines は todoLines と同じ数え方で skip を数え、Engine のチェックアウトがないときの { skip } は数えない（議決 D-0041、Issue #1093）", () => {
+  // 今の engine.test.mjs には、写しを作れないときの legacy_basis_not_found の t.skip が 1 行ある
+  const lines = engineTestNow.split(/\r?\n/);
+  assert.deepEqual(skipLines(engineTestNow).map((n) => lines[n - 1].trim().slice(0, 7)), ["t.skip("]);
+  assert.deepEqual(skipLines("// t.skip('x') は注釈\ntest('x', { skip }, () => {});\nconst skip = false;"), []);
+  assert.deepEqual(skipLines("test('x', { skip: 'legacy_basis_not_found' }, () => {});"), [1]);
+  assert.deepEqual(skipLines("\ntest.skip('x');\nt.skip ('y');"), [2, 3]);
 });
 
 test("check.mjs --events を呼ぶ手順を見つける（道・working-directory・行の継ぎ）", () => {

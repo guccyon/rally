@@ -280,6 +280,20 @@ export function todoLines(source) {
   return out;
 }
 
+/**
+ * engine.test.mjs に残っている skip（t.skip(…)・test.skip(…)・{ skip: … }）の行番号（1 始まり）。todoLines と同じ数え方で、注釈の中は数えない。
+ * Engine のチェックアウトがないときの `{ skip }`（略記）は数えない。engine.test.mjs が ENGINE_REF を上げる PR で、
+ * 写しを作れないときの legacy_basis_not_found の skip が残っていないかを見るのに使う（議決 D-0041、Issue #1093）。
+ */
+export function skipLines(source) {
+  const out = [];
+  source.split(/\r?\n/).forEach((line, i) => {
+    const code = line.replace(/\/\/.*$/, "");
+    if (/\.skip\s*\(|\bskip\s*:/.test(code)) out.push(i + 1);
+  });
+  return out;
+}
+
 /** node --test の TAP の出力から、上の段のテストの結果を { name: "pass" | "fail" | "todo" | "skip" } で返す。 */
 export function parseTapReport(text) {
   const out = {};

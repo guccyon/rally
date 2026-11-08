@@ -555,4 +555,24 @@ enforcement:
       decided_by: committee:D-0038
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0041 の test の案（engine.test.mjs の写しのテストは、Engine の inspector_approved に今の形の basis の文がなく写しを作れないと
+        何も見ずに通るので、緑の結果が担保の効き目と区別できず、外したときに気づけない）を入れた。tools/sendback-check/engine.test.mjs の
+        basisCase・todoRemovalCase を写しで動かすテストが、Engine の supervisor.py に今の形の basis の行（LEGACY_BASIS_LINE）が見つからないときは
+        黙って return せず t.skip に理由 legacy_basis_not_found を付けて飛ばし（TAP に # SKIP legacy_basis_not_found と出る）、Engine がまだ今の形の
+        basis を書くのに行だけが見つからないときは飛ばさずに落とすようにした。tools/sendback-check/order.mjs に todoLines と同じ数え方の skipLines
+        （t.skip(…)・test.skip(…)・skip: を数え、注釈の中と Engine のチェックアウトがないときの { skip } は数えない）を足し、todoRemovalCase が
+        todo と一緒にその skip も数えて、Engine が今の形の basis を書かなくなった版（ENGINE_REF を上げる PR）で skip が残っていれば落とす。
+        手元の Engine の写し（先頭 476573e。dispatcher.py の defect.safe_record を engine_harness.py が取り出せずに落ちるので、その呼び出しを外した写し）で、
+        今の形のままでは写しのテストが通ること、basis の文を今の形でないものに書き換えた写しでは写しのテストが legacy_basis_not_found で SKIP になり、
+        「todo を外す」のテストが todo と skip の行を挙げて落ち、todo だけを外しても skip の行で落ち、写しのテストも消すと通ることを確かめた。
+        t.skip を黙った return に戻す改変で、足した Engine なしのテストと「todo を外す」のテストが落ちることも確かめた。
+        ENGINE_REF の版の Engine では確かめておらず、engine.test.mjs は .github/workflows/ からはまだ走っていない（ci/sendback-engine.yml の写しは建設者）ので、
+        この解決策も未配線・未確認
+      issue: 1093
+      at: 2026-11-08
+      decided_by: committee:D-0041
+      wired: false
+      verified: false
 decided_by: committee:D-0004
