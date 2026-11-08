@@ -1,25 +1,25 @@
 // Engine の本物の判定（judgment.record_judged → dispatcher.act_on_judgment、supervisor.inspector_approved）を
-// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010・D-0011・D-0014・D-0028、Issue #935・#944・#945・#949・#961・#1025）。
+// check.test.mjs と同じ 3 つの場合で確かめる（知見 K-0004 の担保。議決 D-0009・D-0010・D-0011・D-0014・D-0028・D-0041、Issue #935・#944・#945・#949・#961・#1025・#1093）。
 // 参照の実装（check.mjs）ではなく本物の判定の担保で、check.mjs の ci_check の配線より先に入れる（D-0010）。
 // Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 // ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（議決 D-0011、Issue #948）。
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { approvalBasis, checkRecord } from "./check.mjs";
-import { BASIS_TESTS, todoLines } from "./order.mjs";
+import { BASIS_TESTS, LEGACY_BASIS_NOT_FOUND, NO_ENGINE_CHECKOUT, skipLines, todoLines } from "./order.mjs";
 
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
 const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
 const engineDir = process.env.ENGINE_DIR || fileURLToPath(new URL("../../../engine", import.meta.url));
 const required = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true";
 const skip = required || existsSync(`${engineDir}/orchestrator/dispatcher/supervisor.py`)
-  ? false : `Engine のチェックアウトがない（ENGINE_DIR=${engineDir}）`;
+  ? false : `${NO_ENGINE_CHECKOUT}（ENGINE_DIR=${engineDir}）`;
 
 /** Engine の判定を 1 回動かし、起きた後続と basis を返す（dir を渡せばその Engine の写しで動かす） */
 const engine = (record, dir = engineDir) =>
@@ -110,16 +110,22 @@ test(BASIS_TESTS["(3)"], { skip }, (t) => basisCase(t));
 
 // 議決 D-0014 は、Engine の basis を直す PR で todo を外して必須にするとした（Issue #961）。Engine は別のリポジトリなので、このリポジトリで
 // その PR に当たるのは ENGINE_REF を直した版に上げる PR。Engine が今の形の basis を書かなくなったのに todo（todoWhileLegacy・t.todo(…) など。
-// order.mjs の todoLines と同じ数え方）が残っていたら、その PR で落とす。todo を消し忘れると order.mjs の engine_test_todo で ci_check を配線できない
+// order.mjs の todoLines と同じ数え方）が残っていたら、その PR で落とす。todo を消し忘れると order.mjs の engine_test_todo で ci_check を配線できない。
+// 写しを作れないときの legacy_basis_not_found の skip（下の写しのテスト）も、order.mjs の skipLines（todoLines と同じ数え方）で数えて、残っていれば同じく落とす
+// （議決 D-0041、Issue #1093）。字面で数え漏らす別名や動的な skip は、order.test.mjs がこのファイルを走らせた TAP の SKIP の理由と件数で照らす
+// （order.mjs の skipReportProblems。議決 D-0062、Issue #1168）
 const OWN_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
+
+/** ENGINE_REF を上げる PR で消すもの（todo と skip）の行番号 */
+const legacyLeftovers = (source) => [...new Set([...todoLines(source), ...skipLines(source)])].sort((a, b) => a - b);
 
 /** todo を外すことを求める中身。dir は Engine のチェックアウトか写し、source は engine.test.mjs の中身 */
 function todoRemovalCase(dir = engineDir, source = OWN_SOURCE) {
   const { basis } = engine({ ...PR_395, merged: false, judgments: BASIS_JUDGMENTS }, dir);
   if (LEGACY_BASIS.test(basis ?? "")) return;   // 今の形のうちは todo を残してよい
-  const todos = todoLines(source);
-  assert.deepEqual(todos, [], `Engine の basis が今の形でない（${basis}）のに engine.test.mjs に todo が残っている（${todos.join("・")} 行目）。`
-    + "LEGACY_BASIS・todoWhileLegacy と todo を消して必須のテストにする");
+  const left = legacyLeftovers(source);
+  assert.deepEqual(left, [], `Engine の basis が今の形でない（${basis}）のに engine.test.mjs に todo か skip が残っている（${left.join("・")} 行目）。`
+    + "LEGACY_BASIS・todoWhileLegacy と todo、写しのテスト（legacy_basis_not_found の skip）を消して必須のテストにする");
 }
 
 test("(3) Engine の basis が今の形（adopt の合計だけ）でなくなったら、同じ PR で engine.test.mjs の todo を外す", { skip }, () => todoRemovalCase());
@@ -127,7 +133,10 @@ test("(3) Engine の basis が今の形（adopt の合計だけ）でなくな�
 // 議決 D-0028 は、今の形かどうかを LEGACY_BASIS の文と合うかで見ているので、Engine が別の言い回しで adopt の合計だけを書くように変わったときに
 // todo を外すことを求め、そのあと (3) が必須で落ちる流れを写しで確かめるとした（Issue #1025）。Engine の inspector_approved の basis の文を、
 // LEGACY_BASIS と文が違っても欠陥の採用数と仮決めの承認数を分けて書いていない言い回しに書き換えた写しを作り、上の 2 つの中身をその写しで動かす。
-// 写しの元にする Engine が今の形を書かなくなったら（建設者が basis を直したら）写しは作れないので、LEGACY_BASIS・todoWhileLegacy と一緒にこのテストも消す
+// 写しの元にする Engine が今の形を書かなくなったら（建設者が basis を直したら）写しは作れないので、LEGACY_BASIS・todoWhileLegacy と一緒にこのテストも消す。
+// それまでに写しを作れなくなったら、黙って通さず t.skip に legacy_basis_not_found を付けて飛ばし（結果に SKIP で出る）、その skip の行が残っていれば
+// 上の「todo を外す」のテストで落とす（議決 D-0041、Issue #1093）。Engine がまだ今の形の basis を書くのに行だけが見つからないときは飛ばさずに落とす
+const SUPERVISOR = "orchestrator/dispatcher/supervisor.py";
 const LEGACY_BASIS_LINE = /return True, f"judge が \{len\(verdicts\)\} 件を裁いた（採用 \{n_adopt\}。採用した指摘は続きのジョブか差し戻しで直す）"/;
 const LEGACY_BASIS_SOURCE = 'f"judge が {len(verdicts)} 件を裁いた（採用 {n_adopt}。採用した指摘は続きのジョブか差し戻しで直す）"';
 /** adopt の合計だけを書く別の言い回し（Python の f 文字列。len(verdicts) と n_adopt は inspector_approved の変数） */
@@ -142,7 +151,7 @@ const ADOPT_TOTAL_VARIANTS = [
 function engineWithBasis(basis) {
   const dir = mkdtempSync(join(tmpdir(), "sendback-engine-variant-"));
   cpSync(join(engineDir, "orchestrator/dispatcher"), join(dir, "orchestrator/dispatcher"), { recursive: true });
-  const supervisor = join(dir, "orchestrator/dispatcher/supervisor.py");
+  const supervisor = join(dir, SUPERVISOR);
   const source = readFileSync(supervisor, "utf8");
   assert.match(source, LEGACY_BASIS_LINE, "Engine の inspector_approved に今の形の basis の行がない（写しを作れない）");
   writeFileSync(supervisor, source.replace(LEGACY_BASIS_LINE, `return True, ${basis}`));
@@ -152,11 +161,31 @@ function engineWithBasis(basis) {
 /** todo を付けたかを覚えるだけの t の代わり（node:test の t.todo と同じ名前の関数を持つ） */
 const todoRecorder = () => { const marks = []; return { marks, todo(reason) { marks.push(reason); } }; };
 
-test("(3) Engine が LEGACY_BASIS と違う言い回しで adopt の合計だけを書くと、todo を外すことを求められ、外すと (3) が必須で落ちる", { skip }, () => {
-  if (!LEGACY_BASIS.test(engine({ ...PR_395, merged: false, judgments: BASIS_JUDGMENTS }).basis ?? "")) return;   // 上の注釈のとおり、もう写しは作れない
-  const withoutTodos = OWN_SOURCE.split(/\r?\n/).filter((_, i) => !todoLines(OWN_SOURCE).includes(i + 1)).join("\n");
+/** source から ENGINE_REF を上げる PR で消すもの（todo と skip）の行を除いた中身 */
+const withoutLeftovers = (source) => source.split(/\r?\n/).filter((_, i) => !legacyLeftovers(source).includes(i + 1)).join("\n");
+
+test("(3) ENGINE_REF を上げる PR で消すものには、写しを作れないときの legacy_basis_not_found の skip も数える", () => {
+  const skipAt = OWN_SOURCE.split(/\r?\n/).findIndex((l) => /\bt\.skip\(/.test(l) && l.includes("LEGACY_BASIS_NOT_FOUND")) + 1;
+  assert.ok(skipAt > 0, "写しのテストに legacy_basis_not_found の t.skip がない（写しのテストごと消したなら、このテストも消す）");
+  assert.ok(skipLines(OWN_SOURCE).includes(skipAt));
+  assert.ok(legacyLeftovers(OWN_SOURCE).includes(skipAt));
+  // Engine のチェックアウトがないときの { skip } は数えない
+  assert.ok(!skipLines(OWN_SOURCE).some((n) => /\{ skip \}/.test(OWN_SOURCE.split(/\r?\n/)[n - 1])));
+  assert.deepEqual(legacyLeftovers(withoutLeftovers(OWN_SOURCE)), []);
+});
+
+test("(3) Engine が LEGACY_BASIS と違う言い回しで adopt の合計だけを書くと、todo を外すことを求められ、外すと (3) が必須で落ちる", { skip }, (t) => {
+  if (!LEGACY_BASIS_LINE.test(readFileSync(join(engineDir, SUPERVISOR), "utf8"))) {
+    const { basis } = engine({ ...PR_395, merged: false, judgments: BASIS_JUDGMENTS });
+    assert.ok(!LEGACY_BASIS.test(basis ?? ""), `Engine は今の形の basis（${basis}）を書くのに、inspector_approved に今の形の basis の行がない`
+      + "（写しを作れない。LEGACY_BASIS_LINE と LEGACY_BASIS_SOURCE を Engine の行に合わせる）");
+    t.skip(`${LEGACY_BASIS_NOT_FOUND}: Engine の inspector_approved に今の形の basis の文がなく写しを作れない（basis: ${basis}）。`
+      + "ENGINE_REF を上げる PR で LEGACY_BASIS・todoWhileLegacy と一緒にこのテストを消す");
+    return;
+  }
+  const withoutTodos = withoutLeftovers(OWN_SOURCE);
   assert.notDeepEqual(todoLines(OWN_SOURCE), [], "engine.test.mjs に todo がない（LEGACY_BASIS ごと消したなら、このテストも消す）");
-  assert.deepEqual(todoLines(withoutTodos), []);
+  assert.deepEqual(legacyLeftovers(withoutTodos), []);
   for (const variant of ADOPT_TOTAL_VARIANTS) {
     const dir = engineWithBasis(variant);
     const out = engine({ ...PR_395, merged: false, judgments: BASIS_JUDGMENTS }, dir);
@@ -165,8 +194,8 @@ test("(3) Engine が LEGACY_BASIS と違う言い回しで adopt の合計だけ
     assert.ok(!LEGACY_BASIS.test(out.basis), `${variant}: ${out.basis}`);
     assert.deepEqual(checkRecord({ merged: false, judgments: BASIS_JUDGMENTS, followups: out.followups, basis: out.basis }).map((e) => e.rule),
       ["basis_not_split"], `${variant}: ${out.basis}`);
-    // todo が残っていれば、todo を外すことを求めて落ちる。todo を外せば通る
-    assert.throws(() => todoRemovalCase(dir), /todo が残っている/, variant);
+    // todo が残っていれば、todo を外すことを求めて落ちる。todo と skip を外せば通る
+    assert.throws(() => todoRemovalCase(dir), /todo か skip が残っている/, variant);
     todoRemovalCase(dir, withoutTodos);
     // (3) は todo にならずに（必須のまま）落ちる
     const t = todoRecorder();
@@ -174,21 +203,34 @@ test("(3) Engine が LEGACY_BASIS と違う言い回しで adopt の合計だけ
     assert.deepEqual(t.marks, [], `${variant}: (3) が todo になった`);
   }
   // 比べのために、今の形の文のままの写しでは (3) が todo になる（写しの作り方で外れていないこと）
-  const t = todoRecorder();
-  assert.throws(() => basisCase(t, engineWithBasis(LEGACY_BASIS_SOURCE)));
-  assert.deepEqual(t.marks, [LEGACY_TODO]);
+  const legacy = todoRecorder();
+  assert.throws(() => basisCase(legacy, engineWithBasis(LEGACY_BASIS_SOURCE)));
+  assert.deepEqual(legacy.marks, [LEGACY_TODO]);
 });
 
 // イベントの経路（Issue #945）: Engine が記録したイベント列を、README の SQL と同じ形で check.mjs に渡す。
 // ci_check がワークフローで走らせるのと同じ呼び方（--events --pr --summary、GITHUB_ACTIONS=true）で CLI を動かす
 
+/**
+ * 配線の順序を守ったリポジトリの写し（ci/sendback-engine.yml を写し、todo のない engine.test.mjs を置く）。check.mjs --events は GitHub Actions では
+ * 動いていること自体を配線と数えて配線の順序も見る（Issue #1084）ので、イベントの経路だけを見るためにこの写しを GITHUB_WORKSPACE に渡す
+ */
+function wiredWorkspace(dir) {
+  mkdirSync(join(dir, ".github/workflows"), { recursive: true });
+  mkdirSync(join(dir, "tools/sendback-check"), { recursive: true });
+  cpSync(fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), join(dir, ".github/workflows/sendback-engine.yml"));
+  writeFileSync(join(dir, "tools/sendback-check/engine.test.mjs"), "// 配線の順序を守った写し（todo なし）\n");
+  return dir;
+}
+
 /** イベント列を ci_check と同じ呼び方で check.mjs に渡し、終了コード・標準出力・JSON・要約を返す */
 function ciCheck(events, prUrl = PR_395.pr_url) {
   const dir = mkdtempSync(join(tmpdir(), "sendback-engine-events-"));
+  const workspace = wiredWorkspace(join(dir, "repo"));
   writeFileSync(join(dir, "events.json"), JSON.stringify(events, null, 2));
   writeFileSync(join(dir, "summary.md"), "");
   const r = spawnSync("node", [script, "--events", join(dir, "events.json"), "--pr", prUrl, "--json", join(dir, "out.json"),
-    "--summary", join(dir, "summary.md")], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+    "--summary", join(dir, "summary.md")], { env: { ...process.env, GITHUB_ACTIONS: "true", GITHUB_WORKSPACE: workspace }, encoding: "utf8" });
   return { status: r.status, stdout: r.stdout, result: JSON.parse(readFileSync(join(dir, "out.json"), "utf8")),
     summary: readFileSync(join(dir, "summary.md"), "utf8") };
 }

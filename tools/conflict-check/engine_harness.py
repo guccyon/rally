@@ -9,6 +9,10 @@ test_engine.py から呼ぶ。policy.py の線（参照の実装）ではなく�
   一時の git リポジトリで本物の衝突を起こしてから動かし、残った衝突と、エージェントを使わなかったか（MECHANICAL）と、
   機械的に解いた結果が policy.py の verify_mechanical（K-0002 の check.mjs）に通ったか（verified）を返す
 - worker（引き継ぎ）: entrypoint.sh の STATE_ARGS の行。conflict の続きのジョブでエージェントに --state-dir（セッションの引き継ぎ）を渡すかを返す
+- watch（見張り）: watch.py の apply を、orchestrator/dispatcher/stoppage.py の本物の open_stoppage に渡して動かす（議決 D-0030・Issue #1034）。
+  イベント列から開いた停止と、同じイベント列でもう一度回したときに開き直したか（同じ key は開き直さない）を返す
+- finished（記録の欄）: orchestrator/dispatcher/dispatcher.py が、ワーカーを動かし終えたジョブに出す job.finished（cost_usd を持つもの）の
+  payload の欄を構文木から読んで返す（動かさない。議決 D-0030・Issue #1035）。test_events.py が、Engine が agent_resumed と解き方の tier を出すかを見る
 
 supervisor.py は読み込むと DB と GitHub に繋ぐので、使う関数だけを構文木から取り出して、偽の cursor と停止・GitHub の差し替えを渡して動かす。
 entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは一時ファイルの置き場（/work/cl.* を一時ディレクトリに）だけ。
@@ -16,6 +20,8 @@ entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは
   python3 engine_harness.py supervisor <Engine のチェックアウト> [--heads N] [--resolved agent|mechanical]
   python3 engine_harness.py worker <Engine のチェックアウト> [--changelog direct|compiled] <衝突させるファイル>...
   python3 engine_harness.py resume <Engine のチェックアウト>
+  python3 engine_harness.py watch <Engine のチェックアウト> --events <イベントの JSON か JSONL>
+  python3 engine_harness.py finished <Engine のチェックアウト>
   python3 engine_harness.py --check <Engine のチェックアウト>   # 取り出せるかだけを見る（取り出せなければ終了コード 1）
 """
 from __future__ import annotations
@@ -30,13 +36,18 @@ import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # python3 -I で動かしても隣の policy.py を読む
+import events  # noqa: E402
 import policy  # noqa: E402
+import watch as watch_  # noqa: E402
 
 SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
 CONTINUATION = "orchestrator/dispatcher/continuation.py"
+STOPPAGE = "orchestrator/dispatcher/stoppage.py"
+DISPATCHER = "orchestrator/dispatcher/dispatcher.py"
 ENTRYPOINT = "orchestrator/worker/entrypoint.sh"
 SUPERVISOR_FUNCTIONS = ["conflict_step", "ci_failure_step"]
 CONTINUATION_FUNCTIONS = ["enqueue", "attempts", "pending"]
+STOPPAGE_FUNCTIONS = ["open_stoppage"]
 MECHANICAL_START = 'SEEN_CONFLICTS="${CONFLICTS:-}"'
 MECHANICAL_END = 'echo "[worker] continue ${CONTINUE_REASON}'
 PR_URL = "https://github.com/guccyon/rally/pull/659"
@@ -56,8 +67,8 @@ def _unwrap(v):
 
 
 def _insert(sql: str, params: tuple) -> tuple[str, dict]:
-    """insert into <表>(<列>) values (<%s か文字列>) を、表の名前と {列: 値} にする"""
-    m = re.match(r"insert into (\w+)\s*\(([^)]*)\) values \((.*?)\)( returning \w+)?$", sql)
+    """insert into <表>(<列>) values (<%s か文字列>) [on conflict (dedupe_key) do nothing] を、表の名前と {列: 値} にする"""
+    m = re.match(r"insert into (\w+)\s*\(([^)]*)\) values \((.*?)\)( on conflict \(dedupe_key\) do nothing)?( returning \w+)?$", sql)
     if not m:
         raise AssertionError(f"engine_harness が読めない insert: {sql}")
     cols = [c.strip() for c in m.group(2).split(",")]
@@ -75,8 +86,9 @@ class FakeCursor:
         self.jobs: list[dict] = []
         self._rows: list[dict] = []
 
-    def add_event(self, name: str, payload: dict, job_id=None, dedupe_key=None):
-        self.events.append({"id": len(self.events) + 1, "name": name, "payload": payload, "job_id": job_id, "dedupe_key": dedupe_key})
+    def add_event(self, name: str, payload: dict, job_id=None, dedupe_key=None, correlation_id=None):
+        self.events.append({"id": len(self.events) + 1, "name": name, "payload": payload, "job_id": job_id, "dedupe_key": dedupe_key,
+                            "correlation_id": correlation_id})
 
     def execute(self, sql: str, params=()):
         sql = " ".join(sql.split())
@@ -88,7 +100,10 @@ class FakeCursor:
                 self.jobs.append({"id": 100 + len(self.jobs), "state": "queued", **row})
                 self._rows = [{"id": self.jobs[-1]["id"]}]
             elif table == "events":
-                self.add_event(row["name"], row.get("payload") or {}, row.get("job_id"), row.get("dedupe_key"))
+                if "on conflict (dedupe_key) do nothing" in sql and row.get("dedupe_key") is not None \
+                        and any(e["dedupe_key"] == row["dedupe_key"] for e in self.events):
+                    return   # 同じ dedupe_key の記録がある（返す行なし）
+                self.add_event(row["name"], row.get("payload") or {}, row.get("job_id"), row.get("dedupe_key"), row.get("correlation_id"))
                 self._rows = [{"id": self.events[-1]["id"]}]
             else:
                 raise AssertionError(f"engine_harness の偽の cursor が知らない表への insert: {sql}")
@@ -140,14 +155,19 @@ def _functions(path: Path, names: list[str], namespace: dict) -> dict:
     return namespace
 
 
-def load_continuation(engine: Path):
-    """continuation.py は psycopg（Jsonb・UniqueViolation）だけに依存するので、それを差し替えてそのまま読み込む"""
+def _stub_psycopg():
+    """continuation.py と stoppage.py が使う psycopg（Jsonb・UniqueViolation）だけを差し替える"""
     psycopg = types.ModuleType("psycopg")
     psycopg.types = types.ModuleType("psycopg.types")
     psycopg.types.json = types.ModuleType("psycopg.types.json")
     psycopg.types.json.Jsonb = Jsonb
     psycopg.errors = types.SimpleNamespace(UniqueViolation=type("UniqueViolation", (Exception,), {}))
     sys.modules.update({"psycopg": psycopg, "psycopg.types": psycopg.types, "psycopg.types.json": psycopg.types.json})
+
+
+def load_continuation(engine: Path):
+    """continuation.py は psycopg（Jsonb・UniqueViolation）だけに依存するので、それを差し替えてそのまま読み込む"""
+    _stub_psycopg()
     _need(engine, CONTINUATION)
     sys.path.insert(0, str(engine / "orchestrator/dispatcher"))
     import continuation
@@ -220,6 +240,58 @@ def supervisor(engine: Path, heads: int, resolved: str = "agent") -> dict:
         if not new_jobs:
             break
     return {"cycles": cycles, "gh_calls": gh_calls}
+
+
+# ------------------------------------------------------------------ watch
+def load_stoppage(engine: Path):
+    """stoppage.py は psycopg（Jsonb）だけに依存するので、それを差し替えてそのまま読み込む。通知はログだけ（NOTIFIER=log）にし、
+    ログは標準エラーに出す（標準出力は結果の JSON）"""
+    _stub_psycopg()
+    _need(engine, STOPPAGE)
+    path = str(engine / "orchestrator/dispatcher")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    import stoppage
+    missing = [n for n in STOPPAGE_FUNCTIONS if not callable(getattr(stoppage, n, None))]
+    if missing:
+        raise SystemExit(f"Engine の {STOPPAGE} に {', '.join(missing)} がない（関数の名前が変わったら engine_harness.py を合わせる）")
+    if watch_.CATEGORY not in getattr(stoppage, "CATEGORIES", ()):
+        raise SystemExit(f"Engine の {STOPPAGE} の CATEGORIES に watch.py の {watch_.CATEGORY} がない（停止の種類が変わったら watch.py を合わせる）")
+    stoppage.NOTIFIER = "log"
+    stoppage._log = lambda *a: print("[stoppage]", *a, file=sys.stderr)
+    return stoppage
+
+
+def watch(engine: Path, events_path: Path) -> dict:
+    """イベント列を watch.py で照らし、外れた PR の停止を Engine の本物の open_stoppage で開く。同じイベント列でもう一度回し、
+    開き直さないこと（同じ key は dedupe）を返す。開いた停止は偽の cursor の events に残った stoppage.opened から読む"""
+    stoppage = load_stoppage(engine)
+    found = watch_.stoppages(policy.load(), events.parse_events(events_path.read_text(encoding="utf-8")))
+    cur = FakeCursor()
+    first = watch_.apply(cur, stoppage, found)
+    again = watch_.apply(cur, stoppage, found)
+    return {"opened": first, "reopened": again,
+            "recorded": [{"key": e["payload"]["key"], "category": e["payload"]["category"], "detected_by": e["payload"]["detected_by"],
+                          "waiting_for": e["payload"]["waiting_for"], "correlation_id": e["correlation_id"], "job_id": e["job_id"],
+                          "dedupe_key": e["dedupe_key"]}
+                         for e in cur.events if e["name"] == "stoppage.opened"]}
+
+
+# ------------------------------------------------------------------ finished
+def finished(engine: Path) -> dict:
+    """dispatcher.py の record_event(cur, "job.finished", corr, job_id, {...}) のうち、ワーカーを動かし終えたもの（payload に cost_usd を持つ）の
+    payload の欄を返す。payload が辞書の式でない（変数や関数で組む）か、そういう呼び出しがなければ読めないので落とす"""
+    path = _need(engine, DISPATCHER)
+    calls = [n for n in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
+             if isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", None)) == "record_event"
+             and len(n.args) >= 2 and isinstance(n.args[1], ast.Constant) and n.args[1].value == "job.finished"]
+    if any(len(c.args) < 5 or not isinstance(c.args[4], ast.Dict) for c in calls):
+        raise SystemExit(f"Engine の {DISPATCHER} の job.finished の payload が辞書の式でない（出し方が変わったら engine_harness.py を合わせる）")
+    keys = [[k.value for k in c.args[4].keys if isinstance(k, ast.Constant)] for c in calls]
+    ran = [k for k in keys if "cost_usd" in k]
+    if not ran:
+        raise SystemExit(f"Engine の {DISPATCHER} に、cost_usd を持つ job.finished がない（出し方が変わったら engine_harness.py を合わせる）")
+    return {"fields": sorted({f for k in ran for f in k})}
 
 
 # ------------------------------------------------------------------ worker
@@ -316,10 +388,11 @@ def resume(engine: Path) -> dict:
 def check(engine: Path) -> dict:
     """動かさず、取り出す関数と手順がすべて Engine のチェックアウトにあるかだけを見る（CI で飛ばさずに落とすため）"""
     load_continuation(engine)
+    load_stoppage(engine)
     _functions(_need(engine, SUPERVISOR), SUPERVISOR_FUNCTIONS, {"__name__": "engine_harness_scope"})
     mechanical_block(engine)
     state_args_lines(engine)
-    return {"functions": SUPERVISOR_FUNCTIONS + CONTINUATION_FUNCTIONS, "entrypoint": ["mechanical", "state_args"]}
+    return {"functions": SUPERVISOR_FUNCTIONS + CONTINUATION_FUNCTIONS + STOPPAGE_FUNCTIONS, "entrypoint": ["mechanical", "state_args"]}
 
 
 def main(argv: list[str]):
@@ -337,6 +410,10 @@ def main(argv: list[str]):
         out = worker(Path(argv[1]), rest, changelog)
     elif len(argv) == 2 and argv[0] == "resume":
         out = resume(Path(argv[1]))
+    elif len(argv) == 4 and argv[0] == "watch" and argv[2] == "--events":
+        out = watch(Path(argv[1]), Path(argv[3]))
+    elif len(argv) == 2 and argv[0] == "finished":
+        out = finished(Path(argv[1]))
     else:
         raise SystemExit(__doc__)
     json.dump(out, sys.stdout, ensure_ascii=False)

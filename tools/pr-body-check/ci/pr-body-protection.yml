@@ -1,0 +1,115 @@
+# pr-body-engine.yml の写しの engine-test（チェックの名前 pr-body-engine-test）が branch protection の必須のチェックに入っているかを、
+# 既定のブランチへの push・毎日・手動で protection.mjs で照らす（知見 K-0001 の担保。議決 D-0044、Issue #1106）。決定論（LLM を使わない）。
+# 必須にしたあとで外されると、関所を呼ばない Engine の版で engine.test.mjs の (3) が落ちてもマージが止まらず、写しを消す PR も止まらない。
+# ci.test.mjs は守りたい engine-test の中で走るので、写しが消えたり必須から外れたりしたときは自分も走らず、その崩れを見張れない。
+# protection.mjs を建設者が一度走らせるだけでも後で外されたことに気づけないので、写しを消す PR がマージされた直後（push）と定期に走らせる。
+# branch protection は GITHUB_TOKEN では読めないので、読める権限のトークン（GitHub App か administration:read の fine-grained PAT）を
+# シークレット PR_BODY_PROTECTION_TOKEN に置く（建設者。SENDBACK_PROTECTION_TOKEN と同じ値でよい）。そのトークンは branch protection を読む手順だけに渡す。
+# workflow_not_copied・check_name_changed・required_check_missing・check_name_shared のどれかで外れたら ::error を出して落ち、
+# Issue を開くか、開いている Issue を更新する（同じ外れ方の記録がすでにあれば足さない）。通ったら、開いている Issue に通ったことを書いて閉じる。
+# トークンがない・読めなかったときは protection_unreadable の ::error で落ちる（Issue は開かない。必須のチェックの有無が分からないため）。
+# PR では走らせない（PR のコードを issues: write とトークンで動かさない）。push は既定のブランチ（main）だけ。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-protection.yml にそのまま写す。
+# ci.test.mjs（pr-body-engine.yml の engine-test で走る）が、このファイルの形・手順の振る舞い・写しとのずれを見る。
+name: pr-body-protection
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: pr-body-protection
+  cancel-in-progress: false
+
+env:
+  BRANCH: main
+  ISSUE_TITLE: "pr-body-check: pr-body-engine-test が必須のチェックから外れている（K-0001）"
+
+jobs:
+  protection:
+    name: pr-body-protection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: branch protection を読む（K-0001）
+        id: read
+        env:
+          GH_TOKEN: ${{ secrets.PR_BODY_PROTECTION_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error title=pr-body-protection protection_unreadable::シークレット PR_BODY_PROTECTION_TOKEN がない（branch protection を読める権限のトークンを置く）"
+            exit 1
+          fi
+          # 古い形。保護がない（404 の Branch not protected）ときはその JSON のまま渡し、必須のチェックが空として外れる
+          if ! gh api "repos/${GITHUB_REPOSITORY}/branches/${BRANCH}/protection" > protection-classic.json; then
+            if ! grep -qF '"Branch not protected"' protection-classic.json; then
+              echo "::error title=pr-body-protection protection_unreadable::${BRANCH} の branch protection を読めなかった（トークンの権限を確かめる）"
+              exit 1
+            fi
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/rules/branches/${BRANCH}?per_page=100" > protection-rules.json; then
+            echo "::error title=pr-body-protection protection_unreadable::${BRANCH} の rulesets を読めなかった（トークンの権限を確かめる）"
+            exit 1
+          fi
+      - name: 必須のチェックを照らす（K-0001）
+        id: check
+        working-directory: tools/pr-body-check
+        run: |
+          node protection.mjs --protection ../../protection-classic.json --protection ../../protection-rules.json \
+            --json protection-result.json --summary "$GITHUB_STEP_SUMMARY"
+      - name: 外れたら Issue を開くか更新する（K-0001）
+        if: always()
+        working-directory: tools/pr-body-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          if [ ! -f protection-result.json ]; then
+            echo "照らした結果がない（branch protection を読めなかった）ので Issue は開かない"
+            exit 0
+          fi
+          errors=$(node -e 'for (const e of require("./protection-result.json").errors) console.log(`${e.rule}: ${e.message}`)')
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # 開いている Issue を題で探す。読めなければ開いていないとして扱う（外れを黙って捨てない）
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,title \
+            --jq '.[] | select(.title == env.ISSUE_TITLE) | .number' | head -n 1 || true)
+          if [ "${CHECK_OUTCOME:-failure}" = success ] && [ -z "$errors" ]; then
+            if [ -n "$number" ]; then
+              printf '%s\n\n- 実行: %s\n' "pr-body-engine-test が必須のチェックに戻った（protection.mjs が通った）ので閉じる。" "$run_url" > protection-comment.md
+              gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file protection-comment.md
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+            exit 0
+          fi
+          marker="<!-- pr-body-protection: $(printf '%s' "$errors" | sha256sum | cut -c1-16) -->"
+          {
+            echo "$marker"
+            echo "\`tools/pr-body-check/protection.mjs\` が外れた（知見 K-0001、議決 D-0032・D-0044）。\`.github/workflows/pr-body-engine.yml\` の engine-test（pr-body-engine-test）が ${BRANCH} の必須のチェックにないと、関所を呼ばない Engine の版や写しを消す PR が止まらない。"
+            echo
+            echo '```'
+            echo "$errors"
+            echo '```'
+            echo
+            echo "- 実行: ${run_url}"
+          } > protection-comment.md
+          if [ -z "$number" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file protection-comment.md
+            exit 0
+          fi
+          recorded=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}" --jq '.body' || true)
+          recorded+=$'\n'$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}/comments" --paginate --jq '.[].body' || true)
+          if grep -qF -- "$marker" <<< "$recorded"; then
+            echo "Issue #${number} に同じ外れ方の記録があるので足さない"
+            exit 0
+          fi
+          gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file protection-comment.md

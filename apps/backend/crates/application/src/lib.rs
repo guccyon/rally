@@ -15,6 +15,7 @@ pub mod live_lesson;
 pub mod matching;
 pub mod messaging;
 pub mod notification;
+pub mod offset_clock;
 pub mod profile;
 pub mod review;
 pub mod scheduling;

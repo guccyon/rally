@@ -1,0 +1,55 @@
+# 衝突の続きのジョブの検査（tools/conflict-check/、知見 K-0010 の担保。議決 D-0030、Issue #1034）。決定論（LLM を使わない）。
+# PR ごとに、線のテスト（test_policy.py）・イベント列の検査のテスト（test_events.py）・見張りのテスト（test_watch.py）と、
+# Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向けた Engine の本物の処理のテスト（test_engine.py）を走らせる。
+# CI=true と ENGINE_DIR を渡すので、fixtures が読めないとき・Engine のチェックアウトがないとき・engine_harness.py が関数や手順を
+# 取り出せないとき・node か git がないときは飛ばさずに落ちる。Engine が今の形のときだけの todo（README の「今の Engine」）は飛ばしとして結果に出る。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/conflict-check.yml に写す。
+# 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、test_engine.py が通ることを確かめる）。
+# ENGINE_REF は 40 桁のコミット SHA に限る（最初の手順で確かめる）。形は test_ci.py が見る。
+name: conflict-check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conflict-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ENGINE_REF: 2490db6ea89ebbf2066991b102e90ca7db75589c
+
+jobs:
+  conflict-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0010）
+        shell: bash
+        run: |
+          if [[ ! "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=conflict-check engine_ref_not_sha::ENGINE_REF は 40 桁のコミット SHA（小文字の 16 進）にする。ブランチ名やタグは動くので使わない（ENGINE_REF=${ENGINE_REF}）"
+            exit 1
+          fi
+          echo "ENGINE_REF=${ENGINE_REF}"
+      - uses: actions/checkout@v4
+      - name: Engine を取る（固定した版）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 衝突の続きのジョブの線・イベント列の検査・見張り・Engine の本物の処理のテスト（K-0010）
+        env:
+          CI: "true"
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v
