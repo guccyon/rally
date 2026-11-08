@@ -127,7 +127,7 @@ PR ごとに Engine を固定した版（`ENGINE_REF`）でチェックアウト
 
 - branch protection は PR の `GITHUB_TOKEN` では読めないので、PR ごとには走らせない。建設者が写して必須にしたあと、`gh api repos/{owner}/{repo}/branches/main/protection`（rulesets なら `gh api repos/{owner}/{repo}/rules/branches/main`）の出力を `--protection` に渡して走らせる。どちらの形も読む（古い形は `required_status_checks` の `contexts` と `checks[].context`、rulesets は `type: required_status_checks` の規則）。保護がない（404 の `{ "message": … }`）ときは必須のチェックが空として外れる
 - 終了コードは 0 = 通る、1 = 外れた、2 = 読めなかった（JSON でない・`--protection` がない）。`GITHUB_ACTIONS=true` では `::error title=sendback-check <rule>::…` の形で出す
-- 通った出力と、本物の配線の PR で `wiring-order` が落ちる・通る実行の URL を Issue #948 に記録してから、`K-0004` の議決 `D-0026` の解決策（Issue #1018）の `wired` を `true`（`wired_by` に `.github/workflows/sendback-engine.yml` の `wiring-order` と `tools/sendback-check/order.mjs`、`engine-test` と `tools/sendback-check/engine.test.mjs`）にし、`verified` を `true` にする
+- 通った出力と、本物の配線の PR で `wiring-order` が落ちる・通る実行の URL を Issue #948 に記録してから、`K-0004` の議決 `D-0026` の解決策（Issue #1018）の `wired` を `true`（`wired_by` に `.github/workflows/sendback-engine.yml` の `wiring-order` と `tools/sendback-check/order.mjs`、`engine-test` と `tools/sendback-check/engine.test.mjs`）にし、`verified` を `true` にする。`wired_by` には、`on.schedule`（cron）のある `.github/workflows/` のワークフローで schedule でも走るジョブから `tools/sendback-check/protection.mjs` を呼ぶ項目も要る（手で走らせた記録だけでは `wired` にできない。`tools/knowledge-enforcement-check/check.py` が落とす。議決 `D-0039`、Issue #1088）
 
 ### Engine の先頭での定期の実行（`ci/sendback-engine-head.yml`）
 
