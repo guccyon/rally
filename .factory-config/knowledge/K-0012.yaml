@@ -62,6 +62,9 @@ enforcement:
       issue: 1131
       at: 2026-11-08
       decided_by: committee:D-0050
+      requires_check:
+        - runs: tools/pr-body-check/recheck.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
     - kind: ci_check
@@ -84,6 +87,11 @@ enforcement:
       issue: 1122
       at: 2026-11-08
       decided_by: committee:D-0050
+      requires_check:
+        - runs: tools/pr-body-check/check.mjs
+          workflow: .github/workflows/pr-body-check.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
     - kind: ci_check
@@ -108,6 +116,11 @@ enforcement:
       issue: 1196
       at: 2026-11-08
       decided_by: committee:D-0100
+      requires_check:
+        - runs: tools/pr-body-check/check.mjs
+          workflow: .github/workflows/pr-body-check.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
     - kind: test
@@ -132,6 +145,13 @@ enforcement:
       issue: 1197
       at: 2026-11-08
       decided_by: committee:D-0100
+      requires_check:
+        - runs: tools/pr-body-check/recheck.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+        - runs: tools/pr-body-check/ci.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
     - kind: ci_check
@@ -156,6 +176,9 @@ enforcement:
       issue: 1205
       at: 2026-11-08
       decided_by: committee:D-0074
+      requires_check:
+        - runs: tools/pr-body-check/ci.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
     - kind: test

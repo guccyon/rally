@@ -1,6 +1,7 @@
 """check.py のテスト。python3 -m unittest discover -s tools/knowledge-enforcement-check"""
 from __future__ import annotations
 
+import functools
 import importlib.util
 import json
 import os
@@ -100,6 +101,38 @@ class MainTest(unittest.TestCase):
 
 
 TOOL = "tools/knowledge-enforcement-check/check.py"
+
+
+@functools.lru_cache(maxsize=None)
+def repo_knowledge(kid: str) -> dict:
+    path = REPO / check.ROOT / f"{kid}.yaml"
+    return check.load_yaml(path) if path.is_file() else {}
+
+
+def repo_solution(kid: str, issue: int) -> dict:
+    """このリポジトリの K-*.yaml にある、その知見のその issue の解決策（なければ空）"""
+    return next((s for s in check.solutions(repo_knowledge(kid)) if isinstance(s, dict) and s.get("issue") == issue), {})
+
+
+def pr_errors(item: dict, d: Path) -> list[str]:
+    """check_pull_request を、テストの解決策に、このリポジトリの K-*.yaml のその解決策の requires_check を写して走らせる
+    （議決 D-0077（起票時の番号は D-0075）、Issue #1216。前は check.py の REQUIRED_PR などに並べた組で照らしていたので、その組を写した本物の値で照らす）"""
+    sols = []
+    for s in check.solutions(item):
+        req = repo_solution(item.get("id"), s.get("issue")).get(check.REQUIRES_CHECK) if isinstance(s, dict) else None
+        sols.append({**s, check.REQUIRES_CHECK: req} if req is not None and check.REQUIRES_CHECK not in s else s)
+    return check.check_pull_request({**item, "enforcement": {**item["enforcement"], "solutions": sols}}, d)
+
+
+def requires(kid: str, issue: int) -> list[tuple[str, str | None]]:
+    """このリポジトリの K-*.yaml のその解決策の requires_check を (検査, ワークフロー) の列にしたもの"""
+    req, bad = check.required_checks(repo_solution(kid, issue))
+    assert not bad, bad
+    return req
+
+
+PR_UNWIRED = f"{check.REQUIRES_CHECK_UNWIRED}: wired にするには"
+PR_DECISION = f"議決 {check.REQUIRES_CHECK_DECISION}"
 
 
 def without_gate(errors: list[str]) -> list[str]:
@@ -519,7 +552,7 @@ class PullRequestTest(unittest.TestCase):
         wb = [{"workflow": ".github/workflows/c.yml", "job": job, "runs": runs or self.EVENTS}]
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
-        return check.check_pull_request(item, d)
+        return pr_errors(item, d)
 
     PR = "  pull_request:\n"
 
@@ -541,7 +574,7 @@ class PullRequestTest(unittest.TestCase):
             e = self.errors(self.repo(self.wf(on)))
             self.assertEqual(len(e), 1, on)
             self.assertIn("on.pull_request", e[0])
-            self.assertIn("議決 D-0043", e[0])
+            self.assertIn(PR_DECISION, e[0])
 
     def test_pull_request_では走らないジョブと手順は数えない(self):
         for job_if, step_if in (("    if: github.event_name == 'workflow_dispatch'\n", ""), ("", "if: github.event_name != 'pull_request'\n        "),
@@ -563,12 +596,140 @@ class PullRequestTest(unittest.TestCase):
     def test_main_で落とす(self):
         d = self.repo(self.wf("  workflow_dispatch:\n"))
         MainTest.write(None, d, "K-0010.yaml", "id: K-0010\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       f"    - {{kind: test, what: x, issue: 1035, wired: true, wired_by: [{{workflow: .github/workflows/c.yml, job: conflict-check, runs: {self.EVENTS}}}]}}\n")
+                       f"    - {{kind: test, what: x, issue: 1035, wired: true, requires_check: [{self.EVENTS}],"
+                       f" wired_by: [{{workflow: .github/workflows/c.yml, job: conflict-check, runs: {self.EVENTS}}}]}}\n")
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
         errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
         self.assertEqual(len(errors), 1, errors)
-        self.assertIn("issue 1035）: wired にするには", errors[0])
+        self.assertIn(f"issue 1035）: {PR_UNWIRED}", errors[0])
+
+
+class RequiresCheckTest(unittest.TestCase):
+    """解決策の requires_check に書いた検査は、wired: true なら pull_request でも走るジョブから呼ぶ wired_by の項目がないと落とす
+    （議決 D-0077（起票時の番号は D-0075）の schema の案、Issue #1216。前は check.py の REQUIRED_PR などに (知見の id, 解決策の issue) の組を並べていて、
+    組を足し忘れた解決策は黙って通っていた）"""
+
+    RUNS = "tools/x-check/test_x.py"
+    WF = ".github/workflows/x.yml"
+    OTHER = ".github/workflows/y.yml"
+    PR_WF = f"on:\n  pull_request:\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: python3 {RUNS}\n"
+    # 前に check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO に並べていた組（Issue #1216 の前の版）。どれも同じ中身で requires_check に移した
+    MOVED = {("K-0010", 1035): [("tools/conflict-check/test_events.py", None)],
+             ("K-0010", 1103): [("tools/conflict-check/test_events.py", None)],
+             ("K-0004", 1062): [("tools/knowledge-enforcement-check/test_check.py", ".github/workflows/knowledge-enforcement.yml")],
+             ("K-0004", 1138): [("tools/knowledge-enforcement-check/test_check.py", ".github/workflows/knowledge-enforcement.yml")],
+             ("K-0004", 1063): [("tools/knowledge-enforcement-check/test_engine_patch.py", None)],
+             ("K-0004", 1144): [("tools/knowledge-enforcement-check/test_engine_patch.py", None)],
+             ("K-0004", 1158): [("tools/sendback-check/protection.mjs", None)],
+             ("K-0001", 1182): [("tools/pr-body-check/engine.test.mjs", ".github/workflows/pr-body-engine.yml")],
+             ("K-0012", 1122): [("tools/pr-body-check/check.mjs", ".github/workflows/pr-body-check.yml"),
+                                ("tools/pr-body-check/engine.test.mjs", ".github/workflows/pr-body-engine.yml")],
+             ("K-0012", 1196): [("tools/pr-body-check/check.mjs", ".github/workflows/pr-body-check.yml"),
+                                ("tools/pr-body-check/engine.test.mjs", ".github/workflows/pr-body-engine.yml")],
+             ("K-0006", 906): [("tools/pr-body-check/check.mjs", ".github/workflows/pr-body-check.yml")],
+             ("K-0012", 1197): [(f"tools/pr-body-check/{name}", ".github/workflows/pr-body-engine.yml")
+                                for name in ("recheck.test.mjs", "engine.test.mjs", "ci.test.mjs")],
+             ("K-0012", 1131): [("tools/pr-body-check/recheck.test.mjs", ".github/workflows/pr-body-engine.yml")],
+             ("K-0012", 1205): [("tools/pr-body-check/ci.test.mjs", ".github/workflows/pr-body-engine.yml")]}
+
+    def repo(self, files: dict[str, str] | None = None) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.RUNS: "", self.WF: self.PR_WF, **(files or {})}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def item(self, req, wired=True, workflow=None, runs=None, kid="K-9999", issue=1) -> dict:
+        s = {"kind": "schema", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": workflow or self.WF, "job": "x", "runs": runs or self.RUNS}]}
+        if req is not None:
+            s[check.REQUIRES_CHECK] = req
+        return {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [s]}}
+
+    def assert_kind(self, e: list[str], kind: str, what) -> None:
+        self.assertEqual(len(e), 1, (what, e))
+        self.assertIn(f"）: {kind}: ", e[0])
+
+    def test_pull_request_のジョブから呼べば通る(self):
+        d = self.repo()
+        for req in (self.RUNS, [self.RUNS], [{"runs": self.RUNS}], [{"runs": self.RUNS, "workflow": self.WF}], [f"./{self.RUNS}"]):
+            self.assertEqual(check.check_pull_request(self.item(req), d), [], req)
+
+    def test_どの知見と_issue_でも名前の列挙なしに落とす(self):
+        # check.py に組を足さなくても、requires_check を書いた解決策は知見と issue を問わず照らす（足し忘れで黙って通る穴をふさぐ）
+        self.assertFalse([name for name in ("REQUIRED_PR", "REQUIRED_PR_WORKFLOW", "REQUIRED_PR_ALSO") if hasattr(check, name)])
+        d = self.repo({self.WF: self.PR_WF.replace("  pull_request:\n", "  workflow_dispatch:\n")})
+        for kid, issue in (("K-9999", 1), ("K-0004", 1216), ("K-0005", 936), ("K-0004", 1018)):
+            e = check.check_pull_request(self.item(self.RUNS, kid=kid, issue=issue), d)
+            self.assert_kind(e, check.REQUIRES_CHECK_UNWIRED, (kid, issue))
+            for part in (f"issue {issue}）", f"on.pull_request のある {check.WORKFLOWS}/ のワークフロー で", self.RUNS, PR_DECISION):
+                self.assertIn(part, e[0])
+
+    def test_呼ばないジョブや_pull_request_で走らないジョブでは落ちる(self):
+        other = "tools/x-check/test_y.py"
+        d = self.repo({other: ""})
+        self.assert_kind(check.check_pull_request(self.item(self.RUNS, runs=other), d), check.REQUIRES_CHECK_UNWIRED, "ほかの検査を指す項目")
+        d = self.repo({self.WF: self.PR_WF.replace(f"python3 {self.RUNS}", f"python3 {other}"), other: ""})
+        self.assert_kind(check.check_pull_request(self.item(self.RUNS), d), check.REQUIRES_CHECK_UNWIRED, "呼ばないジョブ")
+        for on in ("  workflow_dispatch:\n", "  schedule:\n    - cron: '0 0 * * *'\n", "  push:\n"):
+            d = self.repo({self.WF: self.PR_WF.replace("  pull_request:\n", on)})
+            self.assert_kind(check.check_pull_request(self.item(self.RUNS), d), check.REQUIRES_CHECK_UNWIRED, on)
+        d = self.repo({self.WF: self.PR_WF.replace("    runs-on:", "    if: github.event_name != 'pull_request'\n    runs-on:")})
+        self.assert_kind(check.check_pull_request(self.item(self.RUNS), d), check.REQUIRES_CHECK_UNWIRED, "if:")
+
+    def test_workflow_を書いた検査はそのワークフローの項目だけを数える(self):
+        d = self.repo({self.OTHER: self.PR_WF})
+        req = [{"runs": self.RUNS, "workflow": self.WF}]
+        self.assertEqual(check.check_pull_request(self.item(self.RUNS, workflow=self.OTHER), d), [])
+        e = check.check_pull_request(self.item(req, workflow=self.OTHER), d)
+        self.assert_kind(e, check.REQUIRES_CHECK_UNWIRED, self.OTHER)
+        self.assertIn(f"on.pull_request のある {self.WF} で", e[0])
+
+    def test_挙げた検査ごとに項目が要る(self):
+        other = "tools/x-check/test_y.py"
+        d = self.repo({other: "", self.WF: self.PR_WF + f"      - run: python3 {other}\n"})
+        item = self.item([self.RUNS, other])
+        self.assert_kind(check.check_pull_request(item, d), check.REQUIRES_CHECK_UNWIRED, "1 つだけ")
+        item["enforcement"]["solutions"][0]["wired_by"].append({"workflow": self.WF, "job": "x", "runs": other})
+        self.assertEqual(check.check_pull_request(item, d), [])
+
+    def test_形の誤りとない検査は_wired_を問わず落とす(self):
+        d = self.repo()
+        for req in (1, [], {}, [1], [""], [{"runs": ""}], [{"workflow": self.WF}], [{"runs": self.RUNS, "job": "x"}],
+                    [{"runs": self.RUNS, "workflow": "tools/x-check/ci/x.yml"}], ["../x.py"]):
+            for wired in (True, False):
+                self.assert_kind(check.check_pull_request(self.item(req, wired=wired), d), check.REQUIRES_CHECK_INVALID, (req, wired))
+        for wired in (True, False):
+            e = check.check_pull_request(self.item("tools/x-check/missing.py", wired=wired), d)
+            self.assert_kind(e, check.REQUIRES_CHECK_INVALID, wired)
+            self.assertIn("tools/x-check/missing.py がない", e[0])
+
+    def test_書いていない解決策と配線していない解決策は見ない(self):
+        d = self.repo({self.WF: "on:\n  workflow_dispatch:\njobs: {}\n"})
+        self.assertEqual(check.check_pull_request(self.item(None), d), [])
+        self.assertEqual(check.check_pull_request(self.item(self.RUNS, wired=False), d), [])
+
+    def test_前の組はどれも同じ中身で_requires_check_に移してある(self):
+        found = {(k["id"], s.get("issue")): requires(k["id"], s.get("issue"))
+                 for k in check.load(REPO) for s in check.solutions(k) if isinstance(s, dict) and check.REQUIRES_CHECK in s}
+        self.assertEqual({key: v for key, v in found.items() if key not in self.MOVED}, {("K-0004", 1216): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})
+        self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
+
+    def test_main_で落とす(self):
+        d = self.repo({self.WF: self.PR_WF.replace("  pull_request:\n", "  workflow_dispatch:\n")})
+        MainTest.write(None, d, "K-9999.yaml", "id: K-9999\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: schema, what: x, issue: 1, wired: true, verified: false, requires_check: {self.RUNS},"
+                       f" wired_by: [{{workflow: {self.WF}, job: x, runs: {self.RUNS}}}]}}\n"
+                       "    - {kind: schema, what: x, issue: 2, wired: false, verified: false, requires_check: [{runs: tools/x-check/missing.py}]}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn(f"issue 1）: {PR_UNWIRED}", errors[0])
+        self.assertIn(f"issue 2）: {check.REQUIRES_CHECK_INVALID}: ", errors[1])
 
 
 class KnowledgeGateTest(unittest.TestCase):
@@ -618,12 +779,11 @@ class KnowledgeGateTest(unittest.TestCase):
             self.assertEqual(self.errors(d, kid, issue), [], (kid, issue))
 
     def test_知見と_issue_の列挙に頼らない(self):
-        # K-0004 の 3 つも REQUIRED_PR・REQUIRED_PR_WORKFLOW から外し、check.py の組はどこにも名前で挙げない
+        # K-0004 の 3 つも、どの解決策の requires_check にも check.py を書かない（check.py の組はどこにも名前で挙げない）
         self.assertEqual(check.KNOWLEDGE_GATE[:2], (self.CHECK, self.WF))
-        self.assertFalse([key for key, (target, _) in check.REQUIRED_PR.items() if target == self.CHECK])
-        self.assertFalse([key for key, wf in check.REQUIRED_PR_WORKFLOW.items() if wf == self.WF and check.REQUIRED_PR[key][0] == self.CHECK])
-        for kid, issue in self.SOLUTIONS[3:]:
-            self.assertNotIn((kid, issue), {key for key, (target, _) in check.REQUIRED_PR.items() if target == self.CHECK})
+        self.assertFalse(hasattr(check, "REQUIRED_PR"))
+        for kid, issue in self.SOLUTIONS:
+            self.assertNotIn(self.CHECK, [target for target, _ in requires(kid, issue)], (kid, issue))
 
     def test_check_py_を呼ぶ項目がなければ落ちる(self):
         d = self.repo(self.template())
@@ -705,20 +865,18 @@ class ReadmeListPullRequestTest(unittest.TestCase):
 
     def errors(self, d: Path, issue=1062, **kw) -> list[str]:
         item = self.item(issue, **kw)
-        return check.check_pull_request(item, d) + check.check_wiring(item, d)
+        return pr_errors(item, d) + check.check_wiring(item, d)
 
     def assert_unwired(self, e: list[str], issue, what) -> None:
         self.assertEqual(len(e), 1, (issue, what, e))
-        self.assertIn(f"issue {issue}）: wired にするには", e[0])
+        self.assertIn(f"issue {issue}）: {PR_UNWIRED}", e[0])
         self.assertIn(f"on.pull_request のある {self.WF} で", e[0])
         self.assertIn(self.TEST, e[0])
-        self.assertIn("D-0075", e[0])
+        self.assertIn(PR_DECISION, e[0])
 
     def test_対象に挙げてある(self):
-        self.assertEqual(check.REQUIRED_PR[("K-0004", 1062)], (self.TEST, "D-0052・D-0075"))
-        self.assertEqual(check.REQUIRED_PR[("K-0004", 1138)], (self.TEST, "D-0075"))
         for issue in self.ISSUES:
-            self.assertEqual(check.REQUIRED_PR_WORKFLOW[("K-0004", issue)], self.WF)
+            self.assertEqual(requires("K-0004", issue), [(self.TEST, self.WF)], issue)
 
     def test_ひな形をそのまま写した_enforcement_のジョブなら通る(self):
         d = self.repo(self.template())
@@ -743,14 +901,14 @@ class ReadmeListPullRequestTest(unittest.TestCase):
     def test_test_check_py_でなく_check_py_を指す項目では落ちる(self):
         d = self.repo(self.template())
         for issue in self.ISSUES:
-            self.assert_unwired(check.check_pull_request(self.item(issue, runs=self.CHECK), d), issue, self.CHECK)
+            self.assert_unwired(pr_errors(self.item(issue, runs=self.CHECK), d), issue, self.CHECK)
 
     def test_test_check_py_を呼ばないジョブでは落ちる(self):
         text = self.template().replace("          python3 -B tools/knowledge-enforcement-check/test_check.py -v\n", "", 1)
         self.assertNotEqual(text, self.template())
         d = self.repo(text)
         for issue in self.ISSUES:
-            self.assert_unwired(check.check_pull_request(self.item(issue), d), issue, "test_check.py なし")
+            self.assert_unwired(pr_errors(self.item(issue), d), issue, "test_check.py なし")
 
     def test_pull_request_では走らないジョブは数えない(self):
         text = self.template().replace("  enforcement:\n    runs-on: ubuntu-latest\n",
@@ -758,25 +916,26 @@ class ReadmeListPullRequestTest(unittest.TestCase):
         self.assertNotEqual(text, self.template())
         d = self.repo(text)
         for issue in self.ISSUES:
-            self.assert_unwired(check.check_pull_request(self.item(issue), d), issue, "if:")
+            self.assert_unwired(pr_errors(self.item(issue), d), issue, "if:")
 
     def test_配線していない解決策は見ない(self):
         d = self.repo(self.template("  workflow_dispatch:\n"))
         for issue in self.ISSUES:
-            self.assertEqual(check.check_pull_request(self.item(issue, wired=False), d), [], issue)
-            self.assertEqual(check.check_pull_request(self.item(issue, kid="K-0010"), d), [], issue)
+            self.assertEqual(pr_errors(self.item(issue, wired=False), d), [], issue)
+            self.assertEqual(pr_errors(self.item(issue, kid="K-0010"), d), [], issue)
 
     def test_main_で落とす(self):
         d = self.repo(self.template("  workflow_dispatch:\n"))
         MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n" + "".join(
-            f"    - {{kind: test, what: x, issue: {issue}, wired: true, wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.TEST}}}]}}\n"
+            f"    - {{kind: test, what: x, issue: {issue}, wired: true, requires_check: [{{runs: {self.TEST}, workflow: {self.WF}}}],"
+            f" wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.TEST}}}]}}\n"
             for issue in self.ISSUES))
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
         errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
         self.assertEqual(len(errors), 2, errors)
-        self.assertIn("issue 1062）: wired にするには", errors[0])
-        self.assertIn("issue 1138）: wired にするには", errors[1])
+        self.assertIn(f"issue 1062）: {PR_UNWIRED}", errors[0])
+        self.assertIn(f"issue 1138）: {PR_UNWIRED}", errors[1])
 
 
 class EnginePatchPullRequestTest(unittest.TestCase):
@@ -796,11 +955,11 @@ class EnginePatchPullRequestTest(unittest.TestCase):
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
              "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.PATCH}]}]}}
-        return check.check_pull_request(item, d) + check.check_wiring(item, d)
+        return pr_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
         for issue in (1063, 1144):
-            self.assertEqual(check.REQUIRED_PR[("K-0004", issue)], (self.PATCH, "D-0053"), issue)
+            self.assertEqual(requires("K-0004", issue), [(self.PATCH, None)], issue)
 
     def test_ひな形をそのまま写した_engine_test_のジョブなら通る(self):
         d = self.repo(self.template())
@@ -814,14 +973,14 @@ class EnginePatchPullRequestTest(unittest.TestCase):
                 self.assertEqual(len(e), 1, (on, issue, e))
                 self.assertIn("on.pull_request", e[0])
                 self.assertIn(self.PATCH, e[0])
-                self.assertIn("議決 D-0053", e[0])
+                self.assertIn(PR_DECISION, e[0])
 
     def test_enforcement_のジョブや_check_py_を指す項目では落ちる(self):
         d = self.repo(self.template())
-        e = check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+        e = pr_errors({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "issue": 1144, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.PATCH}]}]}}, d)
         self.assertEqual(len(e), 1, e)
-        e = check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+        e = pr_errors({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "issue": 1063, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.CHECK}]}]}}, d)
         self.assertEqual(len(e), 1, e)
         self.assertIn(self.PATCH, e[0])
@@ -830,7 +989,7 @@ class EnginePatchPullRequestTest(unittest.TestCase):
         step = "          python3 -B -m unittest discover -s tools/knowledge-enforcement-check -v 2>&1 | tee knowledge-enforcement-unittest.log\n"
         text = self.template().replace(step, "", 1)
         self.assertNotEqual(text, self.template())
-        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+        self.assertEqual(len(pr_errors({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "issue": 1144, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.PATCH}]}]}},
             self.repo(text))), 1)
 
@@ -838,25 +997,26 @@ class EnginePatchPullRequestTest(unittest.TestCase):
         text = self.template().replace("  engine-test:\n    runs-on: ubuntu-latest\n",
                                        "  engine-test:\n    if: github.event_name != 'pull_request'\n    runs-on: ubuntu-latest\n", 1)
         self.assertNotEqual(text, self.template())
-        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+        self.assertEqual(len(pr_errors({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "issue": 1063, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.PATCH}]}]}},
             self.repo(text))), 1)
 
     def test_配線していない解決策とほかの知見は見ない(self):
         d = self.repo(self.template("  workflow_dispatch:\n"))
         self.assertEqual(self.errors(d, wired=False), [])
-        self.assertEqual(check.check_pull_request({"id": "K-0010", "_file": "K-0010.yaml", "enforcement": {"level": "deterministic", "solutions": [
+        self.assertEqual(pr_errors({"id": "K-0010", "_file": "K-0010.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "issue": 1144, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.PATCH}]}]}}, d), [])
 
     def test_main_で落とす(self):
         d = self.repo(self.template("  workflow_dispatch:\n"))
         MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       f"    - {{kind: ci_check, what: x, issue: 1144, wired: true, wired_by: [{{workflow: {self.WF}, job: engine-test, runs: {self.PATCH}}}]}}\n")
+                       f"    - {{kind: ci_check, what: x, issue: 1144, wired: true, requires_check: {self.PATCH},"
+                       f" wired_by: [{{workflow: {self.WF}, job: engine-test, runs: {self.PATCH}}}]}}\n")
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
         errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
         self.assertEqual(len(errors), 1, errors)
-        self.assertIn("issue 1144）: wired にするには", errors[0])
+        self.assertIn(f"issue 1144）: {PR_UNWIRED}", errors[0])
 
 
 class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
@@ -883,11 +1043,11 @@ class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
              "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.PROT} for job in jobs]}]}}
-        return check.check_schedule(item, d) + check.check_pull_request(item, d) + check.check_wiring(item, d)
+        return check.check_schedule(item, d) + pr_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
         self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1158)], self.PROT)
-        self.assertEqual(check.REQUIRED_PR[("K-0004", 1158)], (self.PROT, "D-0059"))
+        self.assertEqual(requires("K-0004", 1158), [(self.PROT, None)])
 
     def test_ひな形をそのまま写した_protection_と_protection_pr_なら通る(self):
         self.assertEqual(self.errors(self.repo(self.template())), [])
@@ -897,7 +1057,7 @@ class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
         e = self.errors(d, jobs=("protection",))
         self.assertEqual(len(e), 1, e)
         self.assertIn("on.pull_request", e[0])
-        self.assertIn("議決 D-0059", e[0])
+        self.assertIn(PR_DECISION, e[0])
         e = self.errors(d, jobs=("protection-pr",))
         self.assertEqual(len(e), 1, e)
         self.assertIn("on.schedule（cron）", e[0])
@@ -926,7 +1086,7 @@ class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
     def test_配線していない解決策とほかの解決策は見ない(self):
         d = self.repo("on:\n  workflow_dispatch:\njobs: {}\n")
         self.assertEqual(self.errors(d, wired=False), [])
-        self.assertEqual(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+        self.assertEqual(pr_errors({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "issue": 1018, "wired": True, "wired_by": [{"workflow": self.WF, "job": "protection", "runs": self.PROT}]}]}}, d), [])
 
 
@@ -959,7 +1119,7 @@ class SendbackHeartbeatScheduleTest(unittest.TestCase):
 
     def test_対象に挙げてある(self):
         self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1162)], self.HB)
-        self.assertNotIn(("K-0004", 1162), check.REQUIRED_PR)
+        self.assertEqual(requires("K-0004", 1162), [])
 
     def test_ひな形をそのまま写した_heartbeat_なら通る(self):
         self.assertEqual(self.errors(self.repo(self.template())), [])
@@ -1008,7 +1168,7 @@ class ConflictSchemaScheduleTest(unittest.TestCase):
         for issue, decision in ((1136, "D-0101"), (1207, "D-0101"), (1213, "D-0076")):   # issue 1213 は議決 D-0076（起票時の番号は D-0074）
             self.assertEqual(check.REQUIRED_SCHEDULE[("K-0014", issue)], self.SCHEMA)
             self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0014", issue)], (self.WF, decision))
-            self.assertNotIn(("K-0014", issue), check.REQUIRED_PR)
+            self.assertEqual(requires("K-0014", issue), [], issue)
 
     def test_ひな形をそのまま写した_conflict_schema_なら通る(self):
         for issue in (1136, 1207, 1213):
@@ -1070,7 +1230,7 @@ class ConflictRecordScheduleTest(unittest.TestCase):
     def test_対象に挙げてある(self):
         self.assertEqual(check.REQUIRED_SCHEDULE[("K-0014", 1214)], self.EVENTS)
         self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0014", 1214)], (self.WF, "D-0076"))
-        self.assertNotIn(("K-0014", 1214), check.REQUIRED_PR)
+        self.assertEqual(requires("K-0014", 1214), [])
 
     def test_ひな形をそのまま写した_conflict_record_なら通る(self):
         self.assertEqual(self.errors(self.repo({self.WF: self.template()})), [])
@@ -1133,13 +1293,12 @@ class PrBodyEngineWiringTest(unittest.TestCase):
         item = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
              "wired_by": [{"workflow": wf, "job": job, "runs": runs} for wf, job, runs in wired_by]}]}}
-        return check.check_schedule(item, d) + check.check_pull_request(item, d) + check.check_wiring(item, d)
+        return check.check_schedule(item, d) + pr_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
         self.assertEqual(check.REQUIRED_SCHEDULE[("K-0001", 1182)], self.PROT)
         self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0001", 1182)], (self.PROT_WF, "D-0070"))
-        self.assertEqual(check.REQUIRED_PR[("K-0001", 1182)], (self.ENGINE_TEST, "D-0070"))
-        self.assertEqual(check.REQUIRED_PR_WORKFLOW[("K-0001", 1182)], self.ENGINE_WF)
+        self.assertEqual(requires("K-0001", 1182), [(self.ENGINE_TEST, self.ENGINE_WF)])
 
     def test_2_つのひな形をそのまま写したジョブなら通る(self):
         self.assertEqual(self.errors(self.repo()), [])
@@ -1153,7 +1312,7 @@ class PrBodyEngineWiringTest(unittest.TestCase):
         e = self.errors(d, wired_by=self.WIRED_BY[1:])
         self.assertEqual(len(e), 1, e)
         self.assertIn(f"on.pull_request のある {self.ENGINE_WF} で", e[0])
-        self.assertIn("議決 D-0070", e[0])
+        self.assertIn(PR_DECISION, e[0])
 
     def test_ほかのワークフローのジョブでは落ちる(self):
         d = self.repo({self.OTHER: self.engine()})
@@ -1187,19 +1346,20 @@ class PrBodyEngineWiringTest(unittest.TestCase):
     def test_配線していない解決策とほかの解決策は見ない(self):
         d = self.repo({self.ENGINE_WF: "on:\n  workflow_dispatch:\njobs: {}\n", self.PROT_WF: "on:\n  workflow_dispatch:\njobs: {}\n"})
         self.assertEqual(self.errors(d, wired=False), [])
-        # issue 1106 の解決策は REQUIRED_PR に挙げておらず、ワークフローの名前も問わない
+        # issue 1106 の解決策は requires_check を書いておらず、ワークフローの名前も問わない
         d = self.repo({self.OTHER: self.protection()})
         self.assertEqual(self.errors(d, wired_by=((self.OTHER, "protection", self.PROT),), issue=1106), [])
 
     def test_main_で落とす(self):
         d = self.repo()
         MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       f"    - {{kind: ci_check, what: x, issue: 1182, wired: true, wired_by: [{{workflow: {self.PROT_WF}, job: protection, runs: {self.PROT}}}]}}\n")
+                       f"    - {{kind: ci_check, what: x, issue: 1182, wired: true, requires_check: [{{runs: {self.ENGINE_TEST}, workflow: {self.ENGINE_WF}}}],"
+                       f" wired_by: [{{workflow: {self.PROT_WF}, job: protection, runs: {self.PROT}}}]}}\n")
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
         errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
         self.assertEqual(len(errors), 1, errors)
-        self.assertIn("issue 1182）: wired にするには", errors[0])
+        self.assertIn(f"issue 1182）: {PR_UNWIRED}", errors[0])
         self.assertIn(self.ENGINE_WF, errors[0])
 
 
@@ -1264,16 +1424,13 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
 
     def errors(self, d: Path, engine: Path | None, **kw) -> list[str]:
         item = self.item(**kw)
-        return check.check_pull_request(item, d) + check.check_wiring(item, d) + check.check_engine_wait(item, d, engine)
+        return pr_errors(item, d) + check.check_wiring(item, d) + check.check_engine_wait(item, d, engine)
 
     def test_対象に挙げてある(self):
-        for key in (("K-0012", 1122), ("K-0012", 1196), ("K-0006", 906)):
-            self.assertEqual(check.REQUIRED_PR[key], (self.CHECK, "D-0100"), key)
-            self.assertEqual(check.REQUIRED_PR_WORKFLOW[key], self.CHECK_WF, key)
         for key in (("K-0012", 1122), ("K-0012", 1196)):
-            self.assertEqual(check.REQUIRED_PR_ALSO[key], ((self.ENGINE_TEST, self.ENGINE_WF, "D-0100"),), key)
+            self.assertEqual(requires(*key), [(self.CHECK, self.CHECK_WF), (self.ENGINE_TEST, self.ENGINE_WF)], key)
         self.assertEqual(check.REQUIRED_ENGINE_WAIT, {("K-0012", 1122), ("K-0012", 1196)})
-        self.assertNotIn(("K-0006", 906), check.REQUIRED_PR_ALSO)
+        self.assertEqual(requires("K-0006", 906), [(self.CHECK, self.CHECK_WF)])
 
     def test_ひな形の名前は_Engine_の差分が待つものと合う(self):
         patch = self.RECHECK_PATCH.read_text(encoding="utf-8")
@@ -1296,7 +1453,7 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
             self.assertEqual(len(e), 1, e)
             self.assertIn(f"on.pull_request のある {self.CHECK_WF} で", e[0])
             self.assertIn(self.CHECK, e[0])
-            self.assertIn("議決 D-0100", e[0])
+            self.assertIn(PR_DECISION, e[0])
         d = self.repo(sha, {self.OTHER: self.CHECK_TEMPLATE.read_text(encoding="utf-8")})
         e = self.errors(d, eng, wired_by=((self.OTHER, "pr-body-check", self.CHECK), self.WIRED_BY[1]))
         self.assertEqual(len(e), 1, e)
@@ -1414,13 +1571,11 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
 
     def errors(self, d: Path, **kw) -> list[str]:
         item = self.item(**kw)
-        return check.check_pull_request(item, d) + check.check_wiring(item, d) + check.check_engine_wait(item, d, None)
+        return pr_errors(item, d) + check.check_wiring(item, d) + check.check_engine_wait(item, d, None)
 
     def test_対象に挙げてある(self):
         key = ("K-0012", 1197)
-        self.assertEqual(check.REQUIRED_PR[key], (self.TESTS[0], "D-0100"))
-        self.assertEqual(check.REQUIRED_PR_WORKFLOW[key], self.WF)
-        self.assertEqual(check.REQUIRED_PR_ALSO[key], tuple((t, self.WF, "D-0100") for t in self.TESTS[1:]))
+        self.assertEqual(requires(*key), [(t, self.WF) for t in self.TESTS])
         self.assertNotIn(key, check.REQUIRED_ENGINE_WAIT)
 
     def test_ひな形をそのまま写したジョブで_3_つとも呼べば通る(self):
@@ -1431,7 +1586,7 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
         for missing in self.TESTS:
             e = self.errors(d, runs=tuple(t for t in self.TESTS if t != missing))
             self.assertEqual(len(e), 1, (missing, e))
-            for part in (f"on.pull_request のある {self.WF} で", missing, "議決 D-0100", "issue 1197"):
+            for part in (f"on.pull_request のある {self.WF} で", missing, PR_DECISION, "issue 1197"):
                 self.assertIn(part, e[0])
 
     def test_別のワークフローの写しでは落ちる(self):
@@ -1473,9 +1628,7 @@ class PrBodyEngineCopyWiringTest(PrBodyEngineTestsWiringTest):
     def test_対象に挙げてある(self):
         for issue, target in self.CASES.items():
             key = ("K-0012", issue)
-            self.assertEqual(check.REQUIRED_PR[key], (target, "D-0074"))
-            self.assertEqual(check.REQUIRED_PR_WORKFLOW[key], self.WF)
-            self.assertNotIn(key, check.REQUIRED_PR_ALSO)
+            self.assertEqual(requires(*key), [(target, self.WF)])
             self.assertNotIn(key, check.REQUIRED_ENGINE_WAIT)
 
     def test_ひな形をそのまま写したジョブで_3_つとも呼べば通る(self):
@@ -1489,7 +1642,7 @@ class PrBodyEngineCopyWiringTest(PrBodyEngineTestsWiringTest):
             other = next(t for t in self.TESTS if t != target)
             e = self.errors(d, issue=issue, runs=(other,))
             self.assertEqual(len(e), 1, (issue, e))
-            for part in (f"on.pull_request のある {self.WF} で", target, "議決 D-0074", f"issue {issue}"):
+            for part in (f"on.pull_request のある {self.WF} で", target, PR_DECISION, f"issue {issue}"):
                 self.assertIn(part, e[0])
 
     def test_別のワークフローの写しでは落ちる(self):
