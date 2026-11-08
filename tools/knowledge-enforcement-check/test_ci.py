@@ -6,6 +6,8 @@ pytest を入れて飛ばさずに走らせる形かを見る（差分が ENGINE
 テストは unittest discover でまとめて走らせて出力を残し、次の手順がその出力の skipped が 1 件以上なら落とす（議決 D-0037、Issue #1080）。
 .github/workflows/knowledge-enforcement.yml に写してあれば、その写しも同じ形かと、ENGINE_REF の行のほかがひな形と同じかも見る。
 形の検査（problems）が外れを見逃さないことは、ひな形を書き換えた写しで確かめる。
+ひな形と写しの ENGINE_REF は、形の検査とは別に knowledge-check.yml の ENGINE_REF と字面で照らし、片方だけ上げたら落とす
+（写しがなくても飛ばさない。議決 D-0053、Issue #1143）。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
 """
@@ -29,6 +31,7 @@ TESTS = ("tools/knowledge-enforcement-check/test_engine.py", "tools/knowledge-en
 REF_LINE = re.compile(r"^\s*ENGINE_REF:\s*\S+\s*$", re.M)
 DIR = "tools/knowledge-enforcement-check"
 LOG = "knowledge-enforcement-unittest.log"
+REF_VALUE = re.compile(r"^\s*ENGINE_REF:\s*['\"]?([^'\"\s#]*)['\"]?\s*(?:#.*)?$", re.M)
 
 spec = importlib.util.spec_from_file_location("knowledge_enforcement_check_c", HERE / "check.py")
 check = importlib.util.module_from_spec(spec)
@@ -107,6 +110,62 @@ def problems(text: str, ref: str) -> list[str]:
         if not check.job_calls(wf, JOB, t, read):
             e.append(f"{JOB} のジョブが {t} を呼んでいない")
     return e
+
+
+def ref_mismatches(repo: Path = REPO) -> list[str]:
+    """ひな形と（あれば）写しのうち、ENGINE_REF が knowledge-check.yml の ENGINE_REF と同じ版でないもの（議決 D-0053、Issue #1143）"""
+    ref = patch_check.engine_ref(repo / patch_check.WORKFLOW.relative_to(REPO))
+    e = []
+    for path, required in ((repo / TEMPLATE.relative_to(REPO), True), (repo / COPY.relative_to(REPO), False)):
+        if not required and not path.is_file():
+            continue
+        refs = REF_VALUE.findall(path.read_text(encoding="utf-8"))
+        if refs != [ref]:
+            e.append(f"{path.relative_to(repo)} の ENGINE_REF（{', '.join(refs) or 'なし'}）が knowledge-check.yml の {ref} と同じ版でない。"
+                     "ENGINE_REF は knowledge-check.yml・ひな形・写しの 3 つを同じ PR でそろえて上げる")
+    return e
+
+
+class EngineRefTest(unittest.TestCase):
+    """ENGINE_REF を knowledge-check.yml とひな形（写し）の片方だけ上げた PR を止める（知見 K-0004 の担保。議決 D-0053、Issue #1143）"""
+
+    def test_ひな形と写しのENGINE_REFはknowledge_checkと同じ版(self):
+        self.assertEqual(ref_mismatches(), [])
+
+    def test_ENGINE_REFを片方だけ上げると落ちる(self):
+        ref, new = patch_check.engine_ref(), "a" * 40
+        texts = {patch_check.WORKFLOW: patch_check.WORKFLOW.read_text(encoding="utf-8"),
+                 TEMPLATE: TEMPLATE.read_text(encoding="utf-8")}
+        texts[COPY] = texts[TEMPLATE]   # 写しはひな形と同じ中身で置く
+        cases = [
+            # （knowledge-check.yml・ひな形・写しの ENGINE_REF（None は写しなし）、落ちるか）
+            ((ref, ref, None), False), ((new, new, None), False), ((new, new, new), False), ((ref, ref, ref), False),
+            ((new, ref, None), True), ((ref, new, None), True),
+            ((new, new, ref), True), ((ref, ref, new), True), ((new, ref, new), True),
+            ((ref, f"'{ref}'", None), False), ((ref, f"{ref}  # 版", None), False),
+        ]
+        for refs, fails in cases:
+            with self.subTest(refs), tempfile.TemporaryDirectory() as d:
+                for (src, text), value in zip(texts.items(), refs):
+                    if value is None:
+                        continue
+                    dst = Path(d) / src.relative_to(REPO)
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_text(REF_LINE.sub(f"  ENGINE_REF: {value}", text), encoding="utf-8")
+                self.assertEqual(bool(ref_mismatches(Path(d))), fails, ref_mismatches(Path(d)))
+
+    def test_ENGINE_REFがないか2行あると落ちる(self):
+        template = TEMPLATE.read_text(encoding="utf-8")
+        for name, text in {"なし": REF_LINE.sub("", template),
+                           "2 行": template.replace("        env:\n          CI: \"true\"\n",
+                                                   f"        env:\n          ENGINE_REF: {patch_check.engine_ref()}\n          CI: \"true\"\n", 1)}.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as d:
+                self.assertNotEqual(text, template)
+                for src, body in ((patch_check.WORKFLOW, patch_check.WORKFLOW.read_text(encoding="utf-8")), (TEMPLATE, text)):
+                    dst = Path(d) / src.relative_to(REPO)
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_text(body, encoding="utf-8")
+                self.assertNotEqual(ref_mismatches(Path(d)), [])
 
 
 class TemplateTest(unittest.TestCase):
