@@ -40,10 +40,23 @@ export const MERGED = "merged";
 export const STALE = "patch_stale";
 export const PARTIAL = "patch_partially_applied";
 
+/**
+ * 照らせなかったこと（差分の古さではない）。code は engine_ref_unreadable（ENGINE_REF を読めない。detail.path）か
+ * engine_ref_missing（ENGINE_REF の版がチェックアウトにない。detail.engine・detail.ref）。利用者への文言は CLI（main）で組む。
+ */
+export class PatchCheckError extends Error {
+  constructor(code, detail = {}) {
+    super(code);
+    this.name = "PatchCheckError";
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
 /** ワークフローの env の ENGINE_REF（40 桁のコミット SHA）。 */
-export function engineRef(text, path = "ワークフロー") {
+export function engineRef(text, path) {
   const m = text.match(/^\s*ENGINE_REF:\s*['"]?([0-9a-f]{40})['"]?\s*$/m);
-  if (!m) throw new Error(`${path} に ENGINE_REF（40 桁のコミット SHA）がない`);
+  if (!m) throw new PatchCheckError("engine_ref_unreadable", { path });
   return m[1];
 }
 
@@ -110,7 +123,7 @@ export function patchState(engine, ref, { patch = PATCH, markers = MARKERS } = {
 export function checkPatch({ engine, workflow = workflowPath(), patch = PATCH, markers = MARKERS }) {
   const ref = engineRef(readFileSync(workflow, "utf8"), workflow);
   if (!hasCommit(engine, ref)) {
-    throw new Error(`engine_ref_missing: Engine のチェックアウト（${engine}）に ENGINE_REF ${ref} の版がない（全部の履歴で取る）`);
+    throw new PatchCheckError("engine_ref_missing", { engine, ref });
   }
   const head = git(engine, ["rev-parse", "HEAD"]).trim();
   const targets = [["ENGINE_REF", ref], ["既定のブランチの先頭", head]];
@@ -142,17 +155,30 @@ export function renderSummary({ results, errors }) {
   return out.join("\n") + "\n";
 }
 
+/** 照らせなかったことの案内（CLI に出す文言）。 */
+export function describeFailure(e) {
+  if (!(e instanceof PatchCheckError)) return e.message;
+  if (e.code === "engine_ref_unreadable") return `engine_ref_unreadable: ${e.detail.path ?? "ワークフロー"} に ENGINE_REF（40 桁のコミット SHA）がない`;
+  if (e.code === "engine_ref_missing") {
+    return `engine_ref_missing: Engine のチェックアウト（${e.detail.engine}）に ENGINE_REF ${e.detail.ref} の版がない（全部の履歴で取る）`;
+  }
+  return e.code;
+}
+
 function main() {
   const { values } = parseArgs({ options: { engine: { type: "string" }, workflow: { type: "string" }, json: { type: "string" },
     summary: { type: "string" } } });
-  let result;
-  try {
-    if (!values.engine) throw new Error("--engine に Engine のチェックアウトを渡す");
-    result = checkPatch({ engine: values.engine, workflow: values.workflow ?? workflowPath() });
-  } catch (e) {
-    const msg = `pr-body-check patch: 照らせなかった: ${e.message}`;
+  const fail = (reason) => {
+    const msg = `pr-body-check patch: 照らせなかった: ${reason}`;
     console.log(process.env.GITHUB_ACTIONS === "true" ? `::error title=pr-body-patch patch_check_failed::${msg}` : msg);
     process.exit(2);
+  };
+  if (!values.engine) fail("--engine に Engine のチェックアウトを渡す");
+  let result;
+  try {
+    result = checkPatch({ engine: values.engine, workflow: values.workflow ?? workflowPath() });
+  } catch (e) {
+    fail(describeFailure(e));
   }
   if (values.json) writeFileSync(values.json, JSON.stringify({ ok: result.errors.length === 0, ...result }, null, 2) + "\n");
   if (values.summary) appendFileSync(values.summary, renderSummary(result));

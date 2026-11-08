@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { APPLIES, checkPatch, engineRef, hasCommit, MARKERS, MERGED, PARTIAL, patchFiles, patchState, PATCH, STALE, workflowPath } from "./patch.mjs";
+import { APPLIES, checkPatch, describeFailure, engineRef, hasCommit, MARKERS, MERGED, PARTIAL, PatchCheckError, patchFiles, patchState, PATCH, STALE, workflowPath } from "./patch.mjs";
 
 const CLI = fileURLToPath(new URL("./patch.mjs", import.meta.url));
 const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t",
@@ -83,7 +83,8 @@ test("チェックアウトの今の中身ではなく、名指しした版の�
 
 test("ENGINE_REF を読む（40 桁のコミット SHA でなければ照らせない）", () => {
   assert.match(engineRef(readFileSync(workflowPath(), "utf8")), /^[0-9a-f]{40}$/);
-  assert.throws(() => engineRef("env:\n  ENGINE_REF: main\n"), /ENGINE_REF/);
+  assert.throws(() => engineRef("env:\n  ENGINE_REF: main\n", "w.yml"),
+    (e) => e instanceof PatchCheckError && e.code === "engine_ref_unreadable" && e.detail.path === "w.yml");
   assert.equal(engineRef(`env:\n  ENGINE_REF: "${"a".repeat(40)}"\n`), "a".repeat(40));
 });
 
@@ -113,6 +114,17 @@ test("ENGINE_REF の版と既定のブランチの先頭の両方を照らし、
   assert.deepEqual(stale.errors.map((e) => [e.rule, e.target, e.ref]), [[STALE, "既定のブランチの先頭", fake.moved]]);
   const both = checkFake(fake.partial, fake.moved);
   assert.deepEqual(both.errors.map((e) => [e.rule, e.target]), [[PARTIAL, "ENGINE_REF"], [STALE, "既定のブランチの先頭"]]);
+});
+
+test("ENGINE_REF の版がチェックアウトにないときは engine_ref_missing の PatchCheckError を投げ、案内の文言は describeFailure で組む", () => {
+  const workflow = join(fake.root, "missing-ref.yml");
+  writeFileSync(workflow, `env:\n  ENGINE_REF: ${"0".repeat(40)}\n`);
+  let err;
+  assert.throws(() => checkPatch({ engine: fake.dir, workflow, patch: fake.patch, markers: fake.markers }), (e) => (err = e) instanceof PatchCheckError);
+  assert.equal(err.code, "engine_ref_missing");
+  assert.deepEqual(err.detail, { engine: fake.dir, ref: "0".repeat(40) });
+  assert.match(describeFailure(err), /^engine_ref_missing: .*全部の履歴で取る/);
+  assert.match(describeFailure(new PatchCheckError("engine_ref_unreadable", { path: "w.yml" })), /^engine_ref_unreadable: w\.yml に ENGINE_REF/);
 });
 
 test("CLI: ENGINE_REF の版がチェックアウトにない・ENGINE_REF を読めないときは照らせず終了コード 2（patch_check_failed）", () => {
