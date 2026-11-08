@@ -1,0 +1,79 @@
+guccyon/rally#314（D84: 生徒アプリの契約の画面の案内を、プランの一覧の API から組み立てる）の apps/student-app/lib/api/http_student_api.dart と apps/student-app/lib/api/models.dart のうち、仮決め（error_handling）が差し替えられた箇所（listSubscriptionPlans が on FormatException だけを包み、fromJson が as int / as List<dynamic> で読む）の hunk だけを gh pr diff から切り出したもの。
+diff --git a/apps/student-app/lib/api/http_student_api.dart b/apps/student-app/lib/api/http_student_api.dart
+index 5723b785..6a9c94fe 100644
+--- a/apps/student-app/lib/api/http_student_api.dart
++++ b/apps/student-app/lib/api/http_student_api.dart
+@@ -123,6 +123,18 @@ class HttpStudentApi implements StudentApi {
+     ),
+   );
+ 
++  /// 契約に反する応答（`live_lessons_per_month` が 1 未満・契約にないプランなど、[FormatException] になるもの）は、
++  /// 呼び出し側が失敗として受け止められるよう [StudentApiException] に包み直す
++  @override
++  Future<SubscriptionPlanList> listSubscriptionPlans() async {
++    final json = await _send('GET', '/subscription-plans');
++    try {
++      return SubscriptionPlanList.fromJson(json);
++    } on FormatException {
++      throw const StudentApiException(statusCode: 200);
++    }
++  }
++
+   @override
+   Future<StartSubscriptionResponse> startSubscription(
+     StartSubscriptionRequest body,
+diff --git a/apps/student-app/lib/api/models.dart b/apps/student-app/lib/api/models.dart
+index d683a9a6..52c8ea2d 100644
+--- a/apps/student-app/lib/api/models.dart
++++ b/apps/student-app/lib/api/models.dart
+@@ -598,6 +598,50 @@ class Subscription {
+   );
+ }
+ 
++/// `SubscriptionPlanDetail`。契約プランと、そのプランのビデオ通話の暦月の上限
++class SubscriptionPlanDetail {
++  /// [liveLessonsPerMonth] は契約の `minimum: 1` に合わせて 1 以上
++  const SubscriptionPlanDetail({
++    required this.plan,
++    required this.liveLessonsPerMonth,
++  }) : assert(liveLessonsPerMonth >= 1, 'live_lessons_per_month は 1 以上');
++
++  final SubscriptionPlan plan;
++
++  /// ビデオ通話の暦月の上限（`LiveLessonQuota.limit` と同じ値。1 以上）
++  final int liveLessonsPerMonth;
++
++  /// `live_lessons_per_month` が 1 未満なら [FormatException]（契約にない値として、enum の値と同じく扱う）
++  factory SubscriptionPlanDetail.fromJson(Map<String, dynamic> json) {
++    final liveLessonsPerMonth = json['live_lessons_per_month'] as int;
++    if (liveLessonsPerMonth < 1) {
++      throw FormatException('契約にない値です: $liveLessonsPerMonth');
++    }
++    return SubscriptionPlanDetail(
++      plan: SubscriptionPlan.fromWire(json['plan'] as String),
++      liveLessonsPerMonth: liveLessonsPerMonth,
++    );
++  }
++}
++
++/// `SubscriptionPlanList`（`listSubscriptionPlans` の応答）
++class SubscriptionPlanList {
++  /// [plans] は書き換えられない写しにして持つ（`fromJson` でもコンストラクタで直接作っても、作った後に一覧を変えさせない）
++  SubscriptionPlanList({required List<SubscriptionPlanDetail> plans})
++    : plans = List.unmodifiable(plans);
++
++  /// standard・plus の順
++  final List<SubscriptionPlanDetail> plans;
++
++  factory SubscriptionPlanList.fromJson(Map<String, dynamic> json) =>
++      SubscriptionPlanList(
++        plans: [
++          for (final e in json['plans'] as List<dynamic>)
++            SubscriptionPlanDetail.fromJson(e as Map<String, dynamic>),
++        ],
++      );
++}
++
+ /// `StartSubscriptionRequest`
+ class StartSubscriptionRequest {
+   const StartSubscriptionRequest({

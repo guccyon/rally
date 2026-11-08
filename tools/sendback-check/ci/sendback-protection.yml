@@ -2,13 +2,24 @@
 # 毎日と手動で protection.mjs で照らす（知見 K-0004 の担保。議決 D-0039、Issue #1087）。決定論（LLM を使わない）。
 # 必須にしたあとで外されると、写しを消す・見張りを書き換える PR が止まらなくなる。protection.mjs を建設者が一度走らせるだけでは、
 # 後で外されたことに気づけないので、定期に走らせる。
+# PR ごとにも走らせ（protection-pr のジョブ）、その PR の .github/workflows/ と本物の branch protection を照らして、
+# required_check_missing・check_name_changed・check_name_shared（と workflow_not_copied）なら ::error で落とす（議決 D-0059（起票時の番号は D-0056）、Issue #1158）。
+# 必須のチェックを外したあと・ジョブの名前を変える PR・同じチェックの名前を報告するジョブを足す PR を、その PR の上で止める。
 # branch protection は GITHUB_TOKEN では読めないので、読める権限のトークン（GitHub App か administration:read の fine-grained PAT）を
 # シークレット SENDBACK_PROTECTION_TOKEN に置く（建設者）。そのトークンは branch protection を読む手順だけに渡す。
-# workflow_not_copied か required_check_missing で外れたら ::error を出して落ち、Issue を開くか、開いている Issue を更新する
+# 定期と手動（protection のジョブ）では、外れたら ::error を出して落ち、Issue を開くか、開いている Issue を更新する
 # （同じ外れ方の記録がすでにあれば足さない）。通ったら、開いている Issue に通ったことを書いて閉じる。
+# PR（protection-pr のジョブ）では Issue を開かない（issues: write を持たせない。PR のコードを issues: write で動かさない）。落ちた PR の上で直す。
 # トークンがない・読めなかったときは protection_unreadable の ::error で落ちる（Issue は開かない。必須のチェックの有無が分からないため）。
-# PR では走らせない（PR のコードを issues: write とトークンで動かさない）。
+# フォークからの PR にはシークレットが渡らないので、protection-pr は protection_unreadable で落ちる。
+# 定期（schedule）の protection のジョブがすべての手順で通ったら、最後の 2 つの手順で通った時刻を書いた成果物 sendback-protection-passed を上げる
+# （議決 D-0061（起票時の番号は D-0058）、Issue #1162）。別のワークフロー（ci/sendback-protection-heartbeat.yml）が heartbeat.mjs でその成果物の一覧を読み、
+# 最後に通ってから 2 日より長くたっていれば落ちて Issue を開く。schedule が止まったり落ち続けたりしても気づけるようにするため。
+# 手動（workflow_dispatch）の実行では上げない（手で走らせても schedule が止まっていることは隠さない）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-protection.yml にそのまま写す。
+# 写したら、PR で protection-pr が落ちる実行と schedule で protection が走った実行を Issue #948 と事例記録（.factory-config/knowledge/cases/）に残してから、
+# K-0004 の Issue #1158 の解決策の wired・verified を true にする（wired_by に protection と protection-pr の 2 つ。
+# tools/knowledge-enforcement-check/check.py が schedule と pull_request の両方のジョブから protection.mjs を呼ぶことを求める）。
 # ci.test.mjs（sendback-engine.yml の wiring-order で走る）が、このファイルの形・手順の振る舞い・写しとのずれを見る。
 name: sendback-protection
 
@@ -16,13 +27,13 @@ on:
   schedule:
     - cron: "0 20 * * *"
   workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
-  group: sendback-protection
+  group: sendback-protection-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: false
 
 env:
@@ -31,7 +42,11 @@ env:
 
 jobs:
   protection:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -109,3 +124,53 @@ jobs:
             exit 0
           fi
           gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file protection-comment.md
+      - name: 通った時刻を書く（K-0004）
+        if: github.event_name == 'schedule'
+        run: |
+          printf '{"passed_at":"%s","run":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" > sendback-protection-passed.json
+      - name: 通った記録を成果物に上げる（K-0004）
+        if: github.event_name == 'schedule'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sendback-protection-passed
+          path: sendback-protection-passed.json
+          retention-days: 7
+          if-no-files-found: error
+
+  protection-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: branch protection を読む（K-0004）
+        id: read
+        env:
+          GH_TOKEN: ${{ secrets.SENDBACK_PROTECTION_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error title=sendback-protection protection_unreadable::シークレット SENDBACK_PROTECTION_TOKEN がない（branch protection を読める権限のトークンを置く）"
+            exit 1
+          fi
+          # 古い形。保護がない（404 の Branch not protected）ときはその JSON のまま渡し、必須のチェックが空として外れる
+          if ! gh api "repos/${GITHUB_REPOSITORY}/branches/${BRANCH}/protection" > protection-classic.json; then
+            if ! grep -qF '"Branch not protected"' protection-classic.json; then
+              echo "::error title=sendback-protection protection_unreadable::${BRANCH} の branch protection を読めなかった（トークンの権限を確かめる）"
+              exit 1
+            fi
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/rules/branches/${BRANCH}?per_page=100" > protection-rules.json; then
+            echo "::error title=sendback-protection protection_unreadable::${BRANCH} の rulesets を読めなかった（トークンの権限を確かめる）"
+            exit 1
+          fi
+      - name: 必須のチェックを照らす（K-0004）
+        id: check
+        working-directory: tools/sendback-check
+        run: |
+          node protection.mjs --protection ../../protection-classic.json --protection ../../protection-rules.json \
+            --json protection-result.json --summary "$GITHUB_STEP_SUMMARY"

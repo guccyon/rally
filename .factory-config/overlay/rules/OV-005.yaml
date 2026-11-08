@@ -1,6 +1,6 @@
 id: OV-005
 title: "同じ表示・変換を別の場所に書き直さない（既にある関数・定数・表示のモジュールを使うか、1 か所にまとめて両方から使う）"
-state: adopted
+state: shadow
 knowledge_stage: rubric
 confidentiality: product
 severity: should

@@ -3,8 +3,9 @@
 engine/knowledge-enforcement.patch を Engine のチェックアウトの写しに当て、INDEX.md の担保の列と solutions の真偽の検査が
 check.py と同じ線になること、差分で Engine の core-gates/tests/test_knowledge_check.py に足したテストが通ること（pytest があるとき）を
 確かめる。wired が true の解決策の wired_by の形を Engine も落とし、その線が check.py の形の検査と同じになることも確かめる（議決 D-0034、Issue #1060）。
+verified が true の解決策の verified_by（case・pr・event の列）を Engine も落とし、その線が check.py の確認の記録の照合と同じになることも確かめる（議決 D-0048、Issue #1130）。
 表示の総当たりが、効き目を確かめた改変を当てた Engine の写し（変異体）では必ず食い違いを出すことも確かめる（議決 D-0037、Issue #1079）。
-Engine がもう差分を取り込んでいれば（check_wired_by がある）当てずにそのまま確かめる。
+Engine がもう差分を取り込んでいれば（check_verified_by がある）当てずにそのまま確かめる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（sendback-check/engine.test.mjs と同じ）。
 Engine のファイルは、チェックアウトに .github/workflows/knowledge-check.yml の ENGINE_REF の版があればその版から取る（製品の CI が使う版で
@@ -51,6 +52,7 @@ def sol(**flags):
 
 
 WB = [{"workflow": ".github/workflows/w.yml", "job": "j", "runs": "tools/x/check.py"}]
+VB = [{"case": "C-0002"}]   # このリポジトリの cases/ にある事例記録
 
 
 def k(level="deterministic", *sols):
@@ -98,6 +100,16 @@ def mutate_enforcement_label(src: str, old: str, new: str) -> str:
     return src[:start] + body.replace(old, new) + src[end:]
 
 
+class MutantsTest(unittest.TestCase):
+    # 議決 D-0055（Issue #1151 の起票時の番号は D-0054）。変異体の総当たりは Engine のチェックアウトがないと飛ぶので、
+    # MUTANTS そのものは Engine なしでも毎回確かめ、変異体が消されたり減らされたりしたら落とす
+    def test_MUTANTS_は効き目を確かめた_2_つの改変ちょうど(self):
+        self.assertEqual(set(MUTANTS), {'wired の "true" を配線済みに数える', "verified を真偽でなく値の有無で見る"})
+        for name, (old, new) in MUTANTS.items():
+            with self.subTest(name):
+                self.assertNotEqual(old, new, f"変異体「{name}」が何も置き換えない")
+
+
 @unittest.skipUnless(HAS_ENGINE or REQUIRED, f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
 class EnginePatchTest(unittest.TestCase):
     @classmethod
@@ -120,7 +132,7 @@ class EnginePatchTest(unittest.TestCase):
             else:
                 shutil.copy(ENGINE / f, cls.dir / f)
         src = (cls.dir / FILES[0]).read_text(encoding="utf-8")
-        cls.merged = "def check_wired_by(" in src
+        cls.merged = "def check_verified_by(" in src
         if not cls.merged:
             r = subprocess.run(["git", "apply", str(PATCH)], cwd=cls.dir, capture_output=True, text=True)
             if r.returncode != 0:
@@ -180,7 +192,9 @@ class EnginePatchTest(unittest.TestCase):
         self.assertTrue(any("verified は true か false" in e for e in f(sol(wired=True, verified="yes"))))
         self.assertTrue(any("wired でないのに verified" in e for e in f(sol(wired=False, verified=True))))
         self.assertTrue(any("wired でないのに verified" in e for e in f(sol(verified=True))))
-        self.assertFalse(any("enforcement.solutions" in e for e in f(sol(), sol(wired=True, wired_by=WB), sol(wired=True, verified=True, wired_by=WB))))
+        self.assertFalse(any("enforcement.solutions" in e for e in f(sol(), sol(wired=True, wired_by=WB))))
+        g = lambda *s: self.kc.check_item({**k("deterministic", *s), "_file": "K-9999.yaml"}, {"C-0002"}, set())  # noqa: E731
+        self.assertFalse(any("enforcement.solutions" in e for e in g(sol(wired=True, verified=True, wired_by=WB, verified_by=VB))))
 
     def test_wired_by_の形の検査が_check_py_と同じ(self):
         # 議決 D-0034、Issue #1060。wired が true の解決策の wired_by の形（列・3 つの項目が空でない文字列・.github/workflows/ の直下）を
@@ -202,6 +216,31 @@ class EnginePatchTest(unittest.TestCase):
                 self.assertEqual(got, want, f"wired={wired!r} wired_by={wb!r}: Engine は {got}、check.py は {want}")
         self.assertTrue(all(seen.values()), seen)
 
+    def test_verified_by_の検査が_check_py_と同じ(self):
+        # 議決 D-0048、Issue #1130。verified が true の解決策の verified_by（case・pr・event の列。case を 1 件以上、cases/ にあるもの）を
+        # Engine も落とす。Engine の cases は load() が cases/ から集めた事例記録の id なので、このリポジトリの cases/ を渡して check.py と比べる
+        cases = {p.stem for p in (REPO / check.ROOT / "cases").glob("C-*.md")}
+        self.assertIn(VB[0]["case"], cases)
+        refs = [VB[0], {"case": "C-9999"}, {"case": "C-1"}, {"case": 2}, {"pr": 395}, {"pr": 0}, {"pr": -1}, {"pr": "395"}, {"pr": True},
+                {"event": "case.analyzed:40376"}, {"event": "case.analyzed"}, {"event": 1}, {"issue": 1}, {"case": "C-0002", "pr": 1}, {}, "C-0002", None]
+        # 参照 1 つだけの列と、事例記録の後ろに参照を 1 つ足した列（case が 1 件あっても、ほかの参照の誤りで落ちるか）
+        values = [MISSING, None, [], "x", VB[0], *[[v] for v in refs], *[[VB[0], v] for v in refs],
+                  [{"pr": 395}, {"event": "case.analyzed:40376"}], [{"issue": 1}, VB[0]]]
+        seen = {True: 0, False: 0}
+        for verified in (True, False, MISSING):
+            for vb in values:
+                s = sol(**{n: v for n, v in (("wired", True), ("wired_by", WB), ("verified", verified), ("verified_by", vb)) if v is not MISSING})
+                x = {**k("deterministic", s), "_file": "K-9999.yaml"}
+                want = bool(check.check_verification(x, REPO))
+                got = any("verified_by" in e for e in self.kc.check_item(x, cases, set()))
+                seen[want] += 1
+                self.assertEqual(got, want, f"verified={verified!r} verified_by={vb!r}: Engine は {got}、check.py は {want}")
+        self.assertTrue(all(seen.values()), seen)
+        # 配線していない解決策の verified: true は verified_by があっても落とす（check.py は check_item、Engine は check_item が見る）
+        x = {**k("deterministic", sol(wired=False, verified=True, verified_by=VB)), "_file": "K-9999.yaml"}
+        self.assertTrue(any("wired でないのに verified" in e for e in self.kc.check_item(x, cases, set())))
+        self.assertTrue(any("wired でないのに verified" in e for e in check.check_item(x)))
+
     def test_作り直した_INDEX_md_でこのリポジトリの知見が通る(self):
         with tempfile.TemporaryDirectory() as t:
             shutil.copytree(REPO / check.ROOT, Path(t) / check.ROOT)
@@ -219,6 +258,12 @@ class EnginePatchTest(unittest.TestCase):
         self.assertEqual(list(wb["items"]), list(check.WIRED_BY_KEYS))
         self.assertEqual(list(wb["items"]), self.kc.WIRED_BY_KEYS)
         self.assertEqual(wb["items"]["workflow"], self.kc.WIRED_BY_WORKFLOW_RE.pattern)
+        vb = enf["solution_verified_by"]
+        self.assertEqual((vb["required_when"], vb["requires"], vb["min_cases"]), ({"verified": True}, {"wired": True}, 1))
+        self.assertEqual(list(vb["items"]), list(check.VERIFIED_BY_KINDS))
+        self.assertEqual(list(vb["items"]), self.kc.VERIFIED_BY_KINDS)
+        self.assertEqual((vb["items"]["case"], vb["items"]["event"]), (check.CASE_RE.pattern, check.EVENT_RE.pattern))
+        self.assertEqual((vb["items"]["case"], vb["items"]["event"]), (self.kc.CASE_RE.pattern, self.kc.EVENT_RE.pattern))
 
     def test_Engine_に足したテストが通る(self):
         if importlib.util.find_spec("pytest") is None:
