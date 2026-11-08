@@ -3,6 +3,7 @@
 engine/knowledge-enforcement.patch を Engine のチェックアウトの写しに当て、INDEX.md の担保の列と solutions の真偽の検査が
 check.py と同じ線になること、差分で Engine の core-gates/tests/test_knowledge_check.py に足したテストが通ること（pytest があるとき）を
 確かめる。wired が true の解決策の wired_by の形を Engine も落とし、その線が check.py の形の検査と同じになることも確かめる（議決 D-0034、Issue #1060）。
+表示の総当たりが、効き目を確かめた改変を当てた Engine の写し（変異体）では必ず食い違いを出すことも確かめる（議決 D-0037、Issue #1079）。
 Engine がもう差分を取り込んでいれば（check_wired_by がある）当てずにそのまま確かめる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（sendback-check/engine.test.mjs と同じ）。
@@ -56,6 +57,47 @@ def k(level="deterministic", *sols):
     return {"id": "K-9999", "_file": "K-9999.yaml", "enforcement": {"level": level, "solutions": list(sols)}}
 
 
+def exhaustive_mismatches(enforcement_label):
+    """解決策 1 件の状態は wired・verified の値の直積（未記入・true・false・真偽でない値）。その状態を 0〜2 件並べた組（順序も変える）と、
+    dict でない項目を混ぜた組を、強さと enforcement の形ごとに enforcement_label と check.py の label() に渡し、
+    食い違った（enforcement, Engine の表示, check.py の表示）の列と、check.py の表示ごとの件数を返す"""
+    values = (MISSING, True, False, "true", 1, None)
+    states = [{f: v for f, v in (("wired", w), ("verified", v)) if v is not MISSING} for w, v in itertools.product(values, repeat=2)]
+    groups = [[]] + [[s] for s in states] + [list(p) for p in itertools.product(states, repeat=2)]
+    groups += [[s, "x"] for s in states] + [["x"], [None]]
+    cases = [{"id": "K-9999"}, {"id": "K-9999", "enforcement": None}, {"id": "K-9999", "enforcement": {"level": "deterministic"}},
+             {"id": "K-9999", "enforcement": {"level": "deterministic", "solutions": None}}]
+    cases += [k(level, *(sol(**s) if isinstance(s, dict) else s for s in g)) for level in ("deterministic", "context", "checklist") for g in groups]
+    got = {check.UNWIRED: 0, check.UNVERIFIED: 0, "deterministic": 0}
+    diffs = []
+    for x in cases:
+        want = check.label(x)
+        got[want] = got.get(want, 0) + 1
+        engine = enforcement_label(x)
+        if engine != want:
+            diffs.append((x, engine, want))
+    return diffs, got
+
+
+# 総当たりの効き目を確かめた改変（議決 D-0037、Issue #1079）。enforcement_label() の中の old をすべて new に置き換える
+MUTANTS = {
+    'wired の "true" を配線済みに数える': ('s.get("wired") is True', 's.get("wired") in (True, "true")'),
+    "verified を真偽でなく値の有無で見る": ('s.get("verified") is True', 's.get("verified") is not None'),
+}
+
+
+def mutate_enforcement_label(src: str, old: str, new: str) -> str:
+    """Engine の knowledge_check.py の enforcement_label() の本体だけで old を new に置き換える。
+    置き換える字面がなければ（Engine の書き方が変わって変異体が古くなった）落とす"""
+    start = src.index("def enforcement_label(")
+    end = src.find("\ndef ", start)
+    end = len(src) if end < 0 else end
+    body = src[start:end]
+    if old not in body:
+        raise AssertionError(f"enforcement_label() に {old!r} がない。今の Engine の書き方に合わせて MUTANTS を直す")
+    return src[:start] + body.replace(old, new) + src[end:]
+
+
 @unittest.skipUnless(HAS_ENGINE or REQUIRED, f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
 class EnginePatchTest(unittest.TestCase):
     @classmethod
@@ -103,23 +145,27 @@ class EnginePatchTest(unittest.TestCase):
                 self.assertEqual(self.kc.enforcement_label(x), check.label(x))
 
     def test_担保の表示が_check_py_の_label_と総当たりで同じ(self):
-        # 議決 D-0024、Issue #1015。解決策 1 件の状態は wired・verified の値の直積（未記入・true・false・真偽でない値）。
-        # その状態を 0〜2 件並べた組（順序も変える）と、dict でない項目を混ぜた組を、強さと enforcement の形ごとに渡す
-        values = (MISSING, True, False, "true", 1, None)
-        states = [{f: v for f, v in (("wired", w), ("verified", v)) if v is not MISSING} for w, v in itertools.product(values, repeat=2)]
-        groups = [[]] + [[s] for s in states] + [list(p) for p in itertools.product(states, repeat=2)]
-        groups += [[s, "x"] for s in states] + [["x"], [None]]
-        cases = [{"id": "K-9999"}, {"id": "K-9999", "enforcement": None}, {"id": "K-9999", "enforcement": {"level": "deterministic"}},
-                 {"id": "K-9999", "enforcement": {"level": "deterministic", "solutions": None}}]
-        cases += [k(level, *(sol(**s) if isinstance(s, dict) else s for s in g)) for level in ("deterministic", "context", "checklist") for g in groups]
-        got = {check.UNWIRED: 0, check.UNVERIFIED: 0, "deterministic": 0}
-        for x in cases:
-            want = check.label(x)
-            got[want] = got.get(want, 0) + 1
-            if self.kc.enforcement_label(x) != want:
-                self.fail(f"{x.get('enforcement')!r}: Engine は {self.kc.enforcement_label(x)!r}、check.py は {want!r}")
+        # 議決 D-0024、Issue #1015
+        diffs, got = exhaustive_mismatches(self.kc.enforcement_label)
+        if diffs:
+            x, engine, want = diffs[0]
+            self.fail(f"{x.get('enforcement')!r}: Engine は {engine!r}、check.py は {want!r}（ほか {len(diffs) - 1} 件）")
         # 総当たりが 3 つの表示をどれも通っていること（組の作り方を壊して 1 つの表示に偏ったら気づく）
         self.assertTrue(all(got[x] > 0 for x in (check.UNWIRED, check.UNVERIFIED, "deterministic", "context", "checklist")), got)
+
+    def test_総当たりはどの変異体でも食い違いを出す(self):
+        # 議決 D-0037、Issue #1079。総当たりの効き目を確かめた 2 つの改変を、差分を当てた Engine の写しにさらに当てた変異体として置き、
+        # どの変異体でも総当たりが 1 件以上の食い違いを出すことを毎回確かめる（総当たりをゆるめて変異体が通ってしまったら落ちる）
+        src = (self.dir / FILES[0]).read_text(encoding="utf-8")
+        for i, (name, (old, new)) in enumerate(MUTANTS.items()):
+            with self.subTest(name), tempfile.TemporaryDirectory() as t:
+                mutated = mutate_enforcement_label(src, old, new)
+                (Path(t) / "knowledge_check.py").write_text(mutated, encoding="utf-8")
+                s = importlib.util.spec_from_file_location(f"engine_knowledge_check_mutant_{i}", Path(t) / "knowledge_check.py")
+                kc = importlib.util.module_from_spec(s)
+                s.loader.exec_module(kc)  # type: ignore[union-attr]
+                diffs, _ = exhaustive_mismatches(kc.enforcement_label)
+                self.assertGreater(len(diffs), 0, f"変異体「{name}」で総当たりが食い違いを 1 件も出さない（総当たりがゆるんでいる）")
 
     def test_INDEX_md_の担保の列でK_0004_は未配線(self):
         items = [x for x in check.load(REPO)]
