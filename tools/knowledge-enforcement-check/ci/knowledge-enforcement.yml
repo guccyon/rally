@@ -14,12 +14,11 @@
 # wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/test_check.py} を、
 # verified_by にその事例記録を書く（この写しの pull_request のジョブから test_check.py を呼ぶ項目がないと check.py が落とす。
 # 議決 D-0052、Issue #1139。議決 D-0075、Issue #1215）。
-# engine/knowledge-enforcement.patch が ENGINE_REF に当たらない PR で engine-test のジョブが落ちる実行を記録してから、K-0004 の issue 1063・1144 の解決策を
-# wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: engine-test, runs: tools/knowledge-enforcement-check/test_engine_patch.py} を書く
-# （pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと check.py が落とす。写したあとは、CI か記録が写しを wired_by に書いていれば
+# 写す PR で K-0004 の issue 1063・1144 の解決策を wired: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: engine-test, runs: tools/knowledge-enforcement-check/test_engine_patch.py} を書く
+# （写しがあるのに wired: true でなければ check.py が mirror_unwired で落とす。議決 D-0080（起票時の番号は D-0078）、Issue #1226。
+# pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと check.py が落とす。写したあとは、CI か記録が写しを wired_by に書いていれば
 # 写しがないことを test_ci.py が飛ばさずに落とす。議決 D-0053、Issue #1144）。
-# wired: true にするのは写す PR で行う（写しがあるのに issue 1063・1144 の解決策が wired: true でなければ check.py が mirror_unwired で落とす。
-# 議決 D-0080（起票時の番号は D-0078）、Issue #1226）。
+# engine/knowledge-enforcement.patch が ENGINE_REF に当たらない PR で engine-test のジョブが落ちる実行を記録してから、2 つの解決策を verified: true にする。
 # enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときと、配線先（.github/workflows/）か
 # check.py が呼ぶことを求める検査の置き場（tools/conflict-check/・tools/sendback-check/・tools/pr-body-check/）を変えたときに、通らなければ落とす
 # （wired: true の解決策の配線先のジョブから REQUIRED_RUNS などの検査を外した PR を止める。議決 D-0066（起票時の番号は D-0062）、Issue #1173）。
