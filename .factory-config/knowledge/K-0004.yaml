@@ -811,4 +811,20 @@ enforcement:
       decided_by: committee:D-0059
       wired: false
       verified: false
+    - kind: lint
+      what: >-
+        議決 D-0060（Issue #1160 の起票時の番号は D-0056。PR #1156）の lint の案（D-0039 の lint の案。issue 1087 と 1018 の解決策は、
+        sendback-protection.yml のひな形を写さずにほかのワークフローの schedule のジョブから protection.mjs を呼ぶだけでも wired と書けた）を入れた。
+        tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE に issue 1087 と protection.mjs の組を足し、REQUIRED_SCHEDULE_WORKFLOW を足して、
+        issue 1087 と 1018 の解決策を wired: true にするときは、wired_by に .github/workflows/sendback-protection.yml の、on.schedule に空でない cron があり
+        schedule でも走るジョブから tools/sendback-check/protection.mjs を呼ぶ項目がなければ落とす（ほかのワークフローを指す項目は数えない）。
+        test_check.py で、ひな形をそのまま写した protection のジョブなら通り、同じ中身でも別の名前のワークフロー・schedule を外した写し・
+        protection-pr のジョブでは落ちること、issue 1158 と K-0001 の解決策はワークフローの名前を問わないことを確かめ、ワークフローの名前を見ない改変で
+        落ちることも確かめた。issue 1087 と 1018 の解決策は今 wired: false なのでこの検査は何も落とさず、check.py も .github/workflows/ にはまだ写していない
+        （建設者）ので、PR ごとには走っておらず効き目は確かめていない
+      issue: 1160
+      at: 2026-11-08
+      decided_by: committee:D-0060
+      wired: false
+      verified: false
 decided_by: committee:D-0004

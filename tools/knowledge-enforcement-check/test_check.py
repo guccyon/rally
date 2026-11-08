@@ -297,12 +297,14 @@ class ScheduleTest(unittest.TestCase):
     """K-0004 の issue 1018 の解決策は schedule のジョブから protection.mjs を呼ばないと wired にできない（議決 D-0039、Issue #1088）"""
 
     PROT = "tools/sendback-check/protection.mjs"
+    # issue 1018 は sendback-protection.yml のジョブしか数えない（議決 D-0060、Issue #1160。下の SendbackProtectionWorkflowTest）
+    WF = ".github/workflows/sendback-protection.yml"
 
     def repo(self, workflow: str) -> Path:
         t = tempfile.TemporaryDirectory()
         self.addCleanup(t.cleanup)
         d = Path(t.name)
-        for rel, text in {self.PROT: "", ".github/workflows/p.yml": workflow}.items():
+        for rel, text in {self.PROT: "", self.WF: workflow}.items():
             (d / rel).parent.mkdir(parents=True, exist_ok=True)
             (d / rel).write_text(text, encoding="utf-8")
         return d
@@ -312,7 +314,7 @@ class ScheduleTest(unittest.TestCase):
                 f"      - {step_if}run: node {self.PROT}\n")
 
     def errors(self, d: Path, kid="K-0004", issue=1018, wired=True, runs=None) -> list[str]:
-        wb = [{"workflow": ".github/workflows/p.yml", "job": "protection", "runs": runs or self.PROT}]
+        wb = [{"workflow": self.WF, "job": "protection", "runs": runs or self.PROT}]
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
         return check.check_schedule(item, d)
@@ -370,12 +372,86 @@ class ScheduleTest(unittest.TestCase):
     def test_main_で落とす(self):
         d = self.repo(self.wf("  workflow_dispatch:\n"))
         MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       f"    - {{kind: ci_check, what: x, issue: 1018, wired: true, wired_by: [{{workflow: .github/workflows/p.yml, job: protection, runs: {self.PROT}}}]}}\n")
+                       f"    - {{kind: ci_check, what: x, issue: 1018, wired: true, wired_by: [{{workflow: {self.WF}, job: protection, runs: {self.PROT}}}]}}\n")
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 1018）: wired にするには", errors[0])
+
+
+class SendbackProtectionWorkflowTest(unittest.TestCase):
+    """K-0004 の issue 1087 と 1018 の解決策は .github/workflows/sendback-protection.yml の schedule のジョブから protection.mjs を呼ばないと
+    wired にできない（議決 D-0060（起票時の番号は D-0056）、Issue #1160）"""
+
+    PROT = ScheduleTest.PROT
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-protection.yml"
+    WF = ".github/workflows/sendback-protection.yml"
+    OTHER = ".github/workflows/protection.yml"
+
+    def repo(self, files: dict[str, str]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.PROT: "", **files}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, issue: int, wf=None, job="protection", kid="K-0004") -> list[str]:
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": True, "verified": False,
+             "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": self.PROT}]}]}}
+        return check.check_schedule(item, d)
+
+    def test_対象に挙げてある(self):
+        for issue in (1087, 1018):
+            self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", issue)], self.PROT)
+            self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0004", issue)][0], self.WF)
+        self.assertNotIn(("K-0004", 1158), check.REQUIRED_SCHEDULE_WORKFLOW)
+        self.assertNotIn(("K-0001", 1106), check.REQUIRED_SCHEDULE_WORKFLOW)
+
+    def test_ひな形をそのまま写した_protection_のジョブなら通る(self):
+        d = self.repo({self.WF: self.template()})
+        for issue in (1087, 1018):
+            self.assertEqual(self.errors(d, issue), [], issue)
+
+    def test_ほかのワークフローの_schedule_のジョブでは落ちる(self):
+        d = self.repo({self.WF: self.template(), self.OTHER: self.template()})
+        for issue in (1087, 1018):
+            e = self.errors(d, issue, wf=self.OTHER)
+            self.assertEqual(len(e), 1, (issue, e))
+            self.assertIn(f"on.schedule（cron）のある {self.WF} で", e[0])
+            self.assertIn("議決 D-0039・D-0060", e[0])
+
+    def test_写しが_schedule_で走らなければ落ちる(self):
+        no_sched = self.template().replace('  schedule:\n    - cron: "0 20 * * *"\n', "", 1)
+        self.assertNotEqual(no_sched, self.template())
+        d = self.repo({self.WF: no_sched})
+        for issue in (1087, 1018):
+            self.assertEqual(len(self.errors(d, issue)), 1, issue)
+        # pull_request でしか走らない protection-pr のジョブも数えない
+        d = self.repo({self.WF: self.template()})
+        self.assertEqual(len(self.errors(d, 1087, job="protection-pr")), 1)
+
+    def test_ほかの解決策はワークフローの名前を問わない(self):
+        d = self.repo({self.OTHER: self.template()})
+        self.assertEqual(self.errors(d, 1158, wf=self.OTHER), [])
+        self.assertEqual(self.errors(d, 1087, wf=self.OTHER, kid="K-0001"), [])
+
+    def test_main_で落とす(self):
+        d = self.repo({self.OTHER: self.template()})
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1087, wired: true, wired_by: [{{workflow: {self.OTHER}, job: protection, runs: {self.PROT}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1087）: wired にするには", errors[0])
+        self.assertIn(self.WF, errors[0])
 
 
 class PullRequestTest(unittest.TestCase):
