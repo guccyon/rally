@@ -487,6 +487,21 @@ enforcement:
       decided_by: committee:D-0036
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0036 の ci_check の案（test_engine_patch.py は ENGINE_REF の版だけを見るので、ENGINE_REF が古いまま Engine の先頭だけが進んで
+        差分が当たらなくなっても気づけない）を入れた。tools/knowledge-enforcement-check/ci/knowledge-enforcement-head.yml（sendback-engine-head.yml と同じ形で、
+        PR では走らせず 1 日 1 回と手動）が Engine を ref なしで既定のブランチの先頭から取り、test_engine_patch.py を新しい環境変数 ENGINE_PATCH_REF で
+        ENGINE_REF の代わりに先頭の版へ向けて走らせ、patch_stale なら ::error を出して issue 968 に先頭の版・その時の knowledge-check.yml の ENGINE_REF・
+        実行の URL・当たらなかったところを記録する（同じ先頭の版の patch_stale の記録があれば足さない。patch_stale でない落ち方は ::error だけで記録しない）。
+        test_ci_head.py で、ワークフローの形と、作った Engine で先頭に当たらないと patch_stale で落ちて記録し、もう入っていれば通って記録しないこと、
+        記録を重ねないこと、記録に失敗したら落ちることを偽の gh で確かめ、手元の Engine の先頭（56692cd）に ENGINE_PATCH_REF を向けて今の差分が通ることも確かめた。
+        .github/workflows/ への写しと schedule の実行は建設者が行うので、まだ定期には走っておらず効き目は確かめていない
+      issue: 1076
+      at: 2026-11-08
+      decided_by: committee:D-0036
+      wired: false
+      verified: false
     - kind: test
       what: >-
         議決 D-0037 の test の案（議決 D-0024 の総当たりの効き目を確かめた 2 つの改変は手元の写しで一度だけ試したもので、総当たりが将来ゆるめられても気づけない）を入れた。

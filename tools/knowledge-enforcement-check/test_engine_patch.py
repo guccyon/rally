@@ -8,6 +8,8 @@ engine/knowledge-enforcement.patch を、.github/workflows/knowledge-check.yml �
 名指しで取り出して当てるので、チェックアウトが別の版でも製品の CI が使う版で確かめられる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。チェックアウトがないか、ENGINE_REF の版を
 含まないときは飛ばす。ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（test_engine.py と同じ）。
+環境変数 ENGINE_PATCH_REF に版を渡すと、ENGINE_REF の代わりにその版に当てる（ci/knowledge-enforcement-head.yml が Engine の既定のブランチの
+先頭の版を渡し、ENGINE_REF が古いまま先頭だけが進んで差分が当たらなくなったことを定期に見る。議決 D-0036、Issue #1076）。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
 """
@@ -31,6 +33,7 @@ MARKERS = (("core-gates/knowledge_check.py", "def enforcement_label("), ("core-g
 
 ENGINE = Path(os.environ.get("ENGINE_DIR") or REPO.parent / "engine")
 REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
+PATCH_REF = os.environ.get("ENGINE_PATCH_REF", "")
 
 APPLIES, MERGED, STALE, PARTIAL = "applies", "merged", "patch_stale", "patch_partially_applied"
 
@@ -41,6 +44,11 @@ def engine_ref(workflow: Path = WORKFLOW) -> str:
     if not m:
         raise ValueError(f"{workflow} に ENGINE_REF（40 桁のコミット SHA）がない")
     return m.group(1)
+
+
+def target_ref() -> tuple[str, str]:
+    """差分を当てる版と、その出どころ（ENGINE_PATCH_REF があればその版、なければ ENGINE_REF）。"""
+    return (PATCH_REF, "ENGINE_PATCH_REF") if PATCH_REF else (engine_ref(), "ENGINE_REF")
 
 
 def has_commit(engine: Path, ref: str) -> bool:
@@ -148,10 +156,11 @@ class PatchStateTest(unittest.TestCase):
             engine_ref(w)
 
 
-HAS_ENGINE = (ENGINE / ".git").exists() and has_commit(ENGINE, engine_ref())
+REF, REF_FROM = target_ref()
+HAS_ENGINE = (ENGINE / ".git").exists() and has_commit(ENGINE, REF)
 
 
-@unittest.skipUnless(HAS_ENGINE or REQUIRED, f"ENGINE_REF の版を含む Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
+@unittest.skipUnless(HAS_ENGINE or REQUIRED, f"{REF_FROM} の版を含む Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
 class EngineRefPatchTest(unittest.TestCase):
     def fail_with_annotation(self, msg: str):
         """GitHub Actions では msg の 1 行目を差分のファイルへの ::error にも出して落とす。"""
@@ -160,17 +169,19 @@ class EngineRefPatchTest(unittest.TestCase):
         self.fail(msg)
 
     def test_差分が_ENGINE_REF_の版に当たるかもう入っている(self):
-        ref = engine_ref()
+        ref = REF
         if not HAS_ENGINE:
+            if REF_FROM == "ENGINE_PATCH_REF":
+                raise AssertionError(f"Engine のチェックアウト（ENGINE_DIR={ENGINE}）に ENGINE_PATCH_REF {ref} の版がない")
             raise AssertionError(f"Engine のチェックアウト（ENGINE_DIR={ENGINE}）に knowledge-check.yml の ENGINE_REF {ref} の版がない。"
                                  "ci/knowledge-enforcement.yml の ENGINE_REF を knowledge-check.yml と同じ版にそろえる")
         state, err = patch_state(ENGINE, ref)
         if state == STALE:
-            msg = (f"patch_stale: {PATCH.relative_to(REPO)} が ENGINE_REF {ref} の Engine に当たらず、Engine 側にもまだ入っていない。"
+            msg = (f"patch_stale: {PATCH.relative_to(REPO)} が {REF_FROM} {ref} の Engine に当たらず、Engine 側にもまだ入っていない。"
                    f"今の Engine に合わせて作り直す: {err}")
             self.fail_with_annotation(msg)
         if state == PARTIAL:
-            msg = (f"patch_partially_applied: ENGINE_REF {ref} の Engine に {err}（差分の一部だけが入ったか、入れたあと変わった）。"
+            msg = (f"patch_partially_applied: {REF_FROM} {ref} の Engine に {err}（差分の一部だけが入ったか、入れたあと変わった）。"
                    f"{PATCH.relative_to(REPO)} を今の Engine に合わせて作り直す（全部入れて ENGINE_REF を上げたなら差分を消す）")
             self.fail_with_annotation(msg)
         self.assertIn(state, (APPLIES, MERGED))
