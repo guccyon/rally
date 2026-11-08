@@ -5,7 +5,7 @@
 PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理と、起きた記録（制御プレーンのイベント列）がそれに合っているかを見る。
 
 ```sh
-python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査（Engine の job.finished の欄を含む）・見張りのテストと、Engine の本物の処理のテストと、CI のひな形の形のテスト
+python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査・見張りのテスト（どちらも Engine の job.finished の欄を含む）と、Engine の本物の処理のテストと、CI のひな形の形のテスト
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
 ```
 
@@ -98,7 +98,7 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 - テストのイベント列（エージェントで解いた回・機械的に解いた回・引き継がない回で、記録がそろったもの）の `job.finished` を Engine が出す欄だけにし、`job.started` の `model_tier`（積んだ段。解き方の tier ではない）も外して `events.py` で組み、`agent_resumed` と `tier` の照らせない件数が 0 かを見る
 - Engine が今の形（`agent_resumed` も `agent_tier` も出さない。`legacy_finished`）のときだけ `todo:` の理由で飛ばす。どちらかを出す版からは必須で、片方だけを出す版はもう片方が照らせずに落ちる。欄の名前を変えて出した版も今の形と見るので、その時は `FINISHED_FIELDS` を合わせる
 - Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ（`ENGINE_DIR` を渡したときと `CI=true` では飛ばさずに落とす）。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
-- 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`legacy_finished` の todo の呼び出しを消す
+- 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`legacy_finished` の todo の呼び出しを消す（`test_watch.py` の同じ todo も。下の「Engine の job.finished の欄で見張るテスト」）
 
 ## supervisor の周期ごとの見張り（`watch.py`）
 
@@ -113,6 +113,16 @@ python3 -B tools/conflict-check/watch.py --events tools/conflict-check/fixtures/
 - `apply(cur, stoppage, found)`: Engine の `orchestrator/dispatcher/stoppage.py` の `open_stoppage` で開き、新しく開いた key を返す。同じ key がすでに開いていれば Engine が開き直さない（`stoppage.opened:<key>` の dedupe）ので、周期ごとに呼んでよい
 - 終了コード: 0 = 開く停止がない、1 = 開く停止がある、2 = 記録か設定を読めなかった（`events.py` と同じ）。`--json` は `{ "stoppages": [...] }`
 - `test_watch.py` が、C-0005 の流れで PR #659 に停止を 1 つ開くこと、3 つの rule のどれか 1 つでも開くこと、線どおりの積み方・照らせないだけの PR には開かないこと、次の周期で開き直さないことを確かめる。Engine の本物の `open_stoppage` に渡して動かすのは `test_engine.py` の (4)
+- 「照らせないだけの PR には開かない」も、Engine が今の形（`job.finished` に `agent_resumed` と `agent_tier` を出さない版）のときだけの扱い（議決 `D-0042`、Issue #1101。下の「Engine の job.finished の欄で見張るテスト」）
+
+### Engine の job.finished の欄で見張るテスト（`test_watch.py` の `EngineFinishedTest`）
+
+`test_events.py` の `EngineFinishedTest` と同じ形で、`watch.py` が照らせずに停止を開かなかった外れの件数が 1 以上なら落とす（議決 `D-0042`、Issue #1101。K-0004 の `engine.test.mjs` の todo と同じ形）。
+
+- Engine の `job.finished` の欄は `engine_harness.py finished` で読む。イベント列は、照らすのに `agent_resumed` が要る外れ（2 回目以降で引き継いだ。`resumed_after_limit`）の PR と、`tier` が要る外れ（`CHANGELOG.md` だけの衝突を tier-large で解いた。`agent_for_mechanical`）の PR と、線どおりの PR（`test_events.py` の `FULL`）を 1 本にし、`job.finished` を Engine が出す欄だけに、`job.started` の `model_tier` も外す（`test_events.py` の `engine_shaped`）
+- `watch.stoppages` が外れの PR にその rule で停止を開かなかった件数（照らすのに要る項目ごと）が 0 かを見る。線どおりの PR に開いたら落ちる
+- todo（`legacy_finished`）と Engine のチェックアウトの渡し方・飛ばし方は `test_events.py` の `EngineFinishedTest` と同じ。片方だけを出す版はもう片方の外れを見逃して落ちる
+- 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`test_events.py` と `test_watch.py` の `legacy_finished` の todo の呼び出しを消す
 
 supervisor への配線（建設者が入れる）: `merge_step` の `ci_failure_step` の後（または `conflict_step` で続きのジョブを積んだ直後）に、その PR のイベント列（上の SQL）を引いて `watch.stoppages` と `watch.apply` を呼ぶ。停止が開けば `waiting_for_human` が `ci:` を見るので、その PR は同時に流す枠から外れる。
 
