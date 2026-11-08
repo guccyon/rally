@@ -1,6 +1,6 @@
 # PR 本文の見出しの検査
 
-PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。議決 `D-0045` の ci_check の案と Issue #1109 で、通る側のテスト（`gate.test.mjs`・`engine.test.mjs` の (10)）が CI の `node --test` の対象から外れていないかの見張りを `ci.test.mjs` に足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。知見 `K-0012` の担保として、議決 `D-0033`（Issue #1053 の起票時の番号は `D-0032`。PR #1051）の test の案と Issue #1053 で、本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る検査（`recheck.mjs`）を足した。
+PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。議決 `D-0044` の案と Issue #1106 で、`protection.mjs` を既定のブランチへの push と毎日走らせ、必須のチェックが外れたら落ちて Issue を開くか更新するひな形（`ci/pr-body-protection.yml`）を足した。議決 `D-0045` の ci_check の案と Issue #1109 で、通る側のテスト（`gate.test.mjs`・`engine.test.mjs` の (10)）が CI の `node --test` の対象から外れていないかの見張りを `ci.test.mjs` に足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。知見 `K-0012` の担保として、議決 `D-0033`（Issue #1053 の起票時の番号は `D-0032`。PR #1051）の test の案と Issue #1053 で、本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る検査（`recheck.mjs`）を足した。
 
 続きのジョブ（衝突の解消・CI 落ちの直しなど）の報告が、新しい PR と同じ見出しの組（`## 概要`・`## 対応内容` など）のまま本文の末尾に足されると、同じ見出しが 2 回出る。これを検査役（LLM）と判定役まで流さず、本文を更新した直後に止めるためのもの。差し戻しの直しで本文の末尾に追記するだけだと、見出しの順が崩れたり必須の見出しが欠けたりする（K-0006）ので、それも見る。
 
@@ -93,7 +93,7 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
   - (8) 未完了の続きが仕上がった回（`CONTINUE_REASON=incomplete`・`INCOMPLETE` が空）に関所で外れても、報告を足さない本文で仕上げ（未完了の印を消す・`Refs` を `Closes` に直す・題を戻す・ドラフトを外す）だけは済ませ、`finished.applied` を true で残す。報告は body_fix に回し、人には回さない
   - (9) 同じ回で報告を足さない本文も関所で外れたら、仕上げも書かず `finished.applied` を false で残し、dispatcher が停止（`body_gate_finish:<PR の URL>`、human）を開いて人に回す
   - (10) 同じ写しで、C-0005 の 21 回の続きのジョブの報告の見出しを `###`・`####` に下げたか `## ` 見出しを持たない形なら、毎回関所を 1 回呼んで 0 が返り（`node` を包んで終了コードを残す）、`body_gate.json` を残さずに本文を書き、書いた本文が関所に通る（正しい更新まで止める誤検知がないこと。議決 `D-0032` の test の案、Issue #1038）。Engine がもう関所を呼んでいれば差分を当てずに写すので、配線したあとは本物の本文の更新を確かめる
-- `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`gate.test.mjs`・`engine.test.mjs` の (10) が実行の対象から外れていないこと（下の「配線の手順（建設者）」）
+- `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`gate.test.mjs`・`engine.test.mjs` の (10) が実行の対象から外れていないこと、`ci/pr-body-protection.yml` の形と手順の振る舞い（下の「配線の手順（建設者）」と「定期の照合」）
 - `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
 - `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
@@ -159,9 +159,12 @@ Engine は別のリポジトリなので、次は建設者が入れる。その�
 `protection.mjs` は、`gh api` で取り出した branch protection（古い形か rulesets）の JSON を読み、写しの `engine-test` が報告するチェックの名前（`pr-body-engine-test`）が必須のチェックにあるかを照らす。branch protection は PR の `GITHUB_TOKEN` では読めないので、PR ごとには走らせず建設者が走らせる。
 
 ```sh
-gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # か gh api repos/{owner}/{repo}/rules/branches/main
-node tools/pr-body-check/protection.mjs --protection protection.json      # リポジトリの根から
+gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形
+gh api repos/{owner}/{repo}/rules/branches/main > rules.json             # rulesets
+node tools/pr-body-check/protection.mjs --protection protection.json --protection rules.json   # リポジトリの根から
 ```
+
+`--protection` は何度でも渡せる。古い形と rulesets の両方を渡すと、どちらかで必須になっているチェックを必須に数える（議決 `D-0044`、Issue #1106）。
 
 | rule | 外れる形 |
 |---|---|
@@ -176,6 +179,18 @@ node tools/pr-body-check/protection.mjs --protection protection.json      # リ�
 
 1. 写す前に、今の `ENGINE_REF`（関所を呼ばない Engine）を `ENGINE_DIR` にして `engine.test.mjs` の (3) が落ちることを記録する（`CI=true ENGINE_DIR=<Engine> node --test engine.test.mjs`）
 2. `engine/pr-body-gate.patch` を Engine に入れ、`ENGINE_REF` をその版に上げる（`ci/pr-body-engine.yml` と `tools/sendback-check/ci/sendback-engine.yml` の両方。どちらのテストも通る版にする）。同じ PR で `ci/pr-body-engine.yml` を写し、`pr-body-engine-test` が通ることを確かめる
-3. `pr-body-engine-test` を必須のチェックにし、`protection.mjs` が 0 で終わることを記録する
+3. `pr-body-engine-test` を必須のチェックにし、`protection.mjs` が 0 で終わることを記録する。`ci/pr-body-protection.yml` を `.github/workflows/pr-body-protection.yml` に写してシークレット `PR_BODY_PROTECTION_TOKEN` を置き、手動で走らせて通ることを確かめる（下の「定期の照合」。議決 `D-0044`、Issue #1106）
 4. 本物の続きのジョブで、関所に外れた本文が書かれず（`pr.body_gate_blocked`）、body_fix が積まれた（`job.enqueued`）ことを記録する
-5. 1〜4 の記録を Issue #1037 に残してから、知見 `K-0001` のこの解決策の `wired` を `true`（`wired_by` に `.github/workflows/pr-body-engine.yml`・`engine-test`・`tools/pr-body-check/engine.test.mjs`）に、`verified` を `true` にする
+5. 1〜4 の記録を Issue #1037（と Issue #1106）に残してから、知見 `K-0001` のこの解決策の `wired` を `true`（`wired_by` に `.github/workflows/pr-body-engine.yml`・`engine-test`・`tools/pr-body-check/engine.test.mjs`）に、`verified` を `true` にする
+
+### 定期の照合（`ci/pr-body-protection.yml`）
+
+`ci.test.mjs` は守りたい `engine-test` の中で走るので、写しが消えたり `pr-body-engine-test` が必須のチェックから外されたりしたときは自分も走らず、その崩れを見張れない。建設者が一度 `protection.mjs` を走らせるだけでも、後で外されたことに気づけない（議決 `D-0044`、Issue #1106）。`ci/pr-body-protection.yml` の `protection` のジョブ（チェックの名前 `pr-body-protection`）が、`protection.mjs` を既定のブランチ（`main`）への push・1 日 1 回（UTC 20:30、JST 5:30）・手動（`workflow_dispatch`）で走らせる。push で走るので、写しを消す PR がマージされた直後にも落ちる。
+
+- branch protection は `GITHUB_TOKEN` では読めないので、読める権限のトークン（GitHub App か `administration:read` の fine-grained PAT）をシークレット `PR_BODY_PROTECTION_TOKEN` に置く（建設者。`tools/sendback-check/ci/sendback-protection.yml` の `SENDBACK_PROTECTION_TOKEN` と同じ値でよい）。トークンを渡すのは branch protection を読む手順だけ
+- `main` の古い形（`branches/main/protection`）と rulesets（`rules/branches/main`）の両方を読み、`--protection` に 2 つとも渡す。古い形が保護なし（404 の `Branch not protected`）のときはそのまま渡す（rulesets にもなければ `required_check_missing`）
+- トークンがない・読めなかった（権限がないなど）ときは `::error title=pr-body-protection protection_unreadable::…` で落ちる。必須のチェックの有無が分からないので Issue は開かない
+- `workflow_not_copied`・`check_name_changed`・`required_check_missing`・`check_name_shared` のどれかで外れたら、ジョブは落ち、題が `ISSUE_TITLE` の開いている Issue がなければ開き、あればコメントで足す。記録の最初の行は外れ方ごとの印（`<!-- pr-body-protection: <外れの行の sha256 の先頭 16 桁> -->`）で、同じ印が Issue の本文かコメントにすでにあれば足さない。開いている Issue を探せなかったときは開く側に倒し、Issue を開けない・コメントできないときはその手順も落ちる
+- 通ったら、開いている Issue に通ったことを書いて閉じる
+- PR では走らせない（PR のコードをトークンと `issues: write` で動かさない）。建設者が `.github/workflows/pr-body-protection.yml` にそのまま写す。`ci.test.mjs` がこのひな形の形（push は `main` だけ・schedule・手動のほかで走らない・トークンは読む手順だけ・2 つの JSON を渡す・Issue の手順は `if: always()`・チェックの名前が `pr-body-engine-test` と重ならない）と、手順を偽の `gh` で動かした振る舞い（そろっていれば通る・rulesets だけでも通る・4 つの外れ方のどれでも Issue を開く・開いていればコメントで足し同じ外れ方は足さない・通ったら閉じる・読めなければ照らさない）、写しがあればひな形と同じかを見る
+- 写してシークレットを置き、手動で 1 回走らせて通ったら、`K-0001` の Issue #1106 の解決策の `wired` を `true`（`wired_by` に `.github/workflows/pr-body-protection.yml` の `protection` と `tools/pr-body-check/protection.mjs`、`.github/workflows/pr-body-engine.yml` の `engine-test` と `tools/pr-body-check/engine.test.mjs`）にする。`tools/knowledge-enforcement-check/check.py` の `REQUIRED_SCHEDULE` に入れたので、schedule のジョブから `protection.mjs` を呼ぶ `wired_by` がないと `wired: true` にできない。上の「順序」の 1 と 4（今の `ENGINE_REF` で (3) が落ちること、本物の続きのジョブで外れた本文が書かれず body_fix が積まれたこと）を Issue #1106 に記録してから `verified` を `true` にする

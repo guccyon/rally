@@ -6,9 +6,11 @@ Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なけれ�
 今の Engine が線から外れている場合は、Engine が今の形（LEGACY_*）のときだけ「todo:」の理由で飛ばす（結果には出る）。
 Engine の振る舞いが今の形から変わったら、その版からは線に合わないと落ちる。建設者が Engine を線に合わせて ENGINE_REF を上げたら、
 LEGACY_* と todo_while_legacy の呼び出しを消してよい（README の「今の Engine」）。
+todo で飛ばしたテストは todo で数え、終わりに件数と中身を標準エラーに出す（GitHub Actions では ::warning の注記も。議決 D-0043・Issue #1104）。
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import subprocess
@@ -27,6 +29,28 @@ REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
 HAVE_ENGINE = (ENGINE_DIR / "orchestrator/dispatcher/supervisor.py").is_file()
 SKIP = None if REQUIRED or HAVE_ENGINE else f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE_DIR}）"
 HEADS = 6   # 上限（3）を超えて衝突し続ける head の数
+TODOS: list[str] = []   # この実行で todo（Engine が今の形のときだけ）で飛ばしたテストと理由。test_events.py・test_watch.py の EngineFinishedTest も足す
+
+
+def todo(case: unittest.TestCase, reason: str):
+    """Engine が今の形のときだけ「todo:」の理由で飛ばし、件数に数える（終わりに todo_summary で出す。議決 D-0043・Issue #1104）"""
+    TODOS.append(f"{case.id()}: {reason}")
+    case.skipTest(f"todo: {reason}")
+
+
+def todo_summary(todos: list[str], github: bool = False) -> list[str]:
+    """todo で飛ばした件数と中身の行。GitHub Actions では 1 件ずつ ::warning の注記も出す（OK のまま黙って残らないように）"""
+    out = [f"conflict-check: todo で飛ばしたテスト {len(todos)} 件（Engine が今の形のときだけ。README の「今の Engine」）"]
+    out += [f"  - {t}" for t in todos]
+    if github:
+        out += [f"::warning title=conflict-check todo::{t}" for t in todos]
+    return out
+
+
+@atexit.register
+def _report_todos():
+    if TODOS:
+        print("\n".join(todo_summary(TODOS, os.environ.get("GITHUB_ACTIONS") == "true")), file=sys.stderr)
 
 
 def harness(*args: str) -> dict:
@@ -63,7 +87,7 @@ class EngineTest(unittest.TestCase):
 
     def todo_while_legacy(self, is_legacy: bool, what: str):
         if is_legacy:
-            self.skipTest(f"todo: 今の Engine は {what}（README の「今の Engine」。Engine を直して ENGINE_REF を上げたら消す）")
+            todo(self, f"今の Engine は {what}（README の「今の Engine」。Engine を直して ENGINE_REF を上げたら消す）")
 
     def test_0_取り出す関数と手順がすべてEngineにある(self):
         out = harness("--check", self.engine)
