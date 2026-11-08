@@ -773,4 +773,25 @@ enforcement:
       decided_by: committee:D-0055
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0059（Issue #1158 の起票時の番号は D-0056。PR #1155）の ci_check の案（protection.mjs を .github/workflows/ から定期と PR ごとに走らせ、
+        branch protection の API で読んだ本物の必須のチェックに sendback-engine-test と sendback-wiring-order が入っていないとき
+        （required_check_missing・check_name_changed・check_name_shared）は ::error で落とし、その実行の記録を Issue #948 と事例記録に残してから
+        wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。定期と手動で走る形（議決 D-0039、Issue #1087）はあったので作り直さず、
+        tools/sendback-check/ci/sendback-protection.yml に絞り込みのない pull_request と protection-pr のジョブを足した。protection-pr は protection と同じ
+        branch protection を読む・照らす手順だけを持ち、その PR の .github/workflows/ と本物の必須のチェックを照らして、4 つの外れ方（workflow_not_copied も）で
+        ::error を出して落ちる。Issue は開かず、権限は contents: read だけにし、issues: write は定期と手動でだけ走らせる protection のジョブに移した。
+        tools/sendback-check/ci.test.mjs で、2 つのジョブの if: と権限、protection-pr の手順が protection の読む・照らす手順と同じこと、手順を偽の gh で動かして
+        そろっていれば通り、required_check_missing・check_name_changed・check_name_shared・workflow_not_copied で ::error を出して落ち Issue を開かないこと、
+        トークンがないときは protection_unreadable で落ちることを確かめた。tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE と REQUIRED_PR の両方に
+        この解決策と protection.mjs の組を足し、wired: true にするとき、schedule でも走るジョブと pull_request でも走るジョブの両方から protection.mjs を呼ぶ
+        wired_by がなければ落とす（test_check.py で、ひな形をそのまま写した protection と protection-pr なら通り、片方だけ・pull_request か schedule を外した写し・
+        pull_request で走らない protection-pr では落ちることを確かめた）。.github/workflows/ への写しとシークレットと branch protection は建設者が行う
+        （ワーカーは .github/workflows/ と権限設定に触れない）ので、PR で落ちた実行も Issue #948 と事例記録への記録もまだなく、この解決策は未配線・未確認
+      issue: 1158
+      at: 2026-11-08
+      decided_by: committee:D-0059
+      wired: false
+      verified: false
 decided_by: committee:D-0004

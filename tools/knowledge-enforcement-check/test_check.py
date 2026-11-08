@@ -676,6 +676,77 @@ class EnginePatchPullRequestTest(unittest.TestCase):
         self.assertIn("issue 1144）: wired にするには", errors[0])
 
 
+class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
+    """K-0004 の issue 1158 の解決策は schedule のジョブと pull_request のジョブの両方から protection.mjs を呼ばないと wired にできない
+    （議決 D-0059（起票時の番号は D-0056）、Issue #1158）"""
+
+    PROT = ScheduleTest.PROT
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-protection.yml"
+    WF = ".github/workflows/sendback-protection.yml"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.PROT: "", "tools/sendback-check/order.mjs": "", self.WF: workflow}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, jobs=("protection", "protection-pr"), issue=1158, kid="K-0004", wired=True, runs=None) -> list[str]:
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.PROT} for job in jobs]}]}}
+        return check.check_schedule(item, d) + check.check_pull_request(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1158)], self.PROT)
+        self.assertEqual(check.REQUIRED_PR[("K-0004", 1158)], (self.PROT, "D-0059"))
+
+    def test_ひな形をそのまま写した_protection_と_protection_pr_なら通る(self):
+        self.assertEqual(self.errors(self.repo(self.template())), [])
+
+    def test_片方のジョブだけでは落ちる(self):
+        d = self.repo(self.template())
+        e = self.errors(d, jobs=("protection",))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.pull_request", e[0])
+        self.assertIn("議決 D-0059", e[0])
+        e = self.errors(d, jobs=("protection-pr",))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_pull_request_か_schedule_を外した写しでは落ちる(self):
+        no_pr = self.template().replace("  workflow_dispatch:\n  pull_request:\n", "  workflow_dispatch:\n", 1)
+        self.assertNotEqual(no_pr, self.template())
+        e = self.errors(self.repo(no_pr))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.pull_request", e[0])
+        no_sched = self.template().replace('  schedule:\n    - cron: "0 20 * * *"\n', "", 1)
+        self.assertNotEqual(no_sched, self.template())
+        e = self.errors(self.repo(no_sched))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_pull_request_では走らない_protection_pr_は数えない(self):
+        text = self.template().replace("    if: github.event_name == 'pull_request'\n", "    if: github.event_name != 'pull_request'\n", 1)
+        self.assertNotEqual(text, self.template())
+        self.assertEqual(len(self.errors(self.repo(text))), 1)
+
+    def test_protection_mjs_を呼ばない項目では落ちる(self):
+        e = self.errors(self.repo(self.template()), runs="tools/sendback-check/order.mjs")
+        self.assertEqual(len([x for x in e if "wired にするには" in x]), 2, e)
+
+    def test_配線していない解決策とほかの解決策は見ない(self):
+        d = self.repo("on:\n  workflow_dispatch:\njobs: {}\n")
+        self.assertEqual(self.errors(d, wired=False), [])
+        self.assertEqual(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1018, "wired": True, "wired_by": [{"workflow": self.WF, "job": "protection", "runs": self.PROT}]}]}}, d), [])
+
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 
