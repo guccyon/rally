@@ -710,7 +710,21 @@ enforcement:
       verified: false
     - kind: test
       what: >-
-        議決 D-0053（PR #1146）の test の案を入れた。tools/knowledge-enforcement-check/test_engine_patch.py が一部だけ入ったこと
+        議決 D-0053（Issue #1143 の起票時の番号は D-0050。PR #1142）の test の案を入れた。tools/knowledge-enforcement-check/test_ci.py に
+        ref_mismatches() と EngineRefTest を足し、ci/knowledge-enforcement.yml（と .github/workflows/knowledge-enforcement.yml に写してあればその写し）の
+        ENGINE_REF の行の値が、.github/workflows/knowledge-check.yml の ENGINE_REF と字面で同じ版の 1 行でなければ落とす（形の検査 problems() とは別のテストにし、
+        写しがないときも飛ばさない）。一時ディレクトリに 3 つのファイルを置き、knowledge-check.yml だけ・ひな形だけ・写しだけを上げた組と、ENGINE_REF がない・2 行ある
+        ひな形で落ち、3 つをそろえて上げた組と写しのない組、値を引用符で囲んだ・行の後ろに注釈を付けた組では通ることを確かめ、写しを見ない・値の 1 つだけを見るように
+        壊した写しで落ちることも手元で確かめた。test_ci.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは建設者が置くので、
+        この解決策も未配線・未確認
+      issue: 1143
+      at: 2026-11-08
+      decided_by: committee:D-0053
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0054（Issue #1149 の起票時の番号は D-0053。PR #1146）の test の案を入れた。tools/knowledge-enforcement-check/test_engine_patch.py が一部だけ入ったこと
         （patch_partially_applied）を見る関数の名前を手で書いた MARKERS をやめ、added_functions() が engine/knowledge-enforcement.patch の
         core-gates/knowledge_check.py に足す行（+def ...）から取り出すようにした（差分に関数を足しても一覧から漏れず、その関数だけが入った版を
         patch_stale と取り違えない）。作った Engine の版で、差分に関数を 1 つ足した作った版の差分から足した関数がすべて（テストのファイルの +def は除いて）
@@ -719,7 +733,7 @@ enforcement:
         test_engine_patch.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
       issue: 1149
       at: 2026-11-08
-      decided_by: committee:D-0053
+      decided_by: committee:D-0054
       wired: false
       verified: false
 decided_by: committee:D-0004
