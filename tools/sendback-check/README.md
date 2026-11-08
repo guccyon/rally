@@ -187,6 +187,7 @@ schedule のワークフローは、GitHub が長く動きのないリポジト�
 - Issue のコメントは PR ごとには読まないので、建設者が写して schedule か手動で 1 回走らせたあと、`gh api repos/{owner}/{repo}/issues/948/comments --paginate --jq '.[]'` の出力（1 行 1 件。JSON の配列でもよい）を `--comments` に渡して走らせる
 - 終了コードは 0 = 通る、1 = 外れた、2 = 読めなかった（JSON でない・`--comments` がない）。`GITHUB_ACTIONS=true` では `::error title=sendback-check <rule>::…` の形で出す。通ると記録ごとに種類・先頭の版・実行の URL を 1 行ずつ出す
 - 通ってから、`K-0004` の Issue #977 の解決策の `wired` を `true`（`wired_by` に `.github/workflows/sendback-engine-head.yml` の `engine-head` と `tools/sendback-check/engine.test.mjs`）にし、`verified` を `true` にする。`head-record.mjs` の出力の実行の URL を what に書き足す
+- 記録が残る前に `verified` を `true` にする変更は、`tools/knowledge-enforcement-check/check.py` が止める。Issue #977・#1046・#1047 の解決策が `verified: true` なら、`--head-comments` に渡した Issue #948 のコメントで `head-record.mjs` を走らせ、外れれば `head_record_missing` で落とす（議決 `D-0047`、Issue #1114。`tools/knowledge-enforcement-check/README.md` の「engine-head の記録の照合」）
 
 ## 呼び出す場所
 
