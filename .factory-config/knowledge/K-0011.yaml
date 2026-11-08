@@ -6,7 +6,9 @@ statement: >-
   判定役は指摘の根拠を確かめられず、手元にあるリポジトリの決まり（CLAUDE.md など）だけで裁いて、
   rubric にだけある要求（PR 本文の背景・問題など）を決まりの外として退け、検査役と判定役で同じ成果物の正しい形の基準が割れる。
 scope:
+  work: [dev.review.judge]
   roles: [judge, inspect]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0006

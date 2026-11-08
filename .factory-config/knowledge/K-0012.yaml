@@ -6,7 +6,10 @@ statement: >-
   直した本文の再検査をマージの条件に入れないと、PR は直していない本文か、直したが再検査していない本文のままマージされうる。
   直しが漏れたり失敗したりしていても、マージの前に止める段がない（根拠の 2 件では、直し漏れが残った記録はまだない）。
 scope:
+  work: [dev.describe, dev.review.inspect]
+  artifacts: [PR.body]
   roles: [supervisor, body_fix]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0006

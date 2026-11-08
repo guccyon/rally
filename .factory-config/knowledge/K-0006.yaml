@@ -6,7 +6,11 @@ statement: >-
   見出しの順と階層が崩れて新しい差し戻しを生む。同じ本文を複数のジョブ（body_fix と続きの implement）が並列に書き換えると、
   この崩れは重くなる（並列は主な原因ではなく、悪化させる条件）。
 scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
   roles: [judge, body_fix, implement]
+acts_on: context
 confidence: hypothesis
 evidence:
   - case: C-0003

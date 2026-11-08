@@ -5,8 +5,10 @@ statement: >-
   並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、
   そのたびに重い続きのジョブ（tier-large、PR 本文への追記つき）が走って、費用と本文の追記による次の欠陥を生む。
 scope:
+  work: [dev.build]
+  files: [CHANGELOG.md, changelog.d/]
   roles: [implement]
-  paths: [CHANGELOG.md, changelog.d/]
+acts_on: process
 confidence: hypothesis
 evidence:
   - case: C-0001
