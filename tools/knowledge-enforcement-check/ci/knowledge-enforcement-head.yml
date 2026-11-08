@@ -62,10 +62,8 @@ jobs:
         run: |
           head_sha="${ENGINE_HEAD:-}"
           outcome="${HEAD_OUTCOME:-failure}"
-          engine_ref=""
-          if [ -f ../../.github/workflows/knowledge-check.yml ]; then
-            engine_ref=$(sed -n 's/^ *ENGINE_REF: *\([0-9a-f]*\) *$/\1/p' ../../.github/workflows/knowledge-check.yml | head -n 1)
-          fi
+          # ENGINE_REF は test_engine_patch.py の engine_ref() で読む（knowledge-check.yml の読み方を 1 か所にする）
+          engine_ref=$(python3 -c 'import test_engine_patch as t; print(t.engine_ref())' 2>/dev/null || true)
           engine_ref="${engine_ref:-読めなかった}"
           if [ "$outcome" = success ]; then
             echo "Engine の既定のブランチの先頭（${head_sha}）に差分が当たるか、もう入っている（ENGINE_REF は ${engine_ref}）"

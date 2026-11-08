@@ -20,6 +20,9 @@ REPO = HERE.parent.parent
 spec = importlib.util.spec_from_file_location("knowledge_enforcement_check", HERE / "check.py")
 check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check)  # type: ignore[union-attr]
+patch_spec = importlib.util.spec_from_file_location("knowledge_enforcement_patch", HERE / "test_engine_patch.py")
+patch_check = importlib.util.module_from_spec(patch_spec)
+patch_spec.loader.exec_module(patch_check)  # type: ignore[union-attr]
 
 TEMPLATE = HERE / "ci" / "knowledge-enforcement-head.yml"
 COPY = REPO / ".github" / "workflows" / "knowledge-enforcement-head.yml"
@@ -29,7 +32,7 @@ WF = check.load_yaml(TEMPLATE)
 STEPS = WF["jobs"]["patch-head"]["steps"]
 TEST_STEP = next(s for s in STEPS if s.get("id") == "head-patch")
 NOTIFY_STEP = next(s for s in STEPS if "patch_stale なら知らせて Issue に記録する" in s.get("name", ""))
-ENGINE_REF = check.load_yaml(KNOWLEDGE_CHECK)["env"]["ENGINE_REF"]
+ENGINE_REF = patch_check.engine_ref()   # ENGINE_REF の読み方は test_engine_patch.py の engine_ref() の 1 か所
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -144,7 +147,12 @@ class StepTest(unittest.TestCase):
         self.assertIn("patch does not apply", body)
 
     def test_先頭にもう入っていれば通り_記録しない(self):
-        engine, sha = self.box.engine("def check_wired_by(x):\n")
+        engine, _ = self.box.engine("a\n")
+        f = engine / "core-gates" / "knowledge_check.py"
+        f.write_text("a\ndef check_wired_by(x):\n", encoding="utf-8")
+        (self.box.dir / "engine" / "knowledge-enforcement.patch").write_text(git(engine, "diff") + "\n", encoding="utf-8")
+        git(engine, "commit", "-qam", "merged")   # 先頭は差分を逆に当てられる（もう全部入っている）版
+        sha = git(engine, "rev-parse", "HEAD")
         r = self.box.run(TEST_STEP, ENGINE_DIR=str(engine), GITHUB_ENV=str(self.box.root / "e"), GITHUB_STEP_SUMMARY=str(self.box.root / "s"))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         n = self.box.run(NOTIFY_STEP, ENGINE_HEAD=sha, HEAD_OUTCOME="success")
@@ -158,6 +166,20 @@ class StepTest(unittest.TestCase):
                            capture_output=True, text=True, env={**{k: v for k, v in os.environ.items() if k != "ENGINE_PATCH_REF"}, "ENGINE_DIR": str(engine)})
         self.assertNotEqual(r.returncode, 0)
         self.assertIn(f"ENGINE_REF {ENGINE_REF} の版がない", r.stderr)
+
+    def test_記録の_ENGINE_REF_は_engine_ref_と同じ読み方で_クオートで囲んでも読み_読めなければそう書く(self):
+        (self.box.dir / "patch-head.txt").write_text(STALE_OUT, encoding="utf-8")
+        wf = self.box.root / ".github" / "workflows" / "knowledge-check.yml"
+        bumped = "b" * 40
+        wf.write_text(KNOWLEDGE_CHECK.read_text(encoding="utf-8").replace(f"ENGINE_REF: {ENGINE_REF}", f'ENGINE_REF: "{bumped}"'), encoding="utf-8")
+        self.assertEqual(patch_check.engine_ref(wf), bumped)
+        n = self.box.run(NOTIFY_STEP, ENGINE_HEAD=HEAD, HEAD_OUTCOME="failure")
+        self.assertEqual(n.returncode, 0, n.stdout + n.stderr)
+        self.assertIn(f"ENGINE_REF（{bumped}）", n.stdout)
+        wf.write_text("env:\n  ENGINE_REF: main\n", encoding="utf-8")
+        n = self.box.run(NOTIFY_STEP, ENGINE_HEAD=HEAD, HEAD_OUTCOME="failure")
+        self.assertEqual(n.returncode, 0, n.stdout + n.stderr)
+        self.assertIn("ENGINE_REF（読めなかった）", n.stdout)
 
     def test_同じ先頭の記録があれば足さない(self):
         box = Sandbox({"gh": f'[ "$1" = api ] && printf "%s\\n" "<!-- knowledge-enforcement-head: {HEAD} patch_stale -->"; exit 0'})

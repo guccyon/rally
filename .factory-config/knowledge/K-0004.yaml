@@ -472,6 +472,21 @@ enforcement:
       decided_by: committee:D-0035
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0036 の test の案（test_engine_patch.py が「もう入っている」を差分で足した関数の名前があるかでも判定していたので、差分の一部だけが
+        Engine に入った版や、入れたあと変わった版、名前だけが別の中身で入った版でも通ってしまう）を入れた。「もう入っている」は
+        git apply --reverse --check が通るときだけにし、差分で足した enforcement_label・check_wired_by のどれかが core-gates/knowledge_check.py に
+        あるのに --reverse --check が通らない版は patch_partially_applied で落とす（GitHub Actions では ::error も出す。::warning で通す案は採らず落とす側にした）。
+        作った git の版で、当たる・入っている・enforcement_label だけが入った・check_wired_by だけが入って周りが変わった・入れたあと変わった・どれでもないの
+        判定を確かめ、手元の Engine の写しに本物の差分を当てた版・当てたあと enforcement_label を変えた版・knowledge_check.py だけに当てた版でも
+        merged と patch_partially_applied に分かれることを確かめた。手元の Engine には ENGINE_REF の版がないのでその版では確かめておらず、
+        ci/knowledge-enforcement.yml の .github/workflows/ への写しは建設者が行うので、まだ PR ごとには走っておらず効き目は確かめていない
+      issue: 1077
+      at: 2026-11-08
+      decided_by: committee:D-0036
+      wired: false
+      verified: false
     - kind: ci_check
       what: >-
         議決 D-0036 の ci_check の案（test_engine_patch.py は ENGINE_REF の版だけを見るので、ENGINE_REF が古いまま Engine の先頭だけが進んで
