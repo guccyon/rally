@@ -53,4 +53,24 @@ enforcement:
       at: 2026-11-08
       wired: false
       verified: false
+    - kind: config
+      what: >-
+        議決 D-0071 の config の案のうち、ワーカーの権限で入れられる分を入れた。tools/pr-body-check/followers.json に、実装役の報告の型
+        （Engine の orchestrator/worker/entrypoint.sh の約束の「最後の出力を次の見出しだけで構成する」の次から続く「## …」の行）を合わせる側
+        implementer-report として足した。見出しの間に注釈（「（1〜3 文）」など）が挟まるので、followers.mjs の一覧の取り出し方に任意の item を足し、
+        pattern で捕まえた範囲から item の組を順に拾って separator でつなぎ、template.json の見出しをつないだものと比べる（1 つも拾えなければ読めなかったことにする）。
+        followers.test.mjs で、template.json に合わせた報告の型が通り、Issue #1194 の時点の Engine の報告の型（背景・問題がない）と、順・名前・数を変えた形が
+        headings_mismatch で落ち、注釈だけを変えた形は通り、節がない・2 か所ある・見出しの行がない形は照らさずに読めなかったことになり、template.json だけを変えると
+        合わせる側の 3 つがすべて落ちることを確かめた。手元の Engine（9f8f6b4）では PR-002 と報告の型の両方が headings_mismatch で食い違うので、本物の Engine の照合は
+        Engine の食い違いがどれも Issue #1121・#1194 の時点の形のときだけ todo にし（ほかの形の食い違いや読めない Engine は落とす）、両方を template.json に合わせた
+        Engine の写しでは todo が外れて通ることを確かめた。案の残り（ci/pr-body-engine.yml を .github/workflows/ に写して必須のチェックにし、wired_by を書く）は、
+        この Issue が特権のライン（factory:privileged）でなく .github/workflows/ を変えられないので入れていない（CLAUDE.md の「やってはいけないこと」、Engine ADR 0041）。
+        議決 D-0071 の dissent の票のとおり、Engine の PR-002 と報告の型を合わせて ENGINE_REF を上げる前に必須にすると関係のない PR まで止まる順の問題もある。
+        建設者が Engine を合わせて写すまで配線されておらず効き目は確かめていない。Engine の報告の型を照らす対象に入れたので D-0006 の案の 3 つはそろったが、
+        配線と確認がまだなので confidence は hypothesis のまま
+      issue: 1194
+      at: 2026-11-08
+      decided_by: committee:D-0071
+      wired: false
+      verified: false
 decided_by: committee:D-0006

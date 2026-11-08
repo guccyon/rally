@@ -29,15 +29,15 @@ npm test
 
 PR 本文の `## ` 見出しの順と、必須かどうかの 1 つの定義。順は `概要 / 背景 / 問題 / 対応内容 / 影響範囲・互換性 / 動作確認 / 補足 / 仮決め / 知見`。該当しない見出しは省くので、必須は `概要` と `対応内容` だけ。
 
-見出しの正はこのファイルに置く（知見 `K-0005` の線でオーナーが決めた。Issue #936）。CLAUDE.md の「書き方」の「PR の説明は … の見出しで」は同じ順にそろえてあり、`check.test.mjs` が両者の一致を確かめる。Engine の rubric の `PR-002`（`core-gates/rubric.yaml`）の見出しの列（概要・背景・問題・対応内容・影響範囲・動作確認・補足）は同じ順だが、`影響範囲` の名前と `仮決め`・`知見` がない点がまだ食い違う。Engine は別のリポジトリなので、建設者がこの定義に合わせる。正本とそれに合わせる側は `followers.json` に書き、`followers.mjs` が照らす（下の「正本に合わせる側の照合」）。
+見出しの正はこのファイルに置く（知見 `K-0005` の線でオーナーが決めた。Issue #936）。CLAUDE.md の「書き方」の「PR の説明は … の見出しで」は同じ順にそろえてあり、`check.test.mjs` が両者の一致を確かめる。Engine の rubric の `PR-002`（`core-gates/rubric.yaml`）の見出しの列（概要・背景・問題・対応内容・影響範囲・動作確認・補足）は同じ順だが、`影響範囲` の名前と `仮決め`・`知見` がない点がまだ食い違う。Engine は別のリポジトリなので、建設者がこの定義に合わせる。Engine の実装役の報告の型（`orchestrator/worker/entrypoint.sh` の「最後の出力を次の見出しだけで構成する」の見出しの列）も、`背景`・`問題` がない点がまだ食い違う。正本とそれに合わせる側は `followers.json` に書き、`followers.mjs` が照らす（下の「正本に合わせる側の照合」）。
 
 `check.mjs` は初めて照らすときに定義を読んで検証する（`h2` が空でない配列で、各要素は前後に空白のない 1 行の `text` と真偽値の `required` だけを持ち、`text` が重ならない）。読めない・JSON でない・外れたら専用の `TemplateError` を投げ、本文を照らさない。モジュールの読み込み時には投げないので、表示と終了コード（3）は境界の `main` が組む。検証した定義は配列も要素も凍結して `loadTemplate()` が返すので、後から書き換えられない。
 
 ## 正本に合わせる側の照合（`followers.json`・`followers.mjs`）
 
-知見 `K-0005`（PR 本文の見出しの定義が、rubric の `PR-002` とリポジトリの決まりで割れていると、PR ごとに判断が割れる）を決定論で担保する（Issue #1121。解決策の種類は config）。見出しの正本を `template.json` の 1 つと `followers.json` に書き、それに合わせる側の見出しの一覧が正本と食い違ったら落とす。
+知見 `K-0005`（PR 本文の見出しの定義が、rubric の `PR-002` とリポジトリの決まりで割れていると、PR ごとに判断が割れる）を決定論で担保する（Issue #1121。解決策の種類は config。議決 `D-0071` の config の案と Issue #1194 で、実装役の報告の型を合わせる側に足した）。見出しの正本を `template.json` の 1 つと `followers.json` に書き、それに合わせる側の見出しの一覧が正本と食い違ったら落とす。
 
-- `followers.json`: `canonical` は `template.json` だけ（ほかを書くと定義が不正）。`followers` に合わせる側を並べる。今は CLAUDE.md の「PR の説明は … の見出しで」（区切り ` / `）と「（必須は … 。」（区切り ` と `）、Engine の `core-gates/rubric.yaml` の `PR-002` の `check` の「テンプレートの見出し（…）」（区切り `・`）。各要素は `id`・`root`（`repo` か `engine`）・`path`・`headings`（`pattern` は捕まえる組が 1 つの正規表現、`separator` は区切り）と、任意の `required`、rubric の項目を指す `rubric_id`・`field`（そろえて書く）
+- `followers.json`: `canonical` は `template.json` だけ（ほかを書くと定義が不正）。`followers` に合わせる側を並べる。今は CLAUDE.md の「PR の説明は … の見出しで」（区切り ` / `）と「（必須は … 。」（区切り ` と `）、Engine の `core-gates/rubric.yaml` の `PR-002` の `check` の「テンプレートの見出し（…）」（区切り `・`）、Engine の `orchestrator/worker/entrypoint.sh` の実装役の報告の型（「最後の出力を次の見出しだけで構成する」の次から続く `「## …」` の行。区切り ` / `）。各要素は `id`・`root`（`repo` か `engine`）・`path`・`headings`（`pattern` は捕まえる組が 1 つの正規表現、`separator` は区切り）と、任意の `required`、rubric の項目を指す `rubric_id`・`field`（そろえて書く）。一覧には任意の `item`（捕まえる組が 1 つの正規表現）を書け、書くと `pattern` で捕まえた範囲から `item` の組を出てくる順に拾い、`separator` でつないだものを一覧にする（実装役の報告の型のように、見出しの間に注釈が挟まる形のため。1 つも拾えなければ読めなかったことにする）
 - `followers.mjs`: 合わせる側から一覧をちょうど 1 か所で取り出し、`template.json` の見出しを定義の順に同じ区切りでつないだ文字列と比べる（区切りで割らない。rubric の区切りの `・` が `影響範囲・互換性` にも入るため）。`required` があれば必須の見出しも同じく比べる。rubric は `- id: PR-002` の項目の中から `check` の 1 行の値（引用あり・なし）を読む
 
 ```sh
@@ -51,7 +51,7 @@ node followers.mjs [--engine-dir <Engine のチェックアウト>] [--json <出
 
 終了コードは 0 = 合っている、1 = 食い違った、2 = 合わせる側を読めなかった・一覧がちょうど 1 か所で取り出せなかった（照らしていない。黙って通さない）、3 = `followers.json` か `template.json` が不正。`--json` は `{ "ok": bool, "errors": [{ "rule", "follower", "expected", "actual", "message" }] }`。
 
-照らすのは CI で、`followers.test.mjs` が `ci/pr-body-engine.yml` の `node --test` の中で走り、`ENGINE_DIR` の Engine の rubric と今の CLAUDE.md を照らす（`ENGINE_DIR` を渡したときと `CI=true` では、Engine がなくても飛ばさずに落とす）。今の Engine（手元の 57069a8）の `PR-002` は `headings_mismatch` で食い違うが、`PR-002` の `check` が Issue #1121 の時点の形（`概要・背景・問題・対応内容・影響範囲・動作確認・補足`）のままのときだけ、この照合を `todo` にして CI を止めない。ほかの形の食い違いや、rubric を読めない・`PR-002` を取り出せないときは `todo` にせず落とす。建設者が Engine の `PR-002` の見出しの列を `template.json` に合わせ（`概要・背景・問題・対応内容・影響範囲・互換性・動作確認・補足・仮決め・知見`）て `ENGINE_REF` を上げると、`todo` が外れて必須の照合になる（合わせた写しで通ることを確かめた）。正本を変えるときは、同じ PR で CLAUDE.md をそろえ、Engine の `PR-002` を合わせる。
+照らすのは CI で、`followers.test.mjs` が `ci/pr-body-engine.yml` の `node --test` の中で走り、`ENGINE_DIR` の Engine の rubric・実装役の報告の型と今の CLAUDE.md を照らす（`ENGINE_DIR` を渡したときと `CI=true` では、Engine がなくても飛ばさずに落とす）。今の Engine（手元の 57069a8）の `PR-002` は `headings_mismatch` で食い違うが、`PR-002` の `check` が Issue #1121 の時点の形（`概要・背景・問題・対応内容・影響範囲・動作確認・補足`）のままのときだけ、この照合を `todo` にして CI を止めない。実装役の報告の型も同じで、Issue #1194 の時点の形（`概要 / 対応内容 / 影響範囲・互換性 / 動作確認 / 補足 / 仮決め / 知見`）のままの `headings_mismatch` だけを `todo` に数える。Engine の食い違いがどれもこの 2 つの今の形のときだけ `todo` にし、ほかの形の食い違いや、rubric・`entrypoint.sh` を読めない・一覧を取り出せないときは `todo` にせず落とす。建設者が Engine の `PR-002` の見出しの列を `template.json` に合わせ（`概要・背景・問題・対応内容・影響範囲・互換性・動作確認・補足・仮決め・知見`）、実装役の報告の型に `背景`・`問題` を足し）て `ENGINE_REF` を上げると、`todo` が外れて必須の照合になる（両方を合わせた写しで通ることを確かめた）。正本を変えるときは、同じ PR で CLAUDE.md をそろえ、Engine の `PR-002` と実装役の報告の型を合わせる。
 
 ## 結果
 
@@ -118,7 +118,7 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
 - `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`gate.test.mjs`・`engine.test.mjs` の (10)・`recheck.test.mjs`（skip・todo・only がなく、`C-0003`・`C-0005`・`C-0006` の列のテストがある）が実行の対象から外れていないこと、`gate.test.mjs`・`engine.test.mjs` を TAP で走らせた結果で通る側のテストと (10) が pass と数えられたこと（`engine.test.mjs` で飛ばしてよいのは、共通の skip と、Engine が関所を呼ぶようになったときの (11) だけ）（下の「配線の手順（建設者）」）、`ci/pr-body-protection.yml` と `ci/pr-body-patch.yml` の形と手順の振る舞い、`ci/pr-body-protection.yml` の写しがあれば写しそのものが定期・手動で走りトークンを読めないときに落ちること（下の「配線の手順（建設者）」「定期の照合」「差分の当たりの照合」）、`ci/pr-body-check.yml` の形（下の「マージ前の必須チェック（建設者）」）
 - `patch.test.mjs`: 差分の当たりの照合（`patch.mjs`）。作った Engine の写し（git の版）で、当たる・もう入っている・入れたあと変わった・一部だけ入った・どれでもないの判定と、チェックアウトの今の中身ではなく名指しした版で照らすこと、CLI の終了コードを確かめる。本物の Engine では、差分が `ENGINE_REF` の版に当たるかもう入っていることを確かめる（`engine.test.mjs` と同じ飛ばし方。`ENGINE_DIR` を渡したときと `CI=true` では落とす）
 - `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
-- `followers.test.mjs`: 正本に合わせる側の照合（`followers.mjs`）。今の CLAUDE.md が通り、順・名前・数・必須を変えると落ち、`template.json` だけを変えると両方の合わせる側が落ち、Issue #1121 の時点の Engine の `PR-002` の形が `headings_mismatch` で落ち、一覧を取り出せない形は照らさずに読めなかったことにする。本物の Engine の rubric の照合は `engine.test.mjs` と同じ飛ばし方（`ENGINE_DIR` を渡したときと `CI=true` では落とす）。Engine の `PR-002` が Issue #1121 の時点の形のときだけ `todo`（その判定も、ほかの形や読めない rubric では `todo` にしないことを確かめる）
+- `followers.test.mjs`: 正本に合わせる側の照合（`followers.mjs`）。今の CLAUDE.md が通り、順・名前・数・必須を変えると落ち、`template.json` だけを変えるとすべての合わせる側が落ち、Issue #1121 の時点の Engine の `PR-002` の形と Issue #1194 の時点の実装役の報告の型（`背景`・`問題` がない）が `headings_mismatch` で落ち、報告の型の見出しの順・名前・数を変えると落ちて注釈だけの変更は通り、一覧を取り出せない形は照らさずに読めなかったことにする。本物の Engine の rubric の照合は `engine.test.mjs` と同じ飛ばし方（`ENGINE_DIR` を渡したときと `CI=true` では落とす）。Engine の食い違いが `PR-002` の Issue #1121 の時点の形と実装役の報告の型の Issue #1194 の時点の形だけのときに `todo`（その判定も、ほかの形や読めない Engine では `todo` にしないことを確かめる）
 - `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、事例 `C-0003`（PR #396。最後の本文の直しの job 572 のあと、検査を通さずに 14:23:30 にマージ）の列も `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる。Engine の supervisor が残す `supervisor.body_rechecked` も再検査に数え、直す前とほかの PR のものは数えないことも確かめる
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
 
