@@ -3,17 +3,23 @@
 EngineFinishedTest のほかは Engine は要らない。EngineFinishedTest は Engine の dispatcher.py の job.finished の欄を engine_harness.py で読み、
 agent_resumed と解き方の tier（agent_tier）を出す版の Engine で照らせない件数が 1 以上なら落とす（議決 D-0030・Issue #1035）。
 Engine のチェックアウトの渡し方と飛ばし方は test_engine.py と同じ（ENGINE_DIR を渡したときと CI=true では飛ばさずに落とす）。
-Engine が今の形（job.finished にどちらも出さない。LEGACY_FINISHED）のときだけ「todo:」の理由で飛ばす（K-0004 の engine.test.mjs の todo と同じ形）
+Engine が今の形（job.finished にどちらも出さない。LEGACY_FINISHED）のときだけ「todo:」の理由で飛ばす（K-0004 の engine.test.mjs の todo と同じ形）。
+todo は照らせない件数を理由に添えて test_engine.py の todo で数え、終わりに件数を出す。知見 K-0010 の review_by を過ぎても
+今の形なら飛ばさずに落とす（議決 D-0043・Issue #1104。照らせない件数が見えない形で緑にならないように）
 """
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from collections import Counter
+from datetime import date
 from pathlib import Path
+
+import yaml
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -23,6 +29,7 @@ import policy  # noqa: E402
 import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
 
 C0005 = HERE / "fixtures" / "c0005-pr659-events.json"
+K0010 = HERE.parents[1] / ".factory-config" / "knowledge" / "K-0010.yaml"
 URL = "https://github.com/guccyon/rally/pull/1"
 
 
@@ -170,6 +177,33 @@ FULL = [{"resumed": True, "agent_tier": "tier-large", "files": ["CHANGELOG.md", 
         {"resumed": False, "agent_tier": "tier-large", "files": ["apps/admin-web/src/a.ts"], "cost": 2.4}]
 
 
+def review_by(path: Path = K0010) -> date:
+    """知見 K-0010 の review_by（再確認の期限）。読めなければ落とす（期限の検査を黙って外さない）"""
+    v = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("review_by")
+    return v if isinstance(v, date) else date.fromisoformat(str(v))
+
+
+def today() -> date:
+    """今日の日付。CONFLICT_CHECK_TODAY（YYYY-MM-DD）で差し替えられる（core-gates/knowledge_check.py の --today と同じ使い方）"""
+    v = os.environ.get("CONFLICT_CHECK_TODAY")
+    return date.fromisoformat(v) if v else date.today()
+
+
+def overdue(now: date, deadline: date) -> bool:
+    """review_by を過ぎたか。knowledge_check.py と同じく、期限の日の翌日から過ぎたとみなす"""
+    return deadline < now
+
+
+def todo_until_review_by(case: unittest.TestCase, detail: str):
+    """Engine が今の形のときの扱い。K-0010 の review_by を過ぎていれば落とし、それまでは detail（照らせない件数など）を添えて
+    test_engine.todo で飛ばす（議決 D-0043・Issue #1104）。test_events.py と test_watch.py の EngineFinishedTest が使う"""
+    deadline = review_by()
+    case.assertFalse(overdue(today(), deadline),
+                     f"知見 K-0010 の review_by（{deadline}）を過ぎても、ENGINE_REF の Engine は {LEGACY_TODO}（{detail}）。"
+                     "Engine を直して ENGINE_REF を上げるか、委員会で K-0010 を再確認して review_by を動かす（議決 D-0043）")
+    test_engine.todo(case, f"今の Engine は {LEGACY_TODO}（{detail}。K-0010 の review_by {deadline} を過ぎたら落とす）")
+
+
 def finished_unknown(fields: list[str]) -> dict:
     """Engine が出す欄の job.finished で組んだイベント列の、agent_resumed と tier の照らせない件数"""
     r = events.records_from_events(engine_shaped(stream(FULL), fields))[URL]
@@ -201,6 +235,28 @@ class FinishedFieldsTest(unittest.TestCase):
         self.assertEqual(finished_unknown(self.NOW + ["agent_resumed"]), {"agent_resumed": 0, "tier": 3})
         self.assertEqual(finished_unknown(self.NOW + ["agent_tier"]), {"agent_resumed": 3, "tier": 0})
 
+    def test_todoはK0010のreview_byの日までで翌日からは落とす側になる(self):
+        deadline = review_by()   # 2026-12-05（議決 D-0043 の案の期限）。知見を再確認して review_by を動かせばそれに付いていく
+        self.assertFalse(overdue(date.fromordinal(deadline.toordinal() - 1), deadline))
+        self.assertFalse(overdue(deadline, deadline))
+        self.assertTrue(overdue(date.fromordinal(deadline.toordinal() + 1), deadline))
+
+    def test_review_byを読めなければ落ちる(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for text in ("id: K-0010\n", "review_by: いつか\n"):
+                path = Path(tmp) / "K.yaml"
+                path.write_text(text, encoding="utf-8")
+                with self.assertRaises(ValueError, msg=text):
+                    review_by(path)
+
+    def test_todoの件数と中身を出しGitHub_Actionsでは注記にする(self):
+        todos = ["test_events.EngineFinishedTest.x: 今の Engine は …"]
+        out = test_engine.todo_summary(todos)
+        self.assertIn("todo で飛ばしたテスト 1 件", out[0])
+        self.assertEqual(out[1:], [f"  - {todos[0]}"])
+        self.assertEqual(test_engine.todo_summary(todos, github=True)[-1], f"::warning title=conflict-check todo::{todos[0]}")
+        self.assertIn("0 件", test_engine.todo_summary([])[0])
+
 
 @unittest.skipIf(test_engine.SKIP, test_engine.SKIP)
 class EngineFinishedTest(unittest.TestCase):
@@ -208,7 +264,8 @@ class EngineFinishedTest(unittest.TestCase):
         fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
         self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
         if legacy_finished(fields):
-            self.skipTest(f"todo: 今の Engine は {LEGACY_TODO}")
+            u = finished_unknown(fields)
+            todo_until_review_by(self, f"照らせない件数 agent_resumed={u['agent_resumed']}・tier={u['tier']}")
         self.assertEqual(finished_unknown(fields), {"agent_resumed": 0, "tier": 0},
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列に照らせない回がある。"
                          f"{' と '.join(FINISHED_FIELDS)} の両方を出す")

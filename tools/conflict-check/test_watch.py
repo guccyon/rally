@@ -3,7 +3,8 @@ EngineFinishedTest のほかは Engine は要らない。Engine の本物の sto
 
 EngineFinishedTest は Engine の dispatcher.py の job.finished の欄で組んだイベント列で、watch.py が照らせずに停止を開かなかった外れの件数が
 1 以上なら落とす（議決 D-0042・Issue #1101）。欄の読み方・Engine のチェックアウトの渡し方と飛ばし方・今の形（LEGACY_FINISHED）のときだけの
-「todo:」は test_events.py の EngineFinishedTest と同じ（K-0004 の engine.test.mjs の todo と同じ形）
+「todo:」は test_events.py の EngineFinishedTest と同じ（K-0004 の engine.test.mjs の todo と同じ形）。todo は見逃した件数を理由に添えて
+test_engine.py の todo で数え、知見 K-0010 の review_by を過ぎても Engine が今の形なら落とすのも同じ（議決 D-0043・Issue #1104）
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ import policy  # noqa: E402
 import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
 import test_events  # noqa: E402   同じ理由で、テストの型はモジュールから読む
 import watch  # noqa: E402
-from test_events import C0005, FINISHED_FIELDS, FULL, LEGACY_TODO, URL, engine_shaped, legacy_finished, stream  # noqa: E402
+from test_events import C0005, FINISHED_FIELDS, FULL, URL, engine_shaped, legacy_finished, stream, todo_until_review_by  # noqa: E402
 
 PR659 = "https://github.com/guccyon/rally/pull/659"
 
@@ -179,7 +180,8 @@ class EngineFinishedTest(unittest.TestCase):
         fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
         self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
         if legacy_finished(fields):
-            self.skipTest(f"todo: 今の Engine は {LEGACY_TODO}")
+            m = finished_missed(fields)
+            todo_until_review_by(self, f"見逃した外れ agent_resumed={m['agent_resumed']}・tier={m['tier']}")
         self.assertEqual(finished_missed(fields), {"agent_resumed": 0, "tier": 0},
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列で、照らせずに停止を開かなかった外れがある。"
                          f"{' と '.join(FINISHED_FIELDS)} の両方を出す")
