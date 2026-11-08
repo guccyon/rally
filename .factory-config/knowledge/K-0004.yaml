@@ -844,6 +844,24 @@ enforcement:
       decided_by: committee:D-0060
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0061（Issue #1162 の起票時の番号は D-0058。PR #1161）の ci_check の案（issue 1018 の schedule のワークフロー sendback-protection.yml が
+        通るたびに最後に通った時刻を記録し、別の検査が最後に通ってから 2 日より長くたっていれば落ちて Issue を開き、schedule が止まったり落ち続けたりしても気づけるようにする）を入れた。
+        tools/sendback-check/ci/sendback-protection.yml の protection のジョブの最後に、schedule ですべての手順が通ったときだけ通った時刻を書いて
+        成果物 sendback-protection-passed（保持 7 日）に上げる手順を足した（手動と PR では上げない）。tools/sendback-check/heartbeat.mjs が成果物の一覧を読み、
+        既定のブランチの実行で上げた最後のものの created_at から 48 時間より長ければ heartbeat_stale、1 件もなければ heartbeat_missing で落とす。
+        別のワークフローのひな形 tools/sendback-check/ci/sendback-protection-heartbeat.yml が heartbeat.mjs を定期（protection の 12 時間後）・手動・main への push で走らせ、
+        外れたら Issue を開くか更新し（最後に通った時刻ごとの印で重ねない）、通ったら閉じる。heartbeat.test.mjs で 48 時間ちょうどは通り超えたら落ちること、
+        名前の違う・PR のブランチの成果物を数えないことを、ci.test.mjs で 2 つのひな形の形と、手順を偽の gh で動かして Issue を開く・足さない・閉じる・読めなければ照らさないことを確かめた。
+        tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE にこの解決策と heartbeat.mjs の組を足し、wired: true にするとき schedule でも走るジョブから
+        heartbeat.mjs を呼ぶ wired_by がなければ落とす（test_check.py）。.github/workflows/ への 2 つの写しは建設者が行う（ワーカーは .github/workflows/ に触れない）ので、
+        通った・外れた実行の記録もまだなく、この解決策は未配線・未確認
+      issue: 1162
+      at: 2026-11-08
+      decided_by: committee:D-0061
+      wired: false
+      verified: false
     - kind: lint
       what: >-
         議決 D-0061（Issue #1163 の起票時の番号は D-0058。PR #1161）の lint の案を入れた。tools/knowledge-enforcement-check/check.py の

@@ -1,0 +1,112 @@
+# sendback-protection の定期の実行（ci/sendback-protection.yml の protection のジョブ）が最後に通ってから 2 日より長くたっていないかを、
+# heartbeat.mjs で照らす（知見 K-0004 の担保。議決 D-0061（Issue #1162 の起票時の番号は D-0058。PR #1161）、Issue #1162）。決定論（LLM を使わない）。
+# schedule のワークフローは、GitHub が長く動きのないリポジトリで止めたり、UI で無効にされたり、トークンが切れて落ち続けたりしても、
+# 字面は変わらず誰にも届かない。protection のジョブは schedule で通るたびに成果物 sendback-protection-passed を上げるので、
+# その成果物の一覧（GitHub が付ける作られた時刻）を読み、既定のブランチの実行で上げた最後のものから 48 時間より長ければ ::error で落ちる。
+# sendback-protection.yml とは別のファイルにする（同じファイルのジョブだと、そのワークフローごと止まったときに一緒に止まる）。
+# 定期（sendback-protection の 12 時間後）・手動に加えて、既定のブランチへの push でも走らせ、schedule だけに頼らない。
+# PR では走らせない（PR の中身と関わりのない外れで PR を止めない）。
+# 外れたら Issue を開くか、開いている Issue を更新する（最後に通った時刻が同じ記録がすでにあれば足さない）。通ったら、開いている Issue に通ったことを書いて閉じる。
+# 成果物の一覧を読めなかったときは heartbeat_unreadable の ::error で落ちる（Issue は開かない）。
+# 成果物の一覧は GITHUB_TOKEN（actions: read）で読めるので、シークレットは要らない。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-protection-heartbeat.yml にそのまま写す
+# （ci/sendback-protection.yml の写しと一緒に）。写したら、通った実行と外れた実行（か Issue）の記録を Issue #948 と事例記録に残してから、
+# K-0004 の Issue #1162 の解決策の wired・verified を true にする（wired_by に heartbeat のジョブ。
+# tools/knowledge-enforcement-check/check.py が schedule でも走るジョブから heartbeat.mjs を呼ぶことを求める）。
+# ci.test.mjs（sendback-engine.yml の wiring-order で走る）が、このファイルの形・手順の振る舞い・写しとのずれを見る。
+name: sendback-protection-heartbeat
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sendback-protection-heartbeat
+  cancel-in-progress: false
+
+env:
+  BRANCH: main
+  MAX_AGE_HOURS: 48
+  ISSUE_TITLE: "sendback-check: sendback-protection の定期の実行が 2 日より長く通っていない（K-0004）"
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 通った記録の成果物を読む（K-0004）
+        id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=sendback-protection-passed&per_page=100" --paginate \
+            --jq '.artifacts[]' > heartbeat-artifacts.jsonl; then
+            echo "::error title=sendback-protection-heartbeat heartbeat_unreadable::成果物の一覧を読めなかった（actions: read の権限を確かめる）"
+            exit 1
+          fi
+      - name: 最後に通ってからの時間を照らす（K-0004）
+        id: check
+        working-directory: tools/sendback-check
+        run: |
+          node heartbeat.mjs --artifacts ../../heartbeat-artifacts.jsonl --branch "$BRANCH" --max-age-hours "$MAX_AGE_HOURS" \
+            --json heartbeat-result.json --summary "$GITHUB_STEP_SUMMARY"
+      - name: 古ければ Issue を開くか更新する（K-0004）
+        if: always()
+        working-directory: tools/sendback-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          if [ ! -f heartbeat-result.json ]; then
+            echo "照らした結果がない（成果物の一覧を読めなかった）ので Issue は開かない"
+            exit 0
+          fi
+          errors=$(node -e 'for (const e of require("./heartbeat-result.json").errors) console.log(`${e.rule}: ${e.message}`)')
+          last=$(node -e 'console.log(require("./heartbeat-result.json").last?.at ?? "none")')
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # 開いている Issue を題で探す。読めなければ開いていないとして扱う（外れを黙って捨てない）
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,title \
+            --jq '.[] | select(.title == env.ISSUE_TITLE) | .number' | head -n 1 || true)
+          if [ "${CHECK_OUTCOME:-failure}" = success ] && [ -z "$errors" ]; then
+            if [ -n "$number" ]; then
+              printf '%s\n\n- 最後に通った: %s\n- 実行: %s\n' "sendback-protection の定期の実行がまた通った（heartbeat.mjs が通った）ので閉じる。" "$last" "$run_url" > heartbeat-comment.md
+              gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file heartbeat-comment.md
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+            exit 0
+          fi
+          marker="<!-- sendback-protection-heartbeat: ${last} -->"
+          {
+            echo "$marker"
+            echo "\`tools/sendback-check/heartbeat.mjs\` が外れた（知見 K-0004、議決 D-0061）。\`.github/workflows/sendback-protection.yml\` の schedule が止まっているか落ち続けていると、必須のチェックが外されても気づけない。Actions の画面でワークフローが有効か、最近の実行が落ちていないか（シークレット SENDBACK_PROTECTION_TOKEN など）を確かめる。"
+            echo
+            echo '```'
+            echo "$errors"
+            echo '```'
+            echo
+            echo "- 実行: ${run_url}"
+          } > heartbeat-comment.md
+          if [ -z "$number" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file heartbeat-comment.md
+            exit 0
+          fi
+          recorded=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}" --jq '.body' || true)
+          recorded+=$'\n'$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}/comments" --paginate --jq '.[].body' || true)
+          if grep -qF -- "$marker" <<< "$recorded"; then
+            echo "Issue #${number} に最後に通った時刻が同じ記録があるので足さない"
+            exit 0
+          fi
+          gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file heartbeat-comment.md
