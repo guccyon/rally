@@ -590,6 +590,87 @@ class RequiredRunsTest(unittest.TestCase):
         self.assertIn("issue 1100）: wired にするには", errors[0])
 
 
+class HeadRecordTest(unittest.TestCase):
+    """K-0004 の engine-head に関わる解決策は Issue #948 に engine-head の記録が残るまで verified にできない（議決 D-0047、Issue #1114）"""
+
+    HEAD = "a" * 40
+    RUN = "https://github.com/guccyon/rally/actions/runs/123"
+
+    def comments(self, *bodies: str, login: str = "github-actions[bot]", text: str | None = None) -> str:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        p = Path(t.name) / "comments.jsonl"
+        p.write_text(text if text is not None else "".join(json.dumps({"user": {"login": login}, "body": b}) + "\n" for b in bodies), encoding="utf-8")
+        return str(p)
+
+    def record(self, kind="engine_head_passed") -> str:
+        return f"<!-- sendback-engine-head: {self.HEAD} {kind} -->\n先頭で走らせた。\n\n- 実行: {self.RUN}\n"
+
+    @staticmethod
+    def k4(*sols):
+        return {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": list(sols)}}
+
+    @staticmethod
+    def verified(issue: int):
+        return {"kind": "ci_check", "what": "x", "issue": issue, "wired": True, "verified": True}
+
+    def test_記録があれば通る(self):
+        for kind in ("engine_head_passed", "engine_head_failed"):
+            self.assertEqual(check.check_head_record(self.k4(self.verified(977)), self.comments("ほか", self.record(kind))), [], kind)
+
+    def test_記録がなければ_head_record_missing_で落ちる(self):
+        for name, comments in (("コメントがない", self.comments()), ("ほかの記録だけ", self.comments("PR #395 と同じ入力で通った")),
+                               ("人が写した印", self.comments(self.record(), login="tessan"))):
+            for issue in (977, 1046, 1047):
+                e = check.check_head_record(self.k4(self.verified(issue)), comments)
+                self.assertEqual(len(e), 1, (name, issue))
+                self.assertIn(f"issue {issue}）: head_record_missing: Issue #948 に engine-head", e[0])
+
+    def test_コメントを渡していない_読めないときは_head_record_unchecked_で落ちる(self):
+        for comments in (None, "/nonexistent/comments.jsonl", self.comments(text="{}\nnot json\n")):
+            e = check.check_head_record(self.k4(self.verified(977)), comments)
+            self.assertEqual(len(e), 1, comments)
+            self.assertIn("head_record_unchecked", e[0])
+
+    def test_head_record_mjs_が結果を出さずに抜けたら通さない(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        fake = Path(t.name) / "head-record.mjs"
+        fake.write_text("process.exit(0);\n", encoding="utf-8")
+        e = check.check_head_record(self.k4(self.verified(977)), self.comments(self.record()), script=fake)
+        self.assertEqual(len(e), 1)
+        self.assertIn("head_record_unchecked", e[0])
+
+    def test_対象でない解決策と確認していない解決策は見ない(self):
+        sols = (dict(self.verified(977), verified=False), dict(self.verified(977), verified="true"), self.verified(1018), self.verified(1076))
+        self.assertEqual(check.check_head_record(self.k4(*sols), None, script=Path("/nonexistent.mjs")), [])
+        other = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [self.verified(977)]}}
+        self.assertEqual(check.check_head_record(other, None, script=Path("/nonexistent.mjs")), [])
+
+    def test_head_record_mjs_は_1_回だけ走らせる(self):
+        cache: dict = {}
+        comments = self.comments()
+        self.assertEqual(len(check.check_head_record(self.k4(self.verified(977), self.verified(1047)), comments, cache)), 2)
+        cache["result"] = None  # 走らせ直さず覚えた結果を使う
+        self.assertEqual(check.check_head_record(self.k4(self.verified(977)), comments, cache), [])
+
+    def test_main_で落とす(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: ci_check, what: x, issue: 977, wired: false, verified: true}\n")
+        out = d / "out.json"
+        for comments, rule in ((None, "head_record_unchecked"), (self.comments(), "head_record_missing")):
+            argv = ["--repo", str(d), "--json", str(out)] + (["--head-comments", comments] if comments else [])
+            self.assertEqual(check.main(argv), 1)
+            errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+            self.assertTrue(any(f"issue 977）: {rule}" in x for x in errors), errors)
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out), "--head-comments", self.comments(self.record())]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertFalse(any("head_record" in x for x in errors), errors)
+
+
 class RepoTest(unittest.TestCase):
     """このリポジトリの記録"""
 

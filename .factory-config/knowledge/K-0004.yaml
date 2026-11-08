@@ -640,4 +640,20 @@ enforcement:
       decided_by: committee:D-0041
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0047 の ci_check の案（issue 977 の解決策の wired と verified を true にする条件の、Issue #948 に engine-head の記録が残っていることを
+        建設者が head-record.mjs を手で走らせて判断するだけで、記録のないまま true に書き換える PR を止める線がない）を入れた。
+        tools/knowledge-enforcement-check/check.py に HEAD_RECORD_SOLUTIONS（この知見の issue 977・1046・1047。engine-head に関わる解決策）と
+        check_head_record() を足し、そのどれかが verified: true なら、--head-comments に渡した Issue #948 のコメント（gh api の出力）で
+        tools/sendback-check/head-record.mjs を走らせ、記録がなければ head_record_missing、コメントを渡していない・読めない・head-record.mjs が結果を
+        書かずに抜けたときは head_record_unchecked で落とす。ci/knowledge-enforcement.yml の enforcement のジョブが issues: read で Issue #948 のコメントを取って渡す。
+        test_check.py で、記録があれば通る・記録がない・人が写した印だけ・コメントを渡していない・JSON でない・結果を出さずに抜ける写しで落ちること、
+        verified でない解決策とほかの知見・ほかの issue は見ないことを確かめた。今のリポジトリには verified: true の解決策がなく、
+        ci/knowledge-enforcement.yml の .github/workflows/ への写しは建設者が行うので、まだ PR ごとには走っておらず効き目は確かめていない
+      issue: 1114
+      at: 2026-11-08
+      decided_by: committee:D-0047
+      wired: false
+      verified: false
 decided_by: committee:D-0004

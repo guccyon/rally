@@ -5,6 +5,8 @@
 # テストは unittest discover でまとめて走らせ、その出力で skipped が 1 件以上あっても落とす（飛ばして緑にしない。議決 D-0037、Issue #1080）。
 # 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
 # enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければ落とす。ほかの PR では結果を Job Summary に残すだけ
+# enforcement のジョブは Issue #948 のコメントを取って check.py に渡し、K-0004 の engine-head に関わる解決策が verified: true なら
+# head-record.mjs で engine-head の記録を照らす（議決 D-0047、Issue #1114）。読むので issues: read が要る
 # 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
 name: knowledge-enforcement
 
@@ -13,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 env:
   # Engine の固定した版（40 桁のコミット SHA）。engine/knowledge-enforcement.patch がこの版に当たり、担保の表示が check.py と同じ線になるかを
@@ -89,12 +92,21 @@ jobs:
           python3 -m pip install --quiet pyyaml
           python3 -B tools/knowledge-enforcement-check/test_check.py -v
           python3 -B tools/knowledge-enforcement-check/test_ci.py -v
+      - name: engine-head の記録（Issue #948 のコメント）を取る
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if ! gh api "repos/$REPO/issues/948/comments" --paginate --jq '.[]' > head-comments.jsonl; then
+            rm -f head-comments.jsonl
+            echo "::warning title=knowledge-enforcement head_comments_unread::Issue #948 のコメントを読めなかった。engine-head に関わる解決策が verified: true なら check.py が head_record_unchecked で落とす"
+          fi
       - name: 担保の配線と効き目
         env:
           CHANGED: ${{ steps.scope.outputs.changed }}
         run: |
           rc=0
-          python3 tools/knowledge-enforcement-check/check.py --repo . --json knowledge-enforcement.json --summary "$GITHUB_STEP_SUMMARY" || rc=$?
+          python3 tools/knowledge-enforcement-check/check.py --repo . --json knowledge-enforcement.json --summary "$GITHUB_STEP_SUMMARY" --head-comments head-comments.jsonl || rc=$?
           if [ "$CHANGED" = "true" ]; then exit $rc; fi
       - uses: actions/upload-artifact@v4
         if: always()

@@ -1,16 +1,16 @@
 # 知見の担保の配線と効き目の検査
 
-知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を、議決 `D-0037` と Issue #1080 でそのジョブがテストを飛ばして緑にならない手順を、議決 `D-0039` と Issue #1088 で `protection.mjs` の解決策を手で走らせた記録だけでは `wired` にできない検査（下の「定期の配線の必須」）を、議決 `D-0043` と Issue #1103 で `K-0010` の `EngineFinishedTest` の解決策を PR ごとのジョブから `test_events.py` を呼ばないと `wired` にできない検査（下の「PR ごとの配線の必須」）を、議決 `D-0041` と Issue #1094 で解決策の `decided_by` が指す議決に同じ案があるかを照らす検査を、議決 `D-0042` と Issue #1100 で `K-0010` の衝突の続きのジョブの検査を 1 つのジョブから `test_watch.py`・`test_engine.py` を呼ばないと `wired` にできない検査（下の「呼ぶ検査の必須」）を足した。議決 `D-0044` と Issue #1106 で、「定期の配線の必須」の対象に知見 `K-0001` の解決策を足した。
+知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を、議決 `D-0037` と Issue #1080 でそのジョブがテストを飛ばして緑にならない手順を、議決 `D-0039` と Issue #1088 で `protection.mjs` の解決策を手で走らせた記録だけでは `wired` にできない検査（下の「定期の配線の必須」）を、議決 `D-0043` と Issue #1103 で `K-0010` の `EngineFinishedTest` の解決策を PR ごとのジョブから `test_events.py` を呼ばないと `wired` にできない検査（下の「PR ごとの配線の必須」）を、議決 `D-0041` と Issue #1094 で解決策の `decided_by` が指す議決に同じ案があるかを照らす検査を、議決 `D-0042` と Issue #1100 で `K-0010` の衝突の続きのジョブの検査を 1 つのジョブから `test_watch.py`・`test_engine.py` を呼ばないと `wired` にできない検査（下の「呼ぶ検査の必須」）を足した。議決 `D-0044` と Issue #1106 で、「定期の配線の必須」の対象に知見 `K-0001` の解決策を足した。議決 `D-0047` と Issue #1114 で、`K-0004` の engine-head に関わる解決策を Issue #948 に engine-head の記録が残る前に `verified` にできない検査（下の「engine-head の記録の照合」）を足した。
 
 `K-0004` の解決策は 10 件になったが、どれも「効き目はまだ確かめていない」を `what` の文で書くだけで、`INDEX.md` の担保の列は `deterministic` と出ていた。配線も確認もしていない担保を決定論の担保と読み違えないように、真偽の項目にして機械で数える。
 
 ```sh
-python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]
+python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"] [--head-comments <Issue #948 のコメント>]
 python3 -m unittest discover -s tools/knowledge-enforcement-check   # テスト
 ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discover -s tools/knowledge-enforcement-check   # Engine に当てる差分のテストも
 ```
 
-依存は Python 3 と PyYAML（なければ ruby で読む。Engine の `core-gates/knowledge_check.py` と同じ）。終了コードは 0 = 緑、1 = 通らない、2 = 読めなかった。
+依存は Python 3 と PyYAML（なければ ruby で読む。Engine の `core-gates/knowledge_check.py` と同じ）。engine-head の記録の照合には node も要る。終了コードは 0 = 緑、1 = 通らない、2 = 読めなかった。
 
 ## 項目
 
@@ -35,6 +35,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `REQUIRED_PR` の解決策（`K-0010` の issue 1035・1103）が `wired: true` なのに、`wired_by` に pull_request のジョブから `tools/conflict-check/test_events.py` を呼ぶ項目がない（下の「PR ごとの配線の必須」）
 - `REQUIRED_RUNS` の解決策（`K-0010` の issue 1034・1100）が `wired: true` なのに、`wired_by` に 1 つのジョブから `tools/conflict-check/test_watch.py`・`test_engine.py` をすべて呼ぶ項目がない（下の「呼ぶ検査の必須」）
 - `decided_by` を書いた解決策で、`committee:D-NNNN` の形でない、`.factory-config/knowledge/committee/D-NNNN.yaml` がないか読めない、その議決の `enforcement` に同じ知見の id（`knowledge`）と同じ種類（`solution_kind` が解決策の `kind`）の案がない（`decision_mismatch`。下の「議決との照合」）
+- `HEAD_RECORD_SOLUTIONS` の解決策（`K-0004` の issue 977・1046・1047）が `verified: true` なのに、Issue #948 に engine-head の記録がない（`head_record_missing`）か、照らせない（`head_record_unchecked`。下の「engine-head の記録の照合」）
 
 ## 配線先の照合
 
@@ -81,6 +82,17 @@ branch protection の必須のチェックは PR の `GITHUB_TOKEN` では読め
 
 解決策の `decided_by` は書き手が Issue から写すので、Issue と議決の番号がずれると（Issue #1017・#1018・#1024・#1025 で続いた）別の議決を指したまま残る（議決 `D-0041`、Issue #1094）。`check.py` は `decided_by` を書いた解決策ごとに、指す議決のファイル（`.factory-config/knowledge/committee/D-NNNN.yaml`）があり、その `enforcement` の列に `knowledge` がその知見の `id`、`solution_kind` がその解決策の `kind` の案があるかを照らし、なければ `decision_mismatch` で落とす。`decided_by` を書いていない解決策（`K-0002` の `config` など）は見ない。知見そのものの `decided_by`（`enforcement` の外）は Engine の `knowledge_check.py` が議決の実在を見るので、ここでは見ない。
 
+## engine-head の記録の照合
+
+議決 `D-0031` は、`tools/sendback-check/ci/sendback-engine-head.yml` を写して schedule で走らせ、先頭の Engine での実行の記録が Issue #948 に 1 件残ってから issue 977 の解決策の `wired` と `verified` を `true` にすると決め、`tools/sendback-check/head-record.mjs` がその記録を数える（Issue #1047）。ただ `head-record.mjs` は建設者が手で走らせるだけなので、記録のないまま `verified` を `true` に書き換える変更を止める線がなかった（議決 `D-0047`、Issue #1114）。
+
+`check.py` の `HEAD_RECORD_SOLUTIONS` に挙げた解決策（今は `K-0004` の issue 977（engine-head の定期の実行）・1046（ハーネスのずれを分けて知らせる）・1047（通ったときも記録して数える））のどれかが `verified: true` なら、`--head-comments` に渡したファイル（`gh api repos/{owner}/{repo}/issues/948/comments --paginate --jq '.[]'` の出力）で `head-record.mjs` を 1 回だけ走らせ、次のときにその解決策ごとに落とす。
+
+- `head-record.mjs` が `head_record_missing` で外れた（記録に数えるコメントがない）: `head_record_missing`
+- `--head-comments` を渡していない・ファイルがない、`head-record.mjs` が読めなかった（終了コード 2）・走らせられない・`--json` に結果を書かずに抜けた: `head_record_unchecked`（照らせないときは通さない側に倒す）
+
+`head-record.mjs` が `--json` に `ok: true` を書いて 0 で終わったときだけ通す。対象の解決策がどれも `verified: true` でなければ `head-record.mjs` も走らせず、コメントを渡さなくても落とさない。`ci/knowledge-enforcement.yml` の `enforcement` のジョブは、`issues: read` の `GITHUB_TOKEN` で Issue #948 のコメントを取って `--head-comments` に渡す（取れなければ `::warning` を出してファイルを置かず、対象が `verified: true` なら `head_record_unchecked` で落ちる）。
+
 ## 担保の表示
 
 `check.py` の出力に出す値（`label()`）。Engine の `knowledge_check.py` に移したら（下の「Engine に移す差分」）`INDEX.md` の担保の列もこの値になる予定で、それまで `INDEX.md` は `enforcement.level` のまま出る。
@@ -125,7 +137,7 @@ ENGINE_DIR=/path/to/factory-engine python3 -m unittest discover -s tools/knowled
 ジョブは 2 つ。
 
 - `engine-test`: `ENGINE_REF` の版の Engine を取り、`python3 -m unittest discover -s tools/knowledge-enforcement-check`（`test_engine_patch.py`・`test_engine.py` を含むすべてのテスト）を `CI=true`・`ENGINE_DIR` を渡し、pytest を入れて走らせ、出力を `knowledge-enforcement-unittest.log` に残す。差分が `ENGINE_REF` に当たらない（`patch_stale`）か一部だけ入っている（`patch_partially_applied`）か、差分で足したテストや担保の表示の比べが落ちれば、どの PR でもジョブが落ちる。次の手順（`飛ばしたテストがないか`）が、その出力の要約の `skipped=` が 1 件以上か、走らせたテストの件数（`Ran N tests`）が出ていなければ `tests_skipped`・`unittest_not_run` で落とす（飛ばす条件の取りこぼしで緑にしない。議決 `D-0037`、Issue #1080）。写したらこのジョブを branch protection の必須チェックに入れて PR を止める（議決 `D-0035`、Issue #1063）
-- `enforcement`: Engine の要らないテスト（`test_check.py`・`test_ci.py`）と `check.py` を走らせる。`check.py` の結果で落とすのは、PR が `.factory-config/knowledge/` か `tools/knowledge-enforcement-check/` を変えたときだけ
+- `enforcement`: Engine の要らないテスト（`test_check.py`・`test_ci.py`）と `check.py` を走らせる。`check.py` には Issue #948 のコメントを取って `--head-comments` で渡す（上の「engine-head の記録の照合」）。`check.py` の結果で落とすのは、PR が `.factory-config/knowledge/` か `tools/knowledge-enforcement-check/` を変えたときだけ
 
 `test_ci.py` がひな形（写してあれば写しも）の `engine-test` の形を見て、外れたら落とす。絞り込みのない `pull_request` だけで走る、ジョブと手順に `if:`・`continue-on-error:`・`needs:` がない、`ENGINE_REF` がワークフローの `env` に 1 行だけあって `knowledge-check.yml` と同じ版、最初の手順で 40 桁の SHA かを確かめる、Engine を `ref: ${{ env.ENGINE_REF }}`・`path: .engine` で取る、テストの手順が `CI: "true"`・`ENGINE_DIR` を渡して pytest を入れ、`unittest discover -s tools/knowledge-enforcement-check` を `-p`・`-k` で絞らずに走らせて 2 つのテストを（`check.py` の配線先の照合で）呼び、`shell: bash`・`set -o pipefail` で出力を `tee knowledge-enforcement-unittest.log` に残し、失敗を `|| true` などで握りつぶさない。そのすぐ後に、その出力の `skipped=` を見て落とす手順が bash で 1 つある。写しは `ENGINE_REF` の行のほかがひな形と同じであること（`ENGINE_REF` も `knowledge-check.yml` とそろえるので、実際は同じ中身）。ひな形を 22 とおりに書き換えた写しで、それぞれ外れることも確かめる。`skipped=` を見る手順は、作った出力（`skipped` なし・あり・失敗と一緒・テストが 0 件・出力がない）を渡して、飛ばしたかテストが走っていないときだけ落ちることを確かめる。
 

@@ -33,6 +33,11 @@ tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほか�
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
 同じ種類（solution_kind が解決策の kind）の案があることを照らし、なければ decision_mismatch で落とす。
 
+engine-head の記録の照合（議決 D-0047、Issue #1114）: HEAD_RECORD_SOLUTIONS の解決策（K-0004 の issue 977・1046・1047。engine-head の定期の実行と
+その記録）が verified: true なら、--head-comments に渡した Issue #948 のコメント（gh api の出力）で tools/sendback-check/head-record.mjs を走らせ、
+engine-head の記録がなければ head_record_missing、コメントを渡していない・読めない・head-record.mjs が結果を出さないときは head_record_unchecked で落とす。
+Issue #948 に engine-head の記録が残る前に verified を true にする変更を止める。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -40,10 +45,10 @@ tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほか�
   - deterministic で、wired かつ verified が 1 件以上: deterministic
 
 使い方:
-  python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json out.json] [--summary "$GITHUB_STEP_SUMMARY"]
+  python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json out.json] [--summary "$GITHUB_STEP_SUMMARY"] [--head-comments comments.jsonl]
   終了コード: 0 = 緑、1 = 通らない、2 = 読めなかった
 
-依存: python3。YAML は PyYAML があればそれ、なければ ruby で読む（Engine の knowledge_check.py と同じ）
+依存: python3（engine-head の記録の照合は node も）。YAML は PyYAML があればそれ、なければ ruby で読む（Engine の knowledge_check.py と同じ）
 """
 from __future__ import annotations
 
@@ -52,6 +57,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = ".factory-config/knowledge"
@@ -73,6 +79,11 @@ REQUIRED_PR = {("K-0010", 1035): "tools/conflict-check/test_events.py", ("K-0010
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
+# (知見の id, 解決策の issue)。verified: true にするには Issue #948 に engine-head の記録が要る（議決 D-0047、Issue #1114）
+HEAD_RECORD_SOLUTIONS = {("K-0004", 977), ("K-0004", 1046), ("K-0004", 1047)}
+HEAD_RECORD = Path(__file__).resolve().parent.parent / "sendback-check" / "head-record.mjs"
+HEAD_RECORD_MISSING = "head_record_missing"
+HEAD_RECORD_UNCHECKED = "head_record_unchecked"
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -477,6 +488,49 @@ def check_decision(k: dict, repo: Path, cache: dict | None = None) -> list[str]:
     return e
 
 
+def head_record(comments: str | None, script: Path = HEAD_RECORD) -> tuple[str, str] | None:
+    """Issue #948 のコメント（gh api の出力のファイル）を head-record.mjs で照らす。記録があれば None、なければ (rule, 理由)。
+    head-record.mjs が --json に ok: true を書いて 0 で終わったときだけ通す（結果を書かずに 0 で抜けた形も通さない）"""
+    if not comments or not Path(comments).is_file():
+        return HEAD_RECORD_UNCHECKED, f"--head-comments に Issue #948 のコメント（gh api の出力）を渡していないか、ファイルがない（{comments}）"
+    with tempfile.TemporaryDirectory() as t:
+        out = Path(t) / "head-record.json"
+        try:
+            p = subprocess.run(["node", str(script), "--comments", str(Path(comments).resolve()), "--json", str(out)],
+                               capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.SubprocessError) as x:
+            return HEAD_RECORD_UNCHECKED, f"{script.name} を走らせられない（{x}）"
+        try:
+            result = json.loads(out.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            result = None
+    if not isinstance(result, dict):
+        return HEAD_RECORD_UNCHECKED, f"{script.name} が結果を出さなかった（終了コード {p.returncode}: {p.stderr.strip()}）"
+    if p.returncode == 0 and result.get("ok") is True:
+        return None
+    if p.returncode == 1 and any(isinstance(x, dict) and x.get("rule") == HEAD_RECORD_MISSING for x in result.get("errors") or []):
+        return HEAD_RECORD_MISSING, "Issue #948 に engine-head の先頭の Engine での実行の記録（github-actions[bot] の印と実行の URL）がない"
+    return HEAD_RECORD_UNCHECKED, f"{script.name} の結果が読めない（終了コード {p.returncode}）"
+
+
+def check_head_record(k: dict, comments: str | None, cache: dict | None = None, script: Path = HEAD_RECORD) -> list[str]:
+    """HEAD_RECORD_SOLUTIONS の解決策が verified: true なら、Issue #948 に engine-head の記録があることを求める（議決 D-0047、Issue #1114）。
+    head-record.mjs は 1 回だけ走らせる（cache に覚える）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    cache = {} if cache is None else cache
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("verified") is not True or (k.get("id"), s.get("issue")) not in HEAD_RECORD_SOLUTIONS:
+            continue
+        if "result" not in cache:
+            cache["result"] = head_record(comments, script)
+        if cache["result"] is None:
+            continue
+        rule, why = cache["result"]
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {rule}"
+        e.append(f"{where}: {why}。.github/workflows/sendback-engine-head.yml を schedule で走らせて Issue #948 に記録が残るまで verified を true にしない（議決 D-0047）")
+    return e
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -514,14 +568,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default=".")
     ap.add_argument("--json")
     ap.add_argument("--summary")
+    ap.add_argument("--head-comments", help="Issue #948 のコメント（gh api の出力）。engine-head に関わる解決策が verified: true のときに照らす")
     a = ap.parse_args(argv)
     try:
         items = load(Path(a.repo))
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    repo, decisions = Path(a.repo), {}
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)]
+    repo, decisions, heads = Path(a.repo), {}, {}
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
+              + check_head_record(k, a.head_comments, heads)]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
