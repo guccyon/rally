@@ -1,0 +1,68 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0090
+pr: https://github.com/guccyon/rally/pull/1260
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。
+  - '足した項目の decided_by: committee:D-0068 は、D-0068 の enforcement の test の案（pr-body-protection.yml
+    の写しが schedule と workflow_dispatch を持ち、PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable
+    で飛ばさず落ちることを確かめる）とそのまま対応していて、食い違いはありません。'
+  - 'what に「Issue #1180 の起票時の番号は D-0066」と書き添えてあり、D-0066 は PR #1169 の別の議決なので、番号のずれを正しく説明していて取り違えの恐れはありません。'
+  - K-0004 の workflow_dispatch や schedule を見張る解決策は K-0004 の enforcement のワークフローが対象で、この項目は
+    pr-body-protection.yml が対象なので重複しません。
+  - 'wired: false・verified: false は what の「写しがない間は写しのテストは飛ぶので、配線されておらず効き目は確かめていない」と一致しているので、confidence
+    は hypothesis のまま、status は active のままが妥当です。'
+  - D-0068 の ci_check の案（engine/pr-body-gate.patch の patch_stale の見張り）と、反対の票が求めた D-0019・D-0032
+    の項目への古くなった旨の書き添えはこの変更セットに入っていないので、次に K-0001 を直す変更セットで扱ってください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0068 を指しており、D-0068 の enforcement の 2 つ目の案（ci.test.mjs
+    に pr-body-protection.yml の写しが schedule と workflow_dispatch を持ち、PR_BODY_PROTECTION_TOKEN
+    を読めないときに protection_unreadable で落ちることを確かめるテストを足す）と中身が一致するので、一次記録に辿れます。'
+  - 'what の「Issue #1180 の起票時の番号は D-0066」は、D-0066 が PR #1169 の K-0010 の議決で別物なので、起票時の番号の誤りを正しい
+    D-0068 に読み替えた注記として妥当で、辿り先に食い違いはありません。'
+  - '11 通りの外す直しや仮のリポジトリでの確認の結果は知見の置き場の外にあってこの材料では確かめられませんが、担保の記録であって主張の根拠ではないので採る妨げにはならず、Issue
+    #1180 か what に実行の記録を残すとさらに辿りやすくなります。'
+  - 'wired: false・verified: false は what の「写しがない間は写しのテストは飛ぶので、配線されておらず効き目は確かめていない」と一致していて、担保の強さを言い過ぎていません。'
+  - statement・scope・evidence・confidence は変えておらず、本物の続きのジョブで再発が止まった一次記録もまだないので、confidence
+    は hypothesis のままが妥当です。
+  - 差分に出てくるのは議決の id・Issue と PR の番号・ファイルの道・トークンの変数名だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に、議決 D-0068 の test の案（pr-body-protection.yml
+    の写しの schedule・workflow_dispatch と protection_unreadable で落ちることを見るテスト）を入れた記録を 1
+    件足すだけで、案とそのまま対応しています。
+  - ひな形と写しを一緒に変えると定期の照合が黙って止まる穴を、11 通りの外す直しがどれも落ちることで確かめた決定論のテストで塞いでおり、担保の観点で線の引き方は妥当です。
+  - '写しがない間は写しのテストが飛ぶ点は、check.py が wired_by なしに wired: true を許さず REQUIRED_SCHEDULE
+    で schedule のジョブも求めるので、配線の前に効いたと誤って記録される心配は既存の決定論で抑えられています。'
+  - D-0068 のもう 1 つの案（engine/pr-body-gate.patch の patch_stale・patch_partially_applied
+    を見張る ci_check）はこの差分ではまだ入っていないので、次に K-0001 を直す変更セットで入れるか状態を書いてください。
+  - 'wired: false・verified: false は what の「配線されておらず効き目は確かめていない」と一致しており、本物の記録で効き目を確かめるまで
+    confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0068 の test の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - 足した what は D-0068 の test の案（写しが schedule と workflow_dispatch を持ち、PR_BODY_PROTECTION_TOKEN
+    を読めないときに protection_unreadable で飛ばさず落ちる）とそのまま対応していて、案より広いことを言っていません。
+  - 反例として、ジョブの id を変える直しも外れにしているので、建設者が写すときに正当な理由でジョブ名を変えるとテストが落ちますが、D-0044 の check_name_shared
+    と同じく名前で必須のチェックを守る意図に沿っており、採る妨げにはなりません。
+  - '写しがない間は写しのテストが飛ぶと明記し、wired: false・verified: false としているので言い過ぎはなく、confidence は
+    hypothesis のままが妥当です。'
+  - D-0068 のもう 1 つの案（engine/pr-body-gate.patch の patch_stale を見張る ci_check）はこの差分では入っていないので、次に
+    K-0001 を直す変更セットで入れるか見送るかを記録してください。
+  personal_data: false
+enforcement: []
