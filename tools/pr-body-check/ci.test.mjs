@@ -9,9 +9,11 @@
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
 // PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable で飛ばさず落ちることも見る（議決 D-0068 の test の案、Issue #1180）。
+// ci/pr-body-patch.yml（engine/pr-body-gate.patch が ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で既定のブランチへの push と毎日照らし、
+// patch_stale か patch_partially_applied なら Issue を開くか更新する。議決 D-0068（起票時の番号は D-0066）、Issue #1179）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -658,4 +660,175 @@ test("写し（.github/workflows/pr-body-protection.yml）があれば、定期�
   skip: existsSync(protCopyPath) ? false : "まだ .github/workflows/ に写していない",
 }, () => {
   assert.deepEqual(protectionRunProblems(readFileSync(protCopyPath, "utf8")), []);
+});
+
+// ci/pr-body-patch.yml（engine/pr-body-gate.patch が ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で、既定のブランチへの push・
+// 毎日・手動で照らし、patch_stale か patch_partially_applied なら Issue を開くか更新する。議決 D-0068（起票時の番号は D-0066）、Issue #1179）の形と手順の振る舞い
+const patchTemplate = readFileSync(fileURLToPath(new URL("./ci/pr-body-patch.yml", import.meta.url)), "utf8");
+const patchCopyPath = fileURLToPath(new URL("../../.github/workflows/pr-body-patch.yml", import.meta.url));
+const patchSteps = jobSteps(jobBody(patchTemplate.split(/\r?\n/), "patch") ?? []);
+const patchEngineStep = patchSteps.find((s) => s.some((l) => /repository: guccyon\/factory-engine/.test(l)));
+const patchCheckStep = patchSteps.find((s) => /当たるかを照らす/.test(s[0]));
+const patchIssueStep = patchSteps.find((s) => /Issue を開くか更新する/.test(s[0]));
+const PATCH_ISSUE_TITLE = patchTemplate.match(/^ {2}ISSUE_TITLE: "(.+)"$/m)?.[1];
+
+test("pr-body-patch は既定のブランチへの push・定期（schedule）・手動でだけ走り、PR では走らない。Engine は既定のブランチの先頭を全部の履歴で取る", () => {
+  const lines = patchTemplate.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l))).filter((l) => l.trim() !== "");
+  assert.deepEqual(onBody.filter((l) => /^ {2}[\w-]+:/.test(l)).map((l) => l.trim()), ["push:", "schedule:", "workflow_dispatch:"],
+    "push・schedule・workflow_dispatch のほかで走らせない");
+  assert.ok(onBody.some((l) => /^ {4}branches: \[main\]$/.test(l)), "push は既定のブランチ（main）だけにする");
+  assert.ok(!onBody.some((l) => /^ {4}(paths|paths-ignore|tags|branches-ignore):/.test(l)), "push を道やタグで絞らない");
+  assert.ok(onBody.some((l) => /^ {4}- cron: "[^"]+"$/.test(l)), "schedule の cron がない");
+  assert.ok(!lines.some((l) => /^\s*(- )?continue-on-error:/.test(l)), "continue-on-error があると外れても気づかない");
+  assert.match(patchTemplate, /^ {2}contents: read$/m);
+  assert.match(patchTemplate, /^ {2}issues: write$/m, "Issue を開くので issues: write が要る");
+  assert.ok(!lines.some((l) => /secrets\./.test(l)), "シークレットは使わない");
+  assert.ok(!jobBody(lines, "patch").some((l) => /^ {4}if:/.test(l)), "ジョブを飛ばさない");
+  assert.ok(patchEngineStep, "Engine を取る手順がない");
+  assert.ok(!patchEngineStep.some((l) => /^\s*ref:/.test(l)), "Engine は ref なしで既定のブランチの先頭を取る");
+  assert.ok(patchEngineStep.some((l) => /^\s*path: \.engine$/.test(l)));
+  assert.ok(patchEngineStep.some((l) => /^\s*fetch-depth: 0$/.test(l)), "ENGINE_REF の版も照らすので全部の履歴で取る");
+  assert.ok(!patchCheckStep.some((l) => /^\s*if:/.test(l)), "照らす手順を飛ばさない");
+  assert.ok(patchCheckStep.some((l) => /^\s*id: check$/.test(l)));
+  assert.ok(patchCheckStep.some((l) => /^\s*working-directory: tools\/pr-body-check$/.test(l)));
+  assert.match(runScript(patchCheckStep), /node patch\.mjs --engine "\$\{GITHUB_WORKSPACE\}\/\.engine" --json patch-result\.json/);
+  assert.doesNotMatch(runScript(patchCheckStep), /\|\||; *true|exit 0/, "照らす手順の外れを握りつぶさない");
+  assert.ok(patchIssueStep.some((l) => /^\s*if: always\(\)$/.test(l)), "Issue の手順は照らす手順が落ちたときも走らせる");
+  assert.ok(patchIssueStep.some((l) => /^\s*CHECK_OUTCOME: \$\{\{ steps\.check\.outcome \}\}$/.test(l)));
+  assert.ok(patchSteps.indexOf(patchEngineStep) < patchSteps.indexOf(patchCheckStep) && patchSteps.indexOf(patchCheckStep) < patchSteps.indexOf(patchIssueStep));
+  assert.ok(PATCH_ISSUE_TITLE, "ISSUE_TITLE がない");
+  assert.notEqual(PATCH_ISSUE_TITLE, ISSUE_TITLE, "pr-body-protection と同じ題だと、片方が通ったときにもう片方の Issue を閉じる");
+});
+
+/** 偽の gh（Issue の list・create・comment・close と、Issue の本文とコメントの api）。 */
+function fakePatchGh({ open = "", recorded = "", create = 0 } = {}) {
+  const q = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+  return [
+    `case "$1 $2" in`,
+    `  "issue list") [ -n ${q(open)} ] && printf '%s\\n' ${q(open)}; exit 0 ;;`,
+    `  "issue create") exit ${create} ;;`,
+    `  api\\ *) printf '%s\\n' ${q(recorded)}; exit 0 ;;`,
+    `esac`,
+    `exit 0`,
+  ].join("\n");
+}
+
+const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
+const gitIn = (cwd, ...args) => spawnSync("git", args, { cwd, env: gitEnv, encoding: "utf8" }).stdout.trim();
+
+/**
+ * 仮のリポジトリに patch.mjs と偽の差分（engine/pr-body-gate.patch。entrypoint.sh に関所の呼び出しを足す）を置き、.engine に偽の Engine を作って、
+ * 照らす・Issue の 2 つの手順を順に動かす。refState・headState は ENGINE_REF の版と先頭の版の中身（applies・merged・patch_stale・patch_partially_applied）。
+ * engine が false なら Engine を置かない（照らせない）。
+ */
+function runPatch({ refState = "applies", headState = "applies", engine = true, gh = {} } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "pr-body-patch-ci-"));
+  const dir = join(root, "tools", "pr-body-check");
+  mkdirSync(join(dir, "engine"), { recursive: true });
+  mkdirSync(join(dir, "ci"), { recursive: true });
+  writeFileSync(join(dir, "patch.mjs"), readFileSync(fileURLToPath(new URL("./patch.mjs", import.meta.url))));
+  const e = join(root, ".engine");
+  const sh = join(e, "orchestrator", "worker", "entrypoint.sh");
+  const bodies = { applies: "a\nb\nc\n", merged: "a\nb\nnode tools/pr-body-check/gate.mjs\nc\n",
+    patch_partially_applied: "a\nB\nnode tools/pr-body-check/gate.mjs --x\nc\n", patch_stale: "p\nq\nr\n" };
+  mkdirSync(join(e, "orchestrator", "worker"), { recursive: true });
+  gitIn(e, "init", "-q");
+  writeFileSync(sh, bodies.applies);
+  gitIn(e, "add", ".");
+  gitIn(e, "commit", "-qm", "base");
+  writeFileSync(sh, bodies.merged);
+  writeFileSync(join(dir, "engine", "pr-body-gate.patch"), gitIn(e, "diff") + "\n");
+  const commit = (state) => { writeFileSync(sh, bodies[state]); gitIn(e, "commit", "-qam", state, "--allow-empty"); return gitIn(e, "rev-parse", "HEAD"); };
+  const ref = commit(refState);
+  const head = commit(headState);
+  writeFileSync(join(dir, "ci", "pr-body-engine.yml"), `env:\n  ENGINE_REF: ${ref}\n`);
+  if (!engine) rmSync(e, { recursive: true, force: true });
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: "guccyon/rally", GITHUB_SERVER_URL: "https://github.com",
+    GITHUB_RUN_ID: "123", GITHUB_WORKSPACE: root, ISSUE_TITLE: PATCH_ISSUE_TITLE, GITHUB_STEP_SUMMARY: join(root, "summary"), GITHUB_ACTIONS: "true" };
+  const runStep = (step, extra) => spawnSync("bash", ["-e", "-o", "pipefail", "-c", runScript(step)], { cwd: dir, env: { ...env, ...extra }, encoding: "utf8" });
+  const check = runStep(patchCheckStep, {});
+  /** 偽の gh を opts にして Issue の手順を動かす（同じ照らした結果で何度でも動かせる）。 */
+  const runIssue = (opts) => {
+    writeFileSync(join(bin, "gh"), `#!/usr/bin/env bash\necho "gh $*" >> "${join(root, "calls.log")}"\n${fakePatchGh(opts)}\n`);
+    chmodSync(join(bin, "gh"), 0o755);
+    writeFileSync(join(root, "calls.log"), "");
+    const issue = runStep(patchIssueStep, { GH_TOKEN: "github-token", CHECK_OUTCOME: check.status === 0 ? "success" : "failure" });
+    const commentPath = join(dir, "patch-comment.md");
+    return { check, issue, calls: readFileSync(join(root, "calls.log"), "utf8"), ref, head, runIssue,
+      body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+  };
+  return runIssue(gh);
+}
+
+test("pr-body-patch: ENGINE_REF の版と先頭のどちらでも当たるかもう入っていれば通り、Issue は開かない", () => {
+  for (const [refState, headState] of [["applies", "applies"], ["applies", "merged"], ["merged", "merged"]]) {
+    const r = runPatch({ refState, headState });
+    assert.equal(r.check.status, 0, r.check.stdout + r.check.stderr);
+    assert.match(r.check.stdout, new RegExp(`^ENGINE_REF ${r.ref}: ${refState === "applies" ? "当たる" : "もう入っている"}$`, "m"));
+    assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+    assert.doesNotMatch(r.calls, /^gh issue (create|comment|close)/m);
+  }
+});
+
+test("pr-body-patch: patch_stale と patch_partially_applied は、ENGINE_REF の版でも先頭でも落ち、開いている Issue がなければ開く", () => {
+  for (const [refState, headState, rule, target] of [["applies", "patch_stale", "patch_stale", "既定のブランチの先頭"],
+    ["applies", "patch_partially_applied", "patch_partially_applied", "既定のブランチの先頭"],
+    ["patch_stale", "merged", "patch_stale", "ENGINE_REF"], ["patch_partially_applied", "applies", "patch_partially_applied", "ENGINE_REF"]]) {
+    const r = runPatch({ refState, headState });
+    const label = `${refState}/${headState}`;
+    assert.equal(r.check.status, 1, label);
+    assert.match(r.check.stdout, new RegExp(`^::error title=pr-body-patch ${rule}::${target}`, "m"), label);
+    assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+    assert.match(r.calls, /^gh issue create --repo guccyon\/rally --title .+ --body-file patch-comment\.md$/m, label);
+    assert.match(r.body, /^<!-- pr-body-patch: [0-9a-f]{16} -->\n/, label);
+    assert.match(r.body, new RegExp(`^${rule}: ${target}`, "m"), label);
+    assert.match(r.body, new RegExp(`^- ENGINE_REF（\`${r.ref}\`）: ${refState}$`, "m"), label);
+    assert.match(r.body, new RegExp(`^- 既定のブランチの先頭（\`${r.head}\`）: ${headState}$`, "m"), label);
+    assert.match(r.body, /https:\/\/github\.com\/guccyon\/rally\/actions\/runs\/123/);
+  }
+});
+
+test("pr-body-patch: 開いている Issue があれば、それにコメントで足す（同じ版の同じ外れ方の記録がすでにあれば足さない）", () => {
+  const first = runPatch({ headState: "patch_stale", gh: { open: "42", recorded: "前の記録" } });
+  assert.doesNotMatch(first.calls, /^gh issue create/m);
+  assert.match(first.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file patch-comment\.md$/m);
+  const marker = first.body.split("\n")[0];
+  const again = first.runIssue({ open: "42", recorded: `本文\n${marker}` });
+  assert.equal(again.issue.status, 0, again.issue.stdout + again.issue.stderr);
+  assert.doesNotMatch(again.calls, /^gh issue (create|comment)/m);
+  // 外れ方が変われば足す
+  const other = runPatch({ headState: "patch_partially_applied", gh: { open: "42", recorded: marker } });
+  assert.notEqual(other.body.split("\n")[0], marker);
+  assert.match(other.calls, /^gh issue comment 42 /m);
+});
+
+test("pr-body-patch: 通ったら、開いている Issue に通ったことを書いて閉じる", () => {
+  const r = runPatch({ gh: { open: "42" } });
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.match(r.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file patch-comment\.md$/m);
+  assert.match(r.calls, /^gh issue close 42 --repo guccyon\/rally$/m);
+  assert.match(r.body, /当たるか、もう入っている/);
+});
+
+test("pr-body-patch: Engine がない・ENGINE_REF の版がないときは patch_check_failed で落ち、Issue は開かない", () => {
+  const r = runPatch({ engine: false });
+  assert.equal(r.check.status, 2);
+  assert.match(r.check.stdout, /^::error title=pr-body-patch patch_check_failed::/m);
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.doesNotMatch(r.calls, /^gh issue (create|comment|close)/m);
+});
+
+test("pr-body-patch: Issue を開けなければ Issue の手順も落ちる（黙って通さない）", () => {
+  const r = runPatch({ headState: "patch_stale", gh: { create: 1 } });
+  assert.notEqual(r.issue.status, 0);
+});
+
+test("写し（.github/workflows/pr-body-patch.yml）があれば、ひな形と同じ", {
+  skip: existsSync(patchCopyPath) ? false : "まだ .github/workflows/ に写していない",
+}, () => {
+  assert.equal(readFileSync(patchCopyPath, "utf8").trimEnd(), patchTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
 });
