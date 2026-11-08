@@ -42,15 +42,10 @@ enforcement:
       verified: false
     - kind: ci_check
       what: >-
-        知見の委員会の週 1 の定例で、K-0001・K-0006・K-0009 の担保を新しい検査を足さずに今ある道具の配線で効かせると決めた（ADR 0024。Issue #1120）。
-        配線するのは tools/pr-body-check の check.mjs（同じ ## 見出しの重なりと、見出しの定義 template.json との順・欠け・外の見出しの位置）・gate.mjs
-        （本文の更新の前の関所。外れたら本文を書かずに body_fix に回す）と、それを Engine の続きのジョブの本文の更新から呼ぶ差分 engine/pr-body-gate.patch。
-        建設者が差分を Engine に入れて ENGINE_REF を上げ、ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test を必須のチェックにし、
-        本物の続きのジョブで外れた本文が書かれず body_fix に回ったことを記録してから wired と verified を true にする（手順は tools/pr-body-check/README.md の
-        「配線の手順（建設者）」）。それまでは K-0001・K-0006・K-0009 に新しい担保の Issue を起こさない。この変更ではワーカーの権限で道具を足しも直しもしていない。
-        手元の Engine（57069a8）に engine/pr-body-gate.patch が git apply --check で当たり、その Engine を ENGINE_DIR にすると engine.test.mjs の (3)
-        （関所を呼ばない Engine は外れた本文を書く）だけが落ち、差分を当てた写しを ENGINE_DIR にして CI=true で node --test が全部通る（写しがないことを見る 3 件は飛ばし）ことを確かめた。
-        今の ENGINE_REF（9fee9c2）の版は手元になく走らせていない。.github/workflows/ にまだ写されておらず、配線されておらず効き目は確かめていない
+        知見の委員会の週 1 の定例（ADR 0024、Issue #1120）で、新しい検査を足さずに tools/pr-body-check の関所（gate.mjs。check.mjs の見出しの定義との照合を含む）を
+        Engine の続きのジョブの本文の更新に配線して担保すると決めた（engine/pr-body-gate.patch。配線は建設者）。効くのは、続きの implement が本文を書き足したときの
+        見出しの順・欠け・重なりの崩れを書く前に止めて body_fix に回す部分だけで、body_fix 自身の書き換えと、複数のジョブが同じ本文を並列に書き換えることは止めない。
+        配線するまで、この見出しの崩れに新しい担保の Issue を起こさない
       issue: 1120
       at: 2026-11-08
       wired: false
