@@ -20,6 +20,9 @@ evidence:
   - case: C-0006
   - pr: 821
   - event: "case.analyzed:370935"
+  - case: C-0009
+  - pr: 247
+  - event: "case.analyzed:522825"
 status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08

@@ -1,0 +1,31 @@
+id: K-0017
+theme: 6
+kind: causal
+statement: >-
+  チケットの大きさ（触る領域の数・契約や schema の差分・予想の行数）を投入の前に測り、1 ジョブのターン予算を超えるものを
+  領域ごとの子チケットに分ける段がないと、その大きさのまま 1 ジョブ（tier-large）に投入されてターン上限で途中終了し、
+  rerun で同じ規模の実装をやり直して、費用が中央値の数倍に膨らみやすい（C-0009 では 4 領域・46 ファイル・3912 行のチケットで、
+  1 回目の 7.31 USD が途中終了の分として残り、合計 17.0 USD になった）。根拠は例の 1 チケットだけで、
+  束 process:cost_outlier:code_change のほかの 36 件が同じ型かは確かめていない。rerun が仕掛かりを引き継がずに作り直したことは別の仕組みで、この主張には入れない。
+scope:
+  work: [plan.route, dev.build]
+  artifacts: [Ticket]
+  request_form: [ticket]
+  roles: [supervisor, implement]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0009
+  - issue: 243
+  - pr: 246
+  - pr: 247
+  - event: "case.analyzed:522825"
+status: draft
+verified_at: 2026-11-08
+review_by: 2026-12-08
+confidentiality: product
+related: [K-0018, K-0010]
+invalidate_when:
+  - "投入の前にチケットの大きさを見積もり、上限を超えるものを deps 付きの子チケットに分けて投入するようになった"
+  - "束 process:cost_outlier:code_change のチケットを集計して、領域をまたぐ大きいチケットが束の少数で、ほかの型（途中終了を伴わない外れ値）が大半だと分かった"
+  - "ターン上限で途中終了したジョブの rerun が仕掛かりから再開するようになり、途中終了しても費用が中央値の数倍にならなくなった"
