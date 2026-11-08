@@ -17,4 +17,10 @@ verified_at: 2026-11-01
 review_by: 2026-12-01
 confidentiality: product
 related: [K-0004]
+# 担保の Issue の記録（2026-11-08 の週 1 の定例の見直し、Issue #1119。enforcement.solutions は作った解決策を書く欄なので、まだ作っていない担保はここに書く）
+# - Issue #903（議決 D-0004、PR #571 の schema の案。judgment.judged で adopt が仮決めの承認か欠陥の採用かを必ず示し、incident の adopted を
+#   adopted_defects と approved_provisionals に分ける）: 2026-11-08 の時点で open。作った PR #932 は委員会の議決（不採用・差し戻し）で閉じられ、
+#   マージされていない。取り下げてはいない。作ったら enforcement.solutions に issue 903・decided_by committee:D-0004 で書く
+# - 週 1 の定例の担保の記録でこの知見に付いていた Issue #905 は、起票したときの番号（K-0003、議決 D-0004、PR #570）で開かれたもので、
+#   中身は議決 D-0006 の K-0005 の test の案。記録したときの番号では K-0005 の担保にあたり、この知見の担保ではない（K-0005.yaml に書いた）
 decided_by: committee:D-0004

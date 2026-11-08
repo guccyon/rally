@@ -2,9 +2,9 @@ id: K-0009
 theme: 4
 kind: causal
 statement: >-
-  検査の採用済みの指摘（PR-002 など）と、本文を直す役（body_fix）が決めた本文の書き方の決まりが、次に PR 本文を書き足す役
-  （続きのジョブの summary と Engine の追記）の入力に入らないと、body_fix が本文を直しても次の取り込みでまた崩れ、
-  同じ指摘が採用され続ける。
+  検査の採用済みの指摘（PR-002 など）と、本文を直す役（body_fix）が決めた本文の書き方の決まりが、次に PR 本文に書き足す続きのジョブ
+  （continue の implement）の入力に渡らないと、body_fix が本文を直しても次の取り込みでまた崩れ、同じ指摘が採用され続ける。
+  主張は入力に渡らないことだけに絞る。報告の見出しの階層が下がらずに重なることは K-0001、本文全体を組み直す持ち主がいないことは K-0006 の主張。
 scope:
   work: [dev.describe]
   artifacts: [PR.body]
@@ -16,13 +16,12 @@ evidence:
   - pr: 659
   - event: "case.analyzed:274379"
 status: active
-verified_at: 2026-11-05
-review_by: 2026-12-05
+verified_at: 2026-11-08
+review_by: 2026-12-08
 confidentiality: product
 related: [K-0001, K-0006]
 invalidate_when:
   - "continue（conflict/ci_failed）の implement ジョブの入力に、未解消の採用済みの指摘と body_fix が決めた本文の決まりが入るようになった"
-  - "続きのジョブの報告が PR 本文に入るときに、決まり（## を足さないなど）が機械で守られるようになった"
 enforcement:
   level: deterministic
   solutions:

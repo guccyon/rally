@@ -2,18 +2,25 @@ id: K-0005
 theme: 4
 kind: causal
 statement: >-
-  PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002）・リポジトリの決まり（CLAUDE.md の PR の説明の見出し）の
-  3 つで 1 つに揃っていないと、決まりに沿って書いた本文が、rubric にだけある見出し（背景・問題）の欠けで差し戻されたり、判定役が同じ指摘を
-  決まりの外として退けたりして、PR ごとに判断が割れる。実装役の報告の型だけを rubric に合わせても解けない（どれを正にするかを先に決める）。
+  PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002・OV-001）・リポジトリの決まり（CLAUDE.md の PR の説明の見出し）の
+  3 か所に分かれていて 1 つに揃っていないと、決まりに沿って書いた本文に rubric にだけある見出し（背景・問題）の欠けの指摘が出て、
+  PR によって採られたり退けられたりして判断が割れる。同じ欠けを OV-001 と PR-002 が別々に数え、指摘が 2 重になることもある（C-0002・C-0003）。
+  実装役の報告の型だけを rubric に合わせても解けない（どれを正本にするかを先に決める）。主張は定義が分かれていることに絞る。
+  判定役の入力に rubric の本文が渡らないことは K-0011 の主張。
 scope:
   work: [dev.describe, dev.review.inspect, dev.review.judge]
   artifacts: [PR.body]
   roles: [implement, inspect, judge]
 acts_on: process
-confidence: hypothesis
+confidence: confirmed
 evidence:
-  - case: C-0003
   - case: C-0001
+  - pr: 546
+  - event: "case.analyzed:113682"
+  - case: C-0002
+  - pr: 395
+  - event: "case.analyzed:40376"
+  - case: C-0003
   - pr: "396"
   - event: "case.analyzed:40381"
   - case: C-0005
@@ -23,8 +30,17 @@ evidence:
   - pr: 821
   - event: "case.analyzed:370935"
 status: active
-verified_at: 2026-11-07
-review_by: 2026-12-07
+verified_at: 2026-11-08
+review_by: 2027-02-06
 confidentiality: product
 related: [K-0001, K-0006, K-0011]
+invalidate_when:
+  - "PR 本文の見出しの正本が 1 つに決まり、実装役の報告の型・PR-002 と OV-001 の check・CLAUDE.md の見出しがそれに揃った（D-0006 の担保の案のとおり、正本は作用先の承認で人が決める）"
+  - "見出しの定義が揃ったあとも、背景・問題の欠けの指摘が PR によって採られたり退けられたりした（原因は定義の分かれではなかった）"
+# 担保の Issue の記録（2026-11-08 の週 1 の定例の見直し、Issue #1119。enforcement.solutions は作った解決策を書く欄なので、まだ作っていない担保はここに書く）
+# - Issue #905: 議決 D-0006（PR #570）の test の案（PR 本文の見出しの正を 1 つの定義に決めたうえで、実装役の報告の型・Engine の rubric.yaml の
+#   PR-002 の check・判定役が参照する決まりの見出しの一覧がその定義と一致することを確かめる。正をどれにするかは作用先の承認で人が決めてから入れる）。
+#   起票したときの番号で「K-0003 を test で決定論にする」（議決 D-0004）として開かれたが、記録したときの番号ではこの知見（K-0005）と議決 D-0006 にあたる。
+#   2026-11-08 の時点で open。作った PR #931 は委員会の議決（不採用・差し戻し）で閉じられ、マージされていない。
+#   正本を人が決めて作ったら enforcement.solutions に issue 905・decided_by committee:D-0006 で書く
 decided_by: committee:D-0006

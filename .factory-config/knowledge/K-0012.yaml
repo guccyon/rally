@@ -4,13 +4,15 @@ kind: causal
 statement: >-
   採用した PR 本文の指摘を直す body_fix（本文だけの直し）が終わる前に supervisor が承認（inspector_approved）を出し、
   直した本文の再検査をマージの条件に入れないと、PR は直していない本文か、直したが再検査していない本文のままマージされうる。
-  直しが漏れたり失敗したりしていても、マージの前に止める段がない（根拠の 2 件では、直し漏れが残った記録はまだない）。
+  直しが漏れたり失敗したりしていても、マージの前に止める段がない。根拠の 3 件のうち、C-0005 では採用済みの本文の指摘が残ったまま、
+  本文の直し（pr.body_amended 20:08:50）の 7 秒前の 20:08:43 にマージされた。C-0003 では最後の body_fix のあと検査をもう一度通さずに、
+  C-0006 では直しの約 1 秒後に再検査なしでマージされた。直しが失敗したまま直らずに残った記録はまだない。
 scope:
   work: [dev.describe, dev.review.inspect]
   artifacts: [PR.body]
   roles: [supervisor, body_fix]
 acts_on: engine
-confidence: hypothesis
+confidence: confirmed
 evidence:
   - case: C-0006
   - pr: 821
@@ -18,9 +20,12 @@ evidence:
   - case: C-0005
   - pr: 659
   - event: "case.analyzed:274379"
+  - case: C-0003
+  - pr: "396"
+  - event: "case.analyzed:40381"
 status: active
-verified_at: 2026-11-07
-review_by: 2026-12-07
+verified_at: 2026-11-08
+review_by: 2027-02-06
 confidentiality: product
 related: [K-0004, K-0006]
 invalidate_when:
@@ -45,6 +50,18 @@ enforcement:
       issue: 1053
       at: 2026-11-08
       decided_by: committee:D-0033
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        K-0006 の enforcement.solutions の issue 906 と同じ解決策（議決 D-0006 の案、実装は PR #930。tools/pr-body-check/check.mjs の見出しの定義との照合を
+        pull_request の edited や pr.body_amended でも起動させ、head_sha の変わらない本文だけの直しもマージ前の必須チェックにする想定）。
+        この知見の invalidate_when の 2 つ目（本文だけの直しもマージ前の必須チェックで確かめられるようになった）にあたる担保なので、
+        片方の知見だけが直される食い違いを防ぐために両方に書いた（2026-11-08 の週 1 の定例、Issue #1119）。片方を直すときは両方を直す。
+        議決 D-0006 の案は K-0006 に向けたものなので、ここには decided_by を書かない。起動の配線と必須チェックは建設者の権限でまだ入っておらず、
+        効き目はまだ確かめていない
+      issue: 906
+      at: 2026-11-05
       wired: false
       verified: false
 decided_by: committee:D-0033
