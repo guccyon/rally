@@ -1,13 +1,13 @@
-// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084。必須のチェックが外れたときの守りは議決 D-0059、Issue #1159）。
+// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084。必須のチェックが外れたときの守りは議決 D-0059、Issue #1159。実行の結果の SKIP の照らしは議決 D-0061、Issue #1168）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, isMainModule, loadRepo, parseTapReport, REPO_ROOT, runningFrom, runsEngineTest, skipLines, todoLines } from "./order.mjs";
+import { BASIS_TESTS, callsEventsCheck, checkOrder, checkoutSkipLines, DEFAULT_SCRIPTS, isMainModule, LEGACY_BASIS_NOT_FOUND, loadRepo, NO_ENGINE_CHECKOUT, parseTapReport, REPO_ROOT, runningFrom, runsEngineTest, skipLines, skipReportProblems, tapSkips, todoLines } from "./order.mjs";
 
 const orderScript = fileURLToPath(new URL("./order.mjs", import.meta.url));
 const checkScript = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -55,6 +55,81 @@ test("skipLines は todoLines と同じ数え方で skip を数え、Engine の�
   assert.deepEqual(skipLines("// t.skip('x') は注釈\ntest('x', { skip }, () => {});\nconst skip = false;"), []);
   assert.deepEqual(skipLines("test('x', { skip: 'legacy_basis_not_found' }, () => {});"), [1]);
   assert.deepEqual(skipLines("\ntest.skip('x');\nt.skip ('y');"), [2, 3]);
+});
+
+/** node --test でテストのファイルを走らせた TAP。親の node --test の NODE_TEST_CONTEXT を渡すと TAP で出さないので外す。終了コードは見ない */
+function runTap(file, env = process.env) {
+  const { NODE_TEST_CONTEXT, ...rest } = env;
+  const r = spawnSync("node", ["--test", "--test-reporter=tap", file], { cwd: dirname(file), env: rest, encoding: "utf8" });
+  assert.equal(r.error, undefined, String(r.error));
+  return r.stdout;
+}
+
+test("tapSkips は下の段も含めて SKIP の名前と理由を読み、skipReportProblems は許した理由とソースの件数で照らす（議決 D-0061、Issue #1168）", () => {
+  const tap = [
+    "ok 1 - 通った",
+    "ok 2 - 名前の \\# も読む # SKIP Engine のチェックアウトがない（ENGINE_DIR=/x）",
+    "    ok 1 - 下の段 # SKIP legacy_basis_not_found: 写しを作れない \\# 理由の中",
+    "ok 3 - 理由なし # SKIP",
+    "ok 4 - 別の理由 # skip たまたま",
+    "ok 5 - todo # TODO まだ",
+  ].join("\n");
+  assert.deepEqual(tapSkips(tap), [
+    { name: "名前の # も読む", reason: "Engine のチェックアウトがない（ENGINE_DIR=/x）" },
+    { name: "下の段", reason: "legacy_basis_not_found: 写しを作れない # 理由の中" },
+    { name: "理由なし", reason: "" },
+    { name: "別の理由", reason: "たまたま" },
+  ]);
+  const source = "test('a', { skip }, () => {});\ntest('b', (t) => t.skip('legacy_basis_not_found: x'));";
+  assert.deepEqual(skipReportProblems(tap, source).map((p) => [p.rule, p.name ?? p.reason]), [
+    ["skip_reason_not_allowed", "理由なし"],
+    ["skip_reason_not_allowed", "別の理由"],
+  ]);
+  // ソースの件数を超えて飛ばしたら落とす（字面で数え漏らした skip がある）。飛ばさなかった skip は数が少なくてよい
+  const twice = `${tap}\nok 6 - 2 つ目 # SKIP ${LEGACY_BASIS_NOT_FOUND}: y\nok 7 - 3 つ目 # SKIP ${NO_ENGINE_CHECKOUT}`;
+  assert.deepEqual(skipReportProblems(twice, source).filter((p) => p.rule === "skip_count_mismatch"), [
+    { rule: "skip_count_mismatch", reason: LEGACY_BASIS_NOT_FOUND, ran: 2, lines: 1 },
+    { rule: "skip_count_mismatch", reason: NO_ENGINE_CHECKOUT, ran: 2, lines: 1 },
+  ]);
+  assert.deepEqual(skipReportProblems("ok 1 - 通った\n", source), []);
+  assert.deepEqual(checkoutSkipLines("// { skip } は注釈\ntest('a', { skip }, () => {});\ntest('b', {skip}, f);"), [2, 3]);
+});
+
+test("別名や動的な skip は字面では数え漏れるが、走らせた TAP の SKIP で落とす（議決 D-0061、Issue #1168）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sendback-skip-alias-"));
+  const file = join(dir, "alias.test.mjs");
+  const source = [
+    'import { test } from "node:test";',
+    "test(\"別名で飛ばす\", (t) => { const s = t.skip.bind(t); s(\"" + LEGACY_BASIS_NOT_FOUND + ": 別名\"); });",
+    "const opts = {}; opts.skip = \"動的に飛ばす\";",
+    "test(\"動的に飛ばす\", opts, () => {});",
+    "",
+  ].join("\n");
+  writeFileSync(file, source);
+  // 字面ではどちらも数えない
+  assert.deepEqual(skipLines(source), []);
+  assert.deepEqual(checkoutSkipLines(source), []);
+  const problems = skipReportProblems(runTap(file), source);
+  assert.deepEqual(problems.map((p) => p.rule).sort(), ["skip_count_mismatch", "skip_reason_not_allowed"]);
+  assert.ok(problems.some((p) => p.rule === "skip_reason_not_allowed" && p.reason === "動的に飛ばす"));
+  assert.ok(problems.some((p) => p.rule === "skip_count_mismatch" && p.reason === LEGACY_BASIS_NOT_FOUND && p.ran === 1 && p.lines === 0));
+});
+
+test("engine.test.mjs を走らせた TAP の SKIP は、許した理由だけで、ソースから数えた件数を超えない（今の環境で。議決 D-0061、Issue #1168）", () => {
+  const engineTest = fileURLToPath(new URL("./engine.test.mjs", import.meta.url));
+  assert.deepEqual(skipReportProblems(runTap(engineTest), engineTestNow), []);
+});
+
+test("Engine のチェックアウトがないときの engine.test.mjs の SKIP は、{ skip } の件数だけ「チェックアウトがない」で出る（議決 D-0061、Issue #1168）", () => {
+  // tools/sendback-check を、隣に Engine のない一時ディレクトリの写しに置いて走らせる（ENGINE_DIR と CI を渡すと飛ばさずに落とすので外す）
+  const tool = join(mkdtempSync(join(tmpdir(), "sendback-no-engine-")), "repo/tools/sendback-check");
+  cpSync(dirname(fileURLToPath(import.meta.url)), tool, { recursive: true, filter: (p) => !p.includes("__pycache__") });
+  const { ENGINE_DIR, CI, ...env } = process.env;
+  const tap = runTap(join(tool, "engine.test.mjs"), env);
+  assert.deepEqual(skipReportProblems(tap, engineTestNow), []);
+  const skips = tapSkips(tap);
+  assert.equal(skips.length, checkoutSkipLines(engineTestNow).length, tap);
+  assert.ok(skips.every((s) => s.reason.startsWith(NO_ENGINE_CHECKOUT)), tap);
 });
 
 test("check.mjs --events を呼ぶ手順を見つける（道・working-directory・行の継ぎ）", () => {
