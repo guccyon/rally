@@ -1,0 +1,64 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0080
+pr: https://github.com/guccyon/rally/pull/1230
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に D-0055 の ci_check の案を入れた記録を 1 件足しただけなので、README の決まりや D-0004 から D-0055 までの議決、specs/
+    の規範と矛盾しません。
+  - D-0055 の案はすでに issue 1080（committee:D-0037）と issue 1063（committee:D-0035）の解決策で入っていたと
+    what に書き、作り直さずにゆるめを捕まえる NoSkipTest だけを足しているので、既存の解決策と重複せず担う範囲が分かれています。
+  - D-0055 の consistency の票が求めた D-0037 との対応は what に書かれていますが、案にあった decided_by への D-0037
+    の併記はしていないので、併記するか what に書くだけで足りるとするかを次に K-0004 を直す変更セットで決めてください。
+  - 'pytest がないときに落ちるかは確かめていないことと、.github/workflows/ への写しがまだなことを自分で書いていて wired: false・verified:
+    false と合っているので、confidence は hypothesis のままが妥当です。'
+  - K-0004 の solutions は 46 件になり、supervisor の差し戻しという主張とは別の知見の置き場の担保の記録がたまり続けているので、D-0054・D-0055
+    で勧められたとおり別の知見に分けるかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した solution は issue 1152 と committee:D-0055 を指し、D-0055 の enforcement の ci_check
+    の案（CI=true か ENGINE_DIR のときは test_engine.py を飛ばさずに落とし、skipped を見る）とそのまま対応しているので、一次記録に辿れます。
+  - 既に入っていた分として挙げた issue 1080（committee:D-0037）と issue 1063（committee:D-0035）の解決策は
+    K-0004 に実在するので、作り直さずにテストだけ足したという説明も記録と合っています。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、wired:
+    false・verified: false として PR ごとに走っていないと自分で書いているので、confidence は hypothesis のままが妥当です。'
+  - D-0055 の案は D-0037 を併記するよう求めていましたが decided_by は committee:D-0055 だけなので、次に直すときに
+    D-0037 との対応を decided_by か what に明記してください。
+  - 7 とおりの改変と書きながら挙げているのは 4 つの種類なので、次に直すときに 7 つの内訳を書き分けると確かめた範囲を辿りやすくなります。
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、環境変数やテストの名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0055 の ci_check
+    の案を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - '既にある飛ばさずに落とす仕組み（Issue #1080・#1063）を作り直さず、その飛ばす条件がゆるめられたら落ちる NoSkipTest を足し、7
+    とおりの改変で落ちることと対照で飛ぶことを確かめた形は、決定論の担保として確かさと線の引きやすさが十分です。'
+  - pytest がないときに落ちるかはこのテストで見ていないと自分で書いているので、建設者が Engine の写しを用意できたときに同じ子のプロセスの形で足すと抜けがなくなります。
+  - 'test_ci.py は ci/knowledge-enforcement.yml のひな形からしか走らず .github/workflows/ への写しがまだなので、wired:
+    false・verified: false は事実と合っており、confidence は hypothesis のままが妥当です。'
+  - 中身は CI の飛ばしを防ぐテストなので kind を ci_check としたのは D-0055 の案に合わせたものと読めますが、次に直すときに test
+    との書き分けを what に一言添えると数えやすくなります。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0055 の ci_check
+    の案を入れた記録を enforcement.solutions に 1 件足しただけなので、主張の範囲は広がっていません。
+  - '足した what は wired: false・verified: false のままで、pytest がないときに落ちるかは見ていないことや .github/workflows/
+    への写しがまだないことを自分で書いており、効き目を言い過ぎていません。'
+  - what に「7 とおりの改変」とあるのに挙げた改変は 4〜5 種類しか読み取れないので、次に K-0004 を直すときにその内訳（どのファイルにどの改変を当てたか）を書き足してください。
+  - D-0055 は decided_by に D-0037 を併記するよう求めていましたが、足した項目の decided_by は committee:D-0055
+    だけで、D-0037 との対応は what の文の中にしかないので、次の変更セットで併記してください。
+  - 差し戻しの判定についての K-0004 に知見の置き場の CI の解決策を積み続けている点は D-0048・D-0053・D-0056・D-0072 で指摘済みで、今回の採否には響きませんが、別の知見に分けるかを委員会で見直してください。
+  - 確かさは hypothesis のままが妥当で、上げる根拠も下げる理由もこの PR にはありません。
+  personal_data: false
+enforcement: []
