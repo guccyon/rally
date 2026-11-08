@@ -844,4 +844,20 @@ enforcement:
       decided_by: committee:D-0060
       wired: false
       verified: false
+    - kind: lint
+      what: >-
+        議決 D-0061（Issue #1163 の起票時の番号は D-0058。PR #1161）の lint の案を入れた。tools/knowledge-enforcement-check/check.py の
+        check_schedule() が使う off_schedule を、github.event_name を見るかどうかの字面の当てはめから許可リストに変え、ジョブと検査を呼ぶ手順の if: は、
+        無いか、github.event_name == '<event>' を || でつないだだけで == 'schedule' を含む形（${{ }} で包んでもよい）だけを schedule でも走ると数え、
+        それ以外の式（&& でほかの条件をつなぐ・needs.* や always() を見る・ほかの条件を || でつなぐ・!= や contains() で見る・真偽の値）は
+        schedule を含んでいても走らない側に数えて落とす。test_check.py の ScheduleTest に、許す形（単独・${{ }} で包む・workflow_dispatch と || でつなぐ・
+        手順の if:）で通り、決まった形でない 15 とおりの式をジョブと手順のそれぞれに置くと落ちることを確かめるテストを足し、手元で off_schedule を
+        前の off_event("schedule") に戻した写しでそのテストが落ちることを確かめた。ひな形 tools/sendback-check/ci/sendback-protection.yml の
+        protection のジョブの if: は許す形なので、そのまま写せば通る。check.py は ci/knowledge-enforcement.yml のひな形からしか走らず、
+        .github/workflows/ への写しは建設者が置くので、この解決策は未配線・未確認
+      issue: 1163
+      at: 2026-11-08
+      decided_by: committee:D-0061
+      wired: false
+      verified: false
 decided_by: committee:D-0004
