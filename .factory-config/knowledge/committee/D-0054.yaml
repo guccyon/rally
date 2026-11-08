@@ -1,0 +1,69 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0054
+pr: https://github.com/guccyon/rally/pull/1147
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1076 の ci_check を 1 件足しただけで、README の変更セットの決まりと矛盾しません。
+  - '足した解決策は D-0036 の enforcement の 1 つめの案（1 日 1 回と手動で Engine の先頭に test_engine_patch.py
+    を向け、patch_stale なら issue 968 に記録する）と中身が一致し、decided_by: committee:D-0036 も合っています。'
+  - issue 1014（ENGINE_REF の版に当たるか）や issue 1063（PR ごとの engine-test）とは見る版と走るときが分かれていて重複ではなく、後の議決
+    D-0037 から D-0053 にもこの追記とぶつかる決めはありません。
+  - D-0036 の 2 つめの案（enforcement_label だけで「もう入っている」と通る版を patch_partially_applied で扱うテスト）は入っていませんが、what
+    は満たしたと書いていないので言い過ぎではなく、次の変更セットで入れてください。
+  - D-0036 で求められた patch_stale の見張りへの D-0025 の添え書きがこの変更セットでもまだなので、次に K-0004 を直すときに
+    what か decided_by に D-0025 を書き足し、issue 962 から後の主張から外れた solutions を別の知見に移すか整理するかも委員会で決めてください。
+  - 'wired: false・verified: false と、写しと schedule の実行がまだという記述が合っているので、confidence は
+    hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した ci_check の solution は issue 1076 と committee:D-0036 を指していて、D-0036 の enforcement
+    の 1 つめの案（sendback-engine-head.yml と同じ形で 1 日 1 回と手動、Engine の先頭に test_engine_patch.py
+    を向け、patch_stale なら issue 968 に先頭の版・ENGINE_REF・実行の URL を記録し、同じ版の記録は重ねない）とほぼ文のとおり対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '確かめたのは test_ci_head.py の偽の gh と手元の Engine の先頭（56692cd）だけで、.github/workflows/
+    への写しと schedule の実行はまだと書いているので、wired: false・verified: false と confidence: hypothesis
+    のままが妥当で、定期の実行の本物の記録が cases/ に残るまでは上げないでください。'
+  - D-0036 の 2 つめの案（--reverse --check が通るときだけを「もう入っている」と数える test）はこの solution では入っておらず、what
+    もそれを満たしたとは言っていないので言い過ぎではありませんが、入れるときは別の solution として記録してください。
+  - D-0036 の evidence と consistency が勧めた decided_by への D-0025 の添え書きはこの変更セットでもまだなので、次に
+    K-0004 を直すときに添えてください。
+  - 差分に出てくるのは issue の番号・議決の id・ツールのパス・コミットの短い版・判定の名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0036 の 1 つめの ci_check
+    の案（Engine の既定のブランチの先頭に差分が当たるかを 1 日 1 回と手動で見て、patch_stale なら issue 968 に記録する）を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - git apply --check で先頭に当たるかを見る線は毎回同じ答えが出て安く作れ、ENGINE_REF が古いまま先頭だけが進む見落としを建設者が当てる前に止められるので、決定論の担保として筋がよいです。
+  - 同じ先頭の版の記録を重ねないことと記録に失敗したら落ちることを偽の gh で確かめていて、定期の検査が issue 968 を埋めたり黙って失敗したりする痛さにも手当てがあります。
+  - D-0036 の 2 つめの案（test_engine_patch.py の「もう入っている」の判定を git apply --reverse --check
+    が通るときだけにし、通らなければ patch_partially_applied で落とすか ::warning を出す）はまだ入っておらず、知見の置き場にも記録がないので、次の変更セットで入れてください。
+  - schedule で走る検査は PR を止めないので、.github/workflows/ への写しのあと、実際に定期の実行が 1 件 issue 968
+    か実行の記録に残ってから wired・verified を true にしてください。
+  - '効き目は手元の Engine（56692cd）で確かめただけで、wired: false・verified: false と合っているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0036 の ci_check の案を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 'what に .github/workflows/ への写しと schedule の実行がまだで効き目を確かめていないと書いてあり、wired: false・verified:
+    false とも合っていて、記録より強く言っていません。'
+  - 反例として、Engine の先頭が頻繁に進むのに差分が当たらないままだと、先頭の版ごとに issue 968 へ patch_stale の記録が足されて知らせが埋もれうるので、同じ当たらなかったところが続くときは重ねない形にするかを建設者が確かめてください。
+  - 反例として、D-0036 の test の案（enforcement_label だけで「もう入っている」と数える）がまだ入っていないなら、先頭に差分の一部だけが入った版ではこの定期の検査も記録せずに通るので、その案を次の変更セットで入れてください。
+  - patch_stale でない落ち方は ::error だけで issue 968 に残らず、PR では走らない定期のワークフローの失敗は見落とされやすいので、写すときに知らせの先を決め、K-0004
+    にたまった知見の置き場の CI の解決策（11 件）は D-0048・D-0053 の指摘どおり別の知見に分けるかを委員会で見直してください。
+  - 効き目をまだ本物の記録で確かめていないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+enforcement: []
