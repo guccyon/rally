@@ -1,0 +1,82 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0107
+pr: https://github.com/guccyon/rally/pull/1285
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この差分は K-0004 の enforcement.solutions に D-0072 の ci_check の案のうちワーカーの権限で入れた分の記録を
+    1 件足すだけで、statement・scope・evidence・confidence とトップの decided_by: committee:D-0004
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。'
+  - '足した項目の kind: ci_check と decided_by: committee:D-0072 は D-0072 の enforcement にある
+    knowledge: K-0004・solution_kind: ci_check の案に当たり、PR #1198 も D-0072 の pr と一致するので、過去の議決と食い違いません。'
+  - issue 1129 の解決策（D-0048）は on.pull_request のあるどの .github/workflows/ のワークフローでも数えていたのを、今回は
+    .github/workflows/knowledge-enforcement.yml に絞る線に締めたもので、同じ検査の言い直しではなく重複ではありません。
+  - D-0072 のもう 1 つの test の案（REQUIRED_PR を知見と issue の名前の列挙に頼らず広げる）はこの差分でも手つかずで、今回も
+    issue 1129 の組を名前で足しているので、次の変更セットでその案に応えてください。
+  - 'wired: false・verified: false と what の「未配線・未確認」が一致し、issue 986・1059・1129 の解決策もまだ配線されていないので、K-0004
+    の confidence は hypothesis のままが妥当です。'
+  - 知見の置き場の CI の担保を差し戻しの判定についての K-0004 に積み続けている点は D-0072・D-0081・D-0084 でも指摘済みで、今回の採否には響きませんが、配線が入ったら主張の担保と分ける変更セットを出してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0072 を指していて、D-0072 の pr は #1198、enforcement
+    の 1 つ目の ci_check の案（ci/knowledge-enforcement.yml を写して必須チェックにし、そのあとで issue 986・1059・1129
+    の解決策を wired: true にする）と what の書き出しが合っているので、議決まで辿れます。'
+  - what に出てくる issue 986・1059・1129 の解決策は K-0004 に実際にあり、そのため辿り先を取り違えていません。
+  - 「起票時の番号は D-0071」という書き方は、今の D-0071 が K-0005・K-0006 の別の議決であることと合っています。これまでの記録と同じく、番号が付け直された経緯を書いたものです。
+  - 'what はテストで確かめた範囲だけを書いています。写しとブランチ保護の必須チェックは建設者がまだ行っておらず、check.py も PR ごとには走っていないと明記し、wired:
+    false・verified: false にしているので、記録より強く言っていません。'
+  - statement・evidence（C-0002・PR 395・case.analyzed:40376）・confidence は変わっておらず、どの解決策も未配線・未確認です。そのため確かさは
+    hypothesis のままが妥当で、verified_by で cases/ の事例記録を指す解決策が出るまでは上げないでください。
+  - 差分にあるのはツールのパス・関数や定数の名前・Issue と PR の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0072 の 1 つ目の ci_check の案のうちワーカーが入れられる分の記録で、REQUIRED_PR_WORKFLOW で
+    issue 986・1059・1129 の解決策の wired_by を .github/workflows/knowledge-enforcement.yml
+    の pull_request のジョブに限る線を足しているので、担保の観点では採ってよいです。
+  - 別名のワークフローや workflow_dispatch・schedule・push に替えた写しで落ちること、組を外すとテストが落ちることまで確かめているので、線は安全側に引かれています。
+  - 'ただし照合はワークフローのファイル名と on の字面だけを見るので、knowledge-enforcement.yml を写してもそのジョブがブランチ保護の必須チェックに入っていなければ
+    wired: true にできる穴が残り、外したときに PR が素通りする痛さがあります。'
+  - 'REQUIRED_PR と REQUIRED_PR_WORKFLOW は K-0004 の issue 986・1059・1129 を名前で並べる形のままで、D-0072
+    の test の案（列挙に頼らず全ての wired: true の解決策に同じ線を要する形）はまだ入っていません。'
+  - '足した解決策は wired: false・verified: false と正直に書かれ、どの解決策も未配線・未確認なので、K-0004 の confidence
+    は hypothesis のままが妥当です。'
+  - 差分にはツールのパス・issue の番号・議決と知見の id だけがあり、人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0072 の ci_check の案のうちワーカーが入れられる分の記録を
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - '足した項目は wired: false・verified: false で、.github/workflows/ への写しと branch protection
+    の必須チェックは建設者がまだ行っておらず check.py が PR ごとに走っていないと書いているので、記録より強く言っていません。'
+  - '反例として、REQUIRED_PR_WORKFLOW はワークフローのファイル名と on.pull_request の字面を照らすだけなので、knowledge-enforcement.yml
+    という名前の写しが必須チェックに入っていなくても、また中の別のジョブから check.py を呼ぶだけでも wired: true にできる余地が残り、ジョブ名の照合と
+    branch protection 側の照合を次の変更で検討してください。'
+  - '反例として、今回も REQUIRED_PR に issue 1129 の組を名前で足す形のままで、D-0072 の 2 つ目の案（列挙に頼らず wired:
+    true の解決策すべてに同じ線を引く）は入っておらず、組を足し忘れた解決策が黙って通る穴は残っています。'
+  - 知見の置き場の検査ツールの担保を差し戻しの判定についての K-0004 に積み続けているのは主張と担保の対象がずれていますが、D-0048・D-0072・D-0079
+    までの扱いと同じなので今回の採否には響かず、別の知見に分けるかは委員会か人で決めてください。
+  - どの解決策も未配線・未確認なので、K-0004 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'issue 1087 の protection.mjs と同じやり方で、ブランチ保護の必須チェックに knowledge-enforcement.yml
+    の enforcement のジョブが入っているかを照らす検査を作り、issue 986・1059・1129 の解決策を wired: true にするときは
+    wired_by にその検査も要るように check.py の REQUIRED_PR_WORKFLOW を広げる。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'REQUIRED_PR・REQUIRED_PR_WORKFLOW を issue の名前の列挙から、check.py を呼ぶと書いた wired:
+    true の解決策はどれも knowledge-enforcement.yml の pull_request のジョブを wired_by に要する規則に替え、test_check.py
+    で K-0004 以外の知見の解決策でも同じ線で落ちることを確かめる。'
