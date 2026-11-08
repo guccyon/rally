@@ -20,6 +20,10 @@ evidence と同じく 1 項目に 1 つの参照）を必須にし、case を 1 
 protection.mjs で照らす）を wired: true にするときは、wired_by に、on.schedule（cron）のあるワークフローで、schedule でも走る
 （if: が github.event_name を見るなら == 'schedule' を含み、!= 'schedule' を含まない）ジョブから runs の検査を呼ぶ項目を必須にする。手で走らせた記録だけでは wired にできない。
 
+呼ぶ検査の必須（議決 D-0042、Issue #1100）: REQUIRED_RUNS の解決策（K-0010 の issue 1034・1100。衝突の続きのジョブの検査）を wired: true にするときは、
+wired_by に、.github/workflows/ の 1 つのジョブから挙げた検査（tools/conflict-check/test_watch.py・test_engine.py）をすべて呼ぶ項目を必須にする。
+ほかの検査（test_policy.py だけなど）を呼ぶジョブだけでは wired にできない。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -52,6 +56,9 @@ CASE_RE = re.compile(r"^C-\d{4,}$")
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088）
 REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs"}
+# (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
+CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
+REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -311,6 +318,39 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def check_required_runs(k: dict, repo: Path) -> list[str]:
+    """REQUIRED_RUNS の解決策が wired: true なら、1 つのジョブから挙げた検査をすべて呼ぶ wired_by を求める（議決 D-0042、Issue #1100）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    read = repo_reader(repo)
+
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True:
+            continue
+        targets = REQUIRED_RUNS.get((k.get("id"), s.get("issue")))
+        if targets is None:
+            continue
+        jobs: dict[tuple[str, str], set[str]] = {}
+        for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
+            if valid_wired_by(w) and is_workflow(w["workflow"]) and read(w["workflow"]) is not None:
+                jobs.setdefault((w["workflow"], w["job"]), set()).add(norm("", w["runs"]) or "")
+        ok = False
+        for (wf, job), runs in jobs.items():
+            if not set(targets) <= runs:
+                continue
+            try:
+                doc = load_yaml(repo / wf)
+            except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
+                continue
+            if isinstance(doc, dict) and all(job_calls(doc, job, t, read) for t in targets):
+                ok = True
+                break
+        if not ok:
+            where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+            e.append(f"{where}: wired にするには wired_by に、{WORKFLOWS}/ の 1 つのジョブから {'・'.join(targets)} をすべて呼ぶ項目"
+                     f"（検査ごとに 1 項目、同じ workflow・job）が要る（議決 D-0042）")
+    return e
+
+
 def check_verification(k: dict, repo: Path) -> list[str]:
     """verified が true の解決策の verified_by を照らす（議決 D-0034、Issue #1059）。wired が true であることは check_item が見る"""
     f, e = k.get("_file", str(k.get("id"))), []
@@ -386,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo)) + check_schedule(k, Path(a.repo)) + check_verification(k, Path(a.repo))]
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo)) + check_schedule(k, Path(a.repo)) + check_required_runs(k, Path(a.repo)) + check_verification(k, Path(a.repo))]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
