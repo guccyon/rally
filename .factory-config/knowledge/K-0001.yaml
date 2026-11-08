@@ -140,6 +140,23 @@ enforcement:
       verified: false
     - kind: test
       what: >-
+        議決 D-0044（PR #1105）の test の案（D-0032 の案のとおり gate.test.mjs と engine.test.mjs に通る側の写しを足し、続きのジョブの報告が
+        「## 工場の記録」の下の ### に入った本文と ## 見出しのない報告では関所が 0 を返して本文を書くことを必須のテストにする）を入れた。
+        写しのテスト自体は Issue #1038 で入っていた（gate.test.mjs の通る側の 4 件と engine.test.mjs の (10) の 3 件）が、Engine の
+        orchestrator/worker/entrypoint.sh の FACTORY_RESULT の行が変わって（knowledge_selection が足された。Engine 476573e）
+        tools/pr-body-check/engine/pr-body-gate.patch が当たらなくなり、(10) を含む (4)〜(10) が「差分が当たらない」で落ちて、通る側を確かめられていなかった。
+        差分をその Engine に合わせて作り直し（中身は変えず、FACTORY_RESULT の行の文脈だけ）、手元の Engine（476573e）で npm test が (3) のほか全部通り
+        （(3) は関所を呼ばない Engine なので前から落ちる）、差分を当てた Engine の写しを ENGINE_DIR にして CI=true で全部通ることを確かめた。
+        check.mjs で「## 工場の記録」の後ろの ### も外れにする誤検知の書き換えを入れると、gate.test.mjs の通る側の 4 件と engine.test.mjs の (5)・(10) の 3 件を含む
+        10 件が落ちることも確かめた。gate.test.mjs と engine.test.mjs を走らせる CI（tools/pr-body-check/ci/pr-body-engine.yml）はまだ .github/workflows/ に
+        写されておらず（手順は tools/pr-body-check/README.md の「配線の手順（建設者）」）、配線されておらず効き目は確かめていない
+      issue: 1107
+      at: 2026-11-08
+      decided_by: committee:D-0044
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
         議決 D-0045（PR #1108）の test の案を入れた。tools/pr-body-check/engine.test.mjs の (10) を、engine/pr-body-gate.patch を当てた Engine の写しではなく、
         ENGINE_DIR（CI では ENGINE_REF の版）の Engine の entrypoint.sh そのものから取り出した本文の更新の節で走らせる形にした。通る側の 3 通りの形
         （報告の見出しを ### か #### に下げる、## 見出しを持たない）の 21 回で、node を包んで関所が毎回 1 回呼ばれて 0 を返し、body_gate.json を残さずに本文を書き、

@@ -92,8 +92,8 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
   - (7) 4000 字を超える報告も切らずに、引き継ぎの `body_gate.json` と body_fix の指摘に全文が渡る
   - (8) 未完了の続きが仕上がった回（`CONTINUE_REASON=incomplete`・`INCOMPLETE` が空）に関所で外れても、報告を足さない本文で仕上げ（未完了の印を消す・`Refs` を `Closes` に直す・題を戻す・ドラフトを外す）だけは済ませ、`finished.applied` を true で残す。報告は body_fix に回し、人には回さない
   - (9) 同じ回で報告を足さない本文も関所で外れたら、仕上げも書かず `finished.applied` を false で残し、dispatcher が停止（`body_gate_finish:<PR の URL>`、human）を開いて人に回す
-  - (10) `ENGINE_DIR`（CI では `ENGINE_REF` の版）の Engine の `entrypoint.sh` そのものの本文の更新の節で（差分を当てた写しではなく）、C-0005 の 21 回の続きのジョブの報告の見出しを `###`・`####` に下げたか `## ` 見出しを持たない形なら、毎回関所を 1 回呼んで 0 が返り（`node` を包んで終了コードを残す）、`body_gate.json` を残さずに本文を書き、書いた本文が関所に通る（正しい更新まで止める誤検知がないこと。議決 `D-0032` の test の案、Issue #1038。議決 `D-0045` の test の案、Issue #1110 で写しから本物に替えた）。必須のテストで、関所を呼ばない Engine では (3) と同じく落ちる
-  - (11) Engine がまだ関所を呼ばない間だけ、(10) と同じことを `engine/pr-body-gate.patch` を当てた写しで確かめる（差分そのものの誤検知がないこと）。Engine が関所を呼ぶようになったら (10) が本物で確かめるので飛ばす
+  - (10) `ENGINE_DIR`（CI では `ENGINE_REF` の版）の Engine の `entrypoint.sh` そのものの本文の更新の節で（差分を当てた写しではなく）、C-0005 の 21 回の続きのジョブの報告の見出しを `###`・`####` に下げたか `## ` 見出しを持たない形なら、毎回関所を 1 回呼んで 0 が返り（`node` を包んで終了コードを残す）、`body_gate.json` を残さずに本文を書き、書いた本文が関所に通る（正しい更新まで止める誤検知がないこと。議決 `D-0032` の test の案、Issue #1038。議決 `D-0045` の test の案、Issue #1110 で写しから本物に替えた）。必須のテストで、関所を呼ばない Engine では (3) と同じく落ちる。議決 `D-0044` の test の案（Issue #1107）で、この通る側を必須のテストとして担保に記録した
+  - (11) Engine がまだ関所を呼ばない間だけ、(10) と同じことを `engine/pr-body-gate.patch` を当てた写しで確かめる（差分そのものの誤検知がないこと）。Engine が関所を呼ぶようになったら (10) が本物で確かめるので飛ばす。Engine の行が変わって `engine/pr-body-gate.patch` が当たらなくなると (4)〜(9) と (11) がそろって落ち、差分を確かめられなくなるので、そのときは同じ PR で差分を今の Engine に合わせて作り直す
 - `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`ci/pr-body-protection.yml` の形と手順の振る舞い（下の「配線の手順（建設者）」と「定期の照合」）
 - `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
 - `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる

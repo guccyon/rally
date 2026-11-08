@@ -1,0 +1,79 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0069
+pr: https://github.com/guccyon/rally/pull/1177
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。
+  - '足した項目の decided_by: committee:D-0044 は、D-0044 の enforcement の 2 つ目の test の案（D-0032
+    の案のとおり通る側の写しを必須のテストにする）とそのまま対応していて、食い違いはありません。'
+  - 'Issue #1038 の項目と同じテストを指しますが、新しい項目は Engine 476573e で pr-body-gate.patch が当たらなくなったのを作り直して通る側を確かめ直した記録だと書き分けているので、重複ではなく続きの記録として妥当です。'
+  - 'wired: false・verified: false は what の「配線されておらず効き目は確かめていない」と一致しているので、K-0001 は
+    active・hypothesis のままで INDEX.md の行とも食い違いません。'
+  - 作り直した差分を確かめたのは手元の Engine 476573e で、ci/pr-body-engine.yml が固定する ENGINE_REF（2490db6
+    や 9fee9c2）の版でも当たるかは書いていないので、次に K-0001 を直すときは ENGINE_REF との関係を書き添えてください（D-0064
+    での指摘と同じ点です）。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目の decided_by: committee:D-0044 は PR #1105 の議決で、その enforcement の test
+    の案（gate.test.mjs と engine.test.mjs に通る側の写しを足して必須のテストにする）と文言までそのまま対応しています。'
+  - '写しのテストが Issue #1038 で入っていたことは 1 つ前の項目（issue: 1038）の記録と合っており、今回の中身が pr-body-gate.patch
+    を Engine 476573e に合わせて作り直したことだと言い分けているので、同じ担保を二重に数えていません。'
+  - 確かめたのは手元の Engine（476573e）とその写しで、CI のひな形が固定する ENGINE_REF（D-0064 の記録では 2490db6）の版で作り直した差分が当たるかは書かれていないので、次に直すときは
+    ENGINE_REF の版で確かめたかを what に書いてください。
+  - 誤検知の書き換えで落ちる件数が 1 つ前の項目では計 5 件、今回は 10 件と違うので、次に直すときは何を数えたかの違い（テストの増減か数え方か）を一言添えてください。
+  - 'wired: false・verified: false は what の「配線されておらず効き目は確かめていない」と一致し、主張の根拠となる evidence
+    も変えていないので、confidence は hypothesis のままが妥当です。'
+  - 差分は Engine のコミット・ファイルの道・Issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この差分は D-0044 の test の案を入れた記録を K-0001 の enforcement.solutions に 1 件足すだけで、wired:
+    false・verified: false が what の「配線されておらず効き目は確かめていない」と一致しているので、担保の観点で採ってよいです。'
+  - 通る側の 4 件と (10) の 3 件が必須のテストで、誤検知の書き換えで 10 件が落ちることを確かめたので、関所が正しい本文を止める誤検知も機械で引ける線になり、担保の確かさは上がっています。
+  - 今回 Engine 476573e の FACTORY_RESULT の行の変更だけで pr-body-gate.patch が当たらなくなり (4)〜(10)
+    が黙って確かめられなくなったので、Engine の先頭への差分の当たりを定期的に見る決定論の見張りが K-0001 にも要ります。
+  - K-0004 の knowledge-enforcement.patch には D-0036・D-0056 で git apply --check の定期の見張り（patch_stale）があるので、同じ形を
+    pr-body-gate.patch に広げるのは作る費用が小さく繰り返しの確かさも高いです。
+  - CI（ci/pr-body-engine.yml）が .github/workflows/ に写されるまではどのテストも PR で走らないので、配線と本物の続きのジョブでの記録が済むまで
+    confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - '足した項目は D-0044 の test の案と対応していますが、写しのテスト自体は Issue #1038 の項目で既に記録済みで、この変更の中身は pr-body-gate.patch
+    を Engine 476573e に合わせて作り直したことなので、次に直すときは kind: test の新しい担保ではなく既存の担保の修復だと分かる書き方にしてください。'
+  - 反例として、Engine の FACTORY_RESULT の行が変わるたびに pr-body-gate.patch が当たらなくなり (4)〜(10) がまとめて落ちて通る側を確かめられなくなるので、配線までは同じ壊れ方が繰り返しうることを踏まえ、差分が当たらないことを
+    Engine の版を上げる時点で落とす仕組みも検討してください。
+  - 'wired: false・verified: false と、CI がまだ .github/workflows/ に写されず効き目を確かめていないことが
+    what に明記されているので、担保が効いているように言い過ぎてはいません。'
+  - D-0044 の反対の票が求めた protection.mjs の check_name_shared が意図した反例か誤検知かの一言はこの変更セットでも入っていないので、次に
+    K-0001 を直すときに添えてください。
+  - 配線されて本物の続きのジョブで再発が止まったことを一次記録で確かめるまでは confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: K-0004 の sendback-engine-head.yml と test_engine_patch.py の形にならい、1 日 1
+    回と手動で Engine の既定ブランチの先頭と ENGINE_REF に対して tools/pr-body-check/engine/pr-body-gate.patch
+    を git apply --check し、当たらなければ patch_stale として先頭の版・ENGINE_REF・当たらなかった hunk・実行の
+    URL を issue に記録する（同じ版の記録は重ねない）。engine.test.mjs でも差分が当たらないときは (4)〜(10) を個別に落とす前に
+    patch_stale の 1 件で落とし、原因を一目で分かるようにする。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test
+    を必須のチェックにし、gate.test.mjs・engine.test.mjs の通る側と外れる側の両方が PR ごとに走るようにしてから、本物の続きのジョブの記録を
+    verified_by に残して wired と verified を true にする。
