@@ -24,7 +24,7 @@ import policy  # noqa: E402
 import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
 import test_events  # noqa: E402   同じ理由で、テストの型はモジュールから読む
 import watch  # noqa: E402
-from test_events import C0005, FINISHED_FIELDS, FULL, LEGACY_TODO, URL, engine_shaped, legacy_finished, overdue, review_by, stream, today  # noqa: E402
+from test_events import C0005, FINISHED_FIELDS, FULL, URL, engine_shaped, legacy_finished, stream, todo_until_review_by  # noqa: E402
 
 PR659 = "https://github.com/guccyon/rally/pull/659"
 
@@ -180,12 +180,8 @@ class EngineFinishedTest(unittest.TestCase):
         fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
         self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
         if legacy_finished(fields):
-            m, deadline = finished_missed(fields), review_by()
-            missed = f"見逃した外れ agent_resumed={m['agent_resumed']}・tier={m['tier']}"
-            self.assertFalse(overdue(today(), deadline),
-                             f"知見 K-0010 の review_by（{deadline}）を過ぎても、ENGINE_REF の Engine は {LEGACY_TODO}（{missed}）。"
-                             "Engine を直して ENGINE_REF を上げるか、委員会で K-0010 を再確認して review_by を動かす（議決 D-0043）")
-            test_engine.todo(self, f"今の Engine は {LEGACY_TODO}（{missed}。K-0010 の review_by {deadline} を過ぎたら落とす）")
+            m = finished_missed(fields)
+            todo_until_review_by(self, f"見逃した外れ agent_resumed={m['agent_resumed']}・tier={m['tier']}")
         self.assertEqual(finished_missed(fields), {"agent_resumed": 0, "tier": 0},
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列で、照らせずに停止を開かなかった外れがある。"
                          f"{' と '.join(FINISHED_FIELDS)} の両方を出す")

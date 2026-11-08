@@ -194,6 +194,16 @@ def overdue(now: date, deadline: date) -> bool:
     return deadline < now
 
 
+def todo_until_review_by(case: unittest.TestCase, detail: str):
+    """Engine が今の形のときの扱い。K-0010 の review_by を過ぎていれば落とし、それまでは detail（照らせない件数など）を添えて
+    test_engine.todo で飛ばす（議決 D-0043・Issue #1104）。test_events.py と test_watch.py の EngineFinishedTest が使う"""
+    deadline = review_by()
+    case.assertFalse(overdue(today(), deadline),
+                     f"知見 K-0010 の review_by（{deadline}）を過ぎても、ENGINE_REF の Engine は {LEGACY_TODO}（{detail}）。"
+                     "Engine を直して ENGINE_REF を上げるか、委員会で K-0010 を再確認して review_by を動かす（議決 D-0043）")
+    test_engine.todo(case, f"今の Engine は {LEGACY_TODO}（{detail}。K-0010 の review_by {deadline} を過ぎたら落とす）")
+
+
 def finished_unknown(fields: list[str]) -> dict:
     """Engine が出す欄の job.finished で組んだイベント列の、agent_resumed と tier の照らせない件数"""
     r = events.records_from_events(engine_shaped(stream(FULL), fields))[URL]
@@ -254,12 +264,8 @@ class EngineFinishedTest(unittest.TestCase):
         fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
         self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
         if legacy_finished(fields):
-            u, deadline = finished_unknown(fields), review_by()
-            unknown = f"照らせない件数 agent_resumed={u['agent_resumed']}・tier={u['tier']}"
-            self.assertFalse(overdue(today(), deadline),
-                             f"知見 K-0010 の review_by（{deadline}）を過ぎても、ENGINE_REF の Engine は {LEGACY_TODO}（{unknown}）。"
-                             "Engine を直して ENGINE_REF を上げるか、委員会で K-0010 を再確認して review_by を動かす（議決 D-0043）")
-            test_engine.todo(self, f"今の Engine は {LEGACY_TODO}（{unknown}。K-0010 の review_by {deadline} を過ぎたら落とす）")
+            u = finished_unknown(fields)
+            todo_until_review_by(self, f"照らせない件数 agent_resumed={u['agent_resumed']}・tier={u['tier']}")
         self.assertEqual(finished_unknown(fields), {"agent_resumed": 0, "tier": 0},
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列に照らせない回がある。"
                          f"{' と '.join(FINISHED_FIELDS)} の両方を出す")

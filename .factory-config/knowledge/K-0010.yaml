@@ -106,6 +106,22 @@ enforcement:
       decided_by: committee:D-0042
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0043（PR #1102）の ci_check の案を入れた。tools/knowledge-enforcement-check/check.py の REQUIRED_PR に、K-0010 の issue 1035（EngineFinishedTest）と
+        この issue 1103 の解決策と tools/conflict-check/test_events.py の組を挙げ、どちらかを wired: true にするときは、wired_by に、on.pull_request のある
+        .github/workflows/ のワークフローで pull_request でも走るジョブ（if: が github.event_name を見るなら == 'pull_request' を含み != 'pull_request' を含まない）から
+        test_events.py を呼ぶ項目がないと落とす（ほかの検査を呼ぶだけ・定期や手動だけのワークフローでは wired にできない）。ジョブが呼んでいるかは「配線先の照合」と同じやり方で照らし、
+        ひな形 tools/conflict-check/ci/conflict-check.yml の unittest discover -s tools/conflict-check の形を写したものは呼んでいる側に数えることを test_check.py の
+        PullRequestTest で確かめた。ひな形を .github/workflows/conflict-check.yml に写して必須のチェックにすること、job.finished に agent_resumed と agent_tier を
+        足した Engine に ENGINE_REF を上げることは建設者なので（ワーカーは .github/workflows/ と Engine を変えられない）、今は ENGINE_REF（2490db6）で EngineFinishedTest が
+        todo で飛び、配線もしていないので、効き目はまだ確かめていない。写して ENGINE_REF を上げたら、issue 1035 の項目を wired: true にし、wired_by に
+        {workflow: .github/workflows/conflict-check.yml, job: conflict-check, runs: tools/conflict-check/test_events.py} を書く
+      issue: 1103
+      at: 2026-11-08
+      decided_by: committee:D-0043
+      wired: false
+      verified: false
     - kind: test
       what: >-
         議決 D-0043（PR #1102）の test の案を入れた。EngineFinishedTest の todo が黙って残らないよう、todo の理由に Engine の job.finished の欄で
