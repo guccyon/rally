@@ -1,5 +1,6 @@
 # PR 本文の関所（tools/pr-body-check/gate.mjs）を Engine の本物の本文の組み込みで確かめる（知見 K-0001 の担保。議決 D-0013・D-0019、Issue #956・#975）。決定論（LLM を使わない）。
 # Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向け、tools/pr-body-check のテスト（check.test.mjs・gate.test.mjs・engine.test.mjs・followers.test.mjs など）を PR ごとに走らせる。
+# recheck.test.mjs は、本文の直し（body_fix）の終わりと直した本文の再検査を待たずにマージしたイベント列（事例 C-0003・C-0005・C-0006）が落ちることを確かめる（知見 K-0012 の担保。議決 D-0050、Issue #1131）。
 # followers.test.mjs は、見出しの正本（template.json）に Engine の rubric の PR-002 と CLAUDE.md が合っているかを照らし、食い違ったら落ちる（知見 K-0005 の担保。Issue #1121）。Engine の PR-002 が Issue #1121 の時点の形のままのときだけ todo。
 # ENGINE_DIR を渡すので、Engine のチェックアウトがないときや entrypoint.sh から本文を組む節を取り出せないときは飛ばさずに落ちる。
 # PR 本文そのものはここでは見ない（落ちると ci_failed の続きのジョブが積まれ、その summary がまた本文に足されるため。本文は Engine が更新の前に関所に照らす）。
