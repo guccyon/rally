@@ -1,10 +1,14 @@
 """制御プレーンのイベント列から、PR ごとに conflict の続きのジョブを組み、policy.py の線に照らして落とす（知見 K-0010 の担保。議決 D-0023・Issue #972）。
+衝突したファイルがその場で記録されなかった回も落とす（知見 K-0014 の担保。議決 D-0049・Issue #1135）。
 
 組むもの（PR ごと、continue.enqueued（reason=conflict）の順に 1 件ずつ）: 何回目か・agent_resumed・tier・衝突したファイル。
 落とすもの（rule）:
   over_limit            同じ PR で max_attempts_per_pr を超えて積まれた（今の線では 4 回目以降）
   resumed_after_limit   resume_session_until_attempt より後の回（今の線では 2 回目以降）で agent_resumed=true
   agent_for_mechanical  衝突したファイルが mechanical.paths（CHANGELOG.md と changelog.d/）だけなのに、エージェントの tier（tier-large など）で解いた
+  missing_conflict_files  終わった回（job.finished がある）に、同じ job_id の conflict.files がないか、backfill で後から足されたものしかない
+                          （payload.source が backfill。知見 K-0014 の担保。議決 D-0049・Issue #1135）。continuation.yaml の線ではないので
+                          check ではなく record_check が出し、watch.py の停止には使わない
 
 記録がない項目（agent_resumed・tier・衝突したファイル）は照らさずに件数を出す。これは Engine が今の形（job.finished に agent_resumed と
 解き方の tier（agent_tier）を出さない版）のときだけの扱いで、それらを出す版の Engine で agent_resumed か tier の照らせない件数が 1 以上なら
@@ -71,8 +75,9 @@ def _tier(enq: dict, started: dict, finished: dict) -> str | None:
 
 
 def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[str, dict]:
-    """PR ごとに { pr_url, conflicted_heads, attempts: [{ attempt, job_id, head_sha, agent_resumed, tier, files }] } を組む。
-    job.started・job.finished・conflict.files は job_id で continue.enqueued に結ぶ"""
+    """PR ごとに { pr_url, conflicted_heads, attempts: [{ attempt, job_id, head_sha, agent_resumed, tier, files, files_source, finished }] } を組む。
+    job.started・job.finished・conflict.files は job_id で continue.enqueued に結ぶ。files_source は conflict.files の payload.source
+    （Engine の dispatcher がワーカーのログから記録したら worker_log、factoryctl learn backfill-conflicts で後から足したら backfill）"""
     by_job: dict[int, dict[str, dict]] = {}
     for e in events:
         if e["name"] in ("job.started", "job.finished", "conflict.files") and e.get("job_id") is not None:
@@ -96,12 +101,13 @@ def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[s
             linked = by_job.get(e.get("job_id"), {}) if e.get("job_id") is not None else {}
             started, finished = linked.get("job.started", {}), linked.get("job.finished", {})
             resumed = next((x["agent_resumed"] for x in (p, finished) if isinstance(x.get("agent_resumed"), bool)), None)
-            files = linked.get("conflict.files", {}).get("files")
+            files, source = linked.get("conflict.files", {}).get("files"), linked.get("conflict.files", {}).get("source")
             n = len(r["attempts"]) + 1
             if isinstance(p.get("attempt"), int) and not isinstance(p.get("attempt"), bool):
                 n = max(n, p["attempt"])   # イベント列が途中から始まっていても、Engine の数えた回を下回らない
             r["attempts"].append({"attempt": n, "job_id": e.get("job_id"), "head_sha": p.get("head_sha"), "agent_resumed": resumed,
-                                  "tier": _tier(p, started, finished), "files": files if isinstance(files, list) else None})
+                                  "tier": _tier(p, started, finished), "files": files if isinstance(files, list) else None,
+                                  "files_source": source if isinstance(source, str) else None, "finished": "job.finished" in linked})
     return prs
 
 
@@ -122,6 +128,28 @@ def check(policy_: dict, record: dict) -> list[dict]:
             want = policy.resolution(policy_, a["files"])
             if want["mode"] == "mechanical" and a["tier"] != want["tier"]:
                 err("agent_for_mechanical", f"衝突したのが {', '.join(a['files'])} だけなのに {a['tier']} で解いた（機械的に解く。tier は {want['tier']}）")
+    return errors
+
+
+BACKFILL = "backfill"   # Engine の process_learn.record_conflict_files の source のうち、事後に埋めたもの（factoryctl learn backfill-conflicts）
+
+
+def record_check(record: dict) -> list[dict]:
+    """1 つの PR の記録で、衝突したファイルがその場で記録されなかった回を [{ rule, attempt, job_id, message }] で返す（知見 K-0014）。
+    まだ終わっていない回（job.finished がない）は、dispatcher がワーカーのログから記録する前なので照らさない"""
+    errors = []
+    for a in record["attempts"]:
+        if not a["finished"]:
+            continue
+        if a["files"] is None:
+            why = "conflict.files がない"
+        elif a["files_source"] == BACKFILL:
+            why = "conflict.files が backfill で後から足されたものしかない"
+        else:
+            continue
+        errors.append({"rule": "missing_conflict_files", "attempt": a["attempt"], "job_id": a["job_id"],
+                       "message": f"{a['attempt']} 回目の conflict の続きのジョブに、衝突したファイルがその場で記録されていない（{why}。"
+                                  "同じファイルの衝突の型が集計で見えない。K-0014）"})
     return errors
 
 
@@ -150,7 +178,7 @@ def main(argv: list[str]) -> int:
         return 2
     prs = records_from_events(events, arg("--pr"))
     results = [{"pr_url": url, "attempts": len(r["attempts"]), "conflicted_heads": len(r["conflicted_heads"]),
-                "unknown": unknown(r), "errors": check(policy_, r)} for url, r in prs.items()]
+                "unknown": unknown(r), "errors": check(policy_, r) + record_check(r)} for url, r in prs.items()]
     errors = [e for r in results for e in r["errors"]]
     if "--json" in argv:
         json.dump({"ok": not errors, "prs": results}, sys.stdout, ensure_ascii=False)

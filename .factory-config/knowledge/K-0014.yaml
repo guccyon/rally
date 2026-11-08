@@ -25,4 +25,22 @@ invalidate_when:
   - "pr.conflicted か continue.enqueued(reason=conflict) に、衝突したファイルがその場で（backfill ではなく）載るようになった"
   - "衝突したファイルがその場で記録されるようになったあとも、同じファイルの衝突の束が集計で見えなかった（原因は記録の欠けではなかった）"
   - "記録の欠けが手を打つ時期を遅らせたかを確かめる: 同じファイルの衝突の束ごとに、束が集計で最初に見えた日（conflict.files が数えられた日）と手を打った日（担保の at）を並べ、記録のある束とない束で差がなかった"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        議決 D-0049（PR #1127）の test の案を入れた。tools/conflict-check/events.py に rule missing_conflict_files を足し、
+        continue.enqueued(reason=conflict) の回のうち終わった回（同じ job_id の job.finished がある）に、同じ job_id の conflict.files がないか、
+        backfill で後から足されたもの（payload.source が backfill。Engine の factoryctl learn backfill-conflicts）しかないものを数えて終了コード 1 で落とす
+        （K-0010 の線ではないので check ではなく record_check が出し、watch.py の停止には使わない）。test_events.py の MissingConflictFilesTest で、
+        C-0007 の流れ（PR #290 のジョブ 309 は backfill の conflict.files だけ、PR #295 のジョブ 318・325・338 は記録なし。事例記録の事実だけで組んだ
+        fixtures/c0007-pr290-pr295-events.json）が 4 件落ち、conflict.files をその場で（source: worker_log で）載せた列は通ることを確かめた。
+        今の Engine（main の 57069a8）は conflict.files を continue.enqueued には載せず、ジョブが終わってから dispatcher がワーカーのログから記録するので、
+        その記録があれば「その場で載った」とみなす。イベントを出してこの検査を走らせる配線は建設者が入れるので、本物のイベント列では確かめておらず、効き目はまだ確かめていない
+      issue: 1135
+      at: 2026-11-08
+      decided_by: committee:D-0049
+      wired: false
+      verified: false
 decided_by: committee:D-0049

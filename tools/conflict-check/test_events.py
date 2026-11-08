@@ -6,6 +6,8 @@ Engine のチェックアウトの渡し方と飛ばし方は test_engine.py と
 Engine が今の形（job.finished にどちらも出さない。LEGACY_FINISHED）のときだけ「todo:」の理由で飛ばす（K-0004 の engine.test.mjs の todo と同じ形）。
 todo は照らせない件数を理由に添えて test_engine.py の todo で数え、終わりに件数を出す。知見 K-0010 の review_by を過ぎても
 今の形なら飛ばさずに落とす（議決 D-0043・Issue #1104。照らせない件数が見えない形で緑にならないように）
+
+MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る
 """
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ import policy  # noqa: E402
 import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
 
 C0005 = HERE / "fixtures" / "c0005-pr659-events.json"
+C0007 = HERE / "fixtures" / "c0007-pr290-pr295-events.json"
 K0010 = HERE.parents[1] / ".factory-config" / "knowledge" / "K-0010.yaml"
 URL = "https://github.com/guccyon/rally/pull/1"
 
@@ -58,13 +61,18 @@ def stream(attempts: list[dict], url: str = URL) -> list[dict]:
             fin["agent_tier"] = a["agent_tier"]
         add("job.finished", fin, job)
         if "files" in a:
-            add("conflict.files", {"files": a["files"]}, job)
+            add("conflict.files", {"files": a["files"], "source": a.get("source", "worker_log")}, job)
     return out
 
 
 def rules(evs: list[dict]) -> Counter:
     c = policy.load()
     return Counter(e["rule"] for r in events.records_from_events(evs).values() for e in events.check(c, r))
+
+
+def recorded(evs: list[dict]) -> Counter:
+    """record_check（K-0014）の rule の件数"""
+    return Counter(e["rule"] for r in events.records_from_events(evs).values() for e in events.record_check(r))
 
 
 def run(path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -78,6 +86,7 @@ class C0005Test(unittest.TestCase):
         r = events.records_from_events(evs)["https://github.com/guccyon/rally/pull/659"]
         self.assertEqual(len(r["attempts"]), 20)   # ci_failed の続きは数えない
         self.assertEqual(events.unknown(r), {"agent_resumed": 0, "tier": 0, "files": 1})   # 13 回目は衝突したファイルの記録がない
+        self.assertEqual(recorded(evs), Counter({"missing_conflict_files": 1}))   # その 13 回目は K-0014 の rule で落ちる
 
     def test_C0005のイベント列はコマンドでも終了コード1(self):
         p = run(C0005)
@@ -87,6 +96,7 @@ class C0005Test(unittest.TestCase):
         self.assertIn("attempt=1 job=9001 agent_for_mechanical", p.stdout)
         self.assertNotIn("attempt=1 job=9001 resumed_after_limit", p.stdout)   # 1 回目の引き継ぎは線の中
         self.assertNotIn("attempt=3 job=9003 over_limit", p.stdout)
+        self.assertIn("attempt=13 job=9013 missing_conflict_files", p.stdout)
         d = json.loads(run(C0005, "--json").stdout)
         self.assertFalse(d["ok"])
         self.assertEqual(d["prs"][0]["attempts"], 20)
@@ -144,6 +154,61 @@ class LineTest(unittest.TestCase):
         evs = list(reversed(stream([{"resumed": True}, {"resumed": False}])))
         r = events.records_from_events(events.parse_events(json.dumps(evs)))[URL]
         self.assertEqual([(a["attempt"], a["agent_resumed"]) for a in r["attempts"]], [(1, True), (2, False)])
+
+
+class MissingConflictFilesTest(unittest.TestCase):
+    """知見 K-0014: 衝突を解く続きのジョブに、衝突したファイルがその場で（backfill ではなく）記録されているか"""
+
+    def test_C0007のイベント列はmissing_conflict_filesで落ちる(self):
+        evs = events.parse_events(C0007.read_text(encoding="utf-8"))
+        prs = events.records_from_events(evs)
+        self.assertEqual({url: [e["job_id"] for e in events.record_check(r)] for url, r in prs.items()},
+                         {"https://github.com/guccyon/rally/pull/290": [309],               # CHANGELOG.md は 2026-11-03 の backfill でだけ分かる
+                          "https://github.com/guccyon/rally/pull/295": [318, 325, 338]})    # samples の detail はすべて null
+        self.assertEqual(prs["https://github.com/guccyon/rally/pull/290"]["attempts"][0]["files"], ["CHANGELOG.md"])   # backfill の中身は K-0010 の線には使う
+        self.assertEqual(rules(evs), Counter({"agent_for_mechanical": 1}))   # K-0010 の線（check）には入れない
+
+    def test_C0007のイベント列はコマンドでも終了コード1(self):
+        p = run(C0007)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        for job in (309, 318, 325, 338):
+            self.assertIn(f"job={job} missing_conflict_files", p.stdout)
+        d = json.loads(run(C0007, "--json").stdout)
+        self.assertFalse(d["ok"])
+        self.assertEqual(Counter(e["rule"] for r in d["prs"] for e in r["errors"]),
+                         Counter({"missing_conflict_files": 4, "agent_for_mechanical": 1}))
+
+    def test_conflict_filesをその場で載せた列は通る(self):
+        evs = events.parse_events(C0007.read_text(encoding="utf-8"))
+        jobs = [e["job_id"] for e in evs if e["name"] == "continue.enqueued"]
+        evs = [e for e in evs if e["name"] != "conflict.files"]
+        evs += [{"id": 100 + i, "name": "conflict.files", "job_id": job, "payload": {"files": ["CHANGELOG.md"], "source": "worker_log"}}
+                for i, job in enumerate(jobs)]
+        self.assertEqual(recorded(evs), Counter())
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.json"
+            path.write_text(json.dumps(evs), encoding="utf-8")
+            p = run(path, "--pr", "https://github.com/guccyon/rally/pull/295")   # PR #290 は CHANGELOG.md だけを tier-large で解いた（K-0010 の agent_for_mechanical）
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_衝突がなかった回も空の列をその場で載せていれば通る(self):
+        self.assertEqual(recorded(stream([{"files": []}, {"files": ["CHANGELOG.md"], "cost": 0}])), Counter())
+
+    def test_ないかbackfillだけなら落ちsourceのない記録はその場のものとみなす(self):
+        self.assertEqual(recorded(stream([{}, {"files": ["CHANGELOG.md"], "source": "backfill"}, {"files": ["a.ts"]}])),
+                         Counter({"missing_conflict_files": 2}))
+        evs = stream([{"files": ["a.ts"]}])
+        del next(e for e in evs if e["name"] == "conflict.files")["payload"]["source"]
+        self.assertEqual(recorded(evs), Counter())
+
+    def test_終わっていない回はまだ照らさない(self):
+        evs = [e for e in stream([{}, {}]) if not (e["name"] == "job.finished" and e["job_id"] == 102)]
+        self.assertEqual([e["attempt"] for r in events.records_from_events(evs).values() for e in events.record_check(r)], [1])
+
+    def test_ci_failedの続きは数えない(self):
+        evs = [{"name": "continue.enqueued", "job_id": 900, "payload": {"pr_url": URL, "head_sha": "x", "reason": "ci_failed", "attempt": 1}},
+               {"name": "job.finished", "job_id": 900, "payload": {"state": "succeeded"}}]
+        self.assertEqual(recorded(evs), Counter())
 
 
 # 「記録がない項目は照らさずに件数を出す」は、Engine が今の形（job.finished に agent_resumed と解き方の tier を出さない版）のときだけの扱い。
@@ -291,7 +356,7 @@ class InputTest(unittest.TestCase):
     def test_通る記録は終了コード0(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "events.jsonl"
-            path.write_text("\n".join(json.dumps(e) for e in stream([{"resumed": True}])), encoding="utf-8")
+            path.write_text("\n".join(json.dumps(e) for e in stream([{"resumed": True, "files": ["a.ts"]}])), encoding="utf-8")
             p = run(path)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             self.assertIn("外れ 0 件", p.stdout)
