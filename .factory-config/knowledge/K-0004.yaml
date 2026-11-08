@@ -659,4 +659,22 @@ enforcement:
       decided_by: committee:D-0048
       wired: false
       verified: false
+    - kind: schema
+      what: >-
+        議決 D-0048 の schema の案（wired_by と verified_by を Engine の定義に書き、verified が true のときは verified_by を必須・wired が true を条件とし、
+        Engine の knowledge_check.py でも同じ形を落とす）を、Engine に当てる差分 tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch に足した。
+        wired_by は議決 D-0034（Issue #1060）でこの差分に入っているので、足したのは verified_by の分。definitions/knowledge.yaml の enforcement に
+        solution_verified_by（required_when: {verified: true}、requires: {wired: true}、items の case・pr・event、min_cases: 1）を書き、
+        core-gates/knowledge_check.py の check_verified_by() が verified: true の解決策で verified_by がない・空・列でない、項目が 1 つの参照でないか種類が
+        case・pr・event でない、case が C-NNNN でないか cases/ にない、pr が正の整数でない、event が <種類>:<id> でない、case が 1 件もないときに落とす
+        （check.py の check_verification と同じ線。wired でないのに verified が true は前からの check_item で落とす）。Engine の core-gates/tests/test_knowledge_check.py に
+        その場合分けのテストを足し、test_engine.py で verified・verified_by の値の組ごとに Engine の落とし方が check.py と一致すること、定義の値が check.py と
+        Engine の値とそろうことを確かめ、手元で Engine の判定を壊した写し（pr の true を番号に数える・0 を通す・event の形を見ない・case がなくても通す・
+        cases/ にない事例を通す・verified_by を見ない）で落ちることも確かめた。差分を Engine に当てて ENGINE_REF を上げることと、
+        ci/knowledge-enforcement.yml を .github/workflows/ に写すことは建設者が行うので、この解決策も未配線・未確認
+      issue: 1130
+      at: 2026-11-08
+      decided_by: committee:D-0048
+      wired: false
+      verified: false
 decided_by: committee:D-0004
