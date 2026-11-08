@@ -153,6 +153,12 @@ HAS_ENGINE = (ENGINE / ".git").exists() and has_commit(ENGINE, engine_ref())
 
 @unittest.skipUnless(HAS_ENGINE or REQUIRED, f"ENGINE_REF の版を含む Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
 class EngineRefPatchTest(unittest.TestCase):
+    def fail_with_annotation(self, msg: str):
+        """GitHub Actions では msg の 1 行目を差分のファイルへの ::error にも出して落とす。"""
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::error file={PATCH.relative_to(REPO)}::{msg.splitlines()[0]}")
+        self.fail(msg)
+
     def test_差分が_ENGINE_REF_の版に当たるかもう入っている(self):
         ref = engine_ref()
         if not HAS_ENGINE:
@@ -162,15 +168,11 @@ class EngineRefPatchTest(unittest.TestCase):
         if state == STALE:
             msg = (f"patch_stale: {PATCH.relative_to(REPO)} が ENGINE_REF {ref} の Engine に当たらず、Engine 側にもまだ入っていない。"
                    f"今の Engine に合わせて作り直す: {err}")
-            if os.environ.get("GITHUB_ACTIONS") == "true":
-                print(f"::error file={PATCH.relative_to(REPO)}::{msg.splitlines()[0]}")
-            self.fail(msg)
+            self.fail_with_annotation(msg)
         if state == PARTIAL:
             msg = (f"patch_partially_applied: ENGINE_REF {ref} の Engine に {err}（差分の一部だけが入ったか、入れたあと変わった）。"
                    f"{PATCH.relative_to(REPO)} を今の Engine に合わせて作り直す（全部入れて ENGINE_REF を上げたなら差分を消す）")
-            if os.environ.get("GITHUB_ACTIONS") == "true":
-                print(f"::error file={PATCH.relative_to(REPO)}::{msg}")
-            self.fail(msg)
+            self.fail_with_annotation(msg)
         self.assertIn(state, (APPLIES, MERGED))
 
 
