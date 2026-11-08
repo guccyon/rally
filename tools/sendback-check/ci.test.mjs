@@ -4,7 +4,9 @@
 // .github/workflows/sendback-engine.yml に写してあれば、ENGINE_REF の行のほかがこのひな形と同じかも見る（写すときに変えてよいのはその行だけ）。
 // ひな形が必須のチェックにできる形（PR ごとに必ず走り、落ちたら止める）で、見張りの手順を持っていることも見る（議決 D-0017、Issue #969）。
 // 写しとのずれも見るので、見張りを外す変更はひな形と写しを一緒に直しても wiring-order で落ちる。写しを消す・ジョブの名前を変える変更は、
-// 必須のチェック（engine-test・wiring-order）が報告されずに止まる（branch protection は建設者が入れる）。
+// 必須のチェック（engine-test・wiring-order が報告する sendback-engine-test・sendback-wiring-order）が報告されずに止まる（branch protection は建設者が入れる）。
+// そのチェックの名前をほかのワークフロー（ひな形と .github/workflows/）のジョブが報告しないことも見る。重なると、どちらの報告でも必須のチェックが満たされ、
+// 別のワークフローで check.mjs --events を engine.test.mjs を待たずに走らせる形を設定で止められない（議決 D-0038、Issue #1083）。
 // ENGINE_REF の行を変える PR で engine-test が必ずその版で走る形か（ENGINE_REF の置き場所・needs・Engine を取る版）も、ひな形と写しで見る（議決 D-0028、Issue #1024）。
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
 // その記録で、engine_harness.py のずれ（harness_unknown_query）と Engine の判定の変化（engine_head_failed）を分けることも見る（議決 D-0031、Issue #1046）。
@@ -20,6 +22,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { headRecords } from "./head-record.mjs";
+import { CHECK_NAMES, checkNameProblems, COPY, jobCheckNames, loadTemplates, loadWorkflows, sharedCheckNames } from "./protection.mjs";
 
 const template = readFileSync(fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), "utf8");
 const copyPath = fileURLToPath(new URL("../../.github/workflows/sendback-engine.yml", import.meta.url));
@@ -103,7 +106,10 @@ function requiredCheckProblems(text) {
     if (!wiring.some((l) => /^\s*run: node --test (.* )?ci\.test\.mjs(\s|$)/.test(l))) problems.push("wiring-order が ci.test.mjs を走らせていない");
   }
   if (engine === null) problems.push("engine-test のジョブがない（必須のチェックの名前）");
-  else {
+  for (const { job, expected } of checkNameProblems(jobCheckNames(lines.join("\n")))) {
+    problems.push(`${job} の name: を ${expected} にする（id のままの名前はほかのワークフローも報告し、必須のチェックがどちらでも満たされる）`);
+  }
+  if (engine !== null) {
     if (!engine.some((l) => /^\s*ENGINE_DIR: \S/.test(l))) problems.push("engine-test が ENGINE_DIR を渡していない（渡さないと Engine がないときに飛ばす）");
     if (!engine.some((l) => /node --test (.* )?engine\.test\.mjs(\s|$)/.test(l))) problems.push("engine-test が engine.test.mjs を走らせていない");
   }
@@ -119,10 +125,12 @@ test("見張りを外す・飛ばす・絞るひな形の直しは外れにな�
     "paths で絞る": template.replace("  pull_request:\n", "  pull_request:\n    paths: [\"tools/sendback-check/**\"]\n"),
     "types で絞る": template.replace("  pull_request:\n", "  pull_request:\n    types: [opened]\n"),
     "push だけにする": template.replace("  pull_request:\n", "  push:\n"),
-    "ジョブを飛ばす": template.replace("  wiring-order:\n    runs-on", "  wiring-order:\n    if: false\n    runs-on"),
+    "ジョブを飛ばす": template.replace("  wiring-order:\n", "  wiring-order:\n    if: false\n"),
     "手順を飛ばす": template.replace("      - name: ENGINE_REF の見張りと写しのずれ（K-0004）\n", "      - name: ENGINE_REF の見張りと写しのずれ（K-0004）\n        if: false\n"),
-    "落ちても止めない": template.replace("  engine-test:\n    runs-on", "  engine-test:\n    continue-on-error: true\n    runs-on"),
+    "落ちても止めない": template.replace("  engine-test:\n", "  engine-test:\n    continue-on-error: true\n"),
     "ジョブの名前を変える": template.replace("  wiring-order:\n", "  order:\n"),
+    "チェックの名前を外す": template.replace(`    name: ${CHECK_NAMES["engine-test"]}\n`, ""),
+    "チェックの名前を id と同じにする": template.replace(`    name: ${CHECK_NAMES["wiring-order"]}\n`, "    name: wiring-order\n"),
     "order.mjs を外す": template.replace(/^ {8}run: node tools\/sendback-check\/order\.mjs.*\n/m, "        run: echo skip\n"),
     "ci.test.mjs を外す": template.replace(/^ {8}run: node --test --test-reporter=spec ci\.test\.mjs\n/m, "        run: echo skip\n"),
     "ENGINE_DIR を外す": template.replace(/^ {10}ENGINE_DIR: .*\n/m, ""),
@@ -132,6 +140,31 @@ test("見張りを外す・飛ばす・絞るひな形の直しは外れにな�
     assert.notEqual(text, template, `${name}: 置き換えが効いていない`);
     assert.notDeepEqual(requiredCheckProblems(text), [], `${name} が通った`);
   }
+});
+
+// 必須のチェックの名前の重なり（議決 D-0038、Issue #1083）。別のワークフローの間は needs で待てないので、check.mjs --events を
+// engine.test.mjs を待たずに走らせる形は engine-test を必須のチェックにする設定で止める。その名前をほかのジョブも報告すると、
+// そのジョブの報告でも必須のチェックが満たされて止まらない。ほかのツールのひな形（tools/*/ci/）と .github/workflows/ のジョブを見る。
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+
+/** sendback-engine-test・sendback-wiring-order をほかのジョブも報告する所（空なら通る）。 */
+const reservedShared = (workflows) => sharedCheckNames(Object.values(CHECK_NAMES), workflows).map(({ path, job, name }) => `${path} の ${job} が ${name} を報告する`);
+const otherWorkflows = (root) => ({ ...loadWorkflows(root).others, ...loadTemplates(root) });
+
+test("sendback-engine-test・sendback-wiring-order は、ほかのツールのひな形と .github/workflows/ のどのジョブも報告しない", () => {
+  const workflows = otherWorkflows(repoRoot);
+  assert.ok(Object.keys(workflows).includes("tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml"), "ほかのひな形を読めていない");
+  assert.ok(!Object.keys(workflows).includes(COPY), "写しはほかのワークフローに数えない");
+  assert.deepEqual(reservedShared(workflows), []);
+});
+
+test("ほかのワークフローのジョブがその名前を名乗ると外れになり、id の engine-test のままのジョブは外れにしない", () => {
+  const events = (name) => `name: x\non:\n  pull_request:\njobs:\n  events:\n${name ? `    name: ${name}\n` : ""}    runs-on: ubuntu-latest\n    steps:\n` +
+    "      - run: node tools/sendback-check/check.mjs --events events.json\n";
+  for (const name of Object.values(CHECK_NAMES)) {
+    assert.deepEqual(reservedShared({ ".github/workflows/x.yml": events(name) }), [`.github/workflows/x.yml の events が ${name} を報告する`]);
+  }
+  assert.deepEqual(reservedShared({ ".github/workflows/x.yml": events("engine-test"), ".github/workflows/y.yml": events(null) }), []);
 });
 
 // ENGINE_REF の行を変える PR で engine-test が必ず走るか（議決 D-0028、Issue #1024）。Engine を上げる PR が変えるのは写しの ENGINE_REF の行だけなので、
@@ -184,10 +217,10 @@ test("ENGINE_REF の行を変える PR で engine-test を走らせない・別�
     "paths-ignore で .github を外す": template.replace(onPr, `${onPr}    paths-ignore: [".github/**"]\n`),
     "paths-ignore で写しを外す": template.replace(onPr, `${onPr}    paths-ignore:\n      - ".github/workflows/sendback-engine.yml"\n`),
     "branches で絞る": template.replace(onPr, `${onPr}    branches: [release]\n`),
-    "engine-test が needs で待つ": template.replace("  engine-test:\n    runs-on", "  engine-test:\n    needs: wiring-order\n    runs-on"),
-    "engine-test の needs を列で書く": template.replace("  engine-test:\n    runs-on", "  engine-test:\n    needs:\n      - wiring-order\n    runs-on"),
-    "ジョブの env で ENGINE_REF を上書きする": template.replace("  engine-test:\n    runs-on: ubuntu-latest\n",
-      `  engine-test:\n    runs-on: ubuntu-latest\n    env:\n      ENGINE_REF: ${"f".repeat(40)}\n`),
+    "engine-test が needs で待つ": template.replace("  engine-test:\n", "  engine-test:\n    needs: wiring-order\n"),
+    "engine-test の needs を列で書く": template.replace("  engine-test:\n", "  engine-test:\n    needs:\n      - wiring-order\n"),
+    "ジョブの env で ENGINE_REF を上書きする": template.replace("  engine-test:\n    name: sendback-engine-test\n    runs-on: ubuntu-latest\n",
+      `  engine-test:\n    name: sendback-engine-test\n    runs-on: ubuntu-latest\n    env:\n      ENGINE_REF: ${"f".repeat(40)}\n`),
     "手順の env で ENGINE_REF を上書きする": template.replace("          ENGINE_DIR: ${{ github.workspace }}/.engine\n",
       `          ENGINE_DIR: \${{ github.workspace }}/.engine\n          ENGINE_REF: ${"f".repeat(40)}\n`),
     "GITHUB_ENV で ENGINE_REF を上書きする": template.replace("          echo \"ENGINE_REF=${ENGINE_REF}\"\n",
@@ -517,7 +550,7 @@ const rulesJson = (contexts) => JSON.stringify(contexts.length === 0 ? []
  * 偽の gh。classic・rules は gh api の branch protection と rulesets の応答（{ out, rc }）、open は開いている Issue の list の出力、
  * recorded は Issue の本文とコメント、create は gh issue create の終了コード。
  */
-function fakeProtGh({ classic = { out: classicJson(["engine-test", "wiring-order"]) }, rules = { out: "[]" }, open = "", recorded = "", create = 0 } = {}) {
+function fakeProtGh({ classic = { out: classicJson(Object.values(CHECK_NAMES)) }, rules = { out: "[]" }, open = "", recorded = "", create = 0 } = {}) {
   const q = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
   return [
     `case "$1 $2" in`,
@@ -578,14 +611,14 @@ test("必須のチェックがそろっていれば通り、Issue は開かな�
 });
 
 test("rulesets だけで必須にしていても通る（古い形は保護なしの 404）", () => {
-  const r = runProtection({ gh: { classic: { out: '{"message":"Branch not protected","status":"404"}', rc: 1 }, rules: { out: rulesJson(["engine-test", "wiring-order"]) } } });
+  const r = runProtection({ gh: { classic: { out: '{"message":"Branch not protected","status":"404"}', rc: 1 }, rules: { out: rulesJson(Object.values(CHECK_NAMES)) } } });
   assert.equal(r.read.status, 0, r.read.stdout + r.read.stderr);
   assert.equal(r.check.status, 0, r.check.stdout + r.check.stderr);
   assert.doesNotMatch(r.calls, /^gh issue (create|comment)/m);
 });
 
 test("必須のチェックが後で外されたら required_check_missing で落ち、開いている Issue がなければ開く", () => {
-  const r = runProtection({ gh: { classic: { out: classicJson(["engine-test"]) } } });
+  const r = runProtection({ gh: { classic: { out: classicJson([CHECK_NAMES["engine-test"]]) } } });
   assert.equal(r.check.status, 1);
   assert.match(r.check.stdout, /^::error title=sendback-check required_check_missing::wiring-order/m);
   assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
@@ -610,11 +643,11 @@ test("写しが消えたら workflow_not_copied で落ちて Issue を開く", (
 });
 
 test("開いている Issue があれば、それにコメントで足す（同じ外れ方の記録がすでにあれば足さない）", () => {
-  const first = runProtection({ gh: { classic: { out: classicJson(["engine-test"]) }, open: "42", recorded: "前の記録" } });
+  const first = runProtection({ gh: { classic: { out: classicJson([CHECK_NAMES["engine-test"]]) }, open: "42", recorded: "前の記録" } });
   assert.doesNotMatch(first.calls, /^gh issue create/m);
   assert.match(first.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file protection-comment\.md$/m);
   const marker = first.body.split("\n")[0];
-  const again = runProtection({ gh: { classic: { out: classicJson(["engine-test"]) }, open: "42", recorded: `本文\n${marker}` } });
+  const again = runProtection({ gh: { classic: { out: classicJson([CHECK_NAMES["engine-test"]]) }, open: "42", recorded: `本文\n${marker}` } });
   assert.equal(again.issue.status, 0, again.issue.stdout + again.issue.stderr);
   assert.doesNotMatch(again.calls, /^gh issue (create|comment)/m);
   // 外れ方が変われば足す
