@@ -1,0 +1,79 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0049
+pr: https://github.com/guccyon/rally/pull/1127
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge:
+- K-0013
+- K-0014
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 既存の知見の扱いが K-0001 から K-0012 まで全件に書かれていて、K-0001・K-0002 は evidence を足すだけの直し、K-0008・K-0010
+    は related を足すだけの直しにとどめ、statement と確かさを変えていないので、変更セットの扱いは README の決まりどおりです。
+  - K-0013 は K-0002（衝突の原因）・K-0010（積み直し方）と切り口を分けて「解く時機」に絞っており、K-0008 の「早く解く」案ともその但し書きの側の事例として読み合わせが書かれているので、矛盾や重複はないと判断します。
+  - K-0013 の statement は CHANGELOG.md に限っているのに scope に files がないので、K-0002 と同じく scope.files
+    に CHANGELOG.md を書き足すと範囲が揃います。
+  - K-0013 は CHANGELOG.md への直接の追記を前提にしていますが、この運用は K-0002 の担保（changelog.d/ の断片方式と changelog-check）で禁じられた形なので、invalidate_when
+    に「CHANGELOG.md への直接の追記がなくなった」を足すのがよいです。
+  - K-0014 の前提（衝突したファイルがその場で記録されない）は、K-0010 の events.py がすでに conflict.files のイベントを結んでいることと重なるので、conflict.files
+    が今はその場で出ているのかを次の確認で確かめるべきです。また invalidate_when の 3 つ目は無効になる条件ではなく確かめ方なので、書き分けると読みやすくなります。
+  - 'K-0002 の 2 つの解決策に wired: false・verified: false を書いたのは、README の「次にその知見を直す変更セットで書く」という決まりに合っています。specs
+    の glossary・context-map には衝突やマージ順の用語がないので、製品の規範とぶつかるところはありません。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0013・K-0014 と、K-0001・K-0002 に足した根拠は、どれも C-0007・case.analyzed:370939・PR #290・#295
+    に辿れて、C-0007 にはジョブ番号・時刻・件数・費用が一次記録の形で書いてあります。'
+  - K-0013 は「マージの順番がある」「3 回の解き直しはほかの PR のマージで起きた」を分析役の推測だと statement で断っていて、根拠は CHANGELOG.md
+    の 1 つの束だけなので、hypothesis のままが妥当です。
+  - K-0014 は記録が欠けると対応が遅れることの反例（C-0001 から K-0002 が見つかり、断片方式が入ったこと）を但し書きにして、確かめ方を invalidate_when
+    に書いているので、hypothesis のままが妥当です。
+  - K-0002 の新しい根拠は C-0001・C-0005 と同じ束に入っている見込みが高く、独立した事例として数えずに確かさを上げなかったのは正しい扱いです。
+  - K-0010 の中心の主張（agent_resumed で費用が膨らむこと）はこの材料で確かめられないとして、根拠に足さず related だけにしたのは根拠の線引きとして適切です。
+  - 記録に出てくるのは Issue・PR・ジョブの番号とファイル名だけで、利用者の氏名・連絡先・ID・本文の引用はなく、個人情報は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0014 の主張（衝突解消ジョブを積むときに衝突したファイルを載せない）は、continue.enqueued(reason=conflict) と pr.conflicted
+    に conflict.files がその場で載っているかを機械で照らせるので、線が引きやすく、毎回の衝突で繰り返し、作る費用も小さいです。
+  - K-0010 の担保の tools/conflict-check/events.py はすでに job_id で conflict.files を結び、記録がない項目は件数だけ出しているので、K-0014
+    は「その場で載っていない」を落とす rule を 1 つ足すだけで担保できます。
+  - K-0014 を外したときの痛さは大きく、C-0007 では衝突の束が窓の費用の約 74% に育つまで事後の backfill がなければ型として数えられなかったので、記録の欠けを人の注意に任せない方がよいです。
+  - K-0013 の線（マージ待ちの先頭に来るまで解消を保留する）は、この工場にマージの順番があるかが材料で示されておらず、K-0010 の機械的な解消と同じ
+    PR で 3 回までの上限が効けば痛さが小さくなるので、今は決定論にせず context のままが妥当です。
+  - K-0013 は確かめるために、events.py の出力で PR ごとの CHANGELOG.md だけの衝突の解消の回数を次の窓で数え、K-0010 の線が入ったあとも
+    1 チケットあたりの回数が減らないときに担保を考え直すのがよいです。
+  - 'K-0002 の 2 つの解決策に wired: false・verified: false を足したのは README の決まり（次にその知見を直す変更セットで書く）どおりで、担保の表示を未配線として正しく出す向きなので問題ありません。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - K-0013 は根拠が CHANGELOG.md の 1 つの束だけなので、statement をその束に限り、ほかの共有ファイルに広げていないことは範囲として妥当です。
+  - 'K-0013 の要となる前提（この工場にマージ待ちの列があること、PR #295 の 3 回の解き直しがほかの PR のマージで起きたこと）は推測ですが、statement
+    の但し書きにそう明記されており、hypothesis のままなら採れます。'
+  - K-0013 は、1 チケット平均 6.6 回の多くが K-0010 の上限なしの積み直しや、K-0002 の断片方式の前の窓から来ている可能性を切り分けていないので、次の窓で断片方式と
+    K-0010 の線のあとも解き直しが残るかを確かめるまで、確かさは上げないでください。
+  - K-0013 の scope.roles に implement が入っていますが、解く時機を決めるのは supervisor だけなので、確かめるときに
+    roles を supervisor に絞るか検討してください。
+  - K-0014 は、記録がなくても K-0002 が見つかり手が打たれたという反例を自分で但し書きにし、確かめ方を invalidate_when に置いており、主張が「集計で見えない」に絞られているので、範囲は広すぎません。
+  - K-0001・K-0002・K-0008・K-0010 の直し方は evidence・related・wired/verified の追記に留まり、statement・確かさを変えていないので、反対する理由は見当たりません。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/conflict-check/events.py に rule missing_conflict_files を足し、continue.enqueued(reason=conflict)
+    の時点で同じ job_id の conflict.files がない（または backfill として後から足された）ものを数えて終了コード 1 で落とす。test_events.py
+    で C-0007 の流れ（PR #290・#295 の samples の detail が null のイベント列を事例記録の事実だけで組んだ fixture）が落ち、conflict.files
+    をその場で載せた列は通ることを確かめる。'
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: schema
+  proposal: 'Engine の制御プレーンのイベントの定義で、pr.conflicted と continue.enqueued(reason=conflict)
+    と handoff に conflict.files（衝突したファイルの列）を必須の項目にし、空や null のイベントを出せないようにする。配線は建設者が入れ、入るまでは
+    wired: false・verified: false で記録する。'
