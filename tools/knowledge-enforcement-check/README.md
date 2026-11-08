@@ -1,6 +1,6 @@
 # 知見の担保の配線と効き目の検査
 
-知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を、議決 `D-0037` と Issue #1080 でそのジョブがテストを飛ばして緑にならない手順を、議決 `D-0039` と Issue #1088 で `protection.mjs` の解決策を手で走らせた記録だけでは `wired` にできない検査（下の「定期の配線の必須」）を足した。
+知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を、議決 `D-0037` と Issue #1080 でそのジョブがテストを飛ばして緑にならない手順を、議決 `D-0039` と Issue #1088 で `protection.mjs` の解決策を手で走らせた記録だけでは `wired` にできない検査（下の「定期の配線の必須」）を、議決 `D-0043` と Issue #1103 で `K-0010` の `EngineFinishedTest` の解決策を PR ごとのジョブから `test_events.py` を呼ばないと `wired` にできない検査（下の「PR ごとの配線の必須」）を足した。
 
 `K-0004` の解決策は 10 件になったが、どれも「効き目はまだ確かめていない」を `what` の文で書くだけで、`INDEX.md` の担保の列は `deterministic` と出ていた。配線も確認もしていない担保を決定論の担保と読み違えないように、真偽の項目にして機械で数える。
 
@@ -32,6 +32,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `verified` が `true` なのに、`verified_by` がない・空・列でない、項目が 1 つの参照でない・種類が `case`・`pr`・`event` でない、`case` が `C-NNNN` でないか `.factory-config/knowledge/cases/` にない、`pr` が正の整数でない、`event` が `<種類>:<id>` でない、`case` が 1 件もない（`pr`・`event` は手元で本物か照らせないので、事例記録に辿れることを求める）
 - `wired` が `true` なのに、`wired_by` がない・空・項目が欠けている、`workflow` が `.github/workflows/` の直下でない（ひな形の `ci/*.yml` は配線ではない）、`workflow`・`job`・`runs` のどれかが実在しない、その job が `runs` の検査を呼んでいない（下の「配線先の照合」）
 - `REQUIRED_SCHEDULE` の解決策（`K-0004` の issue 1018）が `wired: true` なのに、`wired_by` に schedule のジョブから `tools/sendback-check/protection.mjs` を呼ぶ項目がない（下の「定期の配線の必須」）
+- `REQUIRED_PR` の解決策（`K-0010` の issue 1035・1103）が `wired: true` なのに、`wired_by` に pull_request のジョブから `tools/conflict-check/test_events.py` を呼ぶ項目がない（下の「PR ごとの配線の必須」）
 
 ## 配線先の照合
 
@@ -54,6 +55,16 @@ branch protection の必須のチェックは PR の `GITHUB_TOKEN` では読め
 - ジョブと呼ぶ手順の `if:` が schedule で走らないと読めない形でない。字面で偽か、`github.event_name` を見るのに `== 'schedule'` がない・`!= 'schedule'` がある形は走らない側に数える（迷う形は呼んでいない側に数える）
 
 `wired` が `true` でない間は見ない。
+
+## PR ごとの配線の必須
+
+`K-0010` の `EngineFinishedTest`（`tools/conflict-check/test_events.py`）は、`job.finished` に `agent_resumed` と `agent_tier` を出さない Engine の版では todo で飛ぶので、ひな形 `tools/conflict-check/ci/conflict-check.yml` を写さずにほかの検査（`test_ci.py` など）を走らせるジョブを書いただけで `wired` にすると、照らせない件数が見えないまま配線済みと読ませてしまう（議決 `D-0043`、Issue #1103）。`check.py` の `REQUIRED_PR` に挙げた解決策（今は `K-0010` の issue 1035 と 1103 の解決策と `tools/conflict-check/test_events.py` の組）は、`wired: true` にするとき、`wired_by` に次をすべて満たす項目が 1 つ以上ないと落とす。
+
+- `runs` が `tools/conflict-check/test_events.py` で、上の「配線先の照合」でジョブがそれを呼んでいる（ひな形の `unittest discover -s tools/conflict-check` の形も呼んでいる側に数える）
+- `workflow` の `on` に `pull_request` がある（`schedule`・`workflow_dispatch`・`push` だけでは足りない。必須のチェックは PR ごとに走るものにする）
+- ジョブと呼ぶ手順の `if:` が pull_request で走らないと読めない形でない。字面で偽か、`github.event_name` を見るのに `== 'pull_request'` がない・`!= 'pull_request'` がある形は走らない側に数える
+
+`wired` が `true` でない間は見ない。ひな形を `.github/workflows/conflict-check.yml` に写して必須のチェックにし、`ENGINE_REF` を `job.finished` に 2 つの欄を足した Engine に上げたら、`K-0010` の issue 1035 の項目を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/conflict-check.yml, job: conflict-check, runs: tools/conflict-check/test_events.py}` を書く。
 
 ## 担保の表示
 
