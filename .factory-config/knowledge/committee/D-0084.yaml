@@ -1,0 +1,73 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0084
+pr: https://github.com/guccyon/rally/pull/1241
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1159 の test を 1 件足しただけなので、README の変更セットの決まりや specs/ の規範と矛盾せず、後の議決 D-0060
+    から D-0083 にもぶつかる決めはありません。
+  - '足した解決策の中身は D-0059 の enforcement の 2 つ目の test の案と文のとおり対応していて、decided_by: committee:D-0059
+    も合っており、起票時の番号 D-0056 とのずれも what に明かしているので、別の PR の議決である D-0056 と取り違えるおそれはありません。'
+  - issue 1084 の解決策（D-0038）は見張りと起動の 9 とおりを確かめたもので、今回は必須のチェックが外れた 4 つの branch protection
+    の場合を足したと what で切り分けているので、重複ではなく補い合う記録です。
+  - '新しい解決策にも wired: false・verified: false を書いているので、K-0004 は README の「すべての解決策に書いた知見」の一覧のままで、test_check.py
+    の照らし合わせとも食い違いません。'
+  - D-0036・D-0054・D-0059 が求めた patch_stale の解決策への D-0025 の添え書きは今回も手つかずで、K-0004 の solutions
+    に置き場の担保が積み重なっているので、主張の担保と置き場の担保を分ける整理を別の変更セットで出すことを改めて勧めます。
+  - 配線も本物の記録での確認もまだなので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 1159 と committee:D-0059 を指していて、D-0059 の enforcement
+    の 2 つ目の案（check.mjs --events が GITHUB_ACTIONS=true のとき order.mjs の見張りを先に走らせる test）とそのまま対応しているので、一次記録に辿れます。
+  - '見張りそのものは Issue #1084 で入っていたという説明は、K-0004 の issue 1084 の solution（running を渡して
+    engine_test_todo・engine_test_not_wired を見る記録）と合っています。'
+  - 'Issue #1159 の起票時の番号が D-0056 だったという添え書きは、既にある別の議決 D-0056 と取り違えやすいので、次に直すときは「起票時に仮の番号
+    D-0056 と書かれていた」と分かる書き方にしてください。'
+  - running を渡さない改変でテストが落ちることは手元で確かめただけで記録が残っていないので、wired・verified を true にするときは本物の実行の記録を事例記録に結んでください。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、新しい
+    solution も wired: false・verified: false なので、confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのは issue と PR の番号、議決の id、ツールのパス、rule の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0059 の 2 つ目の enforcement
+    の案（test）を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - branch protection が外れた 4 とおりと、ワークフローの写しが外れた 11 の状態・順序を守った状態を組み合わせて、check.mjs --events
+    の終了コードと ::error を照らすテストは線がはっきりした決定論の担保で、check.mjs に running を渡さない改変で落ちることも確かめていて筋がよいです。
+  - ただし order.test.mjs も check.mjs --events も .github/workflows/ からはまだ走っていないので、実行時の守りが本当に
+    PR を止めるかは誰も確かめておらず、今は担保が効いていません。
+  - 'kind を test とし、見張りそのものは Issue #1084 で入っていて足したのはテストだけだと what に書き分けたのは、D-0059 で
+    config の書き方に付いた注意に応えていて正確です。'
+  - 'wired: false・verified: false と正直に書かれ、本物の配線の PR で落ちる・通る記録もまだないので、confidence は
+    hypothesis のままが妥当です。'
+  - K-0004 の solutions には置き場や配線の順序を担保する項目が積み重なっているので、配線が入ったら主張そのものの担保と分けて整理する変更セットを別に出すことを勧めます。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0059 の test の案を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - '見張りそのものは Issue #1084 で入っていたと明かし、今回足したのは必須のチェックが外れた 4 つの branch protection での実行時の守りのテストだけだと書き分けているので、D-0038
+    の解決策と二重に数える形にはなっていません。'
+  - 反例として、この実行時の守りは check.mjs --events が走ったときにしか効かず、必須のチェックが外れたうえにワークフローごと消されたり呼ばれなくなったりした場合は何も止まらないので、設定に頼らない守りとして書きすぎないよう建設者が配線するときに確かめてください。
+  - running を GITHUB_WORKFLOW_REF と GITHUB_JOB から組むので、それらが無いか偽られた実行ではこの守りが黙る恐れがあり、その場合のテストも次に直すときに足すことを勧めます。
+  - '写しも配線もまだで wired: false・verified: false と合っているので、confidence は hypothesis のままにしてください。'
+  - K-0004 の solutions には主張の担保と置き場の担保が混ざって積み重なり続けているので、配線が入ったら分けて整理する変更セットを別に出すことを改めて勧めます。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/sendback-check/order.test.mjs を PR ごとに走る .github/workflows/ のジョブ（ci/sendback-engine.yml
+    の写し）に入れ、同じワークフローで check.mjs --events を GITHUB_ACTIONS=true で走らせて、未配線・todo・continue-on-error・if:
+    付きの写しで ::error と終了コード 1 になる記録と、順序を守った状態で 0 になる記録を Issue #948 と cases/ の事例記録に残してから、issue
+    1159 の解決策の wired_by を書いて wired と verified を true にする。'
