@@ -1,0 +1,99 @@
+# Engine に移す差分（engine/knowledge-enforcement.patch）が、Engine の既定のブランチの先頭に当たるかを定期に見る（知見 K-0004 の担保。議決 D-0036、Issue #1076）。決定論（LLM を使わない）。
+# knowledge-enforcement.yml の test_engine_patch.py は knowledge-check.yml の ENGINE_REF の版に当てるので、ENGINE_REF が古いまま先頭だけが進んで
+# 差分が当たらなくなっても、ENGINE_REF を上げるか建設者が当てるときまで誰も気づかない。
+# この knowledge-enforcement-head は Engine を ref なしで既定のブランチの先頭から取り、test_engine_patch.py を ENGINE_PATCH_REF で先頭の版へ向けて走らせ、
+# patch_stale なら ::error を出し、Issue #968 に先頭の版・その時の ENGINE_REF・実行の URL を記録する。
+# 同じ先頭の版の patch_stale の記録が #968 にすでにあれば足さない（毎日同じ記録を積まない）。
+# patch_stale でない落ち方（Engine を取れなかった・テストが壊れた）は ::error を出してジョブを落とすが、#968 には記録しない（差分の古さの記録ではないため）。
+# PR では走らせない（先頭の Engine の変化で PR を止めない。必須のチェックにもしない）。PR のコードを issues: write の権限で動かさないため、
+# knowledge-enforcement.yml とは別のワークフローにした（tools/sendback-check/ci/sendback-engine-head.yml と同じ形）。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/knowledge-enforcement-head.yml にそのまま写す。
+# test_ci_head.py（knowledge-enforcement.yml の unittest discover で走る）が、このファイルの形・手順の振る舞い・写しとのずれを見る。
+name: knowledge-enforcement-head
+
+on:
+  schedule:
+    - cron: "40 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: knowledge-enforcement-head
+  cancel-in-progress: false
+
+env:
+  ISSUE: "968"
+
+jobs:
+  patch-head:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine を取る（既定のブランチの先頭）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          path: .engine
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Engine の先頭に差分が当たるか（patch_stale、K-0004）
+        id: head-patch
+        working-directory: tools/knowledge-enforcement-check
+        env:
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          head_sha=$(git -C "$ENGINE_DIR" rev-parse HEAD)
+          echo "ENGINE_HEAD=${head_sha}" >> "$GITHUB_ENV"
+          rc=0
+          ENGINE_PATCH_REF="$head_sha" python3 -m unittest discover -v -s . -p test_engine_patch.py > patch-head.txt 2>&1 || rc=$?
+          { echo "## knowledge-enforcement-head（Engine の先頭 ${head_sha}）"; echo; echo '```'; cat patch-head.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat patch-head.txt
+          exit $rc
+      - name: 先頭で patch_stale なら知らせて Issue に記録する（K-0004）
+        if: always()
+        working-directory: tools/knowledge-enforcement-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_OUTCOME: ${{ steps.head-patch.outcome }}
+        run: |
+          head_sha="${ENGINE_HEAD:-}"
+          outcome="${HEAD_OUTCOME:-failure}"
+          # ENGINE_REF は test_engine_patch.py の engine_ref() で読む（knowledge-check.yml の読み方を 1 か所にする）
+          engine_ref=$(python3 -c 'import test_engine_patch as t; print(t.engine_ref())' 2>/dev/null || true)
+          engine_ref="${engine_ref:-読めなかった}"
+          if [ "$outcome" = success ]; then
+            echo "Engine の既定のブランチの先頭（${head_sha}）に差分が当たるか、もう入っている（ENGINE_REF は ${engine_ref}）"
+            exit 0
+          fi
+          stale=""
+          if [ -f patch-head.txt ]; then stale=$(grep -m 1 -oE 'patch_stale: .*' patch-head.txt || true); fi
+          if [ -z "$stale" ] || [ -z "$head_sha" ]; then
+            echo "::error title=knowledge-enforcement-head head_check_failed::Engine の既定のブランチの先頭（${head_sha:-版を取れなかった}）で test_engine_patch.py が patch_stale でなく落ちた。ジョブの記録を確かめる（Issue #${ISSUE} には記録しない）"
+            exit 0
+          fi
+          echo "::error title=knowledge-enforcement-head patch_stale::engine/knowledge-enforcement.patch が Engine の既定のブランチの先頭（${head_sha}）に当たらず、Engine 側にもまだ入っていない。ENGINE_REF（${engine_ref}）を上げる前に差分を今の Engine に合わせて作り直す（Issue #${ISSUE} に記録する）"
+          marker="<!-- knowledge-enforcement-head: ${head_sha} patch_stale -->"
+          recorded=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}/comments" --paginate --jq '.[].body' || true)
+          if grep -qF -- "$marker" <<< "$recorded"; then
+            echo "Issue #${ISSUE} に同じ先頭（${head_sha}）の記録があるので足さない"
+            exit 0
+          fi
+          {
+            echo "$marker"
+            echo "\`tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch\` が Engine の既定のブランチの先頭（\`${head_sha}\`）に当たらず、Engine 側にもまだ入っていない（\`patch_stale\`。知見 K-0004、議決 D-0024・D-0036）。"
+            echo "その時の ENGINE_REF は \`${engine_ref}\`。ENGINE_REF を上げる前に、差分を今の Engine に合わせて作り直す。"
+            echo
+            echo "- 実行: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo '当たらなかったところ:'
+            echo
+            echo '```'
+            echo "$stale"
+            sed -n '/^AssertionError: patch_stale: /,/^$/p' patch-head.txt | tail -n +2 | head -n 20
+            echo '```'
+          } > patch-head-comment.md
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file patch-head-comment.md
