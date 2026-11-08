@@ -2,20 +2,26 @@
 //
 //   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection
 //   gh api repos/{owner}/{repo}/rules/branches/main > protection.json        # rulesets（どちらの形でもよい）
-//   node protection.mjs --protection protection.json [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   node protection.mjs --protection protection.json [--protection rules.json] [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
 //
-// 写しを消す PR（写しがなければ wiring-order も走らない）や ci.test.mjs ごと見張りを書き換える PR は、必須のチェック（engine-test・wiring-order）が
-// 報告されないことでしか止まらない。
+// 写しを消す PR（写しがなければ wiring-order も走らない）や ci.test.mjs ごと見張りを書き換える PR は、必須のチェック（sendback-engine-test・sendback-wiring-order）が
+// 報告されないことでしか止まらない。別のワークフローの間は needs で待てないので、check.mjs --events を engine.test.mjs を待たずに
+// 走らせる形も、engine-test を必須のチェックにする設定でしか止まらない（議決 D-0038）。
 // その止め方が効いているか、つまり .github/workflows/sendback-engine.yml の 2 つのジョブが報告するチェックの名前が、
 // 既定のブランチの必須のチェックに入っているかを見る。branch protection は PR の GITHUB_TOKEN では読めないので、
 // 建設者が gh api で取り出した JSON を渡して走らせ、結果を Issue #948 に記録する（README の「必須のチェックの照合」）。
+// 必須のチェックが後で外されたことに気づくよう、ci/sendback-protection.yml が branch protection を読める権限のトークンで
+// 毎日と手動で走らせ、外れたら Issue を開くか更新する（議決 D-0039、Issue #1087）。
 //
 // 見ること:
 //   - 写し（.github/workflows/sendback-engine.yml）がないか、engine-test・wiring-order のジョブがない（workflow_not_copied）
-//   - そのジョブが報告するチェックの名前（ジョブの name: があればそれ、なければ id）が必須のチェックにない（required_check_missing）
+//   - そのジョブが報告するチェックの名前（ジョブの name: があればそれ、なければ id）が CHECK_NAMES でない（check_name_changed。ひな形と写しのずれは ci.test.mjs が見る）
+//   - そのチェックの名前が必須のチェックにない（required_check_missing）
+//   - 同じチェックの名前を .github/workflows/ のほかのジョブも報告する（check_name_shared。どちらの報告でも必須のチェックが満たされ、
+//     写しを消しても、別のワークフローで check.mjs --events を engine.test.mjs を待たずに走らせても止まらない。議決 D-0038、Issue #1083）
 
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -23,8 +29,12 @@ import { REPO_ROOT } from "./order.mjs";
 
 /** 写しの道（リポジトリの根から）。ci.test.mjs が見張るのもこの道。 */
 export const COPY = ".github/workflows/sendback-engine.yml";
+/** ひな形の道（リポジトリの根から）。 */
+export const TEMPLATE = "tools/sendback-check/ci/sendback-engine.yml";
 /** 必須のチェックにするジョブ（ci/sendback-engine.yml の id）。 */
 export const REQUIRED_JOBS = Object.freeze(["engine-test", "wiring-order"]);
+/** そのジョブが報告するチェックの名前（ジョブの name:）。id のままの engine-test はほかのワークフローも報告するので使わない。 */
+export const CHECK_NAMES = Object.freeze({ "engine-test": "sendback-engine-test", "wiring-order": "sendback-wiring-order" });
 
 /**
  * branch protection の JSON から必須のチェックの名前を取り出す。
@@ -66,24 +76,77 @@ export function jobCheckNames(text) {
   return jobs;
 }
 
-/** 写しの中身（ないときは null）と branch protection の JSON を照らす。 */
-export function checkProtection({ workflow, protection }) {
+/** ジョブ（jobCheckNames の結果）のうち、報告するチェックの名前が CHECK_NAMES と違うもの（ないジョブは見ない）。 */
+export function checkNameProblems(jobs) {
+  return REQUIRED_JOBS.filter((job) => jobs.has(job) && jobs.get(job) !== CHECK_NAMES[job])
+    .map((job) => ({ job, name: jobs.get(job), expected: CHECK_NAMES[job] }));
+}
+
+/** ほかのワークフロー（{ 道: 中身 }）のジョブのうち、names のどれかのチェックの名前を報告するもの。 */
+export function sharedCheckNames(names, others) {
+  const wanted = new Set(names);
+  return Object.entries(others).flatMap(([path, text]) =>
+    [...jobCheckNames(text)].filter(([, name]) => wanted.has(name)).map(([job, name]) => ({ path, job, name })));
+}
+
+/**
+ * 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON を照らす。protections に複数渡すと
+ * （古い形と rulesets の両方など）、どれかで必須のチェックになっていれば必須に数える。
+ */
+export function checkProtection({ workflow, others = {}, protection, protections = [protection] }) {
   const errors = [];
-  const contexts = requiredContexts(protection);
+  const contexts = new Set(protections.flatMap((p) => [...requiredContexts(p)]));
   if (workflow == null) {
     errors.push({ rule: "workflow_not_copied", message: `${COPY} がない（ci/sendback-engine.yml を写してから必須のチェックにする）` });
     return { contexts: [...contexts], errors };
   }
   const jobs = jobCheckNames(workflow);
+  const changed = new Map(checkNameProblems(jobs).map((p) => [p.job, p]));
   for (const job of REQUIRED_JOBS) {
     if (!jobs.has(job)) {
       errors.push({ rule: "workflow_not_copied", message: `${COPY} に ${job} のジョブがない` });
-    } else if (!contexts.has(jobs.get(job))) {
+      continue;
+    }
+    const name = jobs.get(job);
+    if (changed.has(job)) {
+      errors.push({ rule: "check_name_changed",
+        message: `${job} のチェックの名前が ${name}（${CHECK_NAMES[job]} にする。ひな形から写し直す）` });
+    }
+    if (!contexts.has(name)) {
       errors.push({ rule: "required_check_missing",
-        message: `${job} のジョブ（チェックの名前 ${jobs.get(job)}）が必須のチェックにない。写しを消す・ジョブの名前を変える PR が止まらない` });
+        message: `${job} のジョブ（チェックの名前 ${name}）が必須のチェックにない。写しを消す・ジョブの名前を変える PR が止まらない` });
+    }
+    for (const other of sharedCheckNames([name], others)) {
+      errors.push({ rule: "check_name_shared",
+        message: `${other.path} の ${other.job} も同じチェックの名前 ${name} を報告する。どちらの報告でも必須のチェックが満たされ、${COPY} を消しても止まらない` });
     }
   }
   return { contexts: [...contexts], errors };
+}
+
+/** dir の直下の YAML を { prefix/ファイル名: 中身 } で読む（skip の道は除く。dir がなければ空）。 */
+function readYamls(dir, prefix, skip) {
+  const out = {};
+  if (!existsSync(dir)) return out;
+  for (const f of readdirSync(dir).sort()) {
+    const path = `${prefix}/${f}`;
+    if (path !== skip && /\.ya?ml$/.test(f)) out[path] = readFileSync(join(dir, f), "utf8");
+  }
+  return out;
+}
+
+/** リポジトリの根から、写し（copy）と .github/workflows/ のほかのワークフローを読む。 */
+export function loadWorkflows(root, copy = COPY) {
+  return { workflow: existsSync(join(root, copy)) ? readFileSync(join(root, copy), "utf8") : null,
+    others: readYamls(join(root, ".github", "workflows"), ".github/workflows", copy) };
+}
+
+/** リポジトリの根から、ツールのひな形（tools/<ツール>/ci/ の YAML）を読む（skip の道は除く）。 */
+export function loadTemplates(root, skip = TEMPLATE) {
+  const tools = join(root, "tools");
+  if (!existsSync(tools)) return {};
+  return Object.assign({}, ...readdirSync(tools, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort()
+    .map((name) => readYamls(join(tools, name, "ci"), `tools/${name}/ci`, skip)));
 }
 
 export function formatErrors(errors, annotate) {
@@ -92,20 +155,19 @@ export function formatErrors(errors, annotate) {
 
 export function renderSummary({ contexts, errors }) {
   const out = ["## sendback-check の必須のチェック", "", `必須のチェック: ${contexts.length === 0 ? "なし" : contexts.join("・")}`, ""];
-  if (errors.length === 0) out.push(`通る: ${REQUIRED_JOBS.join("・")} が必須のチェックに入っている`);
+  if (errors.length === 0) out.push(`通る: ${REQUIRED_JOBS.map((j) => `${CHECK_NAMES[j]}（${j}）`).join("・")}が必須のチェックに入っている`);
   for (const e of errors) out.push(`- 外れた \`${e.rule}\`: ${e.message}`);
   return out.join("\n") + "\n";
 }
 
 function main() {
-  const { values } = parseArgs({ options: { protection: { type: "string" }, repo: { type: "string" }, json: { type: "string" },
+  const { values } = parseArgs({ options: { protection: { type: "string", multiple: true }, repo: { type: "string" }, json: { type: "string" },
     summary: { type: "string" } } });
   let result;
   try {
-    if (!values.protection) throw new Error("--protection に branch protection の JSON を渡す");
-    const protection = JSON.parse(readFileSync(values.protection, "utf8"));
-    const copy = join(values.repo ?? REPO_ROOT, COPY);
-    result = checkProtection({ workflow: existsSync(copy) ? readFileSync(copy, "utf8") : null, protection });
+    if (!values.protection?.length) throw new Error("--protection に branch protection の JSON を渡す");
+    const protections = values.protection.map((f) => JSON.parse(readFileSync(f, "utf8")));
+    result = checkProtection({ ...loadWorkflows(values.repo ?? REPO_ROOT), protections });
   } catch (e) {
     console.error(`sendback-check protection: 読めなかった: ${e.message}`);
     process.exit(2);

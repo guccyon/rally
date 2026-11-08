@@ -1,6 +1,6 @@
 # 差し戻しを起こす判定の検査
 
-supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足し、議決 `D-0017` と Issue #969 でひな形が必須のチェックにできる形かを見張る手順を `ci.test.mjs` に足し、議決 `D-0016` と Issue #964 で配線の順序の見張りに `ENGINE_REF` の Engine で走らせた `engine.test.mjs` の結果（(3) と (c) が todo になっていないか）を足した、議決 `D-0014` と Issue #961 で Engine の basis が直ったのに todo が残っていれば落とすテストを `engine.test.mjs` に足し、議決 `D-0020` と Issue #977 で `engine.test.mjs` を Engine の既定のブランチの先頭でも定期に走らせて落ちたら知らせる形（`ci/sendback-engine-head.yml`）を足した、議決 `D-0026` と Issue #1018 で写しのジョブが branch protection の必須のチェックに入っているかを照らす検査（`protection.mjs`）を足し、議決 `D-0028` と Issue #1024 で `ENGINE_REF` の行を変える PR で `engine-test` が必ずその版で走るかを見張る手順を `ci.test.mjs` に足し、同じ議決と Issue #1025 で Engine が別の言い回しで adopt の合計だけを書いても (3) が必須で落ちることを Engine の写しで確かめるテストを `engine.test.mjs` に足し、議決 `D-0031` と Issue #1046 で `engine_harness.py` の偽の cursor が知らない問い合わせを `harness_unknown_query` で落とし、`engine-head` がそれを `engine_head_failed`（判定の変化）と分けて知らせる形にし、議決 `D-0031` と Issue #1047 で `engine-head` が通ったときも Issue #948 に記録し、その記録が残っているかを照らす検査（`head-record.mjs`）を足し、議決 `D-0038` と Issue #1084 で `check.mjs --events` が GitHub Actions ではどの呼び方で起動されても自分で配線の順序を見張る実行時の守りを足し、議決 `D-0041` と Issue #1093 で `engine.test.mjs` の写しのテストが写しを作れないときに黙って通さず `legacy_basis_not_found` の skip で出し、その skip が残っていれば `ENGINE_REF` を上げる PR で落とすようにした。
+supervisor が差し戻し（sendback）か続きのジョブを起こす判定と、検査役の承認（`supervisor.inspector_approved`）の basis の書き方を決定論で（LLM を使わずに）見る。知見 `K-0004`（`.factory-config/knowledge/K-0004.yaml`）の担保で、委員会の議決 `D-0004` と Issue #902 で作り、議決 `D-0009` と Issue #934 で PR ごとに走らせる検査（制御プレーンのイベント列から組む入口）にし、議決 `D-0011` と Issue #948 で Engine の本物の判定のテストを CI で飛ばさずに走らせる形（`ci/sendback-engine.yml`）にし、議決 `D-0012` と Issue #953 で配線の順序を機械で見張る検査（`order.mjs`）を足し、議決 `D-0014` と Issue #960 で `ENGINE_REF` がコミット SHA であることと写しのずれを見張る手順（`ci.test.mjs`）を足し、議決 `D-0017` と Issue #969 でひな形が必須のチェックにできる形かを見張る手順を `ci.test.mjs` に足し、議決 `D-0016` と Issue #964 で配線の順序の見張りに `ENGINE_REF` の Engine で走らせた `engine.test.mjs` の結果（(3) と (c) が todo になっていないか）を足した、議決 `D-0014` と Issue #961 で Engine の basis が直ったのに todo が残っていれば落とすテストを `engine.test.mjs` に足し、議決 `D-0020` と Issue #977 で `engine.test.mjs` を Engine の既定のブランチの先頭でも定期に走らせて落ちたら知らせる形（`ci/sendback-engine-head.yml`）を足した、議決 `D-0026` と Issue #1018 で写しのジョブが branch protection の必須のチェックに入っているかを照らす検査（`protection.mjs`）を足し、議決 `D-0028` と Issue #1024 で `ENGINE_REF` の行を変える PR で `engine-test` が必ずその版で走るかを見張る手順を `ci.test.mjs` に足し、同じ議決と Issue #1025 で Engine が別の言い回しで adopt の合計だけを書いても (3) が必須で落ちることを Engine の写しで確かめるテストを `engine.test.mjs` に足し、議決 `D-0031` と Issue #1046 で `engine_harness.py` の偽の cursor が知らない問い合わせを `harness_unknown_query` で落とし、`engine-head` がそれを `engine_head_failed`（判定の変化）と分けて知らせる形にし、議決 `D-0031` と Issue #1047 で `engine-head` が通ったときも Issue #948 に記録し、その記録が残っているかを照らす検査（`head-record.mjs`）を足し、議決 `D-0038` と Issue #1084 で `check.mjs --events` が GitHub Actions ではどの呼び方で起動されても自分で配線の順序を見張る実行時の守りを足し、議決 `D-0039` と Issue #1087 で `protection.mjs` を branch protection を読めるトークンで毎日走らせ、必須のチェックが後で外されたら Issue を開くか更新する形（`ci/sendback-protection.yml`）を足し、議決 `D-0041` と Issue #1093 で `engine.test.mjs` の写しのテストが写しを作れないときに黙って通さず `legacy_basis_not_found` の skip で出し、その skip が残っていれば `ENGINE_REF` を上げる PR で落とすようにした。
 
 judge の verdict `adopt` は、仮決めの承認（`defect: null`）と欠陥の採用（`defect` が null でない）の両方に使われる。adopt の件数で差し戻しを起こすと、PR #395（事例 `C-0002`）のように直すもののない差し戻しが記録される。この検査は、判定の線を 1 つの条件にして、記録がそれに合っているかを見る。
 
@@ -10,8 +10,8 @@ node check.mjs < record.json     # --record を省くと標準入力から読む
 node check.mjs --events <制御プレーンのイベントの JSON か JSONL> [--pr <PR の URL>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]
 node order.mjs [--repo <リポジトリの根>] [--engine-report <engine.test.mjs の TAP>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # 配線の順序の見張り
 npm test                         # Engine の本物の判定のテスト（engine.test.mjs）も走る
-node --test ci.test.mjs           # ci/sendback-engine.yml の ENGINE_REF の見張り・必須のチェックにできる形か・.github/workflows/ の写しとのずれ、ci/sendback-engine-head.yml の形と記録の手順
-node protection.mjs --protection <gh api の branch protection の JSON> [--repo <リポジトリの根>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # 必須のチェックの照合
+node --test ci.test.mjs           # ci/sendback-engine.yml の ENGINE_REF の見張り・必須のチェックにできる形か・.github/workflows/ の写しとのずれ、ci/sendback-engine-head.yml の形と記録の手順、ci/sendback-protection.yml の形と Issue の手順
+node protection.mjs --protection <gh api の branch protection の JSON> [--protection <rulesets の JSON>] [--repo <リポジトリの根>] [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # 必須のチェックの照合
 node head-record.mjs --comments <gh api の Issue #948 のコメントの JSON> [--json <出力先>] [--summary "$GITHUB_STEP_SUMMARY"]   # engine-head の記録の照合
 ```
 
@@ -114,20 +114,36 @@ PR ごとに Engine を固定した版（`ENGINE_REF`）でチェックアウト
 - `wiring-order` のジョブは `ci.test.mjs` も走らせる。`.github/workflows/sendback-engine.yml` の写しが `ENGINE_REF` の行のほかで `ci/sendback-engine.yml` とずれていれば落ちる（写しがなければその場合は飛ばす）。ワークフローを直すときは先に `ci/sendback-engine.yml` を直してから写し直す
 - `ci.test.mjs` は、`ci/sendback-engine.yml` が必須のチェックにできる形かも見る（議決 `D-0017`、Issue #969）。`on` が絞り込み（`paths`・`branches`・`types`）のない `pull_request` だけで、`if:` と `continue-on-error` がなく、`wiring-order` のジョブが `order.mjs` と `ci.test.mjs` を、`engine-test` のジョブが `ENGINE_DIR` を向けて `engine.test.mjs` を走らせること。写しとのずれも見るので、見張りを外す・飛ばす変更はひな形と写しを一緒に直しても `wiring-order` で落ちる。GitHub Actions（`GITHUB_ACTIONS=true`）では写しが `.github/workflows/sendback-engine.yml` にないと落ちる（別の名前に写すとずれを見張れないため）
 - `ci.test.mjs` は、`ENGINE_REF` の行を変える PR（Engine を上げる PR）で `engine-test` が必ず走り、その版の Engine を確かめる形かも見る（議決 `D-0028`、Issue #1024）。`paths`・`paths-ignore` で絞ると写しを含めても書き方しだいで走らない PR が出るので、絞り込みの中身は問わず上の見張りで外れにする。そのほかに、`ENGINE_REF` がワークフローの `env` に 1 行だけあること（ジョブや手順の `env`・`GITHUB_ENV` で上書きしない。ずれの比べ方は `ENGINE_REF` の行を無視するので、2 行目で上書きされると見逃すため）、`engine-test` に `needs` がないこと（待つジョブが落ちると飛ばされる）、最初の手順が `ENGINE_REF` の見張りで、Engine を取る手順の `ref` が `${{ env.ENGINE_REF }}` であることを、ひな形と写しの両方で見る
-- 写したら、branch protection で `engine-test` と `wiring-order` を必須のチェックにする。写しを消す・ジョブの名前を変える PR は、必須のチェックが報告されないのでそこで止まる。写すこと・必須にすること・PR #395 と同じ入力で本物の判定が起こさないことが CI で通った記録を Issue #948 に残すことは建設者が行い、そのあとで `K-0004` の `enforcement.solutions` の what を「効き目を確かめた」に直す。必須にしたことは下の `protection.mjs` で照らす
+- 写したら、branch protection で `engine-test` と `wiring-order` のジョブが報告するチェック（`sendback-engine-test` と `sendback-wiring-order`。ジョブの `name:`）を必須のチェックにする。写しを消す・ジョブの名前を変える PR は、必須のチェックが報告されないのでそこで止まる。写すこと・必須にすること・PR #395 と同じ入力で本物の判定が起こさないことが CI で通った記録を Issue #948 に残すことは建設者が行い、そのあとで `K-0004` の `enforcement.solutions` の what を「効き目を確かめた」に直す。必須にしたことは下の `protection.mjs` で照らす
+- チェックの名前を id のまま（`engine-test`・`wiring-order`）にしないのは、`tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml` にも `engine-test` のジョブがあり、同じ名前だと必須のチェックの「engine-test」がどちらの報告でも満たされるため。その形では、写しを消しても、別のワークフローで `check.mjs --events` を `engine.test.mjs` を待たずに走らせても（別のワークフローの間は `needs` で待てないので、`order.mjs` の `engine_test_not_required` は見ない）マージが止まらない（議決 `D-0038`、Issue #1083）。`ci.test.mjs` が、ひな形の 2 つのジョブの `name:` がこの名前であることと、ほかのツールのひな形（`tools/*/ci/`）と `.github/workflows/` のどのジョブもこの名前を報告しないことを見て、外れたら落とす
 
 ### 必須のチェックの照合（`protection.mjs`）
 
-写しを消す PR（写しがなければ `wiring-order` も走らない）や、`ci.test.mjs` ごと見張りを書き換える PR は、`engine-test` と `wiring-order` が必須のチェックで報告されないことでしか止まらない。必須にし忘れると見張りを外す PR がそのまま通り、ジョブに `name:` があるのに id で必須にすると、報告されない名前を待ってすべての PR が止まる（議決 `D-0026`、Issue #1018）。`protection.mjs` が、`.github/workflows/sendback-engine.yml` の 2 つのジョブが報告するチェックの名前と、既定のブランチの必須のチェックを照らす。
+写しを消す PR（写しがなければ `wiring-order` も走らない）や、`ci.test.mjs` ごと見張りを書き換える PR は、`engine-test` と `wiring-order` のチェック（`sendback-engine-test`・`sendback-wiring-order`）が必須のチェックで報告されないことでしか止まらない。別のワークフローで `check.mjs --events` を `engine.test.mjs` を待たずに走らせる形も、同じ設定でしか止まらない（議決 `D-0038`）。必須にし忘れると見張りを外す PR がそのまま通り、ジョブに `name:` があるのに id で必須にすると、報告されない名前を待ってすべての PR が止まる（議決 `D-0026`、Issue #1018）。`protection.mjs` が、`.github/workflows/sendback-engine.yml` の 2 つのジョブが報告するチェックの名前と、既定のブランチの必須のチェックを照らす。
 
 | rule | 外れる状態 |
 |---|---|
 | `workflow_not_copied` | `.github/workflows/sendback-engine.yml` がないか、`engine-test`・`wiring-order` のジョブがない |
-| `required_check_missing` | そのジョブが報告するチェックの名前（ジョブの `name:` があればそれ、なければ id）が必須のチェックにない |
+| `check_name_changed` | そのジョブが報告するチェックの名前（ジョブの `name:` があればそれ、なければ id）が `sendback-engine-test`・`sendback-wiring-order` でない（ひな形と写しのずれは `ci.test.mjs` が見る） |
+| `required_check_missing` | そのチェックの名前が必須のチェックにない（id の `engine-test`・`wiring-order` だけを必須にしたときも） |
+| `check_name_shared` | 同じチェックの名前を `.github/workflows/` のほかのジョブも報告する。どちらの報告でも必須のチェックが満たされ、写しを消しても、別のワークフローの `check.mjs --events` のジョブがその名前を名乗っても止まらない（議決 `D-0038`、Issue #1083） |
 
 - branch protection は PR の `GITHUB_TOKEN` では読めないので、PR ごとには走らせない。建設者が写して必須にしたあと、`gh api repos/{owner}/{repo}/branches/main/protection`（rulesets なら `gh api repos/{owner}/{repo}/rules/branches/main`）の出力を `--protection` に渡して走らせる。どちらの形も読む（古い形は `required_status_checks` の `contexts` と `checks[].context`、rulesets は `type: required_status_checks` の規則）。保護がない（404 の `{ "message": … }`）ときは必須のチェックが空として外れる
 - 終了コードは 0 = 通る、1 = 外れた、2 = 読めなかった（JSON でない・`--protection` がない）。`GITHUB_ACTIONS=true` では `::error title=sendback-check <rule>::…` の形で出す
+- `--protection` は何度でも渡せる。古い形と rulesets の両方を渡すと、どちらかで必須になっているチェックを必須に数える（議決 `D-0039`、Issue #1087）
 - 通った出力と、本物の配線の PR で `wiring-order` が落ちる・通る実行の URL を Issue #948 に記録してから、`K-0004` の議決 `D-0026` の解決策（Issue #1018）の `wired` を `true`（`wired_by` に `.github/workflows/sendback-engine.yml` の `wiring-order` と `tools/sendback-check/order.mjs`、`engine-test` と `tools/sendback-check/engine.test.mjs`）にし、`verified` を `true` にする
+
+#### 定期の照合（`ci/sendback-protection.yml`）
+
+建設者が一度 `protection.mjs` を走らせるだけでは、必須にしたあとで `engine-test`・`wiring-order` が必須のチェックから外されても気づけない（議決 `D-0039`、Issue #1087）。`ci/sendback-protection.yml` の `protection` のジョブが、`protection.mjs` を 1 日 1 回（UTC 20:00、JST 5:00）と手動（`workflow_dispatch`）で走らせる。
+
+- branch protection は `GITHUB_TOKEN` では読めないので、読める権限のトークン（GitHub App か `administration:read` の fine-grained PAT）をシークレット `SENDBACK_PROTECTION_TOKEN` に置く（建設者）。トークンを渡すのは branch protection を読む手順だけ
+- `main` の古い形（`branches/main/protection`）と rulesets（`rules/branches/main`）の両方を読み、`--protection` に 2 つとも渡す。古い形が保護なし（404 の `Branch not protected`）のときはそのまま渡す（rulesets にもなければ `required_check_missing`）
+- トークンがない・読めなかった（権限がないなど）ときは `::error title=sendback-protection protection_unreadable::…` で落ちる。必須のチェックの有無が分からないので Issue は開かない
+- `workflow_not_copied` か `required_check_missing` で外れたら、ジョブは落ち、題が `ISSUE_TITLE` の開いている Issue がなければ開き、あればコメントで足す。記録の最初の行は外れ方ごとの印（`<!-- sendback-protection: <外れの行の sha256 の先頭 16 桁> -->`）で、同じ印が Issue の本文かコメントにすでにあれば足さない（毎日同じ記録を積まない）。開いている Issue を探せなかったときは開く側に倒し、Issue を開けない・コメントできないときはその手順も落ちる
+- 通ったら、開いている Issue があれば通ったことを書いて閉じる
+- PR では走らせない（PR のコードをトークンと `issues: write` で動かさない）。建設者が `.github/workflows/sendback-protection.yml` にそのまま写す。`ci.test.mjs` がこのひな形の形（schedule と手動だけ・トークンは読む手順だけ・2 つの JSON を渡す・Issue の手順は `if: always()`）と、手順を偽の `gh` で動かした振る舞い（そろっていれば通る・rulesets だけでも通る・外されたら Issue を開く・開いていればコメントで足し同じ外れ方は足さない・通ったら閉じる・読めなければ照らさない）、写しがあればひな形と同じかを見る
+- 写してシークレットを置き、手動で 1 回走らせて通ったら、`K-0004` の Issue #1087 の解決策の `wired` を `true`（`wired_by` に `.github/workflows/sendback-protection.yml` の `protection` と `tools/sendback-check/protection.mjs`）にする。外れたときに Issue が開くことを確かめてから `verified` を `true` にする
 
 ### Engine の先頭での定期の実行（`ci/sendback-engine-head.yml`）
 

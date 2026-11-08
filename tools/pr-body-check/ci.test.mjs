@@ -59,7 +59,7 @@ function workflowProblems(text) {
   if (engine === null) return [...problems, "engine-test のジョブがない（必須のチェックにするジョブ）"];
   // チェックの名前は protection.mjs と同じ読み方（jobCheckNames）で見る
   if (jobCheckNames(lines.join("\n")).get(REQUIRED_JOB) !== CHECK_NAME) {
-    problems.push(`engine-test の name: を ${CHECK_NAME} にする（sendback-engine.yml の engine-test と同じ名前だと、必須のチェックがどちらでも満たされる）`);
+    problems.push(`engine-test の name: を ${CHECK_NAME} にする（id のままの engine-test は knowledge-enforcement.yml も報告し、必須のチェックがどちらでも満たされる）`);
   }
   if (engine.some((l) => /^ {4}needs:/.test(l))) problems.push("engine-test に needs があると、待つジョブが落ちたときに飛ばされて走らない");
   const steps = jobSteps(engine);
