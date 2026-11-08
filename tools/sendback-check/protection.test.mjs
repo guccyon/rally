@@ -1,4 +1,4 @@
-// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0004 の担保。議決 D-0026、Issue #1018）。
+// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0004 の担保。議決 D-0026、Issue #1018。複数の JSON を合わせるのは議決 D-0039、Issue #1087）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -82,6 +82,14 @@ test("写しがない・ジョブの名前を変えた写しは workflow_not_cop
   assert.deepEqual(rules(checkProtection({ workflow: template.replace("  wiring-order:\n", "  order:\n"), protection })), ["workflow_not_copied"]);
 });
 
+test("古い形と rulesets を一緒に渡すと、どちらかで必須になっているチェックを必須に数える（議決 D-0039、Issue #1087）", () => {
+  const protections = [classic([ENGINE]), rulesets([WIRING])];
+  assert.deepEqual(checkProtection({ workflow: template, protections }).errors, []);
+  // 保護がない古い形（404）と、どちらにもない wiring-order
+  assert.deepEqual(rules(checkProtection({ workflow: template, protections: [{ message: "Branch not protected", status: "404" }, rulesets([ENGINE])] })),
+    ["required_check_missing"]);
+});
+
 test("branch protection の JSON がオブジェクトでも配列でもなければ読めない", () => {
   for (const v of [null, "engine-test", 1]) assert.throws(() => requiredContexts(v));
 });
@@ -137,6 +145,8 @@ test("CLI: 通れば 0、外れれば 1（GitHub Actions では ::error）、読
   r = run(["--protection", ng, "--repo", dir], { GITHUB_ACTIONS: "true" });
   assert.equal(r.status, 1);
   assert.match(r.stdout, /^::error title=sendback-check required_check_missing::wiring-order のジョブ/m);
+  r = run(["--protection", ng, "--protection", ok, "--repo", dir]);
+  assert.equal(r.status, 0, "--protection を 2 つ渡すと合わせて照らす");
   r = run(["--protection", ok, "--repo", repoWith({})]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /^workflow_not_copied: /m);

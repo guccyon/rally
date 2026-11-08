@@ -573,4 +573,21 @@ enforcement:
       decided_by: committee:D-0038
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0039 の ci_check の案（protection.mjs は建設者が手で走らせるだけなので、engine-test・wiring-order が必須のチェックから
+        後で外されても誰も気づかない）を入れた。tools/sendback-check/ci/sendback-protection.yml に、branch protection を読める権限の
+        トークン（シークレット SENDBACK_PROTECTION_TOKEN。GitHub App か administration:read の fine-grained PAT）で main の古い形の
+        branch protection と rulesets を読み、protection.mjs に 2 つとも渡して（--protection を何度でも渡せるようにし、どちらかで必須なら必須に数える）
+        毎日と workflow_dispatch で照らすワークフローを置いた。workflow_not_copied か required_check_missing で外れたらジョブを落とし、
+        同じ題の開いている Issue がなければ開き、あればコメントで足す（同じ外れ方の印がすでにあれば足さない）。通ったら開いている Issue を閉じる。
+        トークンがない・読めないときは protection_unreadable で落ちて Issue は開かない。ci.test.mjs で、ひな形の形（schedule と手動だけ・
+        トークンは読む手順だけ）と、手順を偽の gh で動かして、そろっていれば通る・rulesets だけでも通る・外されたら Issue を開く・
+        開いていればコメントで足す・通ったら閉じる・読めなければ照らさないことを確かめた。ワーカーは .github/workflows/ を変えられないので、
+        .github/workflows/sendback-protection.yml への写しとシークレットは建設者が置く。まだ一度も走っておらず効き目は確かめていない
+      issue: 1087
+      at: 2026-11-08
+      decided_by: committee:D-0039
+      wired: false
+      verified: false
 decided_by: committee:D-0004

@@ -2,7 +2,7 @@
 //
 //   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection
 //   gh api repos/{owner}/{repo}/rules/branches/main > protection.json        # rulesets（どちらの形でもよい）
-//   node protection.mjs --protection protection.json [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   node protection.mjs --protection protection.json [--protection rules.json] [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
 //
 // 写しを消す PR（写しがなければ wiring-order も走らない）や ci.test.mjs ごと見張りを書き換える PR は、必須のチェック（sendback-engine-test・sendback-wiring-order）が
@@ -11,6 +11,8 @@
 // その止め方が効いているか、つまり .github/workflows/sendback-engine.yml の 2 つのジョブが報告するチェックの名前が、
 // 既定のブランチの必須のチェックに入っているかを見る。branch protection は PR の GITHUB_TOKEN では読めないので、
 // 建設者が gh api で取り出した JSON を渡して走らせ、結果を Issue #948 に記録する（README の「必須のチェックの照合」）。
+// 必須のチェックが後で外されたことに気づくよう、ci/sendback-protection.yml が branch protection を読める権限のトークンで
+// 毎日と手動で走らせ、外れたら Issue を開くか更新する（議決 D-0039、Issue #1087）。
 //
 // 見ること:
 //   - 写し（.github/workflows/sendback-engine.yml）がないか、engine-test・wiring-order のジョブがない（workflow_not_copied）
@@ -87,10 +89,13 @@ export function sharedCheckNames(names, others) {
     [...jobCheckNames(text)].filter(([, name]) => wanted.has(name)).map(([job, name]) => ({ path, job, name })));
 }
 
-/** 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON を照らす。 */
-export function checkProtection({ workflow, others = {}, protection }) {
+/**
+ * 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON を照らす。protections に複数渡すと
+ * （古い形と rulesets の両方など）、どれかで必須のチェックになっていれば必須に数える。
+ */
+export function checkProtection({ workflow, others = {}, protection, protections = [protection] }) {
   const errors = [];
-  const contexts = requiredContexts(protection);
+  const contexts = new Set(protections.flatMap((p) => [...requiredContexts(p)]));
   if (workflow == null) {
     errors.push({ rule: "workflow_not_copied", message: `${COPY} がない（ci/sendback-engine.yml を写してから必須のチェックにする）` });
     return { contexts: [...contexts], errors };
@@ -156,13 +161,13 @@ export function renderSummary({ contexts, errors }) {
 }
 
 function main() {
-  const { values } = parseArgs({ options: { protection: { type: "string" }, repo: { type: "string" }, json: { type: "string" },
+  const { values } = parseArgs({ options: { protection: { type: "string", multiple: true }, repo: { type: "string" }, json: { type: "string" },
     summary: { type: "string" } } });
   let result;
   try {
-    if (!values.protection) throw new Error("--protection に branch protection の JSON を渡す");
-    const protection = JSON.parse(readFileSync(values.protection, "utf8"));
-    result = checkProtection({ ...loadWorkflows(values.repo ?? REPO_ROOT), protection });
+    if (!values.protection?.length) throw new Error("--protection に branch protection の JSON を渡す");
+    const protections = values.protection.map((f) => JSON.parse(readFileSync(f, "utf8")));
+    result = checkProtection({ ...loadWorkflows(values.repo ?? REPO_ROOT), protections });
   } catch (e) {
     console.error(`sendback-check protection: 読めなかった: ${e.message}`);
     process.exit(2);
