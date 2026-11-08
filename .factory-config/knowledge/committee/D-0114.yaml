@@ -1,0 +1,70 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0114
+pr: https://github.com/guccyon/rally/pull/1300
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0014 の enforcement.solutions に D-0076 の schema の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、ほかの知見の扱いは「そのまま」で足ります。
+  - '足した項目の decided_by: committee:D-0076 と PR #1203 は D-0076 の議決と合っており、中身も D-0076
+    の 1 つ目の enforcement の案（handoff は test で見ていないので schema で担保する）に沿っています。'
+  - '「Issue #1213 の起票時の番号は D-0074」という断り書きは、D-0074 が別の PR #1202 の議決であることと食い違わず、issue
+    1214 の項目の書き方とも揃っています。'
+  - D-0049 の schema の案の項目と conflict-files.yaml・schema.py・engine/conflict-files.patch
+    は issue 1136 の項目ですでに入っていると明記したうえで、新しい項目を handoff.saved が Engine の欄に効くかの確認に絞っているので、issue
+    1136 の項目との重複にはなりません。
+  - 'schema.py を呼ぶ定期のジョブを issue 1207・issue 1136 の項目と同じ conflict-schema にまとめて REQUIRED_SCHEDULE
+    に挙げており、既存の配線の線と矛盾しません。wired: false・verified: false の書き方も README の決まり（D-0021・D-0034）どおりです。'
+  - 本物のイベント列での確認も配線もまだないので、confidence は hypothesis のままが妥当です。specs/ の用語集とコンテキストには衝突や
+    handoff の定義がなく、規範との食い違いもありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した enforcement.solutions の schema の項目は decided_by: committee:D-0076 と issue
+    1213 で議決 D-0076（PR #1203）に辿れ、中身も議決の enforcement の proposal（handoff は test で見ていないので
+    schema で担保する）とそろっています。'
+  - issue 1136 の解決策ですでに入っていた分と、この項目で足した分（engine_harness.py の handoff と test_schema.py
+    の EngineHandoffTest）を分けて書いていて、同じ担保を二重に数えていません。
+  - Engine の dispatcher.py の handoff.saved の欄を読んだ話はコミット 9f8f6b4 と道を添えているので辿れますが、前の項目の
+    57069a8 とコミットが違うため、次に直すときはどちらの時点の Engine の話かを揃えると読みやすくなります。
+  - '本物のイベント列で確かめておらず wired: false・verified: false と正直に書き、statement・evidence・confidence:
+    hypothesis は変えていないので、確かさの段はこのままが妥当です。'
+  - 差分に出てくるのは議決・Issue・PR の番号、コミット、ファイルとイベントの名前だけで、利用者の氏名・連絡先・ID・本文の引用はなく、個人情報は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0076 の担保の票が求めた「handoff を含む schema の案を未配線の項目として別に記録する」に答えていて、K-0014
+    の enforcement.solutions に issue 1213 の schema の項目を足すだけです。
+  - handoff.saved の continue_reason=conflict のときに conflict_files がない・空なら落とす線は機械で白黒がつき、EngineHandoffTest
+    が Engine の dispatcher.py の payload の欄の名前を構文木から照らすので、欄の名前がずれて黙って通る抜け道もふさいでいます。
+  - 'check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW と ConflictSchemaScheduleTest
+    で、schedule のジョブから schema.py を呼ぶ wired_by がなければ wired: true にできないので、配線の担保も決定論になっていて、ここで新たに足す決定論の仕組みはありません。'
+  - '今の Engine では衝突の続きの handoff.saved がすべて missing_field で落ちることを書き、wired: false・verified:
+    false と本物のイベント列で確かめていないことを正直に書いているのは README の決まり（D-0021・D-0034）どおりです。'
+  - 残りは建設者が engine/conflict-files.patch を当てて ci/conflict-schema.yml を配線することで、そのあと本物のイベント列で落ちないことを事例記録で確かめてから
+    verified を上げてください。
+  - 確かさは hypothesis のままが妥当で、この PR は担保の記録だけなので上げ下げは要りません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は議決 D-0076 の schema の案を K-0014 の enforcement.solutions に 1 項目足すだけで、statement・scope・evidence・confidence
+    は変えておらず、wired: false・verified: false と what の「未配線・未確認」が合っているので、範囲が広すぎるとは判断しません。'
+  - '新しい項目は issue 1136 の項目と同じ conflict-files.yaml・schema.py・conflict-schema のジョブを使い、足した分は
+    handoff.saved の欄を Engine と照らすところだけなので、建設者が配線するときは 2 つの項目を同じ wired_by で一緒に wired:
+    true にするか、どちらか一方に寄せるかを決めておいてください。'
+  - 反例として、engine_harness.py は dispatcher.py の handoff.saved の payload を構文木で辞書の式として読むので、Engine
+    が payload を別の関数で組むように書き換えると欄が正しくても落ち、欄の名前のずれと見分けがつかなくなるため、落ちたときの文言で両者を分けると誤報を減らせます。
+  - 前の項目は Engine の main の 57069a8、この項目は 9f8f6b4 で確かめたと書いており、どちらも手元のチェックアウトの話で事例記録には辿れないので、本物のイベント列で
+    handoff.saved に conflict_files が載ったことを事例記録で確かめるまで verified は上げないでください。
+  - C-0007 は handoff/ がなく材料が case.json だけと書いているので、handoff に衝突したファイルを載せることが集計で束を見えるようにするかは事例で確かめておらず、confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
