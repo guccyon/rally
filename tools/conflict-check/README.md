@@ -141,6 +141,7 @@ python3 -B tools/conflict-check/watch.py --events tools/conflict-check/fixtures/
 - `watch.stoppages` が外れの PR にその rule で停止を開かなかった件数（照らすのに要る項目ごと）が 0 かを見る。線どおりの PR に開いたら落ちる
 - todo（`legacy_finished`）と Engine のチェックアウトの渡し方・飛ばし方は `test_events.py` の `EngineFinishedTest` と同じ（todo の理由に見逃した件数を添えて `test_engine.py` の `todo` で数え、`K-0010` の `review_by` を過ぎたら落とすのも同じ。議決 `D-0043`、Issue #1104）。片方だけを出す版はもう片方の外れを見逃して落ちる
 - 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`test_events.py` と `test_watch.py` の `legacy_finished` の todo の呼び出しを消す
+- todo の前に、`watch.py` が `events.py` と別の扱いに変わっていないか（`finished_diverged`）を見て、食い違いがあれば Engine が今の形でも todo にせずに落とす（議決 `D-0062`、Issue #1174。委員会の記録は `committee/D-0066.yaml`）。同じイベント列で、`watch.stoppages` が開く停止の rule が PR ごとに `events.check` の rule と同じか、`watch.py` が見逃した外れはどれも `events.py` の照らせない件数（`events.unknown`）が 1 以上の項目か、を見る。イベント列には、`job.finished` の欄によらず照らせる外れの PR（`agent_resumed` と `agent_tier` を `continue.enqueued` に載せて 4 回積む。3 つの rule がすべて出る）も混ぜるので、今の形の Engine でも `watch.py` が rule を照らさなくなったり、照らせない回を外れにしたりすれば落ちる。`FinishedFieldsTest` が、Engine なしで 4 通りの欄（今の形・片方・両方）で食い違わないことと、`watch.py` の照らし方を変えた形ではどの欄でも食い違うことを確かめる
 
 supervisor への配線（建設者が入れる）: `merge_step` の `ci_failure_step` の後（または `conflict_step` で続きのジョブを積んだ直後）に、その PR のイベント列（上の SQL）を引いて `watch.stoppages` と `watch.apply` を呼ぶ。停止が開けば `waiting_for_human` が `ci:` を見るので、その PR は同時に流す枠から外れる。
 
