@@ -276,5 +276,7 @@ terms:
     note: >-
       全部か何もしないかで、同じコーチの期間の重なるお休みは断る（409 coach_leave_overlaps）。今は、予約がお休みで消えたことを
       キャンセルした人（BookingCanceller。listCancelledBookings の cancelled_by が headquarters）と、その予約を含むお休みの記録で
-      たどる。キャンセルの理由の欄と語は #1029 で決める。コーチの受付の停止（coach_acceptance）とは別で、お休みは受付を変えない。
+      たどる。キャンセルの理由は admin-web の契約の BookingCancelReason の coach_leave（getBooking の status_changes のキャンセルの記録と
+      listCancelledBookings の cancel_reason。getBooking はそのお休みの記録 CoachLeave も載せる。#1029）で、境界間イベント BookingCancelled には
+      理由を足さない（cancelled_by が headquarters なのはお休みだけ）。コーチの受付の停止（coach_acceptance）とは別で、お休みは受付を変えない。
       コーチ自身が申し出る操作・お休みの記録の一覧はまだない（specs/ux/issue-455.yaml）。

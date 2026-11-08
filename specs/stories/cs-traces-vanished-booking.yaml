@@ -42,11 +42,12 @@ origin:
 known_gaps:
   - step: 3
     note: >-
-      予約の詳細（getBooking）の状態が変わった記録（BookingStatusChange）は日時と変わった後の状態だけで、キャンセルした人・
-      開始の何時間前か・回数を消費したかが出ない。キャンセルした人は「キャンセルされた予約」（listCancelledBookings の
-      cancelled_by）にしか出ず、予約の詳細から読めない
+      予約の詳細（getBooking）の状態が変わった記録（BookingStatusChange）に、キャンセルした人・開始の何時間前か・回数を消費したか・
+      キャンセルの理由の欄は契約にある（#1029）が、バックエンドがまだ載せず、本部の画面にも出ない。回数の消費の判定を
+      残し始める前の生徒のキャンセルは、載せ始めても consumes_quota が null のまま
   - step: 3
     note: >-
-      コーチのお休み（coach_leave）でキャンセルされた予約から、そのお休みの記録（期間・操作した本部のアカウント・時刻）を
-      たどる手段が本部の画面と契約にない。記録は startCoachLeave の応答（CoachLeave）と DB にだけ残る
+      コーチのお休み（coach_leave）でキャンセルされた予約から、そのお休みの記録（期間・操作した本部のアカウント・時刻）をたどる欄
+      （BookingStatusChange の cancel_reason が coach_leave と coach_leave）は契約にある（#1029）が、バックエンドと本部の画面が
+      まだ対応していない。記録は startCoachLeave の応答（CoachLeave）と DB にだけ残る
 status: active
