@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0071
+pr: https://github.com/guccyon/rally/pull/1190
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0005 に足した config の解決策は、D-0006 の担保役が求めた「正を人が決めてから、その 1 つの定義に他が合っているかを照らす」形に沿っており、正本を
+    Issue #936 のオーナーの判断で決めたと書いているので、過去の議決と矛盾しません。'
+  - K-0006 の what の直しは、D-0022 の票が残した「正が決まったら template.json とこの記録を合わせて直す」という宿題に応えていて、C-0006
+    の「CLAUDE.md の側は template.json で 1 つの定義になった」という記録ともそろっています。
+  - 'D-0006 の案（test）と種類が違うので solution に decided_by を書かず、トップの decided_by: committee:D-0006
+    を残し、実装役の報告の型をまだ照らしていないことも書いているので、議決との関係を言い過ぎず、重複もありません。'
+  - 'INDEX.md の K-0005 の担保の列が deterministic になったのは、wired: false でも enforcement.level
+    をそのまま出すという README の移行の決まりどおりで、手で直したものでも食い違いでもありません。'
+  - 'README は K-0006 の未記入の解決策について次にその知見を直す変更セットで wired・verified を書くと決めているので、この PR
+    で K-0006 の ci_check に wired: false・verified: false を書き足し、README の書き終えた知見の一覧に K-0005
+    を足すとよいです。'
+  - 配線も効き目の確かめもまだで、実装役の報告の型も照らしていないので、K-0005・K-0006 とも confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0005 の追加の解決策は issue: 1121 と at: 2026-11-08 を持ち、正本の決定（Issue #936）と照らす対象（tools/pr-body-check/followers.json・followers.mjs・followers.test.mjs、Engine
+    の 57069a8）を名指ししているので、一次記録に辿れます。'
+  - 'wired: false と verified: false で、配線していないことと効き目を確かめていないことを本文と同じく正直に書いており、確かめた範囲を言い過ぎていません。'
+  - 'オーナーが見出しの正本を決めた Issue #936 と週 1 の定例の決定 Issue #1121 は cases/ にも committee/ にも記録がないので、confirmed
+    に上げる前にそれぞれを evidence か事例記録から辿れるようにしてください。'
+  - 担保は CLAUDE.md と rubric の PR-002 だけで実装役の報告の型を照らしておらず、新しい事例も足していないので、K-0005・K-0006
+    の confidence は hypothesis のままが妥当です。
+  - K-0006 の変更は定義の由来の説明を足しただけで主張と根拠を変えておらず、根拠の観点で問題はありません。
+  - 差分に残るのは Issue・PR の番号、ファイルの道、コミットの短いハッシュだけで、利用者を特定できる氏名・ID・本文の引用はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0005 の見出しの割れは、正本 template.json と合わせる側の一覧を並べて比べるだけで判定でき、線が引きやすく作る費用も小さいので、followers.json
+    と followers.mjs による決定論の担保は D-0006 の担保票の趣旨に沿っています。
+  - 'K-0005 の解決策は wired: false・verified: false と正直に書かれ、ci/pr-body-engine.yml を .github/workflows/
+    に写して必須のチェックにするまで効き目がないことも書いてあるので、担保の状態の記録として妥当です。'
+  - followers.json は CLAUDE.md と rubric の PR-002 だけを照らし、D-0006 の案にある実装役の報告の型（Engine
+    側）は照らしていないので、K-0005 の担保はまだ部分的で、confidence は hypothesis のままが妥当です。
+  - 'INDEX.md の K-0005 の担保の列が deterministic になりますが、解決策がすべて wired: false なので、check.py
+    の表示では「未配線」であることを読み手が取り違えないよう注意が要ります。'
+  - 'K-0006 の解決策を直したのに wired・verified が書かれておらず、README.md の「次にその知見を直す変更セットで実際の配線と確認の状態を書く」に外れるので、この
+    PR で K-0006 の解決策に wired: false・verified: false を足してください。'
+  - この書き忘れは手の注意に頼ると繰り返すので、変更セットが触った K-*.yaml の enforcement.solutions に wired・verified
+    がない項目があれば落とす検査を check.py に足すべきです。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'K-0005 の解決策は、照らす範囲が CLAUDE.md と rubric の PR-002 だけで、実装役の報告の型を照らしていないことや、wired:
+    false・verified: false であることを自分で書いており、言い過ぎてはいません。'
+  - INDEX.md の K-0005 の担保が context から deterministic に変わりますが、未配線で照らす範囲も 3 つのうち 2 つなので、読む人が「担保済み」と取り違える反例があります。README
+    の決まりどおり check.py の表示では未配線と出るので、採らない理由にはしません。
+  - 'K-0005 の statement は「3 つのうちどれを正にするかを先に決める」と書いていますが、オーナーが Issue #936 で正本にしたのは
+    4 つ目の tools/pr-body-check/template.json なので、次に直すときに statement をこの決定に合わせて書き直すとよいです。'
+  - followers.test.mjs は今の Engine（57069a8）の PR-002 で落ちると分かっているので、建設者が Engine を直す前に必須のチェックとして配線すると、関係のない
+    PR まですべて止まります。配線は Engine の PR-002 を直して ENGINE_REF を上げたあとにする順を守るべきです。
+  - K-0006 の変更は template.json がのちに正本になった経緯と K-0005 への参照を足しただけで、主張と範囲は広がっていません。
+  - 解決策が配線されて効き目が確かめられておらず、実装役の報告の型も照らしていないので、K-0005・K-0006 とも confidence は hypothesis
+    のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0006
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/knowledge-enforcement-check/check.py に、PR の差分で変更された K-*.yaml の enforcement.solutions
+    の各項目に wired と verified の真偽が書かれていなければ落とす検査（solution_fields_missing）を足し、未記入の解決策を残したまま知見を直す変更セットをマージ前に止める。
+- knowledge: K-0005
+  level: deterministic
+  solution_kind: config
+  proposal: tools/pr-body-check/followers.json に実装役の報告の型（Engine 側で見出しを定義している箇所）を合わせる側として足し、followers.test.mjs
+    で template.json と食い違えば headings_mismatch で落ちることを確かめ、ci/pr-body-engine.yml を .github/workflows/
+    に配線して必須のチェックにしたうえで wired_by を書く。
