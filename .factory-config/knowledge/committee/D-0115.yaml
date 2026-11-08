@@ -1,0 +1,65 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0115
+pr: https://github.com/guccyon/rally/pull/1301
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した解決策（issue 1215、decided_by: committee:D-0075）は、議決 D-0075 の enforcement
+    にある ci_check の案のうちワーカーの権限で入れられる分だと明記しており、議決の中身と合っています。'
+  - REQUIRED_PR_WORKFLOW で knowledge-enforcement.yml の pull_request のジョブに限る形は、issue
+    1200（D-0072）の check.py 側の解決策と同じ線を test_check.py 側に当てたもので、既存の解決策と矛盾も重複もありません。
+  - '新しい解決策にも wired: false・verified: false を書いているので、K-0004 は README の『すべての解決策に書いた知見』の一覧に載ったままで、一覧とずれません。'
+  - README の決まり（D-0021・D-0034）どおり、.github/workflows/ への写しと cases/ の落ちる実行の記録がないうちは
+    wired・verified を true にしないと書いており、記録より強く言っていません。
+  - D-0052・D-0075・D-0077 で整合と反対の担当が繰り返し求めた『道具の解決策を supervisor の差し戻しの知見 K-0004 に積み増さず、道具の知見を別に立てるか置き場を委員会で決める』件がこの
+    PR でもまだ答えられていないので、次の変更セットまでに委員会で置き場を決めてください。
+  - K-0004 の statement・scope・evidence・confidence は変えておらず、どの解決策も本物の記録で確かめていないので、confidence
+    は hypothesis のままが妥当で、差分に人を特定できる情報はありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した解決策（issue 1215、decided_by: committee:D-0075）は、議決 D-0075 の enforcement
+    にある ci_check の案と文まで合い、議決の記録に辿れます。'
+  - 既存の issue 1139 の解決策（D-0052 の案のうち issue 1062 の分）を issue 1138 にも広げ、ワークフローの名前を knowledge-enforcement.yml
+    に絞った分として書き分けてあり、記録の流れが途切れていません。
+  - 'test_check.py が PR ごとに走らず、cases/ の事例記録もないとして wired: false・verified: false のままにしているので、記録より強く言っていません。'
+  - 権限の理由として挙げた CLAUDE.md の「やってはいけないこと」と Engine ADR 0041 は材料の中では確かめられないので、次に直すときは道か節の名前まで書くと辿りやすくなります。
+  - K-0004 の statement・scope・evidence・confidence は変えておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。
+  - 差分にあるのはツールのパス・Issue の番号・議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0075 の ci_check の案のうちワーカーの権限で入れられる分を K-0004 の enforcement.solutions
+    に 1 件足しただけで、担保の観点では採ってよいです。
+  - issue 1062・1138 の解決策を knowledge-enforcement.yml の pull_request のジョブから test_check.py
+    を呼ぶ項目でしか wired にできないようにする線は、check.py の REQUIRED_PR_WORKFLOW と test_check.py ですでに決定論になっており、新しい担保を足す必要はありません。
+  - '足した解決策は wired: false・verified: false のままで、test_check.py がまだ PR ごとに走らないと断っているので、担保を実態より強く見せていません。'
+  - 残る穴は .github/workflows/ への写しと branch protection の必須チェックで、これはワーカーの権限の外にあり lint
+    やテストでは埋められないので、建設者の配線を引き続き求めます。
+  - 'K-0004 の enforcement.level は deterministic のままですが解決策はどれも wired: false なので、check.py
+    の表示どおり未配線として読んでください。'
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に議決 D-0075 の ci_check の案のうちワーカーの権限で入れられる分を
+    1 件足しただけで、statement・scope・evidence・confidence は変えていないので、範囲は広すぎません。
+  - '足した解決策は wired: false・verified: false のままで、.github/workflows/ への写しと branch protection
+    は建設者が行うので test_check.py はまだ PR ごとに走っていないと断っており、記録より強く言っていません。'
+  - '反例として、REQUIRED_PR_WORKFLOW はファイル名と pull_request のジョブを照らすだけなので、.github/workflows/knowledge-enforcement.yml
+    に写しても必須チェックに入れていなければ wired にできてしまう点が残り、verified: true にする前に cases/ の事例記録で必須チェックとして止まったことを確かめてください。'
+  - D-0052・D-0075・D-0077 の反対の票で、supervisor の差し戻しの知見である K-0004 に知見の置き場の道具の解決策を積み増さず置き場を決めるよう繰り返し求めましたが、この
+    PR もまた積み増しており（解決策は 61 件）、議決 D-0075 が K-0004 を指したので今回は採りますが、次の変更セットでは道具の知見を別に立てるかを委員会で決めてください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  - 差分にあるのはツールの道・Issue の番号・議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+enforcement: []
