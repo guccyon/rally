@@ -1,4 +1,4 @@
-// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084。必須のチェックが外れたときの守りは議決 D-0059、Issue #1159。実行の結果の SKIP の照らしは議決 D-0061、Issue #1168）。
+// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084。必須のチェックが外れたときの守りは議決 D-0059、Issue #1159。実行の結果の SKIP の照らしは議決 D-0062、Issue #1168）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -65,7 +65,7 @@ function runTap(file, env = process.env) {
   return r.stdout;
 }
 
-test("tapSkips は下の段も含めて SKIP の名前と理由を読み、skipReportProblems は許した理由とソースの件数で照らす（議決 D-0061、Issue #1168）", () => {
+test("tapSkips は下の段も含めて SKIP の名前と理由を読み、skipReportProblems は許した理由とソースの件数で照らす（議決 D-0062、Issue #1168）", () => {
   const tap = [
     "ok 1 - 通った",
     "ok 2 - 名前の \\# も読む # SKIP Engine のチェックアウトがない（ENGINE_DIR=/x）",
@@ -95,7 +95,7 @@ test("tapSkips は下の段も含めて SKIP の名前と理由を読み、skipR
   assert.deepEqual(checkoutSkipLines("// { skip } は注釈\ntest('a', { skip }, () => {});\ntest('b', {skip}, f);"), [2, 3]);
 });
 
-test("別名や動的な skip は字面では数え漏れるが、走らせた TAP の SKIP で落とす（議決 D-0061、Issue #1168）", () => {
+test("別名や動的な skip は字面では数え漏れるが、走らせた TAP の SKIP で落とす（議決 D-0062、Issue #1168）", () => {
   const dir = mkdtempSync(join(tmpdir(), "sendback-skip-alias-"));
   const file = join(dir, "alias.test.mjs");
   const source = [
@@ -115,12 +115,12 @@ test("別名や動的な skip は字面では数え漏れるが、走らせた T
   assert.ok(problems.some((p) => p.rule === "skip_count_mismatch" && p.reason === LEGACY_BASIS_NOT_FOUND && p.ran === 1 && p.lines === 0));
 });
 
-test("engine.test.mjs を走らせた TAP の SKIP は、許した理由だけで、ソースから数えた件数を超えない（今の環境で。議決 D-0061、Issue #1168）", () => {
+test("engine.test.mjs を走らせた TAP の SKIP は、許した理由だけで、ソースから数えた件数を超えない（今の環境で。議決 D-0062、Issue #1168）", () => {
   const engineTest = fileURLToPath(new URL("./engine.test.mjs", import.meta.url));
   assert.deepEqual(skipReportProblems(runTap(engineTest), engineTestNow), []);
 });
 
-test("Engine のチェックアウトがないときの engine.test.mjs の SKIP は、{ skip } の件数だけ「チェックアウトがない」で出る（議決 D-0061、Issue #1168）", () => {
+test("Engine のチェックアウトがないときの engine.test.mjs の SKIP は、{ skip } の件数だけ「チェックアウトがない」で出る（議決 D-0062、Issue #1168）", () => {
   // tools/sendback-check を、隣に Engine のない一時ディレクトリの写しに置いて走らせる（ENGINE_DIR と CI を渡すと飛ばさずに落とすので外す）
   const tool = join(mkdtempSync(join(tmpdir(), "sendback-no-engine-")), "repo/tools/sendback-check");
   cpSync(dirname(fileURLToPath(import.meta.url)), tool, { recursive: true, filter: (p) => !p.includes("__pycache__") });

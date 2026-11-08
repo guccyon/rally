@@ -113,7 +113,7 @@ test(BASIS_TESTS["(3)"], { skip }, (t) => basisCase(t));
 // order.mjs の todoLines と同じ数え方）が残っていたら、その PR で落とす。todo を消し忘れると order.mjs の engine_test_todo で ci_check を配線できない。
 // 写しを作れないときの legacy_basis_not_found の skip（下の写しのテスト）も、order.mjs の skipLines（todoLines と同じ数え方）で数えて、残っていれば同じく落とす
 // （議決 D-0041、Issue #1093）。字面で数え漏らす別名や動的な skip は、order.test.mjs がこのファイルを走らせた TAP の SKIP の理由と件数で照らす
-// （order.mjs の skipReportProblems。議決 D-0061、Issue #1168）
+// （order.mjs の skipReportProblems。議決 D-0062、Issue #1168）
 const OWN_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
 
 /** ENGINE_REF を上げる PR で消すもの（todo と skip）の行番号 */

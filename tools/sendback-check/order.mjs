@@ -339,7 +339,7 @@ export function tapSkips(text) {
 }
 
 /**
- * engine.test.mjs を走らせた TAP の SKIP を、ソースから数えた skip と照らす（知見 K-0004 の担保。議決 D-0061、Issue #1168）。
+ * engine.test.mjs を走らせた TAP の SKIP を、ソースから数えた skip と照らす（知見 K-0004 の担保。議決 D-0062、Issue #1168）。
  * skipLines と checkoutSkipLines は字面で数えるので、別名（const s = t.skip.bind(t)）や動的な skip（opts.skip = …）を数え漏らす。実行の結果でそれを見つける。
  *   - 理由が legacy_basis_not_found か Engine のチェックアウトがないのどちらでもない（skip_reason_not_allowed）
  *   - legacy_basis_not_found の SKIP が skipLines の件数より多いか、チェックアウトがないの SKIP が `{ skip }` の件数より多い（skip_count_mismatch）
