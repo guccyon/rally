@@ -539,8 +539,13 @@ class EnforcementScopeTest(unittest.TestCase):
             }.items():
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
                 (root / rel).write_text(body, encoding="utf-8")
+            # 手順は check.py に --base "origin/$PR_BASE" を渡すので、CI（fetch-depth: 0）と同じく PR の base の版を置く（議決 D-0067、Issue #1178）
+            for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "base"],
+                        ["update-ref", "refs/remotes/origin/main", "HEAD"]):
+                subprocess.run(["git", *cmd], cwd=d, check=True, capture_output=True)
             p = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", self.gate["run"]], cwd=d, capture_output=True, text=True,
-                               env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "CHANGED": changed, "GITHUB_STEP_SUMMARY": str(root / "summary.md")})
+                               env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "CHANGED": changed, "PR_BASE": "main",
+                                    "GITHUB_STEP_SUMMARY": str(root / "summary.md")})
             return p.returncode
 
     def test_配線先のジョブからREQUIRED_RUNSの検査を外したPRは落ちる(self):
