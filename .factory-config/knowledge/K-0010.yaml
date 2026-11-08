@@ -91,4 +91,19 @@ enforcement:
       decided_by: committee:D-0030
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0042（PR #1099）の test の案のうち、まだ入っていなかった test_watch.py の検査を入れた（test_events.py の EngineFinishedTest は Issue #1035 で入れた）。
+        test_watch.py の EngineFinishedTest が、engine_harness.py の finished で読んだ Engine の dispatcher.py の job.finished の欄だけにしたイベント列
+        （job.started の model_tier も外す。2 回目以降で引き継いだ PR・CHANGELOG.md だけの衝突を tier-large で解いた PR・線どおりの PR を 1 本にしたもの）を
+        watch.py の stoppages で照らし、照らせずに停止を開かなかった外れ（resumed_after_limit か agent_for_mechanical）が 1 件以上か、線どおりの PR に開いたら落とす。
+        Engine が今の形（job.finished に agent_resumed も agent_tier も出さない版）のときだけ todo で飛ばし（K-0004 の engine.test.mjs の todo と同じ形）、
+        片方だけを出す版はもう片方の外れを見逃して落ちる。ENGINE_DIR を渡したときと CI=true では飛ばさずに落とす。手元の Engine（main の 476573e）では todo になること、
+        dispatcher.py に agent_resumed だけを足した写しでは test_events.py と test_watch.py の両方が落ち、両方を足した写しでは通ることを確かめた。
+        job.finished にそれらを足して ENGINE_REF を上げるのと、ひな形 ci/conflict-check.yml を .github/workflows/ に写すのは建設者なので、効き目はまだ確かめていない
+      issue: 1101
+      at: 2026-11-08
+      decided_by: committee:D-0042
+      wired: false
+      verified: false
 decided_by: committee:D-0013
