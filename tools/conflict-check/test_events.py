@@ -9,6 +9,8 @@ todo は照らせない件数を理由に添えて test_engine.py の todo で�
 
 MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る。
 continue.enqueued の payload の conflict_files（schema.py の定義の欄）をその場の記録として読むことも見る（議決 D-0101・Issue #1208）。
+MechanicalWithoutVerifyTest は、mechanical.verify の検査に落ちる head を機械的に解いた回を落とす rule mechanical_without_verify と、
+同じ PR・同じファイルの機械的な解消が 3 回を超えた件数（知見 K-0015 の担保。議決 D-0078（Issue #1220 の起票時の番号は D-0077）・Issue #1220）を見る。
 RecordOnlySinceTest は、直近の窓の本物のイベント列を定期に照らすジョブ（ci/conflict-schema.yml の conflict-record）が使う --record-only と
 --since を見る（議決 D-0076（Issue #1214 の起票時の番号は D-0074）・Issue #1214）
 """
@@ -39,6 +41,7 @@ import test_engine  # noqa: E402   名前で取り込むと EngineTest がこの
 
 C0005 = HERE / "fixtures" / "c0005-pr659-events.json"
 C0007 = HERE / "fixtures" / "c0007-pr290-pr295-events.json"
+C0008 = HERE / "fixtures" / "c0008-pr678-events.json"
 K0010 = HERE.parents[1] / ".factory-config" / "knowledge" / "K-0010.yaml"
 URL = "https://github.com/guccyon/rally/pull/1"
 
@@ -80,9 +83,9 @@ def stream(attempts: list[dict], url: str = URL) -> list[dict]:
     return out
 
 
-def rules(evs: list[dict]) -> Counter:
+def rules(evs: list[dict], verify: dict | None = None) -> Counter:
     c = policy.load()
-    return Counter(e["rule"] for r in events.records_from_events(evs).values() for e in events.check(c, r))
+    return Counter(e["rule"] for r in events.records_from_events(evs, verify=verify).values() for e in events.check(c, r))
 
 
 def recorded(evs: list[dict]) -> Counter:
@@ -170,6 +173,76 @@ class LineTest(unittest.TestCase):
         evs = list(reversed(stream([{"resumed": True}, {"resumed": False}])))
         r = events.records_from_events(events.parse_events(json.dumps(evs)))[URL]
         self.assertEqual([(a["attempt"], a["agent_resumed"]) for a in r["attempts"]], [(1, True), (2, False)])
+
+
+class MechanicalWithoutVerifyTest(unittest.TestCase):
+    """知見 K-0015: PR が CHANGELOG.md を直接書き換えている（mechanical.verify の検査 tools/changelog-check/check.mjs が落ちる）のに、
+    機械的に（tier none で）衝突を解いた回を落とす。同じ PR・同じファイルの機械的な解消が 3 回を超えたら件数を出す（議決 D-0078）"""
+    PR678 = "https://github.com/guccyon/rally/pull/678"
+
+    def c0008(self) -> tuple[list[dict], dict]:
+        text = C0008.read_text(encoding="utf-8")
+        return events.parse_events(text), events.parse_verify(text)
+
+    def test_C0008のイベント列はmechanical_without_verifyで落ちる(self):
+        evs, verify = self.c0008()
+        c = policy.load()
+        r = events.records_from_events(evs, verify=verify)[self.PR678]
+        self.assertEqual(len(r["attempts"]), 13)
+        # over_limit は機械的に解いた回も数える（README の「線にまだ合わせていない」）。衝突したファイルは今の Engine と同じく事後の記録
+        self.assertEqual(rules(evs, verify), Counter({"mechanical_without_verify": 13, "over_limit": 10}))
+        self.assertEqual(recorded(evs), Counter({"missing_conflict_files": 13}))
+        self.assertEqual(events.mechanical_repeats(c, r), {"CHANGELOG.md": 13})
+        self.assertEqual(events.unverified(c, r), 0)
+        # 検査の結果を渡さなければ照らさず、件数を出す（同じファイルの繰り返しの件数は出す）
+        r = events.records_from_events(evs)[self.PR678]
+        self.assertEqual(rules(evs), Counter({"over_limit": 10}))
+        self.assertEqual((events.unverified(c, r), events.mechanical_repeats(c, r)), (13, {"CHANGELOG.md": 13}))
+
+    def test_C0008のイベント列はコマンドでも終了コード1(self):
+        p = run(C0008, "--verify", str(C0008))
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn("attempt=1 job=3414 mechanical_without_verify", p.stdout)
+        self.assertIn("attempt=13 job=3822 mechanical_without_verify", p.stdout)
+        self.assertIn("同じファイルの機械的な解消が 3 回を超えた: CHANGELOG.md 13 回", p.stdout)
+        d = json.loads(run(C0008, "--verify", str(C0008), "--json").stdout)
+        self.assertFalse(d["ok"])
+        self.assertEqual(d["prs"][0]["mechanical"], {"repeats": {"CHANGELOG.md": 13}, "unverified": 0})
+        self.assertNotIn("mechanical_without_verify", run(C0008).stdout)   # --verify がなければ照らさない
+        self.assertIn("機械的に解いた回の検査の結果 13 件", run(C0008).stdout)
+
+    def test_線どおりの積み方は通る(self):
+        # C-0008 と同じ CHANGELOG.md だけの衝突が 13 回。検査に落ちるのでエージェント（tier-large）の回になり、3 回で停止（4 回目からは積まない）
+        evs = stream([{"resumed": True, "files": ["CHANGELOG.md"], "cost": 1.2}]
+                     + [{"resumed": False, "files": ["CHANGELOG.md"], "cost": 1.2}] * 2 + [{"skip": True}] * 10, url=self.PR678)
+        verify = {self.PR678: {f"h{n}": 1 for n in range(1, 14)}}
+        self.assertEqual(rules(evs, verify), Counter())   # 検査に落ちた head をエージェントで解くのは agent_for_mechanical でもない
+        r = events.records_from_events(evs, verify=verify)[self.PR678]
+        self.assertEqual((events.mechanical_repeats(policy.load(), r), events.unverified(policy.load(), r)), ({}, 0))
+        self.assertEqual(rules(evs), Counter({"agent_for_mechanical": 3}))   # 検査の結果がなければ今までどおり
+
+    def test_検査に通ったheadの機械的な解消と衝突のなかった回は落とさない(self):
+        evs = stream([{"files": ["CHANGELOG.md"], "cost": 0}, {"files": [], "cost": 0}, {"files": ["changelog.d/700.md"], "cost": 0}])
+        verify = {URL: {"h1": 0, "h2": 1, "h3": 0}}
+        self.assertEqual(rules(evs, verify), Counter())
+        self.assertEqual(rules(evs, {URL: {"h1": 2}}), Counter({"mechanical_without_verify": 1}))   # 読めなかった（2）も通らない
+        self.assertEqual(rules(evs, {URL.replace("/1", "/2"): {"h1": 1}}), Counter())   # ほかの PR の結果は使わない
+
+    def test_同じファイルの機械的な解消は3回までは件数を出さない(self):
+        c = policy.load()
+        r = events.records_from_events(stream([{"files": ["CHANGELOG.md"], "cost": 0}] * 3 + [{"files": ["changelog.d/1.md"], "cost": 0}]))[URL]
+        self.assertEqual(events.mechanical_repeats(c, r), {})
+        r = events.records_from_events(stream([{"files": ["CHANGELOG.md"], "cost": 0}] * 4 + [{"files": ["CHANGELOG.md"], "cost": 2.0}]))[URL]
+        self.assertEqual(events.mechanical_repeats(c, r), {"CHANGELOG.md": 4})   # エージェントで解いた回は数えない
+
+    def test_検査の結果の形が違えば終了コード2(self):
+        for bad in ("[]", "{", '{"u": 1}', '{"u": {"h": true}}', '{"verify": {"u": {"h": "1"}}}'):
+            with self.assertRaises(events.EventsError, msg=bad):
+                events.parse_verify(bad)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "verify.json"
+            path.write_text('{"u": {"h": true}}', encoding="utf-8")
+            self.assertEqual(run(C0008, "--verify", str(path)).returncode, 2)
 
 
 class MissingConflictFilesTest(unittest.TestCase):

@@ -1,0 +1,72 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0118
+pr: https://github.com/guccyon/rally/pull/1308
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0015 に足した enforcement.solutions の test は、議決 D-0078 の enforcement にある K-0015
+    の案（tools/conflict-check/events.py の rule mechanical_without_verify と、同じ PR・同じファイルで
+    3 回を超えた機械的な解消の件数の表示）と合っており、decided_by: committee:D-0078 と issue 1220 も議決と食い違いません。'
+  - 案では「PR の差分が CHANGELOG.md を直接書き換えている」ことを見るとしていましたが、実装では check.mjs の終了コードを --verify
+    で渡す形にしており、events に検査の結果が載らないという理由が書いてあるので、案の趣旨から外れていません。
+  - 'what にある「Issue #1220 の起票時の番号は D-0077」の注は、D-0077 が PR #1211 の別の議決なので取り違えを防ぐ書き方として妥当で、README.md
+    の D-0077（起票時の番号は D-0075）の書き方とも揃っています。'
+  - 'wired: false・verified: false で requires_check に tools/conflict-check/test_events.py
+    を書いており、K-0010 の issue 1103 の解決策と同じ検査の道で、README.md の wired・verified・requires_check
+    の決まりに沿っています。'
+  - README.md の「すべての解決策に書いた」一覧への K-0015 の追加は番号の順を守っており、INDEX.md の担保の列を deterministic
+    に変えたのも enforcement.level に合っているので、変更セットの扱いは妥当です。
+  - statement・scope・confidence・status は変えておらず、specs/ の用語や業務ルールを新しく定めるものもなく、配線も本物のイベント列での確認もまだなので、確かさは
+    hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0015 の enforcement.solutions の decided_by: committee:D-0078 は実在する議決で、その enforcement
+    の K-0015 の案（tools/conflict-check/events.py の rule mechanical_without_verify と
+    test_events.py の C-0008 の fixture）と what の中身が合っており、一次記録まで辿れます。'
+  - 'what に書いた「Issue #1220 の起票時の番号は D-0077」は、D-0077 が PR #1211 で knowledge が空の別の議決であることと合っており、番号のずれの注記として正しいです。'
+  - fixture の 13 回（3414〜3822）と、直接の書き換えが 3873 まで残ったことは C-0008 の「出来事」となぜなぜの 3 つ目に書かれており、検査の結果
+    1 は事例記録からの読みで本物ではないと what に正直に書いてあります。
+  - '本物のイベント列で確かめておらず配線もまだなので wired: false・verified: false としたのは根拠に沿っており、verified_by
+    がないのも決まりどおりです。'
+  - Engine が 13 回の解消のときに検査を呼んでいなかったことはまだ確かめていないので、confidence を hypothesis のままにしたのは妥当で、上げる材料はありません。
+  - 足した文にあるのは PR・Issue・job・議決の番号とツールの道だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - K-0015 の enforcement.solutions は、議決 D-0078 の test の案（tools/conflict-check/events.py
+    の rule mechanical_without_verify と test_events.py の MechanicalWithoutVerifyTest）を案どおりに入れた記録で、決定論の担保としてすでに形になっています。
+  - 線は「check.mjs に落ちる head を tier none で解いた回」という機械で照らせる形で、終了コード 1 で落とし、3 回を超えた同じファイルの回数も出すので、繰り返し・線の引きやすさ・外したときの痛さの点で十分です。
+  - 'requires_check に tools/conflict-check/test_events.py を書いているので、wired: true にするときは
+    D-0077 の決まりどおり pull_request で走るジョブからの wired_by が求められ、配線の足し忘れも機械で止まります。'
+  - 'wired: false と verified: false は、Engine が機械的に解く前に検査を呼ぶ配線がなく、fixture の検査の結果 1
+    も事例記録からの読みであることと合っており、正直な記入です。'
+  - enforcement.level を deterministic にし INDEX.md の担保の列と README.md の記入済みの一覧に K-0015
+    を足したのは、test_check.py が照らす一覧と揃える変更として妥当です。
+  - --verify を渡さない head は照らさずに件数を出すだけなので、Engine が検査の結果をイベントに出す配線が入るまで本物の列では効かず、確かさは
+    hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0078 の K-0015 の test の案を enforcement.solutions に 1 項目として記録するだけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - rule mechanical_without_verify は、--verify で渡した head の check.mjs が落ちたのに tier none
+    で解いた回だけを落とします。検査を通る取りまとめや版の切り出しの PR、線どおりにエージェントで解いた回は落とさないので、正しい積み方を誤って落とす反例は見当たりません。
+  - '反例として、--verify を渡さない head や head_sha が合わない回は照らさずに件数を出すだけなので、Engine が検査の結果をイベントに出すまでは黙って通る抜け道が残ります。ただし
+    wired: false・verified: false と書かれており、言い過ぎではありません。'
+  - fixture の 13 回の検査の結果 1 は事例記録から読んだもので本物の検査の結果ではないと what に明記されているので、テストが通ったことを効き目の確かめと取り違えないよう、confidence
+    は hypothesis のままにしてください。
+  - D-0078 の反対の票が挙げた別の原因（node_modules の混入で検査が job 3852 まで動かなかったこと）を確かめる invalidate_when
+    が、K-0015 を直す今回も足されていません。次の変更セットでは足してください。
+  - enforcement.level を deterministic にしたのは、配線されていない間は check.py が 未配線 と表示するという README
+    の決まりに沿っており、K-0010・K-0012 の扱いとも揃っています。
+  personal_data: false
+enforcement: []
