@@ -2,7 +2,8 @@
 
 engine/knowledge-enforcement.patch を Engine のチェックアウトの写しに当て、INDEX.md の担保の列と solutions の真偽の検査が
 check.py と同じ線になること、差分で Engine の core-gates/tests/test_knowledge_check.py に足したテストが通ること（pytest があるとき）を
-確かめる。Engine がもう差分を取り込んでいれば（enforcement_label がある）当てずにそのまま確かめる。
+確かめる。wired が true の解決策の wired_by の形を Engine も落とし、その線が check.py の形の検査と同じになることも確かめる（議決 D-0034、Issue #1060）。
+Engine がもう差分を取り込んでいれば（check_wired_by がある）当てずにそのまま確かめる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（sendback-check/engine.test.mjs と同じ）。
 
@@ -40,6 +41,9 @@ def sol(**flags):
     return {"kind": "test", "what": "x", "issue": 1, **flags}
 
 
+WB = [{"workflow": ".github/workflows/w.yml", "job": "j", "runs": "tools/x/check.py"}]
+
+
 def k(level="deterministic", *sols):
     return {"id": "K-9999", "_file": "K-9999.yaml", "enforcement": {"level": level, "solutions": list(sols)}}
 
@@ -56,7 +60,7 @@ class EnginePatchTest(unittest.TestCase):
             (cls.dir / f).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(ENGINE / f, cls.dir / f)
         src = (cls.dir / FILES[0]).read_text(encoding="utf-8")
-        cls.merged = "def enforcement_label(" in src
+        cls.merged = "def check_wired_by(" in src
         if not cls.merged:
             r = subprocess.run(["git", "apply", str(PATCH)], cwd=cls.dir, capture_output=True, text=True)
             if r.returncode != 0:
@@ -112,7 +116,27 @@ class EnginePatchTest(unittest.TestCase):
         self.assertTrue(any("verified は true か false" in e for e in f(sol(wired=True, verified="yes"))))
         self.assertTrue(any("wired でないのに verified" in e for e in f(sol(wired=False, verified=True))))
         self.assertTrue(any("wired でないのに verified" in e for e in f(sol(verified=True))))
-        self.assertFalse(any("enforcement.solutions" in e for e in f(sol(), sol(wired=True), sol(wired=True, verified=True))))
+        self.assertFalse(any("enforcement.solutions" in e for e in f(sol(), sol(wired=True, wired_by=WB), sol(wired=True, verified=True, wired_by=WB))))
+
+    def test_wired_by_の形の検査が_check_py_と同じ(self):
+        # 議決 D-0034、Issue #1060。wired が true の解決策の wired_by の形（列・3 つの項目が空でない文字列・.github/workflows/ の直下）を
+        # Engine も落とす。実在と呼び出しは check.py だけが照らすので、check.py の誤りのうち形の誤りとだけ比べる
+        shape = ("wired_by（配線先の workflow・job・runs の列）がない", "workflow・job・runs を文字列で書く", "の直下のファイル")
+        items = [WB[0], {**WB[0], "job": ""}, {**WB[0], "runs": None}, {"workflow": WB[0]["workflow"], "job": "j"}, {**WB[0], "job": 1},
+                 ".github/workflows/w.yml", None, {**WB[0], "workflow": "tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml"},
+                 {**WB[0], "workflow": ".github/workflows/sub/w.yml"}, {**WB[0], "workflow": ".github/workflows/w.json"},
+                 {**WB[0], "workflow": ".github/workflows/w.yaml"}, {**WB[0], "workflow": "./.github/workflows/w.yml"}]
+        values = [MISSING, None, [], "x", WB[0], *[[w] for w in items], [WB[0], items[1]], [items[6], WB[0]]]
+        seen = {True: 0, False: 0}
+        for wired in (True, False, MISSING):
+            for wb in values:
+                s = sol(**{n: v for n, v in (("wired", wired), ("wired_by", wb)) if v is not MISSING})
+                x = {**k("deterministic", s), "_file": "K-9999.yaml"}
+                want = any(m in e for e in check.check_wiring(x, REPO) for m in shape)
+                got = any("wired_by" in e for e in self.kc.check_item(x, set(), set()))
+                seen[want] += 1
+                self.assertEqual(got, want, f"wired={wired!r} wired_by={wb!r}: Engine は {got}、check.py は {want}")
+        self.assertTrue(all(seen.values()), seen)
 
     def test_作り直した_INDEX_md_でこのリポジトリの知見が通る(self):
         with tempfile.TemporaryDirectory() as t:
@@ -126,6 +150,11 @@ class EnginePatchTest(unittest.TestCase):
         self.assertEqual(enf["index_labels"], {"unwired": check.UNWIRED, "unverified": check.UNVERIFIED, "deterministic": "deterministic"})
         self.assertEqual(sorted(enf["solution_flags"]), sorted(self.kc.SOLUTION_FLAGS))
         self.assertEqual((self.kc.UNWIRED, self.kc.UNVERIFIED), (check.UNWIRED, check.UNVERIFIED))
+        wb = enf["solution_wired_by"]
+        self.assertEqual(wb["required_when"], {"wired": True})
+        self.assertEqual(list(wb["items"]), list(check.WIRED_BY_KEYS))
+        self.assertEqual(list(wb["items"]), self.kc.WIRED_BY_KEYS)
+        self.assertEqual(wb["items"]["workflow"], self.kc.WIRED_BY_WORKFLOW_RE.pattern)
 
     def test_Engine_に足したテストが通る(self):
         if importlib.util.find_spec("pytest") is None:

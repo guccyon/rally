@@ -426,4 +426,32 @@ enforcement:
       decided_by: committee:D-0034
       wired: false
       verified: false
+    - kind: schema
+      what: >-
+        議決 D-0034 の schema の案（wired_by を Engine の定義に書き、wired が true のときに必須とし、Engine の knowledge_check.py でも同じ形を落とす）を、
+        Engine に当てる差分 tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch に足した。definitions/knowledge.yaml の enforcement に
+        solution_wired_by（required_when: {wired: true}、items の workflow（.github/workflows/ の直下のファイルの形）・job・runs）を書き、
+        core-gates/knowledge_check.py の check_wired_by() が wired: true の解決策で wired_by がない・空・列でない、項目が 3 つの空でない文字列でない、
+        workflow が .github/workflows/ の直下でないときに落とす（ファイル・job の実在と呼び出しは check.py が照らす）。test_engine.py で、wired と wired_by の値の組ごとに
+        Engine の落とし方が check.py の形の誤りと一致すること、定義と両方の値がそろうことを確かめ、Engine の判定を壊した写しで落ちることも確かめた。
+        差分は knowledge-check.yml の ENGINE_REF（9d3713a）に当たらなくなっていたので、その版に合わせて作り直した。差分を Engine に当てて ENGINE_REF を上げることと、
+        ci/knowledge-enforcement.yml を .github/workflows/ に写すことは建設者が行うので、この解決策も未配線・未確認
+      issue: 1060
+      at: 2026-11-08
+      decided_by: committee:D-0034
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0035 の test の案を入れた。tools/knowledge-enforcement-check/README.md の「すべての解決策に wired・verified を書いた知見」と
+        「未記入の解決策が残る知見」の id の一覧は手で書いていて、知見に項目を書き足しても直されずに古くなりうる。test_check.py に、README のこの 2 つの一覧を
+        読み、check.py が K-*.yaml から数えた結果（解決策があって未記入が 0 件の知見と、未記入が 1 件以上の知見）と順まで一致しなければ落ちるテストを足した。
+        一覧の文の形が崩れて読めないときも落ちる。今の記録（K-0001・K-0002・K-0004・K-0010・K-0012 と K-0006・K-0009）では通る。
+        test_check.py は ci/knowledge-enforcement.yml の unittest discover で走るが、そのひな形はまだ .github/workflows/ に写していない（建設者）ので
+        PR ごとには走っておらず、効き目は確かめていない
+      issue: 1062
+      at: 2026-11-08
+      decided_by: committee:D-0035
+      wired: false
+      verified: false
 decided_by: committee:D-0004

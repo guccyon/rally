@@ -1,7 +1,7 @@
 """Engine に移す差分が ENGINE_REF の版に当たるかの検査（知見 K-0004 の担保、議決 D-0024、Issue #1014）。
 
 engine/knowledge-enforcement.patch を、.github/workflows/knowledge-check.yml の ENGINE_REF の版の Engine に git apply --check で当て、
-当たらず、しかも Engine 側にまだ入っていない（git apply --reverse --check が通らず、enforcement_label もない）ときは patch_stale で落とす。
+当たらず、しかも Engine 側にまだ入っていない（git apply --reverse --check が通らず、check_wired_by もない）ときは patch_stale で落とす。
 差分が当たるか、もう入っていれば通る。test_engine.py は ENGINE_DIR のチェックアウトの今の中身に当てるが、こちらは ENGINE_REF の版を
 名指しで取り出して当てるので、チェックアウトが別の版でも製品の CI が使う版で確かめられる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。チェックアウトがないか、ENGINE_REF の版を
@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 PATCH = HERE / "engine" / "knowledge-enforcement.patch"
 WORKFLOW = REPO / ".github" / "workflows" / "knowledge-check.yml"
-MARKER = ("core-gates/knowledge_check.py", "def enforcement_label(")
+MARKER = ("core-gates/knowledge_check.py", "def check_wired_by(")   # 差分で最後に足したもの（Issue #1060）
 
 ENGINE = Path(os.environ.get("ENGINE_DIR") or REPO.parent / "engine")
 REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
@@ -83,12 +83,12 @@ class PatchStateTest(unittest.TestCase):
         git(d, "add", ".")
         git(d, "commit", "-qm", "base")
         cls.base = git(d, "rev-parse", "HEAD")
-        f.write_text("a\nb\ndef enforcement_label(x):\nc\n", encoding="utf-8")
+        f.write_text("a\nb\ndef check_wired_by(x):\nc\n", encoding="utf-8")
         cls.patch = Path(cls.tmp.name) / "p.patch"
         cls.patch.write_text(git(d, "diff") + "\n", encoding="utf-8")
         git(d, "commit", "-qam", "merged")
         cls.merged = git(d, "rev-parse", "HEAD")
-        f.write_text("a\nB\ndef enforcement_label(x, y):\nc\n", encoding="utf-8")
+        f.write_text("a\nB\ndef check_wired_by(x, y):\nc\n", encoding="utf-8")
         git(d, "commit", "-qam", "merged-then-changed")
         cls.changed = git(d, "rev-parse", "HEAD")
         f.write_text("x\ny\nz\n", encoding="utf-8")
