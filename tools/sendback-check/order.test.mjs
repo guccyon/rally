@@ -1,4 +1,4 @@
-// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084）。
+// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084。必須のチェックが外れたときの守りは議決 D-0059、Issue #1159）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -535,4 +535,56 @@ test("実行時の守り: 起動の判定は実の道で比べ、シンボリッ
   assert.ok(!isMainModule(url, orderScript));
   assert.ok(!isMainModule(url, undefined));
   assert.ok(!isMainModule(url, join(box, "ない.mjs")));
+});
+
+// 必須のチェックの設定が外れても実行時に止まること（議決 D-0059（起票時の番号は D-0056）、Issue #1159）。engine-test・wiring-order を branch protection の必須のチェックから
+// 外す（protection.mjs が required_check_missing か workflow_not_copied で外れる）と、設定では何も止まらない。そのときも check.mjs --events は
+// GitHub Actions で自分で配線の順序を見張り、engine.test.mjs が未配線・todo・continue-on-error・if: 付きなら ::error で落ちる
+
+/** 必須のチェックが外れた branch protection（engine-test・wiring-order を外した古い形・id だけを必須にした形・rulesets に入れない形・保護がない） */
+const PROTECTIONS_WITHOUT_REQUIRED = {
+  "ほかのチェックだけが必須": { required_status_checks: { strict: true, contexts: ["backend"], checks: [{ context: "backend", app_id: 15368 }] } },
+  "id の engine-test・wiring-order だけが必須": { required_status_checks: { strict: true, contexts: ["engine-test", "wiring-order"] } },
+  "rulesets に必須のチェックがない": [{ type: "pull_request", parameters: { required_approving_review_count: 1 } }],
+  "保護がない": { message: "Branch not protected", status: "404" },
+};
+
+/** 外れた配線の写し（RUNTIME_STATES の外れに、continue-on-error・if: の残りの形を足す）と、順序を守った写し */
+const UNPROTECTED_STATES = [
+  ...RUNTIME_STATES,
+  ...Object.entries(UNGATED_TEMPLATES).filter(([name]) => !RUNTIME_STATES.some(([n]) => n === name))
+    .map(([name, text]) => [name, { "sendback-engine.yml": text, "hidden.yml": HIDDEN_WORKFLOW }, ENGINE_TEST_FIXED, "engine_test_not_wired"]),
+];
+
+test("実行時の守り: 必須のチェックの設定が外れても、check.mjs --events は未配線・todo・continue-on-error・if: の engine.test.mjs で ::error と終了コード 1 で落ちる（議決 D-0059（起票時の番号は D-0056）、Issue #1159）", () => {
+  const box = mkdtempSync(join(tmpdir(), "sendback-unprotected-"));
+  const protections = Object.entries(PROTECTIONS_WITHOUT_REQUIRED).map(([name, p], i) => {
+    const path = join(box, `protection-${i}.json`);
+    writeFileSync(path, JSON.stringify(p));
+    return [name, path];
+  });
+  const env = { GITHUB_WORKFLOW_REF: "guccyon/rally/.github/workflows/hidden.yml@refs/pull/1/merge", GITHUB_JOB: "hidden" };
+  assert.equal(UNPROTECTED_STATES.filter(([, , , rule]) => rule !== null).length, 11);
+  for (const [name, workflows, engineTest, rule] of UNPROTECTED_STATES) {
+    const root = fixture(workflows, engineTest);
+    // 設定は外れている（protection.mjs が外れを返す）ので、止めるのは実行時の守りだけ
+    for (const [pname, path] of protections) {
+      const p = spawnSync("node", [fileURLToPath(new URL("./protection.mjs", import.meta.url)), "--protection", path, "--repo", root],
+        { encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "true" } });
+      assert.equal(p.status, 1, `${name}・${pname}: ${p.stdout}${p.stderr}`);
+      assert.match(p.stdout, /^::error title=sendback-check (required_check_missing|workflow_not_copied)::/m, `${name}・${pname}`);
+    }
+    const r = launch(LAUNCHERS["node で絶対の道"], root, undefined, env);
+    const label = `${name}: ${r.stdout}${r.stderr}`;
+    assert.match(r.stdout, /^sendback-check: head 1 個・/m, label);
+    // check.mjs は branch protection を読まない（設定の外れで通りも落ちもしない）
+    assert.doesNotMatch(r.stdout, /required_check_missing|workflow_not_copied/, label);
+    if (rule === null) {
+      assert.equal(r.status, 0, label);
+      assert.doesNotMatch(r.stdout, /::error/, label);
+    } else {
+      assert.equal(r.status, 1, label);
+      assert.match(r.stdout, new RegExp(`^::error title=sendback-check ${rule}::GitHub Actions で動いている check\\.mjs --events（\\.github/workflows/hidden\\.yml の hidden）`, "m"), label);
+    }
+  }
 });
