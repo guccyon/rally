@@ -118,4 +118,21 @@ enforcement:
       decided_by: committee:D-0032
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0045（PR #1108）の test の案を入れた。tools/pr-body-check/engine.test.mjs の (10) を、engine/pr-body-gate.patch を当てた Engine の写しではなく、
+        ENGINE_DIR（CI では ENGINE_REF の版）の Engine の entrypoint.sh そのものから取り出した本文の更新の節で走らせる形にした。通る側の 3 通りの形
+        （報告の見出しを ### か #### に下げる、## 見出しを持たない）の 21 回で、node を包んで関所が毎回 1 回呼ばれて 0 を返し、body_gate.json を残さずに本文を書き、
+        書いた本文が関所に通ることを確かめる。todo や飛ばしのない必須のテストで、関所を呼ばない Engine では (3) と同じく落ちる。差分そのものの誤検知を見ていた
+        写しでの確かめは (11) に移し、Engine がまだ関所を呼ばない間だけ走らせ、Engine が関所を呼ぶようになったら (10) が本物で確かめるので飛ばす。
+        手元の Engine（57069a8。関所を呼ばない）では (10) が落ちること、その Engine に差分を当てた全体の写し（entrypoint.sh の FACTORY_RESULT の hunk は
+        今の Engine に当たらないので手で合わせた）を ENGINE_DIR にすると (10) の 3 件が通って (11) が飛ぶこと、その写しの続きのジョブの記録の見出しを
+        ## に戻すと (10) の 3 件が落ちることを確かめた。差分はまだ Engine に入っておらず ENGINE_REF（9fee9c2）も上がっていない（その版は手元になく走らせていない）ので、
+        ENGINE_REF の Engine で (10) が通ることはまだ確かめておらず、案の条件どおり wired と verified は false のままにした。建設者が差分を入れて ENGINE_REF を上げ、
+        (10) が通ることを記録したら（tools/pr-body-check/README.md の「配線の手順（建設者）」の 6）、Issue #1038 とこの解決策の wired と verified を true にする
+      issue: 1110
+      at: 2026-11-08
+      decided_by: committee:D-0045
+      wired: false
+      verified: false
 decided_by: committee:D-0001
