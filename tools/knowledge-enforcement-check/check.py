@@ -208,13 +208,28 @@ def job_calls(workflow: dict, job_id: str, target: str, read, off=runs_off) -> b
     return False
 
 
-def check_wiring(k: dict, repo: Path) -> list[str]:
-    """wired が true の解決策の wired_by を照らす（議決 D-0021、Issue #986）"""
-    f, e = k.get("_file", str(k.get("id"))), []
-
+def repo_reader(repo: Path):
+    """リポジトリの根からの道でファイルを読む関数（なければ None）"""
     def read(rel: str) -> str | None:
         p = repo / rel
         return p.read_text(encoding="utf-8") if rel and p.is_file() else None
+    return read
+
+
+def valid_wired_by(w) -> bool:
+    """wired_by の項目が workflow・job・runs を空でない文字列で持つか"""
+    return isinstance(w, dict) and all(isinstance(w.get(key), str) and w.get(key) for key in WIRED_BY_KEYS)
+
+
+def is_workflow(path: str) -> bool:
+    """.github/workflows/ の直下の YAML か（ひな形の ci/*.yml は配線ではない）"""
+    return re.fullmatch(rf"{re.escape(WORKFLOWS)}/[^/]+\.ya?ml", path) is not None
+
+
+def check_wiring(k: dict, repo: Path) -> list[str]:
+    """wired が true の解決策の wired_by を照らす（議決 D-0021、Issue #986）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
         if not isinstance(s, dict) or s.get("wired") is not True:
@@ -226,11 +241,11 @@ def check_wiring(k: dict, repo: Path) -> list[str]:
             continue
         for j, w in enumerate(wb):
             at = f"{where}: wired_by[{j}]"
-            if not isinstance(w, dict) or not all(isinstance(w.get(key), str) and w.get(key) for key in WIRED_BY_KEYS):
+            if not valid_wired_by(w):
                 e.append(f"{at}: workflow・job・runs を文字列で書く（{w!r}）")
                 continue
             wf, job, target = w["workflow"], w["job"], norm("", w["runs"])
-            if not re.fullmatch(rf"{re.escape(WORKFLOWS)}/[^/]+\.ya?ml", wf):
+            if not is_workflow(wf):
                 e.append(f"{at}: workflow は {WORKFLOWS}/ の直下のファイル（{wf}。ひな形の ci/*.yml は配線ではない）")
                 continue
             if read(wf) is None:
@@ -270,10 +285,7 @@ def off_schedule(cond) -> bool:
 def check_schedule(k: dict, repo: Path) -> list[str]:
     """REQUIRED_SCHEDULE の解決策が wired: true なら、schedule のジョブから検査を呼ぶ wired_by を求める（議決 D-0039、Issue #1088）"""
     f, e = k.get("_file", str(k.get("id"))), []
-
-    def read(rel: str) -> str | None:
-        p = repo / rel
-        return p.read_text(encoding="utf-8") if rel and p.is_file() else None
+    read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
         if not isinstance(s, dict) or s.get("wired") is not True:
@@ -283,9 +295,7 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
             continue
         ok = False
         for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
-            if not isinstance(w, dict) or not all(isinstance(w.get(key), str) and w.get(key) for key in WIRED_BY_KEYS):
-                continue
-            if norm("", w["runs"]) != target or not re.fullmatch(rf"{re.escape(WORKFLOWS)}/[^/]+\.ya?ml", w["workflow"]) or read(w["workflow"]) is None:
+            if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
                 continue
             try:
                 doc = load_yaml(repo / w["workflow"])
