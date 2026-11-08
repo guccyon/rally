@@ -515,7 +515,7 @@ test("走らせた結果の見張りは、(10) や通る側のテストの skip�
 
 test("字面の見張りをすり抜ける飛ばし方（別名で呼ぶ t.skip）も、走らせた結果で外れになる", () => {
   const dir = mkdtempSync(join(tmpdir(), "pr-body-run-"));
-  for (const f of ["c0005.mjs", "check.mjs", "gate.mjs", "template.json"]) copyFileSync(join(RUN_TOOL_DIR, f), join(dir, f));
+  for (const f of ["c0005.mjs", "check.mjs", "gate.mjs", "k0016.mjs", "template.json"]) copyFileSync(join(RUN_TOOL_DIR, f), join(dir, f));
   const loopTest = /(本文は毎回書いてよい（誤検知がない）`), \(\) => \{/;
   const changed = readTest(GATE_TEST).replace(loopTest, '$1, (t) => {\n    if (label) return t["sk" + "ip"]("まだ");');
   assert.notEqual(changed, readTest(GATE_TEST), "置き換えが効いていない");
