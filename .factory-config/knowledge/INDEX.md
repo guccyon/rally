@@ -20,5 +20,5 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0012 | 6 | causal | hypothesis | active | deterministic | 2026-11-07 | 2026-12-07 | 採用した PR 本文の指摘を直す body_fix（本文だけの直し）が終わる前に supervisor が承認（inspector_approved）を出し、  |
 | K-0013 | 6 | causal | hypothesis | active | context | 2026-11-08 | 2026-12-08 | 並行で開いている多くの PR が CHANGELOG.md を変えるとき、pr.conflicted を見るたびに、その PR のマージの順番を待たずに 衝突を |
 | K-0015 | 6 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 衝突の元が PR の中に残っている（PR が CHANGELOG.md を直接書き換えている）とき、エージェントを使わない機械的な衝突の解消が 同じ PR・同じ |
-| K-0017 | 6 | causal | hypothesis | draft | context | 2026-11-08 | 2026-12-08 | チケットの大きさ（触る領域の数・契約や schema の差分・予想の行数）を投入の前に測り、1 ジョブのターン予算を超えるものを 領域ごとの子チケットに分ける段 |
-| K-0018 | 6 | causal | hypothesis | draft | context | 2026-11-08 | 2026-12-08 | チケットを起こすときに、契約（specs/contracts）の変更を先行の子チケットにし、各アプリの実装をそれに依存させるという順番の規約がないと、 契約と複 |
+| K-0017 | 6 | causal | hypothesis | draft | context | 2026-11-08 | 2026-12-08 | チケットの大きさ（触る領域の数・契約や schema の差分・予想の行数）を投入の前に測り、1 ジョブのターン予算の近くの大きさのものを 領域ごとの子チケットに |
+| K-0018 | 6 | causal | hypothesis | draft | context | 2026-11-08 | 2026-12-08 | 契約（specs/contracts）の変更と 2 つ以上のアプリ（apps/*）をまたぐ機能のチケットを起こすときに、契約の変更を先行の子チケットにし、 各ア |
