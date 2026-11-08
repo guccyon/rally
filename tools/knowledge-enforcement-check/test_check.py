@@ -293,6 +293,72 @@ class VerificationTest(unittest.TestCase):
         self.assertFalse(any("issue 1）" in x for x in errors), errors)
 
 
+class ScheduleTest(unittest.TestCase):
+    """K-0004 の issue 1018 の解決策は schedule のジョブから protection.mjs を呼ばないと wired にできない（議決 D-0039、Issue #1088）"""
+
+    PROT = "tools/sendback-check/protection.mjs"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.PROT: "", ".github/workflows/p.yml": workflow}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def wf(self, on: str, job_if: str = "", step_if: str = "") -> str:
+        return (f"on:\n{on}jobs:\n  protection:\n    runs-on: ubuntu-latest\n{job_if}    steps:\n      - uses: actions/checkout@v4\n"
+                f"      - {step_if}run: node {self.PROT}\n")
+
+    def errors(self, d: Path, kid="K-0004", issue=1018, wired=True, runs=None) -> list[str]:
+        wb = [{"workflow": ".github/workflows/p.yml", "job": "protection", "runs": runs or self.PROT}]
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
+        return check.check_schedule(item, d)
+
+    SCHEDULE = "  schedule:\n    - cron: '0 0 * * *'\n  workflow_dispatch:\n"
+
+    def test_schedule_のジョブから呼べば通る(self):
+        d = self.repo(self.wf(self.SCHEDULE))
+        self.assertEqual(self.errors(d), [])
+        self.assertEqual(self.errors(self.repo(self.wf(self.SCHEDULE, "    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'\n"))), [])
+
+    def test_手で走らせるだけのワークフローでは落ちる(self):
+        for on in ("  workflow_dispatch:\n", "  pull_request:\n  workflow_dispatch:\n", "  schedule: []\n  workflow_dispatch:\n", "  schedule:\n    - cron: ''\n"):
+            e = self.errors(self.repo(self.wf(on)))
+            self.assertEqual(len(e), 1, on)
+            self.assertIn("on.schedule（cron）", e[0])
+            self.assertIn("議決 D-0039", e[0])
+
+    def test_schedule_では走らないジョブと手順は数えない(self):
+        for job_if, step_if in (("    if: github.event_name == 'workflow_dispatch'\n", ""), ("", "if: github.event_name != 'schedule'\n        "),
+                                ("    if: github.event_name == 'schedule' && github.event_name != 'schedule'\n", ""),
+                                ("", "if: ${{ github.event_name == 'workflow_dispatch' }}\n        "), ("    if: false\n", "")):
+            self.assertEqual(len(self.errors(self.repo(self.wf(self.SCHEDULE, job_if, step_if)))), 1, (job_if, step_if))
+
+    def test_ほかの検査を呼ぶ項目だけでは落ちる(self):
+        d = self.repo(self.wf(self.SCHEDULE))
+        (d / "tools/sendback-check/order.mjs").write_text("", encoding="utf-8")
+        self.assertEqual(len(self.errors(d, runs="tools/sendback-check/order.mjs")), 1)
+
+    def test_対象でない解決策と配線していない解決策は見ない(self):
+        d = self.repo(self.wf("  workflow_dispatch:\n"))
+        self.assertEqual(self.errors(d, issue=1017), [])
+        self.assertEqual(self.errors(d, kid="K-0001"), [])
+        self.assertEqual(self.errors(d, wired=False), [])
+
+    def test_main_で落とす(self):
+        d = self.repo(self.wf("  workflow_dispatch:\n"))
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1018, wired: true, wired_by: [{{workflow: .github/workflows/p.yml, job: protection, runs: {self.PROT}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1018）: wired にするには", errors[0])
+
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 
