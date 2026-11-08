@@ -42,6 +42,9 @@ unittest discover で満たす。check.py・test_check.py・test_ci.py を名指
 REQUIRED_SCHEDULE と REQUIRED_PR の両方に挙げ、schedule でも走るジョブと pull_request でも走るジョブの両方から
 tools/sendback-check/protection.mjs を呼ぶ項目がないと wired にできないようにした（tools/sendback-check/ci/sendback-protection.yml を写した
 protection と protection-pr のジョブで満たす）。
+議決 D-0060（Issue #1160。起票時の番号は D-0056）で、K-0004 の issue 1087（sendback-protection.yml のひな形）と issue 1018 の解決策は、
+REQUIRED_SCHEDULE_WORKFLOW の .github/workflows/sendback-protection.yml のジョブを指す wired_by でないと数えないようにした
+（ほかのワークフローの schedule のジョブから protection.mjs を呼ぶだけでは、ひな形の写しがなくても wired と読ませてしまうため）。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
@@ -80,11 +83,17 @@ DECIDED_BY_RE = re.compile(r"^committee:(D-\d{4,})$")
 DECISION_MISMATCH = "decision_mismatch"
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106。
-# K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。REQUIRED_PR にも挙げ、schedule と pull_request の両方のジョブから呼ぶことを求める）
+# K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。REQUIRED_PR にも挙げ、schedule と pull_request の両方のジョブから呼ぶことを求める。
+# K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160）
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
 REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
                      ("K-0001", 1106): "tools/pr-body-check/protection.mjs",
-                     ("K-0004", 1158): SENDBACK_PROTECTION}
+                     ("K-0004", 1158): SENDBACK_PROTECTION,
+                     ("K-0004", 1087): SENDBACK_PROTECTION}
+# (知見の id, 解決策の issue) → (REQUIRED_SCHEDULE の検査を呼ぶジョブがあることを求めるワークフロー, 落ちたときに挙げる議決)（議決 D-0060、Issue #1160）
+SENDBACK_PROTECTION_WORKFLOW = f"{WORKFLOWS}/sendback-protection.yml"
+REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
+                              ("K-0004", 1087): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060")}
 # (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
 # K-0004 の issue 986・1059 は議決 D-0048、Issue #1129。issue 1062 は議決 D-0052、Issue #1139。issue 1063・1144 は議決 D-0053、Issue #1144。
 # issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158）
@@ -361,19 +370,24 @@ def has_pull_request(workflow: dict) -> bool:
 
 
 def check_schedule(k: dict, repo: Path) -> list[str]:
-    """REQUIRED_SCHEDULE の解決策が wired: true なら、schedule のジョブから検査を呼ぶ wired_by を求める（議決 D-0039、Issue #1088）"""
+    """REQUIRED_SCHEDULE の解決策が wired: true なら、schedule のジョブから検査を呼ぶ wired_by を求める（議決 D-0039、Issue #1088）。
+    REQUIRED_SCHEDULE_WORKFLOW に挙げた解決策は、そのワークフローのジョブを指す項目だけを数える（議決 D-0060、Issue #1160）"""
     f, e = k.get("_file", str(k.get("id"))), []
     read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
         if not isinstance(s, dict) or s.get("wired") is not True:
             continue
-        target = REQUIRED_SCHEDULE.get((k.get("id"), s.get("issue")))
+        key = (k.get("id"), s.get("issue"))
+        target = REQUIRED_SCHEDULE.get(key)
         if target is None:
             continue
+        workflow, decision = REQUIRED_SCHEDULE_WORKFLOW.get(key, (None, "D-0039"))
         ok = False
         for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
             if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+                continue
+            if workflow is not None and norm("", w["workflow"]) != workflow:
                 continue
             try:
                 doc = load_yaml(repo / w["workflow"])
@@ -384,8 +398,9 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
                 break
         if not ok:
             where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
-            e.append(f"{where}: wired にするには wired_by に、on.schedule（cron）のある {WORKFLOWS}/ のワークフローで schedule でも走るジョブから"
-                     f" {target} を呼ぶ項目が要る（手で走らせた記録だけでは wired にできない。議決 D-0039。"
+            place = f"on.schedule（cron）のある {workflow} で" if workflow else f"on.schedule（cron）のある {WORKFLOWS}/ のワークフローで"
+            e.append(f"{where}: wired にするには wired_by に、{place} schedule でも走るジョブから"
+                     f" {target} を呼ぶ項目が要る（手で走らせた記録だけでは wired にできない。議決 {decision}。"
                      f"ジョブと手順の if: は無いか、github.event_name == 'schedule' を || でつないだ決まった形だけを許す。議決 D-0061）")
     return e
 
