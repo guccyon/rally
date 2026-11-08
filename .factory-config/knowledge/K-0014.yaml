@@ -16,7 +16,7 @@ evidence:
   - case: C-0007
   - pr: 290
   - event: "case.analyzed:370939"
-status: draft
+status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
@@ -25,3 +25,4 @@ invalidate_when:
   - "pr.conflicted か continue.enqueued(reason=conflict) に、衝突したファイルがその場で（backfill ではなく）載るようになった"
   - "衝突したファイルがその場で記録されるようになったあとも、同じファイルの衝突の束が集計で見えなかった（原因は記録の欠けではなかった）"
   - "記録の欠けが手を打つ時期を遅らせたかを確かめる: 同じファイルの衝突の束ごとに、束が集計で最初に見えた日（conflict.files が数えられた日）と手を打った日（担保の at）を並べ、記録のある束とない束で差がなかった"
+decided_by: committee:D-0049

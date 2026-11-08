@@ -18,7 +18,7 @@ evidence:
   - pr: 290
   - pr: 295
   - event: "case.analyzed:370939"
-status: draft
+status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
@@ -27,3 +27,4 @@ invalidate_when:
   - "supervisor が pr.conflicted を受けても、その PR がマージ待ちの先頭に来るまで衝突の解消を保留するようになった"
   - "マージの順番を待って解くようにしたあとも、1 つの PR の衝突の解消の回数が減らなかった（繰り返しの原因は時機ではなかった）"
   - "K-0010 の機械的な解消が効いたあと、CHANGELOG.md の衝突の解消の繰り返しが費用にほとんど効かなくなった（解く時機を変える意味が薄れた）"
+decided_by: committee:D-0049
