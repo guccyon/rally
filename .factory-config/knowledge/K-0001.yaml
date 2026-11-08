@@ -118,6 +118,26 @@ enforcement:
       decided_by: committee:D-0032
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0044 の ci_check の案（建設者が engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げ、ci/pr-body-engine.yml を写して
+        pr-body-engine-test を必須のチェックにし、tools/pr-body-check/protection.mjs を既定のブランチへの push と定期のジョブから呼ぶ）のうち、
+        ワーカーの権限で入れられる分を入れた。ひな形 tools/pr-body-check/ci/pr-body-protection.yml が、branch protection を読める権限のトークン
+        （シークレット PR_BODY_PROTECTION_TOKEN）で main の古い形と rulesets の両方を gh api で読み、protection.mjs に 2 つとも渡して
+        （--protection を何度でも渡せるようにした）、main への push・毎日・手動で照らす。workflow_not_copied・check_name_changed・
+        required_check_missing・check_name_shared のどれかで落ちて Issue を開くか更新し、読めなければ protection_unreadable で落ちる。
+        check_name_shared は、ほかのワークフローが偶然 pr-body-engine-test を名乗った場合も意図して落とす（どちらの報告でも必須のチェックが満たされ、
+        写しを消しても止まらないため。誤検知ではない）。ci.test.mjs が、このひな形の形（PR では走らない・トークンは読む手順だけ）と、手順を偽の gh で
+        動かして 4 つの外れ方のどれでも落ちて Issue を開くことを確かめる。tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE にこの解決策を
+        足したので、schedule のジョブから protection.mjs を呼ぶ wired_by がないと wired にできない。手元の Engine（476573e）では (3) が落ちることを
+        確かめたが、engine/pr-body-gate.patch がもう当たらず (4)〜(10) も落ちる。今の ENGINE_REF（9fee9c2）の版は手元になく走らせていない。
+        差分を Engine に入れること・写すこと・必須にすること・本物の続きのジョブでの記録は建設者が行うので（tools/pr-body-check/README.md の
+        「配線の手順（建設者）」と「定期の照合」）、まだ配線されておらず効き目は確かめていない
+      issue: 1106
+      at: 2026-11-08
+      decided_by: committee:D-0044
+      wired: false
+      verified: false
     - kind: test
       what: >-
         議決 D-0044（PR #1105）の test の案（D-0032 の案のとおり gate.test.mjs と engine.test.mjs に通る側の写しを足し、続きのジョブの報告が

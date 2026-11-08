@@ -16,8 +16,8 @@ tools/sendback-check/order.mjs と同じやり方（注釈と行末の \ を畳�
 evidence と同じく 1 項目に 1 つの参照）を必須にし、case を 1 件以上含めて、指す事例記録が .factory-config/knowledge/cases/ にあることと、
 その解決策が wired: true であることを照らし、なければ落とす。
 
-定期の配線の必須（議決 D-0039、Issue #1088）: REQUIRED_SCHEDULE の解決策（K-0004 の issue 1018。branch protection の必須のチェックを
-protection.mjs で照らす）を wired: true にするときは、wired_by に、on.schedule（cron）のあるワークフローで、schedule でも走る
+定期の配線の必須（議決 D-0039、Issue #1088）: REQUIRED_SCHEDULE の解決策（K-0004 の issue 1018 と K-0001 の issue 1106（議決 D-0044）。
+branch protection の必須のチェックを protection.mjs で照らす）を wired: true にするときは、wired_by に、on.schedule（cron）のあるワークフローで、schedule でも走る
 （if: が github.event_name を見るなら == 'schedule' を含み、!= 'schedule' を含まない）ジョブから runs の検査を呼ぶ項目を必須にする。手で走らせた記録だけでは wired にできない。
 
 呼ぶ検査の必須（議決 D-0042、Issue #1100）: REQUIRED_RUNS の解決策（K-0010 の issue 1034・1100。衝突の続きのジョブの検査）を wired: true にするときは、
@@ -65,8 +65,9 @@ CASE_RE = re.compile(r"^C-\d{4,}$")
 DECIDED_BY_RE = re.compile(r"^committee:(D-\d{4,})$")
 DECISION_MISMATCH = "decision_mismatch"
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
-# (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088）
-REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs"}
+# (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106）
+REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs",
+                     ("K-0001", 1106): "tools/pr-body-check/protection.mjs"}
 # (知見の id, 解決策の issue) → pull_request のジョブから呼ぶことを求める検査（議決 D-0043、Issue #1103）
 REQUIRED_PR = {("K-0010", 1035): "tools/conflict-check/test_events.py", ("K-0010", 1103): "tools/conflict-check/test_events.py"}
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
