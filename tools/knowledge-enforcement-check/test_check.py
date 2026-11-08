@@ -1021,6 +1021,102 @@ class EnginePatchPullRequestTest(unittest.TestCase):
         self.assertIn(f"issue 1144）: {PR_UNWIRED}", errors[0])
 
 
+class MirrorWiredTest(unittest.TestCase):
+    """.github/workflows/knowledge-enforcement.yml（ひな形の写し）が実在するのに、K-0004 の issue 1063・1144 の解決策が wired: true でなければ落とす
+    （議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）"""
+
+    PATCH, CHECK, TEMPLATE, WF = EnginePatchPullRequestTest.PATCH, KnowledgeGateTest.CHECK, KnowledgeGateTest.TEMPLATE, KnowledgeGateTest.WF
+    template = KnowledgeGateTest.template
+
+    def repo(self, workflow: str | None = None) -> Path:
+        if workflow is not None:
+            return EnginePatchPullRequestTest.repo(self, workflow)
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        return Path(t.name)
+
+    def item(self, **by_issue) -> dict:
+        """issue ごとの解決策の上書き（i1063=…・i1144=…。None ならその解決策を置かない）で作った K-0004"""
+        sols = []
+        for issue in (1063, 1144):
+            over = by_issue.get(f"i{issue}", {"wired": False, "verified": False})
+            if over is not None:
+                sols.append({"kind": "ci_check", "what": "x", "issue": issue, **over})
+        return {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": sols}}
+
+    def wired(self) -> dict:
+        return {"wired": True, "verified": False, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.PATCH},
+                                                               {"workflow": self.WF, "job": "enforcement", "runs": self.CHECK}]}
+
+    def assert_unwired(self, e: list[str], issues) -> None:
+        self.assertEqual(len(e), len(issues), e)
+        for line, issue in zip(e, issues):
+            self.assertIn(f"issue {issue}", line)
+            self.assertIn(f": {check.MIRROR_UNWIRED}: {self.WF} ", line)
+            self.assertIn(f"議決 {check.MIRROR_WIRED_DECISION}", line)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.MIRROR_WIRED, (("K-0004", 1063), ("K-0004", 1144)))
+        self.assertEqual(check.MIRROR_WIRED_DECISION, "D-0080")
+        for kid, issue in check.MIRROR_WIRED:
+            self.assertNotEqual(repo_solution(kid, issue), {}, (kid, issue))
+
+    def test_写しがなければ見ない(self):
+        d = self.repo()
+        self.assertEqual(check.check_mirror_wired(self.item(), d), [])
+        self.assertEqual(check.check_mirror_wired(self.item(i1063=None, i1144=None), d), [])
+        # ひな形だけ・別の名前の写しは写しと読まない
+        (d / "tools/knowledge-enforcement-check/ci").mkdir(parents=True)
+        (d / "tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml").write_text(self.template(), encoding="utf-8")
+        (d / ".github/workflows").mkdir(parents=True)
+        (d / ".github/workflows/knowledge-enforcement-copy.yml").write_text(self.template(), encoding="utf-8")
+        self.assertEqual(check.check_mirror_wired(self.item(), d), [])
+
+    def test_写しがあるのに_wired_false_なら落ちる(self):
+        d = self.repo(self.template())
+        self.assert_unwired(check.check_mirror_wired(self.item(), d), (1063, 1144))
+        self.assert_unwired(check.check_mirror_wired(self.item(i1063=self.wired()), d), (1144,))
+        self.assert_unwired(check.check_mirror_wired(self.item(i1144=self.wired()), d), (1063,))
+
+    def test_未記入や真偽でない値も落ちる(self):
+        d = self.repo(self.template())
+        for over in ({}, {"wired": "true"}, {"wired": 1}, {"wired": None}):
+            e = check.check_mirror_wired(self.item(i1063=over, i1144=self.wired()), d)
+            self.assert_unwired(e, (1063,))
+        self.assertIn("（未記入）", check.check_mirror_wired(self.item(i1063={}, i1144=self.wired()), d)[0])
+
+    def test_写しの中身を問わない(self):
+        # 写しが壊れていても実在すれば記録との食い違いを出す（写しの形は test_ci.py、配線先は check_wiring が見る）
+        for text in ("", "name: x\n"):
+            self.assert_unwired(check.check_mirror_wired(self.item(), self.repo(text)), (1063, 1144))
+
+    def test_写した_PR_で_wired_true_にすれば通り_ほかの照合も通る(self):
+        d = self.repo(self.template())
+        (d / check.ROOT / "committee").mkdir(parents=True)
+        item = self.item(i1063=self.wired(), i1144=self.wired())
+        self.assertEqual(check.check_mirror_wired(item, d), [])
+        self.assertEqual(pr_errors(item, d) + check.check_knowledge_gate(item, d) + check.check_wiring(item, d), [])
+
+    def test_ほかの知見や_issue_は見ない(self):
+        d = self.repo(self.template())
+        other = {"id": "K-0010", "_file": "K-0010.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": 1063, "wired": False, "verified": False}]}}
+        k4 = self.item(i1063=self.wired(), i1144=self.wired())
+        k4["enforcement"]["solutions"].append({"kind": "ci_check", "what": "x", "issue": 1226, "wired": False, "verified": False})
+        self.assertEqual(check.check_mirror_wired(k4, d) + check.check_mirror_wired(other, d), [])
+
+    def test_main_で落とす(self):
+        d = self.repo(self.template())
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: ci_check, what: x, issue: 1063, wired: false, verified: false}\n"
+                       "    - {kind: ci_check, what: x, issue: 1144, wired: false, verified: false}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        self.assert_unwired(json.loads(out.read_text(encoding="utf-8"))["errors"], (1063, 1144))
+        (d / self.WF).unlink()
+        self.assertEqual(check.main(["--repo", str(d)]), 0)
+
+
 class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
     """K-0004 の issue 1158 の解決策は schedule のジョブと pull_request のジョブの両方から protection.mjs を呼ばないと wired にできない
     （議決 D-0059（起票時の番号は D-0056）、Issue #1158）"""

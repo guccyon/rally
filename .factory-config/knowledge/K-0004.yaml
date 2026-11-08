@@ -1061,4 +1061,20 @@ enforcement:
           workflow: .github/workflows/knowledge-enforcement.yml
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0080（Issue #1226 の起票時の番号は D-0078。PR #1222）の ci_check の案（check.py で、.github/workflows/knowledge-enforcement.yml が実在するのに
+        issue 1063・1144 の解決策が wired: false のままなら落とし、建設者が写したあとに記録の更新が遅れて未配線と表示され続けるずれを止める）を入れた。
+        tools/knowledge-enforcement-check/check.py に MIRROR_WIRED と check_mirror_wired() を足し、写しのファイルがあるのに、この知見の issue 1063・1144 の
+        解決策の wired が true でない（false・未記入・真偽でない値）ときは mirror_unwired で落とす（写しがなければ見ない。
+        ひな形だけ・別の名前の写しは写しと読まない）。wired: true にしたあとの wired_by の照合は今までどおり requires_check と check.py の配線の検査が行う。
+        test_check.py の MirrorWiredTest で、写しがない・ある、片方だけ wired: true、未記入・真偽でない値、写しの中身が壊れているとき、ほかの知見や issue での落とし方と、
+        ひな形をそのまま写して 2 つを wired: true にし wired_by を書けばほかの照合とあわせて通ることを確かめ、照合を main から外す・false のときだけ落とす・
+        写しでなく記録の置き場の有無を見る・対象から issue 1144 を外す改変で落ちることも手元で確かめた。check.py は ci/knowledge-enforcement.yml のひな形の enforcement の
+        ジョブからしか走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1226
+      at: 2026-11-08
+      decided_by: committee:D-0080
+      wired: false
+      verified: false
 decided_by: committee:D-0004
