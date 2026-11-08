@@ -1,4 +1,5 @@
-// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0004 の担保。議決 D-0026、Issue #1018。ブランチの JSON と複数の JSON は議決 D-0040、Issue #1091）。
+// 必須のチェックの照合（protection.mjs）のテスト（知見 K-0004 の担保。議決 D-0026、Issue #1018。複数の JSON を合わせるのは議決 D-0039、Issue #1087。
+// ブランチの JSON は議決 D-0040、Issue #1091）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -89,6 +90,9 @@ test("ブランチの JSON（protection.required_status_checks）も読む", () 
   assert.deepEqual([...requiredContexts(branch(["engine-test", "wiring-order"]))].sort(), ["engine-test", "wiring-order"]);
   assert.deepEqual(checkProtection({ workflow: template, protection: branch([ENGINE, WIRING]) }).errors, []);
   assert.deepEqual(rules(checkProtection({ workflow: template, protection: branch([]) })), ["required_check_missing", "required_check_missing"]);
+  // id の engine-test・wiring-order だけを必須にした形は、照らす名前（sendback-engine-test・sendback-wiring-order）がないので外れる
+  assert.deepEqual(rules(checkProtection({ workflow: template, protection: branch(["engine-test", "wiring-order"]) })),
+    ["required_check_missing", "required_check_missing"]);
 });
 
 test("複数の JSON を渡すと、必須のチェックはそれらを合わせたもの（古い形と rulesets に分けて必須にしても通る）", () => {
@@ -96,6 +100,14 @@ test("複数の JSON を渡すと、必須のチェックはそれらを合わ�
   assert.deepEqual(checkProtection({ workflow: template, protections: [branch([]), rulesets([ENGINE, WIRING])] }).errors, []);
   assert.deepEqual(rules(checkProtection({ workflow: template, protections: [branch([ENGINE]), []] })), ["required_check_missing"]);
   assert.deepEqual(rules(checkProtection({ workflow: template, protections: [] })), ["required_check_missing", "required_check_missing"]);
+});
+
+test("古い形と rulesets を一緒に渡すと、どちらかで必須になっているチェックを必須に数える（議決 D-0039、Issue #1087）", () => {
+  const protections = [classic([ENGINE]), rulesets([WIRING])];
+  assert.deepEqual(checkProtection({ workflow: template, protections }).errors, []);
+  // 保護がない古い形（404）と、どちらにもない wiring-order
+  assert.deepEqual(rules(checkProtection({ workflow: template, protections: [{ message: "Branch not protected", status: "404" }, rulesets([ENGINE])] })),
+    ["required_check_missing"]);
 });
 
 test("branch protection の JSON がオブジェクトでも配列でもなければ読めない", () => {
@@ -159,6 +171,8 @@ test("CLI: 通れば 0、外れれば 1（GitHub Actions では ::error）、読
   assert.equal(run(["--protection", half, "--repo", dir]).status, 1);
   r = run(["--protection", half, "--protection", join(dir, "rest.json"), "--repo", dir]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
+  r = run(["--protection", ng, "--protection", ok, "--repo", dir]);
+  assert.equal(r.status, 0, "--protection を 2 つ渡すと合わせて照らす");
   r = run(["--protection", ok, "--repo", repoWith({})]);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /^workflow_not_copied: /m);

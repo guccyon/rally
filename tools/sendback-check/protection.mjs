@@ -3,8 +3,8 @@
 //   gh api repos/{owner}/{repo}/branches/main/protection > protection.json   # 古い形の branch protection（管理者の権限が要る）
 //   gh api repos/{owner}/{repo}/branches/main > branch.json                  # ブランチ（protection の要約。読む権限で読める）
 //   gh api repos/{owner}/{repo}/rules/branches/main > rules.json             # rulesets（読む権限で読める）
-//   node protection.mjs --protection branch.json --protection rules.json [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
-//   --protection は何度でも渡せ、必須のチェックはすべての JSON を合わせたものにする（古い形と rulesets の両方で必須にできるため）
+//   node protection.mjs --protection protection.json [--protection rules.json …] [--repo <リポジトリの根>] [--json <出力先>] [--summary <GITHUB_STEP_SUMMARY>]
+//   --protection は何度でも渡せ、どれかで必須のチェックになっていれば必須に数える（古い形と rulesets の両方で必須にできるため）
 //   終了コード: 0 = 通る、1 = 外れた、2 = 読めなかった
 //
 // 写しを消す PR（写しがなければ wiring-order も走らない）や ci.test.mjs ごと見張りを書き換える PR は、必須のチェック（sendback-engine-test・sendback-wiring-order）が
@@ -13,6 +13,8 @@
 // その止め方が効いているか、つまり .github/workflows/sendback-engine.yml の 2 つのジョブが報告するチェックの名前が、
 // 既定のブランチの必須のチェックに入っているかを見る。ci/sendback-engine.yml の required-checks のジョブが PR ごとに、
 // PR の GITHUB_TOKEN でも読めるブランチと rulesets の JSON を gh api で取って走らせ、外れていれば落とす（議決 D-0040、Issue #1091）。
+// 必須のチェックが後で外されたことに PR がなくても気づくよう、ci/sendback-protection.yml が branch protection を読める権限のトークンで
+// 毎日と手動で走らせ、外れたら Issue を開くか更新する（議決 D-0039、Issue #1087）。
 //
 // 見ること:
 //   - 写し（.github/workflows/sendback-engine.yml）がないか、engine-test・wiring-order のジョブがない（workflow_not_copied）
@@ -91,8 +93,8 @@ export function sharedCheckNames(names, others) {
 }
 
 /**
- * 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON
- * （protections に列で渡せば、必須のチェックはそれらを合わせたもの）を照らす。
+ * 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON を照らす。protections に複数渡すと
+ * （古い形と rulesets の両方など）、どれかで必須のチェックになっていれば必須に数える。
  */
 export function checkProtection({ workflow, others = {}, protection, protections = [protection] }) {
   const errors = [];

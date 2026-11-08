@@ -12,6 +12,8 @@
 // その記録で、engine_harness.py のずれ（harness_unknown_query）と Engine の判定の変化（engine_head_failed）を分けることも見る（議決 D-0031、Issue #1046）。
 // 通ったときも engine_head_passed として記録し、その記録を head-record.mjs が数えることも見る（議決 D-0031、Issue #1047）。
 // required-checks のジョブ（engine-test と wiring-order が main の必須のチェックかを PR ごとに照らす。議決 D-0040、Issue #1091）の手順を、偽の gh で動かして確かめる。
+// ci/sendback-protection.yml（branch protection を読めるトークンで protection.mjs を毎日走らせ、外れたら Issue を開くか更新する。
+// 議決 D-0039、Issue #1087）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -550,11 +552,11 @@ test("テストの手順が通っていない（failure・skipped・cancelled・
 const requiredStep = jobSteps(template, "required-checks").find((s) => /main の必須のチェックか/.test(s[0]));
 
 /** 偽の gh が返すブランチの JSON（protection の要約）と rulesets の JSON。null を渡した API は 404 で落ちる。 */
-function runRequired({ branch, rules: rulesJson, copy = true }) {
+function runRequired({ branch, rules, copy = true }) {
   const out = (v) => (v === null ? `echo 'gh: Not Found (HTTP 404)' >&2; exit 1` : `printf '%s' '${JSON.stringify(v)}'`);
   const box = sandbox({ gh: `case "$2" in
   repos/guccyon/rally/branches/main) ${out(branch)} ;;
-  repos/guccyon/rally/rules/branches/main) ${out(rulesJson)} ;;
+  repos/guccyon/rally/rules/branches/main) ${out(rules)} ;;
   *) echo "unexpected $*" >&2; exit 9 ;;
 esac` });
   for (const f of ["protection.mjs", "order.mjs"]) copyFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url)), join(box.dir, f));
@@ -574,12 +576,12 @@ esac` });
 const branchJson = (contexts) => ({ name: "main", protected: contexts.length > 0,
   protection: { enabled: contexts.length > 0, required_status_checks: { enforcement_level: "non_admins", contexts, checks: contexts.map((context) => ({ context })) } } });
 const [ENGINE, WIRING] = [CHECK_NAMES["engine-test"], CHECK_NAMES["wiring-order"]];
-const rulesJson = (contexts) => contexts.length === 0 ? [] : [{ type: "required_status_checks",
+const rulesetJson = (contexts) => contexts.length === 0 ? [] : [{ type: "required_status_checks",
   parameters: { required_status_checks: contexts.map((context) => ({ context })) } }];
 
 test("required-checks は gh api でブランチと rulesets を取り、engine-test と wiring-order が必須なら通る（古い形・rulesets・両方に分けて）", () => {
   for (const [branch, rules] of [[[ENGINE, WIRING], []], [[], [WIRING, ENGINE]], [[ENGINE], [WIRING]]]) {
-    const r = runRequired({ branch: branchJson(branch), rules: rulesJson(rules) });
+    const r = runRequired({ branch: branchJson(branch), rules: rulesetJson(rules) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.calls, /^gh api repos\/guccyon\/rally\/branches\/main$/m);
     assert.match(r.calls, /^gh api repos\/guccyon\/rally\/rules\/branches\/main$/m);
@@ -588,8 +590,9 @@ test("required-checks は gh api でブランチと rulesets を取り、engine-
 });
 
 test("required-checks は必須から外れていると required_check_missing、写しがないと workflow_not_copied で落ちる", () => {
-  for (const [branch, rules] of [[[ENGINE], []], [[], [WIRING]], [["backend"], []], [[], []]]) {
-    const r = runRequired({ branch: branchJson(branch), rules: rulesJson(rules) });
+  // id の engine-test・wiring-order だけを必須にした形も、照らす名前（sendback-engine-test・sendback-wiring-order）がないので落ちる
+  for (const [branch, rules] of [[[ENGINE], []], [[], [WIRING]], [["backend"], []], [[], []], [["engine-test", "wiring-order"], []], [[], ["engine-test", "wiring-order"]]]) {
+    const r = runRequired({ branch: branchJson(branch), rules: rulesetJson(rules) });
     assert.equal(r.status, 1, JSON.stringify([branch, rules]));
     assert.match(r.stdout, /^::error title=sendback-check required_check_missing::/m);
   }
@@ -604,4 +607,159 @@ test("required-checks は gh api が読めなければ protection_unreadable で
     assert.equal(r.status, 1, r.stdout + r.stderr);
     assert.match(r.stdout, /^::error title=sendback-check protection_unreadable::gh api repos\/guccyon\/rally\/(rules\/)?branches\/main が読めなかった/m);
   }
+});
+
+// 必須のチェックが後で外されたことに気づく（議決 D-0039、Issue #1087）。protection.mjs を一度走らせるだけでは、必須にしたあとで外されても気づけない。
+// ci/sendback-protection.yml が branch protection を読めるトークンで毎日と手動で照らし、外れたら Issue を開くか更新する。手順を偽の gh で動かして確かめる。
+const protTemplate = readFileSync(fileURLToPath(new URL("./ci/sendback-protection.yml", import.meta.url)), "utf8");
+const protCopyPath = fileURLToPath(new URL("../../.github/workflows/sendback-protection.yml", import.meta.url));
+const protSteps = jobSteps(protTemplate, "protection");
+const protReadStep = protSteps.find((s) => /branch protection を読む/.test(s[0]));
+const protCheckStep = protSteps.find((s) => /必須のチェックを照らす/.test(s[0]));
+const protIssueStep = protSteps.find((s) => /外れたら Issue を開くか更新する/.test(s[0]));
+const ISSUE_TITLE = protTemplate.match(/^ {2}ISSUE_TITLE: "(.+)"$/m)?.[1];
+
+/** 古い形の branch protection の JSON（protection.test.mjs と同じ形） */
+const classicJson = (contexts) => JSON.stringify({ required_status_checks: { strict: true, contexts, checks: contexts.map((context) => ({ context })) } });
+const rulesJson = (contexts) => JSON.stringify(contexts.length === 0 ? []
+  : [{ type: "required_status_checks", parameters: { required_status_checks: contexts.map((context) => ({ context })) } }]);
+
+/**
+ * 偽の gh。classic・rules は gh api の branch protection と rulesets の応答（{ out, rc }）、open は開いている Issue の list の出力、
+ * recorded は Issue の本文とコメント、create は gh issue create の終了コード。
+ */
+function fakeProtGh({ classic = { out: classicJson(Object.values(CHECK_NAMES)) }, rules = { out: "[]" }, open = "", recorded = "", create = 0 } = {}) {
+  const q = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+  return [
+    `case "$1 $2" in`,
+    `  "api repos/guccyon/rally/branches/main/protection") printf '%s' ${q(classic.out)}; exit ${classic.rc ?? 0} ;;`,
+    `  "api repos/guccyon/rally/rules/branches/main?per_page=100") printf '%s' ${q(rules.out)}; exit ${rules.rc ?? 0} ;;`,
+    `  "issue list") [ -n ${q(open)} ] && printf '%s\\n' ${q(open)}; exit 0 ;;`,
+    `  "issue create") exit ${create} ;;`,
+    `  api\\ *) printf '%s\\n' ${q(recorded)}; exit 0 ;;`,
+    `esac`,
+    `exit 0`,
+  ].join("\n");
+}
+
+/** sandbox に protection.mjs と（あれば）sendback-engine.yml の写しを置き、読む・照らす・Issue の 3 つの手順を順に動かす */
+function runProtection({ gh = {}, copy = template, token = "t" } = {}) {
+  const box = sandbox({ gh: fakeProtGh(gh) });
+  for (const f of ["protection.mjs", "order.mjs"]) writeFileSync(join(box.dir, f), readFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url))));
+  if (copy != null) {
+    mkdirSync(join(box.root, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(box.root, ".github", "workflows", "sendback-engine.yml"), copy);
+  }
+  const env = { BRANCH: "main", ISSUE_TITLE, GITHUB_STEP_SUMMARY: join(box.root, "summary"), GITHUB_ACTIONS: "true" };
+  const read = runStep(protReadStep, { ...box, dir: box.root }, { ...env, GH_TOKEN: token });
+  const check = read.status === 0 ? runStep(protCheckStep, box, env) : null;
+  const outcome = check === null ? "skipped" : check.status === 0 ? "success" : "failure";
+  const issue = runStep(protIssueStep, box, { ...env, GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
+  const commentPath = join(box.dir, "protection-comment.md");
+  return { read, check, issue, calls: box.calls(), body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+}
+
+test("sendback-protection は定期（schedule）と手動でだけ走り、PR では走らない。トークンは branch protection を読む手順だけに渡す", () => {
+  const lines = protTemplate.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l))).map((l) => l.trim()).filter((l) => l !== "");
+  assert.deepEqual(onBody.filter((l) => /^[\w-]+:$/.test(l)), ["schedule:", "workflow_dispatch:"], "schedule と workflow_dispatch のほかで走らせない");
+  assert.ok(onBody.some((l) => /^- cron: "[^"]+"$/.test(l)), "schedule の cron がない");
+  assert.ok(!lines.some((l) => /^\s*(- )?continue-on-error:/.test(l)), "continue-on-error があると外れても気づかない");
+  assert.match(protTemplate, /^ {2}contents: read$/m);
+  assert.match(protTemplate, /^ {2}issues: write$/m, "Issue を開くので issues: write が要る");
+  const secretLines = lines.filter((l) => /secrets\./.test(l));
+  assert.deepEqual(secretLines.map((l) => l.trim()), ["GH_TOKEN: ${{ secrets.SENDBACK_PROTECTION_TOKEN }}"]);
+  assert.ok(protReadStep.some((l) => /secrets\.SENDBACK_PROTECTION_TOKEN/.test(l)), "トークンを渡すのは branch protection を読む手順だけ");
+  assert.ok(!protReadStep.some((l) => /^\s*if:/.test(l)) && !protCheckStep.some((l) => /^\s*if:/.test(l)), "読む・照らす手順を飛ばさない");
+  assert.ok(protCheckStep.some((l) => /^\s*id: check$/.test(l)));
+  assert.match(runScript(protCheckStep), /node protection\.mjs --protection \S+ --protection \S+/, "古い形と rulesets の両方を渡す");
+  assert.ok(protIssueStep.some((l) => /^\s*if: always\(\)$/.test(l)), "Issue の手順は照らす手順が落ちたときも走らせる");
+  assert.ok(protIssueStep.some((l) => /^\s*CHECK_OUTCOME: \$\{\{ steps\.check\.outcome \}\}$/.test(l)));
+  assert.ok(protSteps.indexOf(protReadStep) < protSteps.indexOf(protCheckStep) && protSteps.indexOf(protCheckStep) < protSteps.indexOf(protIssueStep));
+  assert.ok(ISSUE_TITLE, "ISSUE_TITLE がない");
+});
+
+test("必須のチェックがそろっていれば通り、Issue は開かない", () => {
+  const r = runProtection();
+  assert.equal(r.read.status, 0, r.read.stdout + r.read.stderr);
+  assert.equal(r.check.status, 0, r.check.stdout + r.check.stderr);
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.doesNotMatch(r.calls, /^gh issue (create|comment|close)/m);
+});
+
+test("rulesets だけで必須にしていても通る（古い形は保護なしの 404）", () => {
+  const r = runProtection({ gh: { classic: { out: '{"message":"Branch not protected","status":"404"}', rc: 1 }, rules: { out: rulesJson(Object.values(CHECK_NAMES)) } } });
+  assert.equal(r.read.status, 0, r.read.stdout + r.read.stderr);
+  assert.equal(r.check.status, 0, r.check.stdout + r.check.stderr);
+  assert.doesNotMatch(r.calls, /^gh issue (create|comment)/m);
+});
+
+test("必須のチェックが後で外されたら required_check_missing で落ち、開いている Issue がなければ開く", () => {
+  const r = runProtection({ gh: { classic: { out: classicJson([CHECK_NAMES["engine-test"]]) } } });
+  assert.equal(r.check.status, 1);
+  assert.match(r.check.stdout, /^::error title=sendback-check required_check_missing::wiring-order/m);
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.match(r.calls, new RegExp(`^gh issue create --repo guccyon/rally --title ${ISSUE_TITLE.replace(/[()（）・]/g, ".")} --body-file protection-comment\\.md$`, "m"));
+  assert.match(r.body, /^<!-- sendback-protection: [0-9a-f]{16} -->\n/);
+  assert.match(r.body, /^required_check_missing: wiring-order のジョブ/m);
+  assert.match(r.body, /https:\/\/github\.com\/guccyon\/rally\/actions\/runs\/123/);
+});
+
+test("保護ごと外された（古い形が 404・rulesets も空）ときも required_check_missing で Issue を開く", () => {
+  const r = runProtection({ gh: { classic: { out: '{"message":"Branch not protected","status":"404"}', rc: 1 } } });
+  assert.equal(r.check.status, 1);
+  assert.match(r.body, /^required_check_missing: engine-test/m);
+  assert.match(r.calls, /^gh issue create /m);
+});
+
+test("写しが消えたら workflow_not_copied で落ちて Issue を開く", () => {
+  const r = runProtection({ copy: null });
+  assert.equal(r.check.status, 1);
+  assert.match(r.body, /^workflow_not_copied: /m);
+  assert.match(r.calls, /^gh issue create /m);
+});
+
+test("開いている Issue があれば、それにコメントで足す（同じ外れ方の記録がすでにあれば足さない）", () => {
+  const first = runProtection({ gh: { classic: { out: classicJson([CHECK_NAMES["engine-test"]]) }, open: "42", recorded: "前の記録" } });
+  assert.doesNotMatch(first.calls, /^gh issue create/m);
+  assert.match(first.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file protection-comment\.md$/m);
+  const marker = first.body.split("\n")[0];
+  const again = runProtection({ gh: { classic: { out: classicJson([CHECK_NAMES["engine-test"]]) }, open: "42", recorded: `本文\n${marker}` } });
+  assert.equal(again.issue.status, 0, again.issue.stdout + again.issue.stderr);
+  assert.doesNotMatch(again.calls, /^gh issue (create|comment)/m);
+  // 外れ方が変われば足す
+  const other = runProtection({ gh: { classic: { out: classicJson([]) }, open: "42", recorded: marker } });
+  assert.match(other.calls, /^gh issue comment 42 /m);
+});
+
+test("通ったら、開いている Issue に通ったことを書いて閉じる", () => {
+  const r = runProtection({ gh: { open: "42" } });
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.match(r.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file protection-comment\.md$/m);
+  assert.match(r.calls, /^gh issue close 42 --repo guccyon\/rally$/m);
+  assert.match(r.body, /必須のチェックに戻った/);
+});
+
+test("トークンがない・branch protection を読めないときは protection_unreadable で落ち、照らさず Issue も開かない", () => {
+  for (const [name, opts] of [["トークンがない", { token: "" }], ["権限がない（403）", { gh: { classic: { out: '{"message":"Resource not accessible by personal access token","status":"403"}', rc: 1 } } }],
+    ["rulesets を読めない", { gh: { rules: { out: '{"message":"Not Found"}', rc: 1 } } }]]) {
+    const r = runProtection(opts);
+    assert.equal(r.read.status, 1, name);
+    assert.match(r.read.stdout, /^::error title=sendback-protection protection_unreadable::/m, name);
+    assert.equal(r.check, null);
+    assert.equal(r.issue.status, 0, name);
+    assert.doesNotMatch(r.calls, /^gh issue (create|comment)/m, name);
+  }
+});
+
+test("Issue を開けなければ Issue の手順も落ちる（黙って通さない）", () => {
+  const r = runProtection({ gh: { classic: { out: classicJson([]) }, create: 1 } });
+  assert.notEqual(r.issue.status, 0);
+});
+
+test("写し（.github/workflows/sendback-protection.yml）があれば、ひな形と同じ", {
+  skip: existsSync(protCopyPath) ? false : "まだ .github/workflows/ に写していない",
+}, () => {
+  assert.equal(readFileSync(protCopyPath, "utf8").trimEnd(), protTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
 });
