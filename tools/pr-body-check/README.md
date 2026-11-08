@@ -152,7 +152,7 @@ Engine は別のリポジトリなので、次は建設者が入れる。その�
 - `on` が絞り込みのない `pull_request` だけ（`paths`・`paths-ignore`・`branches`・`types` は中身を問わず外れ）。`if:`・`continue-on-error`・`engine-test` の `needs` がない
 - `ENGINE_REF` がワークフローの `env` に 40 桁のコミット SHA で 1 行だけあり（ジョブや手順の `env`・`GITHUB_ENV` で上書きしない）、Engine を取る手順の `ref` が `${{ env.ENGINE_REF }}`
 - テストの手順が `tools/pr-body-check` で `ENGINE_DIR` を渡し、道を渡さずに `node --test` で全部のテストを走らせ、`exit $rc` で落ちる
-- `engine-test` の `name:` が `pr-body-engine-test`。`tools/sendback-check/ci/sendback-engine.yml` にも `engine-test` のジョブがあるので、同じ名前だと必須のチェックの「engine-test」がどちらの報告でも満たされ、この写しを消しても止まらない
+- `engine-test` の `name:` が `pr-body-engine-test`。`tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml` にも id のままの `engine-test` のジョブがあるので（`tools/sendback-check/ci/sendback-engine.yml` の `engine-test` は `sendback-engine-test` を報告する。議決 `D-0038`）、同じ名前だと必須のチェックの「engine-test」がどちらの報告でも満たされ、この写しを消しても止まらない
 - ひな形の `ENGINE_REF` が `tools/sendback-check/ci/sendback-engine.yml` と同じ版。写しがあれば、`ENGINE_REF` の行のほかがひな形と同じで、`.github/workflows/sendback-engine.yml` の写しとも同じ版。GitHub Actions で写しがなければ落ちる
 
 `protection.mjs` は、`gh api` で取り出した branch protection（古い形か rulesets）の JSON を読み、写しの `engine-test` が報告するチェックの名前（`pr-body-engine-test`）が必須のチェックにあるかを照らす。branch protection は PR の `GITHUB_TOKEN` では読めないので、PR ごとには走らせず建設者が走らせる。

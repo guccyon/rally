@@ -12,6 +12,7 @@ import { CHECK_NAME, checkProtection, COPY, loadWorkflows, REPO_ROOT } from "./p
 const script = fileURLToPath(new URL("./protection.mjs", import.meta.url));
 const template = readFileSync(fileURLToPath(new URL("./ci/pr-body-engine.yml", import.meta.url)), "utf8");
 const sendback = readFileSync(fileURLToPath(new URL("../sendback-check/ci/sendback-engine.yml", import.meta.url)), "utf8");
+const knowledgeEnforcement = readFileSync(fileURLToPath(new URL("../knowledge-enforcement-check/ci/knowledge-enforcement.yml", import.meta.url)), "utf8");
 
 /** gh api repos/{owner}/{repo}/branches/main/protection の形 */
 const classic = (contexts) => ({ required_status_checks: { strict: true, contexts, checks: contexts.map((context) => ({ context, app_id: 15368 })) } });
@@ -40,11 +41,12 @@ test("写しがない・engine-test のジョブがないと workflow_not_copied
   assert.deepEqual(rules(checkProtection({ workflow: template.replace("  engine-test:\n", "  pr-body:\n"), protection })), ["workflow_not_copied"]);
 });
 
-test("写しのチェックの名前を sendback-engine.yml と同じ engine-test に戻すと、必須でも check_name_changed と check_name_shared で外れる", () => {
+test("写しのチェックの名前を id のままの engine-test に戻すと、必須でも check_name_changed と check_name_shared で外れる（knowledge-enforcement.yml も engine-test を報告する）", () => {
   const same = template.replace(`    name: ${CHECK_NAME}\n`, "");
-  const r = checkProtection({ workflow: same, others: { ".github/workflows/sendback-engine.yml": sendback }, protection: classic(["engine-test"]) });
+  const r = checkProtection({ workflow: same, others: { ".github/workflows/sendback-engine.yml": sendback,
+    ".github/workflows/knowledge-enforcement.yml": knowledgeEnforcement }, protection: classic(["engine-test"]) });
   assert.deepEqual(rules(r), ["check_name_changed", "check_name_shared"]);
-  assert.match(r.errors[1].message, /sendback-engine\.yml の engine-test も同じチェックの名前 engine-test/);
+  assert.match(r.errors[1].message, /knowledge-enforcement\.yml の engine-test も同じチェックの名前 engine-test/);
 });
 
 test("ほかのワークフローのジョブが pr-body-engine-test を名乗ると check_name_shared で外れる", () => {

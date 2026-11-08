@@ -313,7 +313,7 @@ test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) �
 // engine.test.mjs の手順やジョブを飛ばせる・落ちても通る形にした写しと、check.mjs --events のジョブが engine-test を待たない写し（議決 D-0025、Issue #1017）
 
 const ENGINE_STEP = "      - name: Engine の本物の判定のテスト（K-0004）\n";
-const ENGINE_JOB = "  engine-test:\n    runs-on: ubuntu-latest\n";
+const ENGINE_JOB = "  engine-test:\n    name: sendback-engine-test\n    runs-on: ubuntu-latest\n";
 const stepWith = (key) => template.replace(ENGINE_STEP, `${ENGINE_STEP}        ${key}\n`);
 const jobWith = (key) => template.replace(ENGINE_JOB, `${ENGINE_JOB}    ${key}\n`);
 /** engine.test.mjs を走らせたことにならない写し */
@@ -336,7 +336,7 @@ test("engine.test.mjs の手順かジョブに continue-on-error か if: を付�
   // continue-on-error: false はゲートのまま。ほかの手順・ジョブ（wiring-order）の continue-on-error・if: は見ない
   assert.ok(runsEngineTest(stepWith("continue-on-error: false")));
   assert.ok(runsEngineTest(jobWith("continue-on-error: ${{ false }}")));
-  assert.ok(runsEngineTest(template.replace("  wiring-order:\n    runs-on: ubuntu-latest\n", "  wiring-order:\n    if: false\n    runs-on: ubuntu-latest\n")));
+  assert.ok(runsEngineTest(template.replace("  wiring-order:\n    name: sendback-wiring-order\n", "  wiring-order:\n    name: sendback-wiring-order\n    if: false\n")));
   // run の中の文字（シェルの if など）は手順の鍵に数えない
   assert.ok(runsEngineTest(template.replace("          rc=0\n", "          if: true\n          rc=0\n")));
   // jobs: のない手順だけの写しでも、手順の continue-on-error は見る

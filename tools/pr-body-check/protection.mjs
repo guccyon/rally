@@ -15,12 +15,11 @@
 //   - そのチェックの名前が必須のチェックにない（required_check_missing）
 //   - 同じチェックの名前を .github/workflows/ のほかのジョブも報告する（check_name_shared。どちらの報告でも必須のチェックが満たされ、写しを消しても止まらない）
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { jobCheckNames, requiredContexts } from "../sendback-check/protection.mjs";
+import { jobCheckNames, loadWorkflows as loadCopyAndOthers, requiredContexts } from "../sendback-check/protection.mjs";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** 写しの道（リポジトリの根から）。ci.test.mjs が見張るのもこの道。 */
@@ -65,19 +64,8 @@ export function checkProtection({ workflow, others = {}, protection }) {
   return { contexts: [...contexts], errors };
 }
 
-/** リポジトリの根から、写しとほかのワークフローを読む。 */
-export function loadWorkflows(root) {
-  const dir = join(root, ".github", "workflows");
-  const copy = join(root, COPY);
-  const others = {};
-  if (existsSync(dir)) {
-    for (const f of readdirSync(dir).sort()) {
-      const path = `.github/workflows/${f}`;
-      if (path !== COPY && /\.ya?ml$/.test(f)) others[path] = readFileSync(join(dir, f), "utf8");
-    }
-  }
-  return { workflow: existsSync(copy) ? readFileSync(copy, "utf8") : null, others };
-}
+/** リポジトリの根から、写しとほかのワークフローを読む（読み方は tools/sendback-check/protection.mjs のもの）。 */
+export const loadWorkflows = (root) => loadCopyAndOthers(root, COPY);
 
 export function formatErrors(errors, annotate) {
   return errors.map((e) => annotate ? `::error title=pr-body-check ${e.rule}::${e.message}` : `${e.rule}: ${e.message}`);
