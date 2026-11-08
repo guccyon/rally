@@ -11,6 +11,7 @@
 # 「engine-test」がどちらの報告でも満たされ、この写しを消しても止まらないため（議決 D-0032、Issue #1037）。
 # ci.test.mjs（このテストの中で走る）が、形・ENGINE_REF・sendback-engine.yml との版のずれ・写しとのずれを見張り、
 # gate.test.mjs（関所と CLI のテスト）と engine.test.mjs の (10)（通る側の写し）が skip・todo・only・道や名前の絞り込み（NODE_OPTIONS を含む）で外れていないことも見て（議決 D-0045、Issue #1109）、
+# その 2 つを TAP で走らせた結果で、通る側のテストと (10) が pass と数えられ skip・todo が 0 かも見て（議決 D-0070、Issue #1183）、
 # protection.mjs で建設者が必須のチェックに入っているかを照らす（README の「配線の手順（建設者）」）。
 name: pr-body-engine
 

@@ -206,4 +206,21 @@ enforcement:
       decided_by: committee:D-0068
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0070（Issue #1183 の起票時の番号は D-0067。PR #1181）の test の案を入れた。tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）が、
+        Issue #1109 の字面の見張りに加えて、gate.test.mjs と engine.test.mjs をそれぞれ node --test --test-reporter=tap で走らせ（外の node --test の NODE_TEST_CONTEXT は渡さない）、
+        gate.test.mjs の通る側のテスト（書いてよい本文の 2 件、通る側の 3 通りの形、通る側の CLI のテスト）と engine.test.mjs の (10)（3 通りの形）が
+        上の段に名前のとおりにあって SKIP・TODO の指示のない ok と数えられ、ファイルごとの集計の skipped と todo が 0 であることを見て、外れたら落とす。集計がない（途中で止まった）ときも落とす。
+        engine.test.mjs の側は、Engine のチェックアウトがなく ENGINE_DIR も CI=true もない手元でだけ飛ばす（engine.test.mjs と同じ飛ばし方）。
+        字面の見張りを通る別名の t.skip（t["sk" + "ip"]）を gate.test.mjs の写しに入れると走らせた結果で外れになること、engine.test.mjs の (10) に同じ形の飛ばしを入れると
+        落ちること、(10) の SKIP・TODO・失敗・欠け・describe の下への移動、ほかのテストの skip・todo、集計のない TAP を外れにすることを確かめた。
+        手元の Engine（dcc3b1e）を ENGINE_DIR にして CI=true で、新しいテストは通り、(3) のほかは全部通ることを確かめた（(3) は関所を呼ばない Engine なので前から落ちる）。
+        テストの中の条件付きの早い return のように、飛ばさずに pass と数えられる外し方は捕まえられない。ci/pr-body-engine.yml はまだ .github/workflows/ に写されておらず
+        （手順は tools/pr-body-check/README.md の「配線の手順（建設者）」）、配線されておらず効き目は確かめていない
+      issue: 1183
+      at: 2026-11-08
+      decided_by: committee:D-0070
+      wired: false
+      verified: false
 decided_by: committee:D-0001

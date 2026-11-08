@@ -5,6 +5,7 @@
 // このテストは engine-test の node --test の中で走るので、写しから見張りを外す変更も同じジョブで落ちる。
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
+// 字面の照合だけに頼らず、gate.test.mjs と engine.test.mjs を TAP で走らせた結果で、通る側のテストと (10) が pass と数えられたかも見る（議決 D-0070 の test の案、Issue #1183）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
 // PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable で飛ばさず落ちることも見る（議決 D-0068 の test の案、Issue #1180）。
@@ -12,12 +13,13 @@
 // patch_stale か patch_partially_applied なら Issue を開くか更新する。議決 D-0068（起票時の番号は D-0066）、Issue #1179）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { parseTapReport } from "../sendback-check/order.mjs";
 import { jobCheckNames } from "../sendback-check/protection.mjs";
 import { PASSING_REPORTS } from "./c0005.mjs";
 import { CHECK_NAME, REQUIRED_JOB } from "./protection.mjs";
@@ -254,6 +256,102 @@ test("gate.test.mjs と engine.test.mjs の (10) を外す・飛ばす直しは�
       assert.notDeepEqual(exclusionProblems(file, text), [], `${file} ${name} が通った`);
     }
   }
+});
+
+// 通る側のテストが実際に走って pass と数えられたかの見張り（知見 K-0001 の担保。議決 D-0070（Issue #1183 の起票時の番号は D-0067。PR #1181）の
+// test の案、Issue #1183）。exclusionProblems はテストのファイルの字面を見るだけなので、列挙していない飛ばし方（別名で呼ぶ t.skip、describe.skip、
+// ENGINE_DIR が空の文字列で渡るなど）はすり抜けうる。gate.test.mjs と engine.test.mjs を node --test --test-reporter=tap で走らせ、その結果で、
+// 通る側のテストが名前のとおりにあって pass（SKIP・TODO の指示のない ok）と数えられ、ファイル全体の skip・todo の数が 0 かを見る。
+// engine.test.mjs は (10) のほかが落ちても（関所を呼ばない Engine の (3) など）ここでは見ない（同じ node --test で落ちる）。
+const RUN_TOOL_DIR = fileURLToPath(new URL("./", import.meta.url));
+const runEngineDir = process.env.ENGINE_DIR || fileURLToPath(new URL("../../../engine", import.meta.url));
+// engine.test.mjs と同じ飛ばし方（ENGINE_DIR を渡したときと CI=true では飛ばさない）
+const runEngineSkip = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true" || existsSync(`${runEngineDir}/orchestrator/worker/entrypoint.sh`)
+  ? false : `Engine のチェックアウトがない（ENGINE_DIR=${runEngineDir}）`;
+
+/** gate.test.mjs の通る側のテストの名前（書いてよい本文の関所、通る側の 3 通りの形、通る側の CLI）。 */
+const GATE_PASSING_NAMES = [
+  "新しい PR の本文は書いてよい",
+  "続きのジョブの記録が「## 工場の記録」の下の ### にあれば書いてよい",
+  ...PASSING_REPORTS.map(([label]) => `C-0005 の 21 回の続きのジョブでも、${label}本文は毎回書いてよい（誤検知がない）`),
+  "CLI は正しく入った続きのジョブの報告の本文で 0 を返し、body_fix の入力を出さない",
+];
+/** engine.test.mjs の (10) の名前（通る側の 3 通りの形）。 */
+const ENGINE_PASSING_NAMES = PASSING_REPORTS.map(([label]) =>
+  `(10) 関所を配線した Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`);
+
+/** テストのファイルを node --test の TAP で走らせた出力。外の node --test の NODE_TEST_CONTEXT を渡すと TAP で出さないので外す。終了コードは見ない。 */
+function runTap(file, cwd = RUN_TOOL_DIR) {
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const r = spawnSync(process.execPath, ["--test", "--test-reporter=tap", file], { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return `${r.stdout ?? ""}${r.error ? `\n# spawn error: ${r.error.message}` : ""}`;
+}
+
+/** TAP の終わりの集計（# skipped N・# todo N。古い node は # skip N）。なければ null。 */
+const tapCount = (tap, ...keys) => {
+  const m = tap.match(new RegExp(`^# (?:${keys.join("|")}) (\\d+)$`, "m"));
+  return m ? Number(m[1]) : null;
+};
+
+/** 走らせた結果で、通る側のテストが pass と数えられず、skip・todo が 0 でないときの外れ（空なら通る）。 */
+function runReportProblems(file, tap, names) {
+  const problems = [];
+  const results = parseTapReport(tap);
+  for (const name of names) {
+    const got = results[name];
+    if (got !== "pass") problems.push(`${file}: 「${name}」が pass と数えられていない（${got ?? "実行されていない"}）`);
+  }
+  for (const [label, keys] of [["skip", ["skipped", "skip"]], ["todo", ["todo"]]]) {
+    const n = tapCount(tap, ...keys);
+    if (n === null) problems.push(`${file}: TAP に ${label} の数がない（node --test が最後まで走っていない）`);
+    else if (n !== 0) problems.push(`${file}: ${label} の数が ${n}（0 でない）`);
+  }
+  return problems;
+}
+
+test("gate.test.mjs を TAP で走らせると、通る側のテストが pass と数えられ、skip・todo が 0", () => {
+  const tap = runTap(GATE_TEST);
+  assert.deepEqual(runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES), [], tap);
+});
+
+test("engine.test.mjs を TAP で走らせると、(10) が通る側の 3 通りの形で pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
+  assert.ok(PASSING_REPORTS.length >= 3, "通る側の形（c0005.mjs の PASSING_REPORTS）が 3 通りない");
+  const tap = runTap(ENGINE_TEST);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_PASSING_NAMES), [], tap);
+});
+
+test("走らせた結果の見張りは、(10) や通る側のテストの skip・todo・失敗・欠け、ほかのテストの skip・todo、途中で止まった TAP を外れにする", () => {
+  const esc = (s) => s.replace(/[#\\]/g, "\\$&");
+  const tap = (lines, { skipped = 0, todo = 0 } = {}) =>
+    ["TAP version 13", ...lines.map((l, i) => l.replace("ok -", `ok ${i + 1} -`)), `1..${lines.length}`, `# tests ${lines.length}`, `# skipped ${skipped}`, `# todo ${todo}`].join("\n");
+  const okAll = ENGINE_PASSING_NAMES.map((n) => `ok - ${esc(n)}`);
+  const [first, ...rest] = ENGINE_PASSING_NAMES;
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap([...okAll, "not ok - (3) 関所を呼ばない Engine で落ちる"]), ENGINE_PASSING_NAMES), []);
+  const cases = {
+    "(10) を SKIP にした": tap([`ok - ${esc(first)} # SKIP まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { skipped: 1 }),
+    "(10) を TODO にした": tap([`not ok - ${esc(first)} # TODO まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { todo: 1 }),
+    "(10) が落ちた": tap([`not ok - ${esc(first)}`, ...rest.map((n) => `ok - ${esc(n)}`)]),
+    "(10) が 1 つ走っていない": tap(rest.map((n) => `ok - ${esc(n)}`)),
+    "(10) を describe の下に入れた（上の段にない）": tap([`ok - 包み`, ...ENGINE_PASSING_NAMES.map((n) => `    ok - ${esc(n)}`)]),
+    "ほかのテストを飛ばした（集計の skip）": tap(okAll, { skipped: 1 }),
+    "ほかのテストを todo にした（集計の todo）": tap(okAll, { todo: 1 }),
+    "集計がない（途中で止まった）": okAll.map((l, i) => l.replace("ok -", `ok ${i + 1} -`)).join("\n"),
+  };
+  for (const [name, text] of Object.entries(cases)) assert.notDeepEqual(runReportProblems(ENGINE_TEST, text, ENGINE_PASSING_NAMES), [], `${name} が通った`);
+});
+
+test("字面の見張りをすり抜ける飛ばし方（別名で呼ぶ t.skip）も、走らせた結果で外れになる", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-run-"));
+  for (const f of ["c0005.mjs", "check.mjs", "gate.mjs", "template.json"]) copyFileSync(join(RUN_TOOL_DIR, f), join(dir, f));
+  const loopTest = /(本文は毎回書いてよい（誤検知がない）`), \(\) => \{/;
+  const changed = readTest(GATE_TEST).replace(loopTest, '$1, (t) => {\n    if (label) return t["sk" + "ip"]("まだ");');
+  assert.notEqual(changed, readTest(GATE_TEST), "置き換えが効いていない");
+  assert.deepEqual(exclusionProblems(GATE_TEST, changed), [], "字面の見張りが捕まえた（すり抜けの例になっていない）");
+  writeFileSync(join(dir, GATE_TEST), changed);
+  const tap = runTap(GATE_TEST, dir);
+  const problems = runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES);
+  assert.equal(problems.filter((p) => /pass と数えられていない（skip）/.test(p)).length, PASSING_REPORTS.length, tap);
+  assert.ok(problems.includes(`${GATE_TEST}: skip の数が ${PASSING_REPORTS.length}（0 でない）`), tap);
 });
 
 // recheck.test.mjs（知見 K-0012 の担保）も、ひな形の engine-test の node --test で走る（議決 D-0050 の ci_check の案、Issue #1131）。
