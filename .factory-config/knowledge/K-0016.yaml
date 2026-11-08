@@ -1,0 +1,31 @@
+id: K-0016
+theme: 4
+kind: causal
+statement: >-
+  実装役の報告（handoff の summary.md）から PR 本文を組み立てる受け渡しで、本文の頭（## 概要 と ## 対応内容）が欠けたり、
+  ## 概要 の前に余計な文が混じったりしても、組み立てたあとに本文の先頭が決まりの見出しで始まるかを確かめる段がないと、
+  崩れた本文がそのまま PR に載り、検査・判定で本文の並びの指摘と本文の直しを生む（C-0008 では報告が箇条書きの途中の文から始まり、
+  C-0006 でも冒頭の段落と ## 対応内容 が抜けていた）。どこで欠けたか（実装役の書き出しか、Engine の組み立てか）は、どちらの事例でも記録で確かめられていない。
+scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
+  roles: [implement, body_fix, judge]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0008
+  - pr: 678
+  - event: "case.analyzed:370961"
+  - case: C-0006
+  - pr: 821
+  - event: "case.analyzed:370935"
+status: active
+verified_at: 2026-11-08
+review_by: 2026-12-08
+confidentiality: product
+related: [K-0005, K-0006, K-0009]
+invalidate_when:
+  - "summary.md から本文を組み立てたあとに、先頭が ## 概要 で始まるか、その前に文が混じっていないかを機械で確かめるようになった"
+  - "実装役の会話の記録と summary.md を突き合わせ、欠けが実装役の書き出しの側だと分かった（その場合は Engine の組み立てではなく実装役への指示の知見に直す）"
+decided_by: committee:D-0078
