@@ -6,13 +6,17 @@
   missing_field  要る欄がない（null も含む）
   bad_field      欄の形が違う（conflict_files なら、空でない文字列の列で 1 件以上でない。空の列も含む）
 
-  python3 schema.py --events <イベントの JSON か JSONL> [--defs <conflict-files.yaml か Engine の events.yaml>] [--json]
+  python3 schema.py --events <イベントの JSON か JSONL> [--defs <conflict-files.yaml か Engine の events.yaml>] [--since <ISO 8601 の時刻>] [--json]
+  --since: Engine に engine/conflict-files.patch を当てた時刻。occurred_at がそれより前のイベントは照らさない（議決 D-0101・Issue #1207。
+           差分の前の Engine はこの欄を出さないので、前のイベントまで照らすとすべて missing_field で落ちる）。渡したのに
+           occurred_at がない・読めないイベントがあれば、照らすかを決められないので読めなかったとする
   終了コード: 0 = 通る、1 = 外れた、2 = 記録か定義を読めなかった
 """
 from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -75,13 +79,39 @@ def field_error(spec: dict, value) -> str | None:
     return None
 
 
-def check(defs: dict[str, dict], events: list[dict]) -> list[dict]:
+def parse_time(text) -> datetime:
+    """ISO 8601 の時刻（時差つき）を読む。読めないか時差がなければ ValueError"""
+    if not isinstance(text, str):
+        raise ValueError(f"文字列でない: {text!r}")
+    t = datetime.fromisoformat(text.strip())
+    if t.tzinfo is None:
+        raise ValueError(f"時差がない: {text}")
+    return t
+
+
+def before(events: list[dict], since: datetime | None) -> set[int]:
+    """occurred_at が since より前のイベントの添え字（照らさないもの）。since がなければ空。
+    occurred_at がない・読めないイベントがあれば ev.EventsError（照らすかを決められない）"""
+    if since is None:
+        return set()
+    out = set()
+    for i, e in enumerate(events):
+        try:
+            if parse_time(e.get("occurred_at")) < since:
+                out.add(i)
+        except ValueError as x:
+            raise ev.EventsError(f"{i} 件目の occurred_at を読めない（--since で絞れない）: {x}") from x
+    return out
+
+
+def check(defs: dict[str, dict], events: list[dict], since: datetime | None = None) -> list[dict]:
     """定義にあるイベントを 1 件ずつ照らし、外れたものを [{ rule, index, name, job_id, pr_url, field, message }] で返す。
-    要る欄は、ないか null なら missing_field、あれば形を見る。要らない欄でも、あって null でなければ形を見る"""
-    errors = []
+    要る欄は、ないか null なら missing_field、あれば形を見る。要らない欄でも、あって null でなければ形を見る。
+    since を渡したら、occurred_at がそれより前のイベントは照らさない（before）"""
+    errors, skip = [], before(events, since)
     for i, e in enumerate(events):
         defn = defs.get(e["name"])
-        if defn is None:
+        if defn is None or i in skip:
             continue
         p = e.get("payload") or {}
         need = required_fields(defn, p)
@@ -110,6 +140,13 @@ def main(argv: list[str]) -> int:
     if not path:
         print("conflict-check schema: --events <イベントの JSON か JSONL> を渡す", file=sys.stderr)
         return 2
+    since = None
+    if "--since" in argv:
+        try:
+            since = parse_time(arg("--since"))
+        except ValueError as e:
+            print(f"conflict-check schema: --since を時差つきの ISO 8601 の時刻で渡す: {e}", file=sys.stderr)
+            return 2
     try:
         defs = load(defs_path)
     except (OSError, yaml.YAMLError, DefsError) as e:
@@ -120,14 +157,20 @@ def main(argv: list[str]) -> int:
     except (OSError, ev.EventsError) as e:
         print(f"conflict-check schema: {path} を読めない: {e}", file=sys.stderr)
         return 2
-    errors = check(defs, events)
+    try:
+        skipped = len(before(events, since))
+        errors = check(defs, events, since)
+    except ev.EventsError as e:
+        print(f"conflict-check schema: {path} を読めない: {e}", file=sys.stderr)
+        return 2
     if "--json" in argv:
-        json.dump({"ok": not errors, "errors": errors}, sys.stdout, ensure_ascii=False)
+        json.dump({"ok": not errors, "errors": errors, "skipped": skipped}, sys.stdout, ensure_ascii=False)
         print()
     else:
         for x in errors:
             print(f"{x['pr_url']} {x['name']} job={x['job_id']} {x['rule']}: {x['message']}")
-        print(f"conflict-check schema: イベント {len(events)} 件・外れ {len(errors)} 件")
+        tail = f"（{since.isoformat()} より前の {skipped} 件は照らさない）" if since else ""
+        print(f"conflict-check schema: イベント {len(events)} 件{tail}・外れ {len(errors)} 件")
     return 1 if errors else 0
 
 

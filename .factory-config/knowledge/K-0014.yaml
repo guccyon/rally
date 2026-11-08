@@ -65,4 +65,28 @@ enforcement:
       decided_by: committee:D-0049
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0101（Issue #1207 の起票時の番号は D-0073。PR #1204）の ci_check の案（Engine に tools/conflict-check/engine/conflict-files.patch を当てたあと、
+        定期か PR ごとのワークフローで tools/conflict-check/schema.py を直近の窓のイベント列に対して走らせ、issue 1136 の項目を wired: true にして
+        wired_by にそのワークフローのファイル・job・schema.py の道を書く。適用日より前のイベントは照らさない）のうち、ワーカーの権限で入れられる分を入れた。
+        schema.py に --since（Engine に差分を当てた時刻）を足し、occurred_at がそれより前のイベントは照らさず、occurred_at がない・読めないイベントがあれば
+        照らすかを決められないので終了コード 2 にした。制御プレーンの events から直近の窓（差分を当てた時刻と直近 8 日の始まりの遅いほうから後）の
+        pr.conflicted・continue.enqueued・handoff.saved を引く tools/conflict-check/window-events.sql と、毎日と手動でそれを読んで schema.py に --since を
+        渡して照らす定期のワークフローのひな形 tools/conflict-check/ci/conflict-schema.yml（job conflict-schema）を置いた。ひな形の差分を当てた時刻
+        （CONFLICT_FILES_SINCE）は空にしてあり、空か時差つきの時刻でなければ照らさずに落ち、events を読む接続先（シークレット CONFLICT_EVENTS_DATABASE_URL）が
+        ない・読めないときも落ちる（差分の前の Engine のイベントで落ちることも、照らさずに緑になることもない）。PR には紐づかない記録を見るので PR ごとには
+        走らせない。test_schema.py の SinceTest がその絞り方を、test_schema_ci.py がひな形の形と手順の振る舞い（時刻の確かめ・シークレットのないとき・外れの
+        終了コードを握りつぶさないこと・写しのずれ）を確かめた。SQL を Postgres で走らせる WindowSqlTest は psql と DATABASE_URL のある環境だけで走り、
+        作業した環境には psql がなく飛ばした。あわせて tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に
+        この解決策と issue 1136 の解決策を挙げ、.github/workflows/conflict-schema.yml の schedule でも走るジョブから schema.py を呼ぶ wired_by の項目が
+        ないと wired: true にできないようにした（test_check.py の ConflictSchemaScheduleTest）。ワーカーは .github/workflows/ を変えられず、Engine は
+        別のリポジトリなので、差分を Engine に当てて Engine がこの欄を載せて出すようにすること、ひな形を写して CONFLICT_FILES_SINCE に当てた時刻を書くこと、
+        シークレットを置くこと、2 つの解決策を wired: true にして wired_by を書くことは建設者が行う（tools/conflict-check/README.md の
+        「直近の窓のイベント列の定期の照合」）。まだ配線されておらず、本物のイベント列では確かめていない
+      issue: 1207
+      at: 2026-11-08
+      decided_by: committee:D-0101
+      wired: false
+      verified: false
 decided_by: committee:D-0049
