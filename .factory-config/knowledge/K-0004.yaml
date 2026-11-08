@@ -722,4 +722,22 @@ enforcement:
       decided_by: committee:D-0053
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0055（Issue #1152 の起票時の番号は D-0054。PR #1148）の ci_check の案（議決 D-0037 の ci_check の案として、CI=true か ENGINE_DIR を
+        渡したときは Engine の写しがなくても test_engine.py を skip せずに落とし、ci/knowledge-enforcement.yml の unittest discover の出力で skipped が
+        1 件以上なら落とす。D-0053 の案とまとめて D-0037 を併記する）を入れた。飛ばさずに落とす分（test_engine.py・test_engine_patch.py）と skipped を見る手順は
+        議決 D-0037 の ci_check の案として Issue #1080 で、CI で版や pytest がないときに落とす分は議決 D-0035 の ci_check の案として Issue #1063 で入っていたので、
+        作り直さずに、その飛ばす条件がゆるめられたら気づけるテストを足した。skipped を見る手順はひな形から走らせたときしか効かないので、
+        tools/knowledge-enforcement-check/test_ci.py に NoSkipTest を足し、test_engine.py と test_engine_patch.py を Engine のない一時の置き場（隣の ../engine もない）に写して
+        子のプロセスで走らせ、CI=true・空のディレクトリかないディレクトリの ENGINE_DIR・Engine のファイルはあるが ENGINE_REF の版のない ENGINE_DIR（CI=true と一緒も）の
+        どれでも、飛ばさずに Engine のチェックアウトの文で落ちることと、どちらも渡さないときだけ飛ぶこと（対照）を確かめる。REQUIRED から CI か ENGINE_DIR を外す、
+        版がないときに飛ばす、skipUnless から REQUIRED を外す、チェックアウトがないときに黙って抜ける、の 7 とおりの改変でこのテストが落ちることを手元で確かめた。
+        pytest がないときに落ちるかは Engine の本物の中身が要るのでこのテストでは見ていない。test_ci.py は ci/knowledge-enforcement.yml のひな形からしか走らず、
+        .github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1152
+      at: 2026-11-08
+      decided_by: committee:D-0055
+      wired: false
+      verified: false
 decided_by: committee:D-0004
