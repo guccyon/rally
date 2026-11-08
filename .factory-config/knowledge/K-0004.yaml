@@ -743,4 +743,16 @@ enforcement:
       decided_by: committee:D-0053
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0055（Issue #1151 の起票時の番号は D-0054。PR #1148）の test の案を入れた。tools/knowledge-enforcement-check/test_engine.py に
+        MutantsTest を足し、MUTANTS の名前の集合が「wired の "true" を配線済みに数える」「verified を真偽でなく値の有無で見る」の 2 件ちょうどで、
+        どの変異体も置き換える前と後の字面が違うことを確かめる。変異体の総当たり（EnginePatchTest）は Engine のチェックアウトがないと飛ぶが、
+        このテストは Engine なしでも毎回走る。手元で変異体を 1 件消した写しと、置き換えた後の字面を前と同じにした写しで落ちることを確かめた。
+        test_engine.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1151
+      at: 2026-11-08
+      decided_by: committee:D-0055
+      wired: false
+      verified: false
 decided_by: committee:D-0004

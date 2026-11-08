@@ -100,6 +100,16 @@ def mutate_enforcement_label(src: str, old: str, new: str) -> str:
     return src[:start] + body.replace(old, new) + src[end:]
 
 
+class MutantsTest(unittest.TestCase):
+    # 議決 D-0055（Issue #1151 の起票時の番号は D-0054）。変異体の総当たりは Engine のチェックアウトがないと飛ぶので、
+    # MUTANTS そのものは Engine なしでも毎回確かめ、変異体が消されたり減らされたりしたら落とす
+    def test_MUTANTS_は効き目を確かめた_2_つの改変ちょうど(self):
+        self.assertEqual(set(MUTANTS), {'wired の "true" を配線済みに数える', "verified を真偽でなく値の有無で見る"})
+        for name, (old, new) in MUTANTS.items():
+            with self.subTest(name):
+                self.assertNotEqual(old, new, f"変異体「{name}」が何も置き換えない")
+
+
 @unittest.skipUnless(HAS_ENGINE or REQUIRED, f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
 class EnginePatchTest(unittest.TestCase):
     @classmethod
