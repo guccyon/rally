@@ -878,4 +878,19 @@ enforcement:
       decided_by: committee:D-0061
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0062（Issue #1168 の起票時の番号は D-0061。PR #1166）の test の案を入れた。tools/sendback-check/order.mjs に、node --test の TAP からすべての段の SKIP の名前と理由を読む tapSkips と、
+        それをソースから数えた skip と照らす skipReportProblems を足した。理由が legacy_basis_not_found か Engine のチェックアウトがない（{ skip } の略記）で
+        始まらなければ skip_reason_not_allowed、legacy_basis_not_found の SKIP が skipLines の件数より多いか、チェックアウトがないの SKIP が { skip } の行
+        （checkoutSkipLines）より多ければ skip_count_mismatch で落とす。理由の頭は order.mjs の LEGACY_BASIS_NOT_FOUND・NO_ENGINE_CHECKOUT に置き、
+        engine.test.mjs もそれを使う。order.test.mjs が engine.test.mjs を今の環境と、隣に Engine のない一時ディレクトリの写しで走らせて照らす。
+        engine.test.mjs の末尾に別名（t.skip.bind(t)）の legacy_basis_not_found の skip を 2 つ足す改変と、動的な skip（opts.skip = …）を足す改変で
+        このテストが落ちることを手元で確かめた。order.test.mjs は .github/workflows/ からはまだ走っておらず（ci/sendback-engine.yml の写しは建設者）、
+        この解決策も未配線・未確認
+      issue: 1168
+      at: 2026-11-08
+      decided_by: committee:D-0062
+      wired: false
+      verified: false
 decided_by: committee:D-0004
