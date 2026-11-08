@@ -607,9 +607,9 @@ class RepoTest(unittest.TestCase):
         """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
         text = (HERE / "README.md").read_text(encoding="utf-8")
         ids = r"((?:`K-\d{4,}`・?)+)"
-        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids} の未記入の解決策は", text)
-        self.assertIsNotNone(m, "README.md に「すべての解決策に書いたのは `K-…`。`K-…` の未記入の解決策は」の一覧がない")
-        listed_done, listed_open = (re.findall(r"K-\d{4,}", g) for g in m.groups())
+        m = re.search(rf"すべての解決策に書いたのは {ids}。(?:{ids} の未記入の解決策は|未記入の解決策が残る知見はない)", text)
+        self.assertIsNotNone(m, "README.md に「すべての解決策に書いたのは `K-…`。`K-…` の未記入の解決策は」か「…。未記入の解決策が残る知見はない」の一覧がない")
+        listed_done, listed_open = (re.findall(r"K-\d{4,}", g or "") for g in m.groups())
         rows = [check.row(x) for x in check.load(REPO)]
         done = [r["id"] for r in rows if r["solutions"] and not r["unrecorded"]]
         still_open = [r["id"] for r in rows if r["unrecorded"]]
