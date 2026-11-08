@@ -10,6 +10,9 @@ pytest を入れて飛ばさずに走らせる形かを見る（差分が ENGINE
 形の検査（problems）が外れを見逃さないことは、ひな形を書き換えた写しで確かめる。
 ひな形と写しの ENGINE_REF は、形の検査とは別に knowledge-check.yml の ENGINE_REF と字面で照らし、片方だけ上げたら落とす
 （写しがなくても飛ばさない。議決 D-0053、Issue #1143）。
+skipped を見る手順はひな形から走らせたときしか効かないので、test_engine.py と test_engine_patch.py そのものが CI=true か ENGINE_DIR を渡したときに
+Engine のチェックアウトや ENGINE_REF の版がなくても飛ばさずに落ちることを、Engine のない一時の置き場で子のプロセスとして走らせて確かめ、
+どちらも渡さないときだけ飛ぶことを対照にする（議決 D-0037 の ci_check の案。議決 D-0055、Issue #1152）。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
 """
@@ -19,6 +22,7 @@ import importlib.util
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -302,6 +306,73 @@ class TemplateTest(unittest.TestCase):
         text = COPY.read_text(encoding="utf-8")
         self.assertEqual(problems(text, self.ref), [])
         self.assertEqual(REF_LINE.sub("ENGINE_REF:", text), REF_LINE.sub("ENGINE_REF:", self.text))
+
+
+class NoSkipTest(unittest.TestCase):
+    """test_engine.py と test_engine_patch.py が、CI=true か ENGINE_DIR を渡したときは Engine の写しや ENGINE_REF の版がなくても
+    飛ばさずに落ちることを、Engine のない一時の置き場で子のプロセスとして走らせて確かめる（知見 K-0004 の担保。議決 D-0037・D-0055、Issue #1152）。
+    飛ばす条件がゆるめられると、ひな形の skipped を見る手順に頼るだけになり、写しのない手元や別の呼び方では黙って緑になる"""
+
+    MODULES = ("test_engine", "test_engine_patch")
+    FILES = (f"{DIR}/check.py", f"{DIR}/test_engine.py", f"{DIR}/test_engine_patch.py",
+             f"{DIR}/engine/knowledge-enforcement.patch", ".github/workflows/knowledge-check.yml")
+    ENV_KEYS = ("CI", "ENGINE_DIR", "ENGINE_PATCH_REF", "GITHUB_ACTIONS")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        root = Path(cls.tmp.name)
+        cls.repo = root / "repo"   # 隣の root/engine は置かないので、ENGINE_DIR を渡さなければ Engine はない
+        for rel in cls.FILES:
+            (cls.repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (cls.repo / rel).write_bytes((REPO / rel).read_bytes())
+        cls.empty = root / "empty"
+        cls.empty.mkdir()
+        # Engine のファイルはあるが ENGINE_REF の版がないチェックアウト
+        cls.other = root / "other"
+        for f in ("core-gates/knowledge_check.py", "definitions/knowledge.yaml", "core-gates/tests/test_knowledge_check.py"):
+            (cls.other / f).parent.mkdir(parents=True, exist_ok=True)
+            (cls.other / f).write_text("# x\n", encoding="utf-8")
+        git = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+        for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(cls.other), *args], env=git, capture_output=True, check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def run_module(self, module: str, **env: str) -> subprocess.CompletedProcess:
+        base = {k: v for k, v in os.environ.items() if k not in self.ENV_KEYS}
+        return subprocess.run([sys.executable, "-B", "-m", "unittest", "-v", module], cwd=self.repo / DIR,
+                              env={**base, **env}, capture_output=True, text=True, timeout=120)
+
+    def test_CIかENGINE_DIRを渡すとEngineがなくても飛ばさずに落ちる(self):
+        cases = {
+            "CI=true（隣の ../engine もない）": {"CI": "true"},
+            "ENGINE_DIR が空のディレクトリ": {"ENGINE_DIR": str(self.empty)},
+            "ENGINE_DIR がないディレクトリ": {"ENGINE_DIR": str(self.repo / "nothing")},
+            "ENGINE_DIR に ENGINE_REF の版がない": {"ENGINE_DIR": str(self.other)},
+            "CI=true と ENGINE_DIR に ENGINE_REF の版がない": {"CI": "true", "ENGINE_DIR": str(self.other)},
+        }
+        for name, env in cases.items():
+            for module in self.MODULES:
+                with self.subTest(name, module=module):
+                    p = self.run_module(module, **env)
+                    out = p.stdout + p.stderr
+                    self.assertNotEqual(p.returncode, 0, out)
+                    self.assertRegex(out, r"(?m)^FAILED \((failures|errors)=[1-9]", out)
+                    self.assertNotIn("skipped", out, out)
+                    self.assertIn("Engine のチェックアウト", out, out)   # 読み込みの誤りなどほかの理由で落ちたのではない
+
+    def test_どちらも渡さずEngineがなければ飛ばす(self):
+        # 上のテストが「飛ばした」を見分けられることと、一時の置き場に本当に Engine がないことを確かめる対照
+        for module in self.MODULES:
+            with self.subTest(module=module):
+                p = self.run_module(module)
+                out = p.stdout + p.stderr
+                self.assertEqual(p.returncode, 0, out)
+                self.assertRegex(out, r"(?m)^OK \(skipped=[1-9][0-9]*\)$", out)
 
 
 if __name__ == "__main__":
