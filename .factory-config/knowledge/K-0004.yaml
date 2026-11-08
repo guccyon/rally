@@ -626,4 +626,18 @@ enforcement:
       decided_by: committee:D-0041
       wired: false
       verified: false
+    - kind: lint
+      what: >-
+        議決 D-0041 の lint の案（Issue と議決の番号のずれが続き、解決策の decided_by を手で直す手順は外れうる）を入れた。
+        tools/knowledge-enforcement-check/check.py の check_decision で、enforcement.solutions の decided_by を書いた解決策ごとに、
+        それが committee:D-NNNN の形で、.factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に
+        同じ知見の id（knowledge）と同じ種類（solution_kind が解決策の kind）の案があることを照らし、なければ decision_mismatch で落とす。
+        decided_by を書いていない解決策は見ない。test_check.py で、当たれば通る・議決がない・知見の id か種類が違う・形が崩れている・
+        議決が読めないときに落ちることと、このリポジトリの知見が通ることを確かめた。check.py は ci/knowledge-enforcement.yml の
+        ひな形からしか走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1094
+      at: 2026-11-08
+      decided_by: committee:D-0041
+      wired: false
+      verified: false
 decided_by: committee:D-0004
