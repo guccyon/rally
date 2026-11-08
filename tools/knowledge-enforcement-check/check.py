@@ -12,6 +12,10 @@ tools/sendback-check/order.mjs と同じやり方（注釈と行末の \ を畳�
 ラッパーのスクリプトを 3 段まで辿る）で照らし、なければ落とす。order.mjs と違い、迷う形は呼んでいない側に数える
 （ここで見逃すと配線していない担保を配線済みと読ませるため）。
 
+確認の記録の照合（議決 D-0034、Issue #1059）: verified が true の解決策には verified_by（本物の記録を指す case・pr・event の列。
+evidence と同じく 1 項目に 1 つの参照）を必須にし、case を 1 件以上含めて、指す事例記録が .factory-config/knowledge/cases/ にあることと、
+その解決策が wired: true であることを照らし、なければ落とす。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -39,6 +43,9 @@ UNWIRED = "未配線"
 UNVERIFIED = "deterministic（未確認）"
 WORKFLOWS = ".github/workflows"
 WIRED_BY_KEYS = ("workflow", "job", "runs")
+VERIFIED_BY_KINDS = ("case", "pr", "event")
+CASE_RE = re.compile(r"^C-\d{4,}$")
+EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -238,6 +245,38 @@ def check_wiring(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def check_verification(k: dict, repo: Path) -> list[str]:
+    """verified が true の解決策の verified_by を照らす（議決 D-0034、Issue #1059）。wired が true であることは check_item が見る"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("verified") is not True:
+            continue
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        vb = s.get("verified_by")
+        if not isinstance(vb, list) or not vb:
+            e.append(f"{where}: verified が true なのに verified_by（確かめた本物の記録を指す case・pr・event の列）がない")
+            continue
+        cases = [v["case"] for v in vb if isinstance(v, dict) and len(v) == 1 and "case" in v]
+        for j, v in enumerate(vb):
+            at = f"{where}: verified_by[{j}]"
+            if not isinstance(v, dict) or len(v) != 1 or next(iter(v)) not in VERIFIED_BY_KINDS:
+                e.append(f"{at}: 1 項目に 1 つの参照で、種類は {'・'.join(VERIFIED_BY_KINDS)} のどれか（例: - case: C-0001）（{v!r}）")
+                continue
+            (kind, val), = v.items()
+            if kind == "case":
+                if not isinstance(val, str) or not CASE_RE.match(val):
+                    e.append(f"{at}: case は C-NNNN（{val!r}）")
+                elif not (repo / ROOT / "cases" / f"{val}.md").is_file():
+                    e.append(f"{at}: 事例記録 {val} が {ROOT}/cases/ にない")
+            elif kind == "pr" and (isinstance(val, bool) or not isinstance(val, int) or val <= 0):
+                e.append(f"{at}: pr は PR の番号（正の整数）（{val!r}）")
+            elif kind == "event" and (not isinstance(val, str) or not EVENT_RE.match(val)):
+                e.append(f"{at}: event は <種類>:<id>（例: case.analyzed:40376）（{val!r}）")
+        if not cases:
+            e.append(f"{where}: verified_by に {ROOT}/cases/ にある事例記録（case）が 1 件もない（pr・event だけでは本物の記録か照らせない）")
+    return e
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -281,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo))]
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo)) + check_verification(k, Path(a.repo))]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
