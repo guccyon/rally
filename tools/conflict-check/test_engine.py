@@ -29,7 +29,7 @@ REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
 HAVE_ENGINE = (ENGINE_DIR / "orchestrator/dispatcher/supervisor.py").is_file()
 SKIP = None if REQUIRED or HAVE_ENGINE else f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE_DIR}）"
 HEADS = 6   # 上限（3）を超えて衝突し続ける head の数
-TODOS: list[str] = []   # この実行で todo（Engine が今の形のときだけ）で飛ばしたテストと理由。test_events.py の EngineFinishedTest も足す
+TODOS: list[str] = []   # この実行で todo（Engine が今の形のときだけ）で飛ばしたテストと理由。test_events.py・test_watch.py の EngineFinishedTest も足す
 
 
 def todo(case: unittest.TestCase, reason: str):
