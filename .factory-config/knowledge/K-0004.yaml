@@ -590,4 +590,20 @@ enforcement:
       decided_by: committee:D-0039
       wired: false
       verified: false
+    - kind: lint
+      what: >-
+        議決 D-0039 の lint の案（issue 1018 の解決策は protection.mjs を建設者が手で走らせて記録するだけになりやすく、branch protection の必須のチェックが
+        後で外されても誰も気づかないので、手で走らせた記録だけでは wired にできないようにする）を入れた。tools/knowledge-enforcement-check/check.py に
+        REQUIRED_SCHEDULE（K-0004 の issue 1018 と tools/sendback-check/protection.mjs の組）と check_schedule() を足し、その解決策が wired: true のとき、
+        wired_by に、on.schedule に空でない cron のある .github/workflows/ のワークフローで、schedule でも走るジョブ（ジョブと手順の if: が字面で偽でなく、
+        github.event_name を見るなら == 'schedule' を含み != 'schedule' を含まない）から protection.mjs を呼ぶ項目がなければ落とす。
+        test_check.py で、schedule と workflow_dispatch のワークフローで通ること、workflow_dispatch だけ・pull_request と workflow_dispatch・空の schedule・
+        空の cron・workflow_dispatch に絞る if:・!= 'schedule' の if:・if: false・別の検査を呼ぶ項目で落ちること、ほかの知見・ほかの issue・wired でない解決策は
+        見ないことを確かめた。issue 1018 の解決策は今 wired: false なのでこの検査は何も落とさず、check.py も .github/workflows/ にはまだ写していない（建設者）ので、
+        PR ごとには走っておらず効き目は確かめていない
+      issue: 1088
+      at: 2026-11-08
+      decided_by: committee:D-0039
+      wired: false
+      verified: false
 decided_by: committee:D-0004

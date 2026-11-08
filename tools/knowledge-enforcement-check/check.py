@@ -16,6 +16,10 @@ tools/sendback-check/order.mjs と同じやり方（注釈と行末の \ を畳�
 evidence と同じく 1 項目に 1 つの参照）を必須にし、case を 1 件以上含めて、指す事例記録が .factory-config/knowledge/cases/ にあることと、
 その解決策が wired: true であることを照らし、なければ落とす。
 
+定期の配線の必須（議決 D-0039、Issue #1088）: REQUIRED_SCHEDULE の解決策（K-0004 の issue 1018。branch protection の必須のチェックを
+protection.mjs で照らす）を wired: true にするときは、wired_by に、on.schedule（cron）のあるワークフローで、schedule でも走る
+（if: が github.event_name を見るなら == 'schedule' を含み、!= 'schedule' を含まない）ジョブから runs の検査を呼ぶ項目を必須にする。手で走らせた記録だけでは wired にできない。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -46,6 +50,8 @@ WIRED_BY_KEYS = ("workflow", "job", "runs")
 VERIFIED_BY_KINDS = ("case", "pr", "event")
 CASE_RE = re.compile(r"^C-\d{4,}$")
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
+# (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088）
+REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs"}
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -185,15 +191,15 @@ def calls(lines: list[str], target: str, cwd: str, env: dict, read, depth: int =
     return False
 
 
-def job_calls(workflow: dict, job_id: str, target: str, read) -> bool:
-    """ワークフローの job_id のジョブの手順のどれかが target を呼ぶか（if: が字面で偽のジョブ・手順は走らないので数えない）"""
+def job_calls(workflow: dict, job_id: str, target: str, read, off=runs_off) -> bool:
+    """ワークフローの job_id のジョブの手順のどれかが target を呼ぶか（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える）"""
     job = (workflow.get("jobs") or {}).get(job_id)
-    if not isinstance(job, dict) or runs_off(job.get("if")):
+    if not isinstance(job, dict) or off(job.get("if")):
         return False
     wenv = {**(workflow.get("env") or {}), **(job.get("env") or {})}
     wd = (((job.get("defaults") or {}).get("run") or {}).get("working-directory")) or ""
     for step in job.get("steps") or []:
-        if not isinstance(step, dict) or not isinstance(step.get("run"), str) or runs_off(step.get("if")):
+        if not isinstance(step, dict) or not isinstance(step.get("run"), str) or off(step.get("if")):
             continue
         env = {**wenv, **(step.get("env") or {})}
         cwd = norm("", expand(str(step.get("working-directory") or wd), env)) or ""
@@ -202,13 +208,28 @@ def job_calls(workflow: dict, job_id: str, target: str, read) -> bool:
     return False
 
 
-def check_wiring(k: dict, repo: Path) -> list[str]:
-    """wired が true の解決策の wired_by を照らす（議決 D-0021、Issue #986）"""
-    f, e = k.get("_file", str(k.get("id"))), []
-
+def repo_reader(repo: Path):
+    """リポジトリの根からの道でファイルを読む関数（なければ None）"""
     def read(rel: str) -> str | None:
         p = repo / rel
         return p.read_text(encoding="utf-8") if rel and p.is_file() else None
+    return read
+
+
+def valid_wired_by(w) -> bool:
+    """wired_by の項目が workflow・job・runs を空でない文字列で持つか"""
+    return isinstance(w, dict) and all(isinstance(w.get(key), str) and w.get(key) for key in WIRED_BY_KEYS)
+
+
+def is_workflow(path: str) -> bool:
+    """.github/workflows/ の直下の YAML か（ひな形の ci/*.yml は配線ではない）"""
+    return re.fullmatch(rf"{re.escape(WORKFLOWS)}/[^/]+\.ya?ml", path) is not None
+
+
+def check_wiring(k: dict, repo: Path) -> list[str]:
+    """wired が true の解決策の wired_by を照らす（議決 D-0021、Issue #986）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
         if not isinstance(s, dict) or s.get("wired") is not True:
@@ -220,11 +241,11 @@ def check_wiring(k: dict, repo: Path) -> list[str]:
             continue
         for j, w in enumerate(wb):
             at = f"{where}: wired_by[{j}]"
-            if not isinstance(w, dict) or not all(isinstance(w.get(key), str) and w.get(key) for key in WIRED_BY_KEYS):
+            if not valid_wired_by(w):
                 e.append(f"{at}: workflow・job・runs を文字列で書く（{w!r}）")
                 continue
             wf, job, target = w["workflow"], w["job"], norm("", w["runs"])
-            if not re.fullmatch(rf"{re.escape(WORKFLOWS)}/[^/]+\.ya?ml", wf):
+            if not is_workflow(wf):
                 e.append(f"{at}: workflow は {WORKFLOWS}/ の直下のファイル（{wf}。ひな形の ci/*.yml は配線ではない）")
                 continue
             if read(wf) is None:
@@ -242,6 +263,51 @@ def check_wiring(k: dict, repo: Path) -> list[str]:
                 e.append(f"{at}: {wf} に job {job} がない")
             elif not job_calls(doc, job, target, read):
                 e.append(f"{at}: {wf} の job {job} が {target} を呼んでいない")
+    return e
+
+
+def has_schedule(workflow: dict) -> bool:
+    """on.schedule に cron が 1 つ以上あるか（PyYAML も ruby も on: を true と読むので両方を見る）"""
+    on = next((workflow[key] for key in ("on", True, "true") if key in workflow), None)
+    sched = on.get("schedule") if isinstance(on, dict) else None
+    return isinstance(sched, list) and any(isinstance(c, dict) and isinstance(c.get("cron"), str) and c["cron"].strip() for c in sched)
+
+
+def off_schedule(cond) -> bool:
+    """schedule では走らないと数える if:（字面で偽か、github.event_name を見るのに == 'schedule' がないか != 'schedule' がある）。迷う形は走らない側に数える"""
+    if runs_off(cond):
+        return True
+    if not isinstance(cond, str) or "event_name" not in cond:
+        return False
+    return not re.search(r"event_name\s*==\s*['\"]schedule['\"]", cond) or re.search(r"!=\s*['\"]schedule['\"]", cond) is not None
+
+
+def check_schedule(k: dict, repo: Path) -> list[str]:
+    """REQUIRED_SCHEDULE の解決策が wired: true なら、schedule のジョブから検査を呼ぶ wired_by を求める（議決 D-0039、Issue #1088）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    read = repo_reader(repo)
+
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True:
+            continue
+        target = REQUIRED_SCHEDULE.get((k.get("id"), s.get("issue")))
+        if target is None:
+            continue
+        ok = False
+        for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
+            if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+                continue
+            try:
+                doc = load_yaml(repo / w["workflow"])
+            except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
+                continue
+            if isinstance(doc, dict) and has_schedule(doc) and job_calls(doc, w["job"], target, read, off_schedule):
+                ok = True
+                break
+        if not ok:
+            where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+            e.append(f"{where}: wired にするには wired_by に、on.schedule（cron）のある {WORKFLOWS}/ のワークフローで schedule でも走るジョブから"
+                     f" {target} を呼ぶ項目が要る（手で走らせた記録だけでは wired にできない。議決 D-0039）")
     return e
 
 
@@ -320,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo)) + check_verification(k, Path(a.repo))]
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo)) + check_schedule(k, Path(a.repo)) + check_verification(k, Path(a.repo))]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
