@@ -690,4 +690,22 @@ enforcement:
       decided_by: committee:D-0052
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0052 の ci_check の案（建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して branch protection の必須チェックに入れ、
+        README の一覧と K-*.yaml がずれた PR で test_check.py が落ちる実行を記録してから、issue 1062 の解決策の wired・verified を true にする）のうち、
+        ワーカーの権限で入れられる分を入れた。tools/knowledge-enforcement-check/check.py の REQUIRED_PR に、K-0004 の issue 1062 の解決策と
+        tools/knowledge-enforcement-check/test_check.py の組を足し、その解決策を wired: true にするとき、wired_by に、on.pull_request のある
+        .github/workflows/ のワークフローで pull_request でも走るジョブから test_check.py を呼ぶ項目がなければ落とす（手で走らせる・定期・手動・push だけ、
+        check.py を指す項目、test_check.py を呼ばないジョブでは wired にできない）。test_check.py で、ひな形をそのまま .github/workflows/knowledge-enforcement.yml に
+        写した enforcement のジョブなら通ること、on を workflow_dispatch・schedule・push に替えた写し、check.py を指す項目、test_check.py の行を消したジョブ、
+        != 'pull_request' の if: を付けたジョブで落ちること、wired でない解決策とほかの知見は見ないことを確かめた。ひな形の注釈と README に、
+        落ちる実行を事例記録に残してから issue 1062 の解決策を wired: true・verified: true にする手順を書いた。.github/workflows/ への写しと
+        branch protection の必須チェックは建設者が行う（権限設定はワーカーが触れない）ので、test_check.py はまだ PR ごとには走っておらず、
+        この解決策も issue 1062 の解決策も未配線・未確認
+      issue: 1139
+      at: 2026-11-08
+      decided_by: committee:D-0052
+      wired: false
+      verified: false
 decided_by: committee:D-0004
