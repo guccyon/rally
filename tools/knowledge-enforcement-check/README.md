@@ -1,6 +1,6 @@
 # 知見の担保の配線と効き目の検査
 
-知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を、議決 `D-0037` と Issue #1080 でそのジョブがテストを飛ばして緑にならない手順を、議決 `D-0039` と Issue #1088 で `protection.mjs` の解決策を手で走らせた記録だけでは `wired` にできない検査（下の「定期の配線の必須」）を足した。
+知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を、議決 `D-0037` と Issue #1080 でそのジョブがテストを飛ばして緑にならない手順を、議決 `D-0039` と Issue #1088 で `protection.mjs` の解決策を手で走らせた記録だけでは `wired` にできない検査（下の「定期の配線の必須」）を、議決 `D-0041` と Issue #1094 で解決策の `decided_by` が指す議決に同じ案があるかを照らす検査を足した。
 
 `K-0004` の解決策は 10 件になったが、どれも「効き目はまだ確かめていない」を `what` の文で書くだけで、`INDEX.md` の担保の列は `deterministic` と出ていた。配線も確認もしていない担保を決定論の担保と読み違えないように、真偽の項目にして機械で数える。
 
@@ -32,6 +32,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `verified` が `true` なのに、`verified_by` がない・空・列でない、項目が 1 つの参照でない・種類が `case`・`pr`・`event` でない、`case` が `C-NNNN` でないか `.factory-config/knowledge/cases/` にない、`pr` が正の整数でない、`event` が `<種類>:<id>` でない、`case` が 1 件もない（`pr`・`event` は手元で本物か照らせないので、事例記録に辿れることを求める）
 - `wired` が `true` なのに、`wired_by` がない・空・項目が欠けている、`workflow` が `.github/workflows/` の直下でない（ひな形の `ci/*.yml` は配線ではない）、`workflow`・`job`・`runs` のどれかが実在しない、その job が `runs` の検査を呼んでいない（下の「配線先の照合」）
 - `REQUIRED_SCHEDULE` の解決策（`K-0004` の issue 1018）が `wired: true` なのに、`wired_by` に schedule のジョブから `tools/sendback-check/protection.mjs` を呼ぶ項目がない（下の「定期の配線の必須」）
+- `decided_by` を書いた解決策で、`committee:D-NNNN` の形でない、`.factory-config/knowledge/committee/D-NNNN.yaml` がないか読めない、その議決の `enforcement` に同じ知見の id（`knowledge`）と同じ種類（`solution_kind` が解決策の `kind`）の案がない（`decision_mismatch`。下の「議決との照合」）
 
 ## 配線先の照合
 
@@ -54,6 +55,10 @@ branch protection の必須のチェックは PR の `GITHUB_TOKEN` では読め
 - ジョブと呼ぶ手順の `if:` が schedule で走らないと読めない形でない。字面で偽か、`github.event_name` を見るのに `== 'schedule'` がない・`!= 'schedule'` がある形は走らない側に数える（迷う形は呼んでいない側に数える）
 
 `wired` が `true` でない間は見ない。
+
+## 議決との照合
+
+解決策の `decided_by` は書き手が Issue から写すので、Issue と議決の番号がずれると（Issue #1017・#1018・#1024・#1025 で続いた）別の議決を指したまま残る（議決 `D-0041`、Issue #1094）。`check.py` は `decided_by` を書いた解決策ごとに、指す議決のファイル（`.factory-config/knowledge/committee/D-NNNN.yaml`）があり、その `enforcement` の列に `knowledge` がその知見の `id`、`solution_kind` がその解決策の `kind` の案があるかを照らし、なければ `decision_mismatch` で落とす。`decided_by` を書いていない解決策（`K-0002` の `config` など）は見ない。知見そのものの `decided_by`（`enforcement` の外）は Engine の `knowledge_check.py` が議決の実在を見るので、ここでは見ない。
 
 ## 担保の表示
 

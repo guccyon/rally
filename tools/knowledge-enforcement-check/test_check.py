@@ -359,6 +359,64 @@ class ScheduleTest(unittest.TestCase):
         self.assertIn("issue 1018）: wired にするには", errors[0])
 
 
+class DecisionTest(unittest.TestCase):
+    """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
+
+    def repo(self, **decisions: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        (d / check.ROOT / "committee").mkdir(parents=True)
+        for did, text in decisions.items():
+            (d / check.ROOT / "committee" / f"{did.replace('_', '-')}.yaml").write_text(text, encoding="utf-8")
+        return d
+
+    PLAN = "id: D-0001\nenforcement:\n- {knowledge: K-9999, level: deterministic, solution_kind: test, proposal: x}\n"
+
+    def test_議決の案に当たれば通る(self):
+        d = self.repo(D_0001=self.PLAN)
+        self.assertEqual(check.check_decision(k("deterministic", sol(decided_by="committee:D-0001")), d), [])
+
+    def test_decided_by_を書いていない解決策は見ない(self):
+        self.assertEqual(check.check_decision(k("deterministic", sol(), "x"), self.repo()), [])
+
+    def test_議決がなければ落ちる(self):
+        e = check.check_decision(k("deterministic", sol(decided_by="committee:D-0002")), self.repo(D_0001=self.PLAN))
+        self.assertEqual(len(e), 1)
+        self.assertIn("decision_mismatch: 議決 D-0002 が .factory-config/knowledge/committee/ にない", e[0])
+
+    def test_知見の_id_か種類が違えば落ちる(self):
+        d = self.repo(D_0001=self.PLAN.replace("K-9999", "K-0001"), D_0002=self.PLAN.replace("solution_kind: test", "solution_kind: lint"),
+                      D_0003="id: D-0003\noutcome: adopt\nknowledge: [K-9999]\n", D_0004="id: D-0004\nenforcement: {knowledge: K-9999, solution_kind: test}\n")
+        for did in ("D-0001", "D-0002", "D-0003", "D-0004"):
+            e = check.check_decision(k("deterministic", sol(decided_by=f"committee:{did}")), d)
+            self.assertEqual(len(e), 1, did)
+            self.assertIn(f"decision_mismatch: 議決 {did} の enforcement に K-9999 の test の案がない", e[0])
+
+    def test_形の崩れた_decided_by_は落ちる(self):
+        d = self.repo(D_0001=self.PLAN)
+        for v in ("D-0001", "committee:D-1", "committee:D-0001 ", None, 1):
+            e = check.check_decision(k("deterministic", sol(decided_by=v)), d)
+            self.assertEqual(len(e), 1, v)
+            self.assertIn("decision_mismatch: decided_by は committee:D-NNNN", e[0])
+
+    def test_読めない議決は落ちる(self):
+        e = check.check_decision(k("deterministic", sol(decided_by="committee:D-0001")), self.repo(D_0001="id: [D-0001\n"))
+        self.assertEqual(len(e), 1)
+        self.assertIn("decision_mismatch: 議決 D-0001 が読めない", e[0])
+
+    def test_main_で落とす(self):
+        d = self.repo(D_0001=self.PLAN.replace("K-9999", "K-0001"))
+        MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: test, what: x, issue: 1, wired: false, verified: false, decided_by: 'committee:D-0001'}\n"
+                       "    - {kind: lint, what: x, issue: 2, wired: false, verified: false, decided_by: 'committee:D-0001'}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 2）: decision_mismatch: 議決 D-0001 の enforcement に K-0001 の lint の案がない", errors[0])
+
+
 class RepoTest(unittest.TestCase):
     """このリポジトリの記録"""
 
