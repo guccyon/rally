@@ -9,7 +9,8 @@ pytest を入れて飛ばさずに走らせる形かを見る（差分が ENGINE
 写しを消した・名前を変えた PR を止める。議決 D-0053、Issue #1144）。どちらでもない手元では、まだ写していないとして飛ばす。
 形の検査（problems）が外れを見逃さないことは、ひな形を書き換えた写しで確かめる。
 ひな形と写しの ENGINE_REF は、形の検査とは別に knowledge-check.yml の ENGINE_REF と字面で照らし、片方だけ上げたら落とす
-（写しがなくても飛ばさない。議決 D-0053、Issue #1143）。
+（写しがなくても飛ばさない。議決 D-0053、Issue #1143）。knowledge-check.yml が ENGINE_REF を .factory-config/engine.lock から読む形（Engine ADR 0041）なら、
+engine.lock の版と照らし、engine.lock だけを上げた PR も落とす（議決 D-0080（起票時の番号は D-0078）、Issue #1225）。
 skipped を見る手順はひな形から走らせたときしか効かないので、test_engine.py と test_engine_patch.py そのものが CI=true か ENGINE_DIR を渡したときに
 Engine のチェックアウトや ENGINE_REF の版がなくても飛ばさずに落ちることを、Engine のない一時の置き場で子のプロセスとして走らせて確かめ、
 どちらも渡さないときだけ飛ぶことを対照にする（議決 D-0037 の ci_check の案。議決 D-0055、Issue #1152）。
@@ -185,7 +186,8 @@ class CopyMissingTest(unittest.TestCase):
 
 
 def ref_mismatches(repo: Path = REPO) -> list[str]:
-    """ひな形と（あれば）写しのうち、ENGINE_REF が knowledge-check.yml の ENGINE_REF と同じ版でないもの（議決 D-0053、Issue #1143）"""
+    """ひな形と（あれば）写しのうち、ENGINE_REF が knowledge-check.yml の ENGINE_REF と同じ版でないもの（議決 D-0053、Issue #1143）。
+    knowledge-check.yml が .factory-config/engine.lock を読む形なら、その版と照らす（test_engine_patch.py の engine_ref()。議決 D-0080、Issue #1225）"""
     ref = patch_check.engine_ref(repo / patch_check.WORKFLOW.relative_to(REPO))
     e = []
     for path, required in ((repo / TEMPLATE.relative_to(REPO), True), (repo / COPY.relative_to(REPO), False)):
@@ -194,7 +196,7 @@ def ref_mismatches(repo: Path = REPO) -> list[str]:
         refs = REF_VALUE.findall(path.read_text(encoding="utf-8"))
         if refs != [ref]:
             e.append(f"{path.relative_to(repo)} の ENGINE_REF（{', '.join(refs) or 'なし'}）が knowledge-check.yml の {ref} と同じ版でない。"
-                     "ENGINE_REF は knowledge-check.yml・ひな形・写しの 3 つを同じ PR でそろえて上げる")
+                     "ENGINE_REF は knowledge-check.yml（が読む .factory-config/engine.lock）・ひな形・写しの 3 つを同じ PR でそろえて上げる")
     return e
 
 
@@ -206,9 +208,12 @@ class EngineRefTest(unittest.TestCase):
 
     def test_ENGINE_REFを片方だけ上げると落ちる(self):
         ref, new = patch_check.engine_ref(), "a" * 40
-        texts = {patch_check.WORKFLOW: patch_check.WORKFLOW.read_text(encoding="utf-8"),
-                 TEMPLATE: TEMPLATE.read_text(encoding="utf-8")}
-        texts[COPY] = texts[TEMPLATE]   # 写しはひな形と同じ中身で置く
+        check_text = patch_check.WORKFLOW.read_text(encoding="utf-8")
+        # knowledge-check.yml の版は、env の ENGINE_REF の行の形でも、.factory-config/engine.lock を読む形（Engine ADR 0041）でも上げる（Issue #1225）
+        forms = {"engine.lock を読む形": (check_text if patch_check.LOCK_REL in check_text and not REF_LINE.search(check_text)
+                                          else f"run: |\n  lock={patch_check.LOCK_REL}\n", True),
+                 "env の ENGINE_REF の行": (f"env:\n  ENGINE_REF: {ref}\n", False)}
+        template = TEMPLATE.read_text(encoding="utf-8")
         cases = [
             # （knowledge-check.yml・ひな形・写しの ENGINE_REF（None は写しなし）、落ちるか）
             ((ref, ref, None), False), ((new, new, None), False), ((new, new, new), False), ((ref, ref, ref), False),
@@ -216,15 +221,20 @@ class EngineRefTest(unittest.TestCase):
             ((new, new, ref), True), ((ref, ref, new), True), ((new, ref, new), True),
             ((ref, f"'{ref}'", None), False), ((ref, f"{ref}  # 版", None), False),
         ]
-        for refs, fails in cases:
-            with self.subTest(refs), tempfile.TemporaryDirectory() as d:
-                for (src, text), value in zip(texts.items(), refs):
-                    if value is None:
-                        continue
-                    dst = Path(d) / src.relative_to(REPO)
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    dst.write_text(REF_LINE.sub(f"  ENGINE_REF: {value}", text), encoding="utf-8")
-                self.assertEqual(bool(ref_mismatches(Path(d))), fails, ref_mismatches(Path(d)))
+        for form, (check_body, by_lock) in forms.items():
+            for (check_ref, *refs), fails in cases:
+                with self.subTest(form=form, refs=(check_ref, *refs)), tempfile.TemporaryDirectory() as d:
+                    files = {patch_check.WORKFLOW: check_body if by_lock else REF_LINE.sub(f"  ENGINE_REF: {check_ref}", check_body)}
+                    if by_lock:
+                        files[REPO / patch_check.LOCK_REL] = f"# 版\n{check_ref}\n"
+                    for src, value in zip((TEMPLATE, COPY), refs):   # 写しはひな形と同じ中身で置く
+                        if value is not None:
+                            files[src] = REF_LINE.sub(f"  ENGINE_REF: {value}", template)
+                    for src, body in files.items():
+                        dst = Path(d) / src.relative_to(REPO)
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        dst.write_text(body, encoding="utf-8")
+                    self.assertEqual(bool(ref_mismatches(Path(d))), fails, ref_mismatches(Path(d)))
 
     def test_ENGINE_REFがないか2行あると落ちる(self):
         template = TEMPLATE.read_text(encoding="utf-8")
@@ -233,7 +243,8 @@ class EngineRefTest(unittest.TestCase):
                                                    f"        env:\n          ENGINE_REF: {patch_check.engine_ref()}\n          CI: \"true\"\n", 1)}.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as d:
                 self.assertNotEqual(text, template)
-                for src, body in ((patch_check.WORKFLOW, patch_check.WORKFLOW.read_text(encoding="utf-8")), (TEMPLATE, text)):
+                for src, body in ((patch_check.WORKFLOW, patch_check.WORKFLOW.read_text(encoding="utf-8")), (TEMPLATE, text),
+                                  (REPO / patch_check.LOCK_REL, f"{patch_check.engine_ref()}\n")):
                     dst = Path(d) / src.relative_to(REPO)
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     dst.write_text(body, encoding="utf-8")
@@ -533,10 +544,13 @@ class EnforcementScopeTest(unittest.TestCase):
             for rel, body in {
                 check.KNOWLEDGE_CHECK: (HERE / "check.py").read_text(encoding="utf-8"),
                 ".github/workflows/conflict-check.yml": workflow,
+                # wired: true の解決策はどれも enforcement のジョブの check.py の配線を求める（議決 D-0072、Issue #1201）ので、ひな形を写して置く
+                check.KNOWLEDGE_ENFORCEMENT_WORKFLOW: TEMPLATE.read_text(encoding="utf-8"),
                 "tools/conflict-check/test_watch.py": "", "tools/conflict-check/test_engine.py": "",
                 f"{check.ROOT}/K-0010.yaml": yaml.safe_dump({"id": "K-0010", "enforcement": {"level": "deterministic", "solutions": [{
                     "kind": "ci_check", "issue": 1034, "wired": True, "verified": False,
-                    "wired_by": [{"workflow": ".github/workflows/conflict-check.yml", "job": "conflict-check", "runs": r} for r in check.CONFLICT_TESTS]}]}},
+                    "wired_by": [{"workflow": ".github/workflows/conflict-check.yml", "job": "conflict-check", "runs": r} for r in check.CONFLICT_TESTS]
+                    + [{"workflow": check.KNOWLEDGE_ENFORCEMENT_WORKFLOW, "job": SCOPE_JOB, "runs": check.KNOWLEDGE_CHECK}]}]}},
                     allow_unicode=True),
             }.items():
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -568,7 +582,8 @@ class NoSkipTest(unittest.TestCase):
 
     MODULES = ("test_engine", "test_engine_patch")
     FILES = (f"{DIR}/check.py", f"{DIR}/test_engine.py", f"{DIR}/test_engine_patch.py",
-             f"{DIR}/engine/knowledge-enforcement.patch", ".github/workflows/knowledge-check.yml")
+             f"{DIR}/engine/knowledge-enforcement.patch", ".github/workflows/knowledge-check.yml",
+             patch_check.LOCK_REL)   # knowledge-check.yml が ENGINE_REF を読む（Issue #1225）
     ENV_KEYS = ("CI", "ENGINE_DIR", "ENGINE_PATCH_REF", "GITHUB_ACTIONS")
 
     @classmethod

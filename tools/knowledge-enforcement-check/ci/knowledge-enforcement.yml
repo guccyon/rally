@@ -26,7 +26,7 @@
 # conflict-check の ENGINE_REF の Engine で EngineFinishedTest が todo のままなら落とす（議決 D-0067、Issue #1178）
 # enforcement のジョブは Issue #948 のコメントを取って check.py に渡し、K-0004 の engine-head に関わる解決策が verified: true なら
 # head-record.mjs で engine-head の記録を照らす（議決 D-0047、Issue #1114）。読むので issues: read が要る
-# 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
+# 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF（.factory-config/engine.lock の版）と同じ版にそろえる）。形は test_ci.py が見る。
 name: knowledge-enforcement
 
 on:
@@ -38,10 +38,11 @@ permissions:
 
 env:
   # Engine の固定した版（40 桁のコミット SHA）。engine/knowledge-enforcement.patch がこの版に当たり、担保の表示が check.py と同じ線になるかを
-  # test_engine.py で確かめる（議決 D-0016・D-0017、Issue #965・#968）。knowledge-check.yml の ENGINE_REF と同じ版にそろえる
+  # test_engine.py で確かめる（議決 D-0016・D-0017、Issue #965・#968）。knowledge-check.yml の ENGINE_REF（knowledge-check.yml が読む
+  # .factory-config/engine.lock の版。Engine ADR 0041）と同じ版にそろえる。engine.lock だけを上げると test_ci.py が落ちる（議決 D-0080、Issue #1225）
   # （test_engine_patch.py が knowledge-check.yml の ENGINE_REF の版をこのチェックアウトから取り出し、差分が当たらずまだ入ってもいなければ
   # patch_stale で落とす。版がそろっていないとチェックアウトにその版がなく落ちる。議決 D-0024、Issue #1014）
-  ENGINE_REF: 9d3713a69b7784fc31069bf370002d554bfc3a64
+  ENGINE_REF: ad5c659e090faf91beedf9f2bd9f95043f9505d7
 
 concurrency:
   group: knowledge-enforcement-${{ github.ref }}

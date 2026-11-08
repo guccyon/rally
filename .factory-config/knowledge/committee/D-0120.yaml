@@ -1,0 +1,65 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0120
+pr: https://github.com/guccyon/rally/pull/1311
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に 1 項目を足しただけで、statement・scope・evidence・confidence
+    は変えておらず、README の「担保した知見も消さず solutions に残す」の決まりに合っています。
+  - 'what の括弧の中の案は D-0080 の enforcement の 1 つ目の proposal と文面が同じで、decided_by: committee:D-0080
+    と D-0080 の pr（#1222）で辿れ、起票時の番号 D-0078（PR #1212 の議決）との違いもほかの項目と同じ書き方で断っています。'
+  - issue 1143 の既存の項目（EngineRefTest が knowledge-check.yml の env の ENGINE_REF を読む）は
+    Engine ADR 0041 で前提が変わって古くなっていますが、新しい項目がその壊れ方と直し方を書いているので矛盾ではなく続きの記録として読めます。
+  - 次に K-0004 を直す変更セットでは、issue 1143 の項目の what に issue 1225 で読み方を直したことを書き添えるか、どちらかを指すようにして、2
+    つの項目が同じ案を入れたと別々に言う重複を解いてください。
+  - 'requires_check を {runs, workflow} の形で書き wired: false・verified: false にしているので、D-0077
+    の決まりと README の K-0004 を「すべての解決策に書いた」側に置く一覧の両方と食い違いません。'
+  - どの解決策も本物の記録で効き目を確かめておらず、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の解決策は decided_by: committee:D-0080 を指していて、what の括弧の中は D-0080 の enforcement
+    の test の案（knowledge: K-0004、solution_kind: test）と文面が同じなので、機械で辿れます。'
+  - '起票時の番号 D-0078 は別の PR #1212 の議決で、D-0080 の pr は #1222 なので、番号のずれと PR 番号を断ってあるのは辿るうえで妥当です。'
+  - 'engine.lock が ad5c659 でひな形が 9d3713a のままだったことや、4 つのテストファイルが読み込みで 1 件も走らなかったことは知見の置き場のほかの記録には出てこず
+    what の申告しか根拠がないので、建設者が配線するときに Issue #1225 の差分とテストの実行記録で確かめてください。'
+  - Engine ADR 0041 は材料の中で中身を確かめられないので、次に直すときは道か節の名前まで書くと辿りやすくなります。
+  - 'Engine に足したテストを手元で確かめていないことと、写しがないことを断って wired: false・verified: false にしているので、記録より強く言っておらず、K-0004
+    の statement・evidence・confidence は変わっていないので confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・コミットの SHA・Issue と PR と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は、議決 D-0080 で担保の担当が「先に入れるべき」とした test の案（ENGINE_REF がずれたら落とす）を入れた記録を、K-0004
+    の enforcement.solutions に 1 項目足しただけで、決定論の担保を足す向きに合っています。
+  - ENGINE_REF のずれは版を上げるたびに起き、線は 40 桁の SHA が一致するかどうかではっきり引け、外すとテスト 4 本が 1 件も走らなくなるほど痛く、作る費用は小さいので、テストで担保するのが妥当です。
+  - engine_ref() を engine.lock を読む形と env の行の形の両方に合わせ、engine.lock だけ・ひな形だけ・写しだけを上げた組で落ちることを確かめる作りは、今回のように読み込みで黙って全部飛ぶ穴をふさいでいます。
+  - 'requires_check に test_ci.py と .github/workflows/knowledge-enforcement.yml を書いているので、wired:
+    true にするときは check.py が requires_check_unwired で配線を求めることになり、手で組を足し忘れる穴は残りません。'
+  - 'ただし .github/workflows/ への写しがまだなく PR ごとに走らないので、建設者が写すまでは外れても何も止まらないものとして扱い、wired:
+    false・verified: false のままにしているのは正しいです。'
+  - 差分で Engine に足したテストは pytest がなく手元で確かめていないと断っているので、建設者が配線するときにその実行記録を cases/ に残し、それを
+    verified_by にしてから verified を上げてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0080 の test の案を入れた記録を 1 項目足しただけで、statement・scope・evidence・confidence
+    は変えていないので、知見の主張の範囲は広がっていません。
+  - '足した項目は wired: false・verified: false のままで、test_ci.py が .github/workflows/ の写しからまだ走らないことも断っているので、記録より強く言っていません。'
+  - ただし what には D-0080 の案のほかに、engine_ref() の読み方の直し、ひな形の ENGINE_REF を ad5c659 に上げたこと、EnforcementScopeTest
+    への check.py の配線という別の直しが 1 項目にまとまっていて範囲が広いので、次に直すときは解決策ごとに項目を分けてください。
+  - 反例として、engine.lock の最初の行が 40 桁の SHA でない形（タグや短い SHA）に変わると engine_ref() がまた読み込みで落ち、test_ci.py
+    などが 1 件も走らなくなる同じ穴が残るので、読めないときに黙って飛ばさずはっきり落ちることを確かめてください。
+  - Engine に足したテストは pytest がなく手元で確かめていないと自分で断っており、EngineRefTest の組も実行の記録が知見の置き場にないので、建設者が配線するときに実行記録で確かめてください。
+  - 差し戻しの判定についての K-0004 に CI の仕組みの解決策がたまり続けるずれは今回も広がっていますが D-0053 以降と同じ扱いなので採否には響かず、どの解決策も効き目を確かめていないので
+    confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
