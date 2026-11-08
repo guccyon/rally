@@ -1,0 +1,29 @@
+id: K-0015
+theme: 6
+kind: causal
+statement: >-
+  同じ PR で同じ原因の作業が繰り返されても（同じファイルの機械的な衝突の解消、同じ本文の指摘への body_fix）、回数の上限や
+  「同じことが繰り返されている」と見て原因の直しに切り替える段がないと、繰り返しが続き、元の直し（CHANGELOG.md への直接の書き換えを
+  changelog.d/ に移す、本文の組み立てを直す）が後回しになる（C-0008 では CHANGELOG.md だけの機械的な衝突の解消が 13 回、
+  同じ本文の指摘への body_fix が 5 回続いた）。機械的な解消は 1 回ごとの費用が小さくても、衝突の元が PR の中に残る限り止まらない。
+  ただし、Engine が繰り返しを数えていないのか、数えていても止める線がないのかは材料で確かめていない。
+scope:
+  work: [dev.build, dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
+  roles: [supervisor, body_fix, judge]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0008
+  - pr: 678
+  - event: "case.analyzed:370961"
+status: draft
+verified_at: 2026-11-08
+review_by: 2026-12-08
+confidentiality: product
+related: [K-0010, K-0013, K-0002, K-0009, K-0016]
+invalidate_when:
+  - "同じ PR の同じファイルの機械的な衝突の解消が一定の回数を超えたら、原因を直すジョブか人への知らせに切り替わるようになった"
+  - "同じ指摘への body_fix が続いたら、ループを止めて指示役に知らせるようになった"
+  - "上限や切り替えを入れたあとも、同じ PR で同じ原因の繰り返しが減らなかった（原因は回数の線ではなかった）"
