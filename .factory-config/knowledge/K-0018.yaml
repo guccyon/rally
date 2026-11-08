@@ -17,7 +17,7 @@ evidence:
   - case: C-0009
   - issue: 243
   - event: "case.analyzed:522825"
-status: draft
+status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
@@ -26,3 +26,4 @@ invalidate_when:
   - "チケットの起こし方の規約に、契約の変更を先行の子チケットにし各アプリをそれに依存させる決まりが入った"
   - "束 process:cost_outlier:code_change のチケットを集計して、契約と複数のアプリを 1 枚にまとめたチケットが束の少数だと分かった"
   - "例のチケットの本文を確かめ、まとめて書かれた理由が規約のなさではなかった（例: 契約の子チケットが別にあったのに投入の順がずれた）"
+decided_by: committee:D-0119

@@ -22,7 +22,7 @@ evidence:
   - pr: 246
   - pr: 247
   - event: "case.analyzed:522825"
-status: draft
+status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
@@ -31,3 +31,4 @@ invalidate_when:
   - "投入の前にチケットの大きさを見積もり、ターン予算の近くの大きさのものを deps 付きの子チケットに分けて投入するようになった"
   - "同じ大きさ（領域の数・契約や schema の差分・行数）のチケットが、たいてい 1 ジョブで途中終了せずに終わると分かった"
   - "束 process:cost_outlier:code_change のチケットを集計して、途中終了を伴うものが束の少数だと分かった"
+decided_by: committee:D-0119
