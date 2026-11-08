@@ -60,6 +60,11 @@ touch:
           select * from (select 'コーチ: ' || display_name, 'mock.coach.' || account_id
                          from identity.accounts where role = 'coach' order by created_at, account_id limit 3) c
         ) a
+  # 時間をまたぐシナリオ（factory-engine の ADR 0028 の scenario_time）。QA が環境の再起動と時計の進めを起こせる。
+  # restart は再起動する部品（DB は残す）。clock_env はサーバーの時計を進める秒数を渡す compose の変数（backend の CLOCK_OFFSET_SECONDS）。
+  # 進めた時計は、次に版を出す・戻す・入れ直すときに 0 に戻る
+  restart: [backend]
+  clock_env: CLOCK_OFFSET_SECONDS
   reset:
     service: postgres
     command: ["psql", "-U", "rally", "-d", "postgres", "-v", "ON_ERROR_STOP=1",
