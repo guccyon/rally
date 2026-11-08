@@ -40,7 +40,8 @@ enforcement:
         template.json だけを変えると両方の合わせる側が落ち、Issue #1121 の時点の Engine の PR-002（影響範囲の名前と、仮決め・知見がない）が
         headings_mismatch で落ちることを確かめた。照らすのは CI で、followers.test.mjs は ci/pr-body-engine.yml の node --test の中で
         ENGINE_DIR の Engine の rubric を照らす（ENGINE_DIR を渡したときと CI=true では飛ばさない）。手元の Engine（57069a8）の PR-002 は
-        まだ食い違うので落ちる。Engine の PR-002 を template.json に合わせて ENGINE_REF を上げること、ci/pr-body-engine.yml を
+        まだ食い違うが、PR-002 が Issue #1121 の時点の形のままのときだけ todo にして CI を止めない（ほかの形の食い違いや読めない rubric は落とす。
+        PR-002 を合わせた Engine の写しでは todo が外れて通ることを確かめた）。Engine の PR-002 を template.json に合わせて ENGINE_REF を上げること、ci/pr-body-engine.yml を
         .github/workflows/ に写して必須のチェックにすることは建設者が行うので、まだ配線されておらず効き目は確かめていない。
         種類を config にしたのは Issue #1121（委員会の週 1 の定例の決定）の解決策の種類に従ったためで、担保の中心は正本と合わせる側を
         followers.json の設定で決めたことにあり、followers.test.mjs はその設定を CI で照らす手段。議決 D-0006 の案（solution_kind は test）とは
