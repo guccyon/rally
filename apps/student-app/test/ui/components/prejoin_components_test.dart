@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rally_student_app/ui/components/camera_preview_frame.dart';
 import 'package:rally_student_app/ui/components/join_bar.dart';
 import 'package:rally_student_app/ui/components/level_meter.dart';
 import 'package:rally_student_app/ui/components/media_toggle.dart';
+import 'package:rally_student_app/ui/components/rally_camera_preview.dart';
 import 'package:rally_student_app/ui/countdown.dart';
 import 'package:rally_student_app/ui/theme/rally_theme.dart';
 import 'package:rally_student_app/ui/theme/rally_tokens.dart';

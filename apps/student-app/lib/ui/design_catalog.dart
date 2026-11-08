@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'components/booking_card.dart';
-import 'components/camera_preview_frame.dart';
 import 'components/confirm_dialog.dart';
 import 'components/empty_state.dart';
 import 'components/join_bar.dart';
@@ -10,6 +9,7 @@ import 'components/list_row.dart';
 import 'components/media_toggle.dart';
 import 'components/notice.dart';
 import 'components/rally_button.dart';
+import 'components/rally_camera_preview.dart';
 import 'components/rally_card.dart';
 import 'components/score_panel.dart';
 import 'components/section_loading.dart';
