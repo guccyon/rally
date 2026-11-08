@@ -621,7 +621,7 @@ class KnowledgeGateTest(unittest.TestCase):
         # K-0004 の 3 つも REQUIRED_PR・REQUIRED_PR_WORKFLOW から外し、check.py の組はどこにも名前で挙げない
         self.assertEqual(check.KNOWLEDGE_GATE[:2], (self.CHECK, self.WF))
         self.assertFalse([key for key, (target, _) in check.REQUIRED_PR.items() if target == self.CHECK])
-        self.assertFalse([key for key, wf in check.REQUIRED_PR_WORKFLOW.items() if wf == self.WF])
+        self.assertFalse([key for key, wf in check.REQUIRED_PR_WORKFLOW.items() if wf == self.WF and check.REQUIRED_PR[key][0] == self.CHECK])
         for kid, issue in self.SOLUTIONS[3:]:
             self.assertNotIn((kid, issue), {key for key, (target, _) in check.REQUIRED_PR.items() if target == self.CHECK})
 
@@ -690,70 +690,93 @@ class KnowledgeGateTest(unittest.TestCase):
 
 class ReadmeListPullRequestTest(unittest.TestCase):
     """K-0004 の issue 1062 の解決策（README の一覧と K-*.yaml を照らす test_check.py のテスト）は pull_request のジョブから test_check.py を呼ばないと
-    wired にできない（議決 D-0052、Issue #1139）"""
+    wired にできない（議決 D-0052、Issue #1139）。issue 1138 の解決策（.factory-config/knowledge/README.md の一覧も照らす）も同じで、どちらも
+    ひな形の写しの .github/workflows/knowledge-enforcement.yml のジョブを指す項目だけを数える（議決 D-0075、Issue #1215）"""
 
     TEST = "tools/knowledge-enforcement-check/test_check.py"
     CHECK, TEMPLATE, WF = KnowledgeGateTest.CHECK, KnowledgeGateTest.TEMPLATE, KnowledgeGateTest.WF
+    ISSUES = (1062, 1138)
     repo, template = KnowledgeGateTest.repo, KnowledgeGateTest.template
 
-    def errors(self, d: Path, issue=1062, kid="K-0004", wired=True, job="enforcement", runs=None) -> list[str]:
-        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+    def item(self, issue=1062, kid="K-0004", wired=True, job="enforcement", runs=None, workflow=None) -> dict:
+        return {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False,
-             "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.TEST}]}]}}
+             "wired_by": [{"workflow": workflow or self.WF, "job": job, "runs": runs or self.TEST}]}]}}
+
+    def errors(self, d: Path, issue=1062, **kw) -> list[str]:
+        item = self.item(issue, **kw)
         return check.check_pull_request(item, d) + check.check_wiring(item, d)
 
+    def assert_unwired(self, e: list[str], issue, what) -> None:
+        self.assertEqual(len(e), 1, (issue, what, e))
+        self.assertIn(f"issue {issue}）: wired にするには", e[0])
+        self.assertIn(f"on.pull_request のある {self.WF} で", e[0])
+        self.assertIn(self.TEST, e[0])
+        self.assertIn("D-0075", e[0])
+
     def test_対象に挙げてある(self):
-        self.assertEqual(check.REQUIRED_PR[("K-0004", 1062)], (self.TEST, "D-0052"))
+        self.assertEqual(check.REQUIRED_PR[("K-0004", 1062)], (self.TEST, "D-0052・D-0075"))
+        self.assertEqual(check.REQUIRED_PR[("K-0004", 1138)], (self.TEST, "D-0075"))
+        for issue in self.ISSUES:
+            self.assertEqual(check.REQUIRED_PR_WORKFLOW[("K-0004", issue)], self.WF)
 
     def test_ひな形をそのまま写した_enforcement_のジョブなら通る(self):
-        self.assertEqual(self.errors(self.repo(self.template())), [])
+        d = self.repo(self.template())
+        for issue in self.ISSUES:
+            self.assertEqual(self.errors(d, issue), [], issue)
 
     def test_定期や手動だけのワークフローでは落ちる(self):
         for on in ("  workflow_dispatch:\n", "  schedule:\n    - cron: '0 0 * * *'\n", "  push:\n    branches: [main]\n"):
-            e = self.errors(self.repo(self.template(on)))
-            self.assertEqual(len(e), 1, (on, e))
-            self.assertIn("on.pull_request", e[0])
-            self.assertIn(self.TEST, e[0])
-            self.assertIn("議決 D-0052", e[0])
+            d = self.repo(self.template(on))
+            for issue in self.ISSUES:
+                self.assert_unwired(self.errors(d, issue), issue, on)
+
+    def test_ほかのワークフローのジョブでは落ちる(self):
+        # 中身がひな形と同じでも、必須チェックにする写し（knowledge-enforcement.yml）でなければ数えない（議決 D-0075、Issue #1215）
+        other = ".github/workflows/knowledge.yml"
+        d = self.repo(self.template())
+        (d / other).write_text(self.template(), encoding="utf-8")
+        for issue in self.ISSUES:
+            self.assertEqual(check.check_wiring(self.item(issue, workflow=other), d), [], issue)
+            self.assert_unwired(self.errors(d, issue, workflow=other), issue, other)
 
     def test_test_check_py_でなく_check_py_を指す項目では落ちる(self):
-        e = check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
-            {"kind": "test", "issue": 1062, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.CHECK}]}]}},
-            self.repo(self.template()))
-        self.assertEqual(len(e), 1, e)
-        self.assertIn(self.TEST, e[0])
+        d = self.repo(self.template())
+        for issue in self.ISSUES:
+            self.assert_unwired(check.check_pull_request(self.item(issue, runs=self.CHECK), d), issue, self.CHECK)
 
     def test_test_check_py_を呼ばないジョブでは落ちる(self):
         text = self.template().replace("          python3 -B tools/knowledge-enforcement-check/test_check.py -v\n", "", 1)
         self.assertNotEqual(text, self.template())
-        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
-            {"kind": "test", "issue": 1062, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.TEST}]}]}},
-            self.repo(text))), 1)
+        d = self.repo(text)
+        for issue in self.ISSUES:
+            self.assert_unwired(check.check_pull_request(self.item(issue), d), issue, "test_check.py なし")
 
     def test_pull_request_では走らないジョブは数えない(self):
         text = self.template().replace("  enforcement:\n    runs-on: ubuntu-latest\n",
                                        "  enforcement:\n    if: github.event_name != 'pull_request'\n    runs-on: ubuntu-latest\n", 1)
         self.assertNotEqual(text, self.template())
-        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
-            {"kind": "test", "issue": 1062, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.TEST}]}]}},
-            self.repo(text))), 1)
+        d = self.repo(text)
+        for issue in self.ISSUES:
+            self.assert_unwired(check.check_pull_request(self.item(issue), d), issue, "if:")
 
     def test_配線していない解決策は見ない(self):
         d = self.repo(self.template("  workflow_dispatch:\n"))
-        self.assertEqual(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
-            {"kind": "test", "issue": 1062, "wired": False}]}}, d), [])
-        self.assertEqual(check.check_pull_request({"id": "K-0010", "_file": "K-0010.yaml", "enforcement": {"level": "deterministic", "solutions": [
-            {"kind": "test", "issue": 1062, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.TEST}]}]}}, d), [])
+        for issue in self.ISSUES:
+            self.assertEqual(check.check_pull_request(self.item(issue, wired=False), d), [], issue)
+            self.assertEqual(check.check_pull_request(self.item(issue, kid="K-0010"), d), [], issue)
 
     def test_main_で落とす(self):
         d = self.repo(self.template("  workflow_dispatch:\n"))
-        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       f"    - {{kind: test, what: x, issue: 1062, wired: true, wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.TEST}}}]}}\n")
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n" + "".join(
+            f"    - {{kind: test, what: x, issue: {issue}, wired: true, wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.TEST}}}]}}\n"
+            for issue in self.ISSUES))
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
         errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
-        self.assertEqual(len(errors), 1, errors)
+        self.assertEqual(len(errors), 2, errors)
         self.assertIn("issue 1062）: wired にするには", errors[0])
+        self.assertIn("issue 1138）: wired にするには", errors[1])
 
 
 class EnginePatchPullRequestTest(unittest.TestCase):
