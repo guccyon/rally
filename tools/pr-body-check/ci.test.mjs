@@ -6,7 +6,8 @@
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
-// 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。
+// 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
+// PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable で飛ばさず落ちることも見る（議決 D-0068 の test の案、Issue #1180）。
 // ci/pr-body-patch.yml（engine/pr-body-gate.patch が ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で既定のブランチへの push と毎日照らし、
 // patch_stale か patch_partially_applied なら Issue を開くか更新する。議決 D-0068（起票時の番号は D-0066）、Issue #1179）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
@@ -339,6 +340,18 @@ function fakeProtGh({ classic = { out: classicJson([CHECK_NAME]) }, rules = { ou
  * 読む・照らす・Issue の 3 つの手順を順に動かす。copy が null なら写しを置かない。
  */
 function runProtection({ gh = {}, copy = template, others = {}, token = "t" } = {}) {
+  const { root, dir, runStep } = protSandbox({ gh, copy, others });
+  const read = runStep(protReadStep, root, { GH_TOKEN: token });
+  const check = read.status === 0 ? runStep(protCheckStep, dir, {}) : null;
+  const outcome = check === null ? "skipped" : check.status === 0 ? "success" : "failure";
+  const issue = runStep(protIssueStep, dir, { GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
+  const calls = existsSync(join(root, "calls.log")) ? readFileSync(join(root, "calls.log"), "utf8") : "";
+  const commentPath = join(dir, "protection-comment.md");
+  return { read, check, issue, calls, body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+}
+
+/** 偽の gh と protection.mjs を置いた仮のリポジトリと、そこで手順の run を動かす runStep(step, cwd, env) を返す。 */
+function protSandbox({ gh = {}, copy = template, others = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "pr-body-protection-"));
   const dir = join(root, "tools", "pr-body-check");
   const sendback = join(root, "tools", "sendback-check");
@@ -358,13 +371,7 @@ function runProtection({ gh = {}, copy = template, others = {}, token = "t" } = 
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: "guccyon/rally", GITHUB_SERVER_URL: "https://github.com",
     GITHUB_RUN_ID: "123", BRANCH: "main", ISSUE_TITLE, GITHUB_STEP_SUMMARY: join(root, "summary"), GITHUB_ACTIONS: "true" };
   const runStep = (step, cwd, extra) => spawnSync("bash", ["-e", "-o", "pipefail", "-c", runScript(step)], { cwd, env: { ...env, ...extra }, encoding: "utf8" });
-  const read = runStep(protReadStep, root, { GH_TOKEN: token });
-  const check = read.status === 0 ? runStep(protCheckStep, dir, {}) : null;
-  const outcome = check === null ? "skipped" : check.status === 0 ? "success" : "failure";
-  const issue = runStep(protIssueStep, dir, { GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
-  const calls = existsSync(join(root, "calls.log")) ? readFileSync(join(root, "calls.log"), "utf8") : "";
-  const commentPath = join(dir, "protection-comment.md");
-  return { read, check, issue, calls, body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+  return { root, dir, runStep };
 }
 
 test("pr-body-protection は既定のブランチへの push・定期（schedule）・手動でだけ走り、PR では走らない。トークンは branch protection を読む手順だけに渡す", () => {
@@ -480,6 +487,81 @@ test("写し（.github/workflows/pr-body-protection.yml）があれば、ひな�
   skip: existsSync(protCopyPath) ? false : "まだ .github/workflows/ に写していない",
 }, () => {
   assert.equal(readFileSync(protCopyPath, "utf8").trimEnd(), protTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
+});
+
+// 定期の照合そのものが黙って止まる外れ方を塞ぐ（議決 D-0068 の test の案。Issue #1180 の起票時の番号は D-0066。PR #1176）。
+// 写しがひな形と同じかは上のテストで見るが、ひな形と写しを一緒に変えれば通る。写しから schedule や workflow_dispatch を外したり、
+// トークンを読めないときに飛ばして緑にしたりすると、必須のチェックが外されても誰も気づかないので、写しそのものの形と読む手順の振る舞いを見る。
+/** 定期・手動で走り、トークンを読めないときに protection_unreadable で落ちる形かの外れ（空なら通る）。注釈の行は見ない。 */
+function protectionRunProblems(text) {
+  const problems = [];
+  const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = on < 0 ? [] : lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l)));
+  const onKeys = onBody.filter((l) => /^ {2}[\w-]+:/.test(l)).map((l) => l.trim().replace(/:.*$/, ""));
+  const schedule = onBody.findIndex((l) => /^ {2}schedule:\s*$/.test(l));
+  const scheduleBody = schedule < 0 ? [] : onBody.slice(schedule + 1, onBody.findIndex((l, i) => i > schedule && /^ {2}\S/.test(l)) >>> 0);
+  if (!scheduleBody.some((l) => /^ {4}- cron: (["'])\S+(\s+\S+){4}\1\s*$/.test(l))) {
+    problems.push("on の schedule に cron がない（定期に照らさないと、PR のない日に必須のチェックが外されても気づけない）");
+  }
+  if (!onKeys.includes("workflow_dispatch")) problems.push("on に workflow_dispatch がない（写したあとに手で走らせて確かめられない）");
+  if (lines.some((l) => /^\s*(- )?continue-on-error:/.test(l))) problems.push("continue-on-error があると、読めなくても落ちない");
+  const job = jobBody(lines, "protection");
+  if (job === null) return [...problems, "protection のジョブがない"];
+  if (job.some((l) => /^ {4}if:/.test(l))) problems.push("protection のジョブに if: があると、定期の照合が飛ばされうる");
+  const read = jobSteps(job).find((s) => s.some((l) => /secrets\.PR_BODY_PROTECTION_TOKEN/.test(l)));
+  if (!read) return [...problems, "PR_BODY_PROTECTION_TOKEN を読む手順がない"];
+  if (read.some((l) => /^\s*(- )?if:/.test(l))) problems.push("トークンを読む手順に if: があると、読めないときに飛ばされうる");
+  const tokenVar = read.map((l) => l.match(/^\s*(\w+): \$\{\{ secrets\.PR_BODY_PROTECTION_TOKEN \}\}\s*$/)?.[1]).find(Boolean);
+  if (!tokenVar) return [...problems, "PR_BODY_PROTECTION_TOKEN は読む手順の env にそのまま渡す"];
+  if (!read.some((l) => /^\s*run: \|\s*$/.test(l))) return [...problems, "トークンを読む手順が run: | でない"];
+  // 本物の gh はトークンがないと認証の誤りで終了コード 4 を返す
+  const cases = [
+    ["トークンがない", "", { classic: { out: "", rc: 4 }, rules: { out: "", rc: 4 } }],
+    ["権限がない（403）", "t", { classic: { out: '{"message":"Resource not accessible by personal access token","status":"403"}', rc: 1 } }],
+    ["rulesets を読めない", "t", { rules: { out: '{"message":"Not Found"}', rc: 1 } }],
+  ];
+  for (const [name, token, gh] of cases) {
+    const { root, runStep } = protSandbox({ gh });
+    const r = runStep(read, root, { [tokenVar]: token });
+    if (r.status === 0 || !/^::error title=pr-body-protection protection_unreadable::/m.test(r.stdout)) {
+      problems.push(`${name}ときに protection_unreadable で落ちない（終了コード ${r.status}）`);
+    }
+  }
+  return problems;
+}
+
+test("pr-body-protection のひな形は定期・手動で走り、トークンを読めないときは protection_unreadable で飛ばさず落ちる", () => {
+  assert.deepEqual(protectionRunProblems(protTemplate), []);
+});
+
+test("pr-body-protection の定期・手動の on を外す・読めないときに飛ばす直しは外れになる", () => {
+  const readStep = "      - name: branch protection を読む（K-0001）\n";
+  const mutants = {
+    "schedule を外す": (t) => t.replace(/^ {2}schedule:\n {4}- cron: "[^"]+"\n/m, ""),
+    "cron を空にする": (t) => t.replace(/^( {4}- cron: )"[^"]+"$/m, '$1""'),
+    "workflow_dispatch を外す": (t) => t.replace(/^ {2}workflow_dispatch:\n/m, ""),
+    "on を 1 行の列にする": (t) => t.replace(/^on:\n(?: {2}.*\n)+/m, "on: [push]\n"),
+    "ジョブに if: を足す": (t) => t.replace(/^( {4}runs-on: ubuntu-latest\n)/m, "$1    if: github.event_name != 'schedule'\n"),
+    "読む手順に if: を足す": (t) => t.replace(readStep, `${readStep}        if: env.HAS_TOKEN == 'true'\n`),
+    "読む手順に continue-on-error を足す": (t) => t.replace(readStep, `${readStep}        continue-on-error: true\n`),
+    "トークンがないときは警告にして飛ばす": (t) => t.replace(/(protection_unreadable::シークレット PR_BODY_PROTECTION_TOKEN がない[^\n]*\n\s*)exit 1/, "$1exit 0")
+      .replace("::error title=pr-body-protection protection_unreadable::シークレット", "::warning title=pr-body-protection::シークレット"),
+    "権限がないときに飛ばす": (t) => t.replace(/(の branch protection を読めなかった[^\n]*\n\s*)exit 1/, "$1exit 0"),
+    "rulesets を読めないときに飛ばす": (t) => t.replace(/(の rulesets を読めなかった[^\n]*\n\s*)exit 1/, "$1exit 0"),
+    "ジョブの id を変える": (t) => t.replace(/^ {2}protection:\n/m, "  protect:\n"),
+  };
+  for (const [name, mutate] of Object.entries(mutants)) {
+    const changed = mutate(protTemplate);
+    assert.notEqual(changed, protTemplate, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(protectionRunProblems(changed), [], `${name} が通った`);
+  }
+});
+
+test("写し（.github/workflows/pr-body-protection.yml）があれば、定期・手動で走り、トークンを読めないときは protection_unreadable で飛ばさず落ちる", {
+  skip: existsSync(protCopyPath) ? false : "まだ .github/workflows/ に写していない",
+}, () => {
+  assert.deepEqual(protectionRunProblems(readFileSync(protCopyPath, "utf8")), []);
 });
 
 // ci/pr-body-patch.yml（engine/pr-body-gate.patch が ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で、既定のブランチへの push・
