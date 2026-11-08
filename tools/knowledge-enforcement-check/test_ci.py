@@ -5,6 +5,8 @@ knowledge-check.yml と同じ ENGINE_REF の版の Engine を取り、test_engin
 pytest を入れて飛ばさずに走らせる形かを見る（差分が ENGINE_REF に当たらないか、差分で足したテストが落ちればジョブが落ちる）。
 テストは unittest discover でまとめて走らせて出力を残し、次の手順がその出力の skipped が 1 件以上なら落とす（議決 D-0037、Issue #1080）。
 .github/workflows/knowledge-enforcement.yml に写してあれば、その写しも同じ形かと、ENGINE_REF の行のほかがひな形と同じかも見る。
+写しがないときは、CI（CI=true）か、K-*.yaml の wired: true の解決策が wired_by に写しを書いているときは飛ばさずに落とす（建設者が写したあとで
+写しを消した・名前を変えた PR を止める。議決 D-0053、Issue #1144）。どちらでもない手元では、まだ写していないとして飛ばす。
 形の検査（problems）が外れを見逃さないことは、ひな形を書き換えた写しで確かめる。
 ひな形と写しの ENGINE_REF は、形の検査とは別に knowledge-check.yml の ENGINE_REF と字面で照らし、片方だけ上げたら落とす
 （写しがなくても飛ばさない。議決 D-0053、Issue #1143）。
@@ -30,7 +32,9 @@ import yaml
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 TEMPLATE = HERE / "ci" / "knowledge-enforcement.yml"
-COPY = REPO / ".github" / "workflows" / "knowledge-enforcement.yml"
+COPY_REL = ".github/workflows/knowledge-enforcement.yml"
+COPY = REPO / COPY_REL
+IN_CI = os.environ.get("CI") == "true"
 JOB = "engine-test"
 TESTS = ("tools/knowledge-enforcement-check/test_engine.py", "tools/knowledge-enforcement-check/test_engine_patch.py")
 REF_LINE = re.compile(r"^\s*ENGINE_REF:\s*\S+\s*$", re.M)
@@ -115,6 +119,55 @@ def problems(text: str, ref: str) -> list[str]:
         if not check.job_calls(wf, JOB, t, read):
             e.append(f"{JOB} のジョブが {t} を呼んでいない")
     return e
+
+
+def copy_claims(items: list[dict]) -> list[str]:
+    """wired: true の解決策のうち、wired_by に写し（COPY_REL）を書いたもの（「K-0004 の issue 1063」の形）"""
+    out = []
+    for k in items:
+        for s in check.solutions(k):
+            wb = s.get("wired_by") if isinstance(s, dict) and s.get("wired") is True else None
+            if isinstance(wb, list) and any(isinstance(w, dict) and isinstance(w.get("workflow"), str) and check.norm("", w["workflow"]) == COPY_REL
+                                            for w in wb):
+                out.append(f"{k.get('id')} の issue {s.get('issue')}")
+    return out
+
+
+def copy_missing(exists: bool, in_ci: bool, claims: list[str]) -> str | None:
+    """写しがないときに落とす理由。None なら（写しがあるか、まだ写していない手元なので）落とさない（議決 D-0053、Issue #1144）"""
+    if exists:
+        return None
+    if in_ci:
+        return "CI（CI=true）では写しがないまま飛ばさない"
+    if claims:
+        return f"{'・'.join(claims)} の解決策が wired_by に写しを書いている"
+    return None
+
+
+class CopyMissingTest(unittest.TestCase):
+    """写しがないときに飛ばすか落とすか（議決 D-0053、Issue #1144）"""
+
+    def item(self, wired=True, workflow=COPY_REL, kid="K-0004", issue=1063) -> dict:
+        return {"id": kid, "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": issue, "wired": wired, "wired_by": [{"workflow": workflow, "job": JOB, "runs": TESTS[1]}]}]}}
+
+    def test_写しがあれば落とさない(self):
+        self.assertIsNone(copy_missing(True, True, ["K-0004 の issue 1063"]))
+
+    def test_CI_では写しがなければ落とす(self):
+        self.assertIn("CI=true", copy_missing(False, True, []))
+
+    def test_記録が写しを配線先に書いていれば落とす(self):
+        why = copy_missing(False, False, copy_claims([self.item(), self.item(kid="K-0010", issue=1035)]))
+        self.assertIn("K-0004 の issue 1063・K-0010 の issue 1035", why)
+        self.assertIsNotNone(copy_missing(False, False, copy_claims([self.item(workflow="./" + COPY_REL)])))
+
+    def test_手元でまだ写していなければ飛ばす(self):
+        self.assertIsNone(copy_missing(False, False, []))
+        claims = copy_claims([self.item(wired=False), self.item(workflow=".github/workflows/knowledge-check.yml"),
+                              {"id": "K-0001", "enforcement": {"level": "context"}}, {"id": "K-0002"}])
+        self.assertEqual(claims, [])
+        self.assertIsNone(copy_missing(False, False, claims))
 
 
 def ref_mismatches(repo: Path = REPO) -> list[str]:
@@ -246,7 +299,10 @@ class TemplateTest(unittest.TestCase):
 
     def test_写しがあれば形どおりでENGINE_REFの行のほかはひな形と同じ(self):
         if not COPY.is_file():
-            self.skipTest(".github/workflows/knowledge-enforcement.yml にまだ写していない（建設者が写す）")
+            why = copy_missing(False, IN_CI, copy_claims(check.load(REPO)))
+            if why:
+                self.fail(f"{COPY_REL} がない（{why}）。写しを消さない（議決 D-0053、Issue #1144）")
+            self.skipTest(f"{COPY_REL} にまだ写していない（建設者が写す）")
         text = COPY.read_text(encoding="utf-8")
         self.assertEqual(problems(text, self.ref), [])
         self.assertEqual(REF_LINE.sub("ENGINE_REF:", text), REF_LINE.sub("ENGINE_REF:", self.text))
