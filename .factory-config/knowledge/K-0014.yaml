@@ -89,4 +89,23 @@ enforcement:
       decided_by: committee:D-0101
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0101（Issue #1208 の起票時の番号は D-0073。PR #1204）の test の案（D-0049 の 1 つ目の案どおり tools/conflict-check/events.py に
+        rule missing_conflict_files を足し、continue.enqueued(reason=conflict) と同じ job_id の conflict.files がその場にないものを落とす）を入れた。
+        rule・C-0007 の流れの fixtures/c0007-pr290-pr295-events.json・その場で載せた列が通るテストは issue 1135 の解決策ですでに入っていたので、
+        この案では、その rule が issue 1136 の解決策（conflict-files.yaml）の欄 conflict_files も読むようにした。continue.enqueued の payload に
+        conflict_files が schema.py と同じ形（空でない文字列の列で 1 件以上）で載っていれば積んだその場の記録として通し、衝突したファイルにもその列を
+        使う（conflict.files より先に見る）。形どおりでなければ載っていないとみなし、今までどおり conflict.files で見る。Engine が
+        engine/conflict-files.patch どおりに欄を載せたあとも missing_conflict_files が落とし続けて、2 つの解決策が食い違わないようにするため。
+        test_events.py の MissingConflictFilesTest で、C-0007 の流れ（PR #290 のジョブ 309 は backfill だけ、PR #295 のジョブ 318・325・338 は記録なし）が
+        4 件落ちること、その列から conflict.files を外して continue.enqueued に conflict_files を載せた列がコマンドでも通ること、空の列・null・空白だけ・
+        文字列の列でない conflict_files は落ちること、その列が worker_log・backfill の記録より先に見られ K-0010 の agent_for_mechanical にも使われることを
+        確かめた。pr.conflicted の conflict_files は続きのジョブと job_id で結べないので見ない。Engine はまだ欄を載せず、この検査を走らせる配線も
+        建設者が入れるので、本物のイベント列では確かめておらず、未配線・未確認
+      issue: 1208
+      at: 2026-11-08
+      decided_by: committee:D-0101
+      wired: false
+      verified: false
 decided_by: committee:D-0049

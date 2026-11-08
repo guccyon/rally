@@ -7,7 +7,8 @@ Engine が今の形（job.finished にどちらも出さない。LEGACY_FINISHED
 todo は照らせない件数を理由に添えて test_engine.py の todo で数え、終わりに件数を出す。知見 K-0010 の review_by を過ぎても
 今の形なら飛ばさずに落とす（議決 D-0043・Issue #1104。照らせない件数が見えない形で緑にならないように）
 
-MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る
+MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る。
+continue.enqueued の payload の conflict_files（schema.py の定義の欄）をその場の記録として読むことも見る（議決 D-0101・Issue #1208）
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ URL = "https://github.com/guccyon/rally/pull/1"
 def stream(attempts: list[dict], url: str = URL) -> list[dict]:
     """attempts の各項目（resumed・tier・files・cost）から、Engine の形のイベント列を作る。files は積んだ直後（job.started の前）に
     conflict.files として載せる（source は既定で supervisor）。late があれば今の Engine と同じく job.finished のあとに載せ（source は既定で
-    worker_log）、stop があれば job.finished を出さない（終わらずに止まった回）"""
+    worker_log）、stop があれば job.finished を出さない（終わらずに止まった回）。inline があれば continue.enqueued の payload の conflict_files に置く"""
     out, i = [], 0
 
     def add(name, payload, job_id=None):
@@ -52,7 +53,10 @@ def stream(attempts: list[dict], url: str = URL) -> list[dict]:
         add("pr.conflicted", {"pr_url": url, "head_sha": sha})
         if a.get("skip"):
             continue   # 上限を超えたので積まなかった（停止を開いた）
-        add("continue.enqueued", {"pr_url": url, "head_sha": sha, "reason": "conflict", "attempt": n}, job)
+        enq = {"pr_url": url, "head_sha": sha, "reason": "conflict", "attempt": n}
+        if "inline" in a:
+            enq["conflict_files"] = a["inline"]
+        add("continue.enqueued", enq, job)
         if "files" in a and not a.get("late"):
             add("conflict.files", {"files": a["files"], "source": a.get("source", "supervisor")}, job)
         add("job.started", {"model_tier": a.get("tier", "tier-large")}, job)
@@ -226,6 +230,35 @@ class MissingConflictFilesTest(unittest.TestCase):
         evs = [{"name": "continue.enqueued", "job_id": 900, "payload": {"pr_url": URL, "head_sha": "x", "reason": "ci_failed", "attempt": 1}},
                {"name": "job.finished", "job_id": 900, "payload": {"state": "succeeded"}}]
         self.assertEqual(recorded(evs), Counter())
+
+    def test_C0007の流れでcontinue_enqueuedにconflict_filesを載せれば通る(self):
+        # 議決 D-0101: schema の案（conflict-files.yaml）の形で Engine が積むときに載せた列。backfill の conflict.files は外す
+        evs = [e for e in events.parse_events(C0007.read_text(encoding="utf-8")) if e["name"] != "conflict.files"]
+        for e in evs:
+            if e["name"] == "continue.enqueued":
+                e["payload"]["conflict_files"] = ["CHANGELOG.md"]
+        self.assertEqual(recorded(evs), Counter())
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.json"
+            path.write_text(json.dumps(evs), encoding="utf-8")
+            p = run(path, "--pr", "https://github.com/guccyon/rally/pull/295")
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_continue_enqueuedのconflict_filesが形どおりでなければ載っていないとみなす(self):
+        # schema.py の bad_field・missing_field と同じ線（空でない文字列の列で 1 件以上）。ほかの記録がなければ落ちる
+        for bad in ([], None, [""], ["  "], "CHANGELOG.md", [1]):
+            self.assertEqual(recorded(stream([{"inline": bad}])), Counter({"missing_conflict_files": 1}), bad)
+        # 形どおりでなくても、その場の conflict.files があれば今までどおり通る
+        self.assertEqual(recorded(stream([{"inline": [], "files": ["a.ts"]}])), Counter())
+
+    def test_continue_enqueuedのconflict_filesはworker_logやbackfillより先に見る(self):
+        self.assertEqual(recorded(stream([{"inline": ["a.ts"], "files": ["a.ts"], "late": True},
+                                          {"inline": ["a.ts"], "files": ["a.ts"], "source": "backfill"},
+                                          {"inline": ["a.ts"], "stop": True}])), Counter())
+        # K-0010 の線にもその列を使う（CHANGELOG.md だけの衝突を tier-large で解いた回）
+        evs = stream([{"inline": ["CHANGELOG.md"], "cost": 1.2}])
+        self.assertEqual(rules(evs), Counter({"agent_for_mechanical": 1}))
+        self.assertEqual(events.records_from_events(evs)[URL]["attempts"][0]["files"], ["CHANGELOG.md"])
 
 
 # 「記録がない項目は照らさずに件数を出す」は、Engine が今の形（job.finished に agent_resumed と解き方の tier を出さない版）のときだけの扱い。
