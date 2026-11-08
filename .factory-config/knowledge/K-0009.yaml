@@ -6,7 +6,10 @@ statement: >-
   （続きのジョブの summary と Engine の追記）の入力に入らないと、body_fix が本文を直しても次の取り込みでまた崩れ、
   同じ指摘が採用され続ける。
 scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
   roles: [implement, body_fix, judge]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0005

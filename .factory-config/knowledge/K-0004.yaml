@@ -3,7 +3,10 @@ theme: 6
 kind: causal
 statement: supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」ではなく adopt の件数で起こすと、直すもののない差し戻しが記録される。
 scope:
+  work: [dev.review.judge]
+  artifacts: [Judgment]
   roles: [supervisor]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0002
