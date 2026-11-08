@@ -1,0 +1,101 @@
+# 関所の配線の差分（engine/pr-body-gate.patch）が Engine の ENGINE_REF の版と既定のブランチの先頭に当たるかを、既定のブランチへの push・毎日・手動で
+# patch.mjs で照らす（知見 K-0001 の担保。議決 D-0068（Issue #1179 の起票時の番号は D-0066。PR #1176）、Issue #1179）。決定論（LLM を使わない）。
+# 差分は建設者が Engine に入れるまで rally に置いたままなので、Engine の先頭が進むと黙って当たらなくなる（Engine 476573e。Issue #1107）。
+# engine.test.mjs は PR ごとに ENGINE_REF の版でしか走らず、先頭で当たらなくなっても ENGINE_REF を上げるか建設者が当てるときまで誰も気づかない。
+# 当たる・もう入っている・patch_partially_applied・patch_stale を版ごとに分けて出し、patch_stale か patch_partially_applied なら ::error を出して落ち、
+# Issue を開くか、開いている Issue を更新する（同じ版の同じ外れ方の記録がすでにあれば足さない）。それを見て、建設者が取り込む前に差分を直す変更を起こす。
+# どちらの版でも当たるかもう入っていれば、開いている Issue に通ったことを書いて閉じる。
+# 照らせなかったとき（Engine を取れなかった・ENGINE_REF の版がない）は patch_check_failed の ::error で落ちる（Issue は開かない。差分の古さではないため）。
+# PR では走らせない（先頭の Engine の変化で PR を止めない。PR のコードを issues: write の権限で動かさない）。push は既定のブランチ（main）だけ。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-patch.yml にそのまま写す。
+# ci.test.mjs（pr-body-engine.yml の engine-test で走る）が、このファイルの形・手順の振る舞い・写しとのずれを見る。
+name: pr-body-patch
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "50 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: pr-body-patch
+  cancel-in-progress: false
+
+env:
+  ISSUE_TITLE: "pr-body-check: engine/pr-body-gate.patch が Engine に当たらない（K-0001）"
+
+jobs:
+  patch:
+    name: pr-body-patch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine を取る（既定のブランチの先頭。ENGINE_REF の版も含むよう全部の履歴）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          path: .engine
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 差分が ENGINE_REF の版と先頭に当たるかを照らす（K-0001）
+        id: check
+        working-directory: tools/pr-body-check
+        run: |
+          node patch.mjs --engine "${GITHUB_WORKSPACE}/.engine" --json patch-result.json --summary "$GITHUB_STEP_SUMMARY"
+      - name: 当たらなければ Issue を開くか更新する（K-0001）
+        if: always()
+        working-directory: tools/pr-body-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          if [ ! -f patch-result.json ]; then
+            echo "照らした結果がない（Engine を取れなかったか ENGINE_REF の版がない）ので Issue は開かない"
+            exit 0
+          fi
+          errors=$(node -e 'for (const e of require("./patch-result.json").errors) console.log(`${e.rule}: ${e.target} ${e.ref}`)')
+          details=$(node -e 'for (const e of require("./patch-result.json").errors) console.log(`${e.rule}: ${e.message}\n${e.detail}`)')
+          states=$(node -e 'for (const r of require("./patch-result.json").results) console.log(`- ${r.target}（\`${r.ref}\`）: ${r.state}`)')
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # 開いている Issue を題で探す。読めなければ開いていないとして扱う（外れを黙って捨てない）
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number,title \
+            --jq '.[] | select(.title == env.ISSUE_TITLE) | .number' | head -n 1 || true)
+          if [ "${CHECK_OUTCOME:-failure}" = success ] && [ -z "$errors" ]; then
+            if [ -n "$number" ]; then
+              printf '%s\n\n%s\n\n- 実行: %s\n' "engine/pr-body-gate.patch が ENGINE_REF の版と既定のブランチの先頭に当たるか、もう入っている（patch.mjs が通った）ので閉じる。" "$states" "$run_url" > patch-comment.md
+              gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file patch-comment.md
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+            exit 0
+          fi
+          marker="<!-- pr-body-patch: $(printf '%s' "$errors" | sha256sum | cut -c1-16) -->"
+          {
+            echo "$marker"
+            echo "\`tools/pr-body-check/engine/pr-body-gate.patch\` が Engine に当たらず、もう入ってもいない（知見 K-0001、議決 D-0019・D-0068）。建設者が Engine に入れる前に、差分を今の Engine に合わせて作り直す変更を起こす（\`tools/pr-body-check/README.md\` の「差分の当たりの照合」）。"
+            echo
+            echo "$states"
+            echo
+            echo '```'
+            echo "$details"
+            echo '```'
+            echo
+            echo "- 実行: ${run_url}"
+          } > patch-comment.md
+          if [ -z "$number" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file patch-comment.md
+            exit 0
+          fi
+          recorded=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}" --jq '.body' || true)
+          recorded+=$'\n'$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}/comments" --paginate --jq '.[].body' || true)
+          if grep -qF -- "$marker" <<< "$recorded"; then
+            echo "Issue #${number} に同じ版の同じ外れ方の記録があるので足さない"
+            exit 0
+          fi
+          gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file patch-comment.md
