@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0055
+pr: https://github.com/guccyon/rally/pull/1153
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に 1 件足しただけなので、README の決まりや D-0004 から後の議決と矛盾しません。
+  - '足した ci_check は D-0037 の 2 つめの enforcement の案（CI か ENGINE_DIR を渡したときは skip せずに落とし、unittest
+    discover の出力で skipped が 1 件以上あれば落とす）と文面が対応していて、issue 1080・decided_by: committee:D-0037
+    で辿れます。'
+  - D-0053 の consistency の票が求めた D-0037 との結び付きは、今回の項目が D-0037 を decided_by にしたことで記録に残ったので、重なりの扱いとしては妥当です。
+  - ただし engine-test のジョブを名指しの 2 ファイルから discover に変えたので、issue 1063（D-0035）の項目の what
+    にある走らせ方の記述が古くなっており、次に K-0004 を直す変更セットでその項目に今回の変更で置き換わった旨を書き添えてください。
+  - D-0037 の 1 つめの案（test_engine.py に変異体を置いて総当たりのテストが必ず食い違いを出すことを確かめる test）はまだ入っていないので、残りとして次の変更セットで扱ってください。
+  - 'wired: false・verified: false で未配線・未確認と文でも断っているので confidence は hypothesis のままが妥当で、K-0004
+    に積み重なった担保の仕組みの解決策を別の知見に分けるか整理するかの見直しを改めて勧めます。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した solution は issue 1080 と committee:D-0037 を指していて、D-0037 の ci_check の案（test_engine.py
+    を CI か ENGINE_DIR を渡したときは飛ばさずに落とし、unittest discover の出力で skipped が 1 件以上なら落とす）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '手元で ENGINE_DIR を渡すと落ちることは確かめたが ENGINE_REF（9d3713a）の版で通るかは確かめていないこと、.github/workflows/
+    への写しが建設者待ちで PR ごとに走っていないことを自分で書き、wired: false・verified: false としているので、記録の書き方は正直です。'
+  - 本物の CI でこの検査の効き目を確かめた事例記録がまだないので、confidence は hypothesis のままが妥当です。
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、版の値などの識別子だけで、利用者や人を特定できる情報はありません。
+  - D-0037 のもう 1 つの案（test_engine.py に変異体を置く test）はこの solution では入っていないので、入れたときは別の
+    solution として committee:D-0037 を指して記録してください。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0037 の ci_check
+    の案を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - skipped が 1 件以上かテストの件数が出ていなければ落とす線は、出力の要約から機械的に引けて繰り返し確かめられ、test_ci.py でひな形を 22
+    とおりに書き換えた写しで外れることも確かめているので、線の確かさは十分です。
+  - ただし unittest discover は既定で test*.py に合うファイルしか拾わないので、テストのファイルの名前が変わったり TestCase
+    の読み込みが黙って外れたりすると、skipped が 0 件のまま走るテストが減っても気づけません。
+  - D-0037 の test の案（確かめた 2 つの改変を変異体としてテストの中に置き、毎回必ず落ちることを確かめる）はまだ入っていないので、次の変更セットで入れてください。
+  - 'ENGINE_REF（9d3713a）の版で通るかは確かめておらず、.github/workflows/ への写しと必須チェックも建設者待ちで wired:
+    false・verified: false と正直に書いているので、confidence は hypothesis のままが妥当です。'
+  - issue 962 から後の solutions は supervisor の差し戻しではなく知見の置き場の担保を担っているので、配線が入ったら別の知見へ移すかを委員会で見直すことを勧めます。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0037 の ci_check
+    の案を入れた記録を enforcement.solutions に 1 件足しただけなので、主張の範囲は広がっていません。
+  - 'what は ENGINE_REF（9d3713a）の版で通るかは確かめていないこと、.github/workflows/ への写しと必須チェックがまだで
+    PR ごとに走っていないことを自分で書いていて、wired: false・verified: false とも合っており言い過ぎていません。'
+  - 反例として、discover で拾われる test_check.py・test_ci.py などが Engine と関係のない理由（入っていない Python
+    のライブラリなど）で飛ばされても skipped= が 1 件以上で engine-test が落ちるので、それが狙いどおりかを建設者が写すときに確かめてください。
+  - 反例として、unittest の要約の書き方（OK (skipped=N)・FAILED (failures=N, skipped=N)・expected
+    failures=）が Python の版で変わると skipped を見る手順が読み違えるので、写しで使う Python の版の本物の出力でも確かめてください。
+  - K-0004 の solutions は 32 件になり、issue 962 から後は supervisor の差し戻しではなく知見の置き場の担保の仕組みを担っているので、建設者の配線が入ったら別の知見に分けるか整理するかを委員会で見直すことを改めて勧めます。
+  - Engine の本物の版でも本物の CI でも効き目を確かめていないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: test_ci.py（か test_check.py）に、tools/knowledge-enforcement-check/ の中で unittest.TestCase
+    を定義する .py ファイルがすべて discover の既定の形 test*.py に合うことと、knowledge-enforcement-unittest.log
+    の出力にそれぞれのファイルのテストが 1 件以上走った跡があることを照らすテストを足し、拾われないファイルや走らなかったファイルがあれば落とす。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: D-0037 の test の案のとおり、test_engine.py に確かめた 2 つの改変（wired の "true" を配線済みに数える、verified
+    を値の有無で見る）を差分を当てた Engine の写しへ当てる変異体として置き、総当たりのテストがどの変異体でも 1 件以上の食い違いを出さなければ落とす。
