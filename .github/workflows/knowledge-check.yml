@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ENGINE_REF: f44a3720060faf309e692fdd67cea528cc48dc73
+  ENGINE_REF: 9d3713a69b7784fc31069bf370002d554bfc3a64
 
 jobs:
   knowledge:
