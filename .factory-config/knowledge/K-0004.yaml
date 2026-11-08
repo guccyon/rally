@@ -951,4 +951,21 @@ enforcement:
       decided_by: committee:D-0062
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0072（Issue #1200 の起票時の番号は D-0071。PR #1198）の ci_check の案（建設者が ci/knowledge-enforcement.yml を
+        .github/workflows/knowledge-enforcement.yml に写して check.py を on.pull_request で走らせ、enforcement のジョブをブランチ保護の必須チェックに入れ、
+        そのあとで issue 986・1059 と issue 1129 の解決策を wired: true（wired_by にその workflow・job・check.py）にする）のうち、ワーカーの権限で入れられる分を入れた。
+        tools/knowledge-enforcement-check/check.py の REQUIRED_PR に issue 1129 の解決策と check.py の組を足し、REQUIRED_PR_WORKFLOW で issue 986・1059・1129 の
+        解決策は .github/workflows/knowledge-enforcement.yml の pull_request でも走るジョブから check.py を呼ぶ項目でないと数えないようにした
+        （ほかのワークフローの pull_request のジョブから check.py を呼ぶだけでは、必須チェックにする写しがなくても wired にできてしまっていた）。
+        test_check.py の KnowledgeCheckPullRequestTest で、ひな形をそのまま写した enforcement のジョブなら 3 つとも通ること、同じ中身でも別の名前のワークフローや
+        on を workflow_dispatch・schedule・push に替えた写しで落ちることを確かめ、REQUIRED_PR_WORKFLOW の組を外すとこのテストが落ちることも確かめた。
+        .github/workflows/ への写しと branch protection の必須チェックは、ふつうのワーカーの権限にない（CLAUDE.md の「やってはいけないこと」、Engine ADR 0041）ので
+        建設者が行う。check.py はまだ PR ごとには走っておらず、この解決策も issue 986・1059・1129 の解決策も未配線・未確認
+      issue: 1200
+      at: 2026-11-08
+      decided_by: committee:D-0072
+      wired: false
+      verified: false
 decided_by: committee:D-0004
