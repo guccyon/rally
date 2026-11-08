@@ -42,6 +42,10 @@ knowledge_gate_unwired で落とす（K-0004 の issue 986・1059・1129 は REQ
 組を足し忘れたほかの知見の解決策が黙って通らないように）。
 議決 D-0052（Issue #1139）で、K-0004 の issue 1062 の解決策（README の一覧と K-*.yaml を照らす test_check.py のテスト）も、pull_request のジョブから
 test_check.py を呼ぶ項目がないと wired にできないようにした（同じく enforcement のジョブで満たす）。
+議決 D-0075（Issue #1215）で、K-0004 の issue 1138 の解決策（.factory-config/knowledge/README.md の一覧も K-*.yaml と照らす test_check.py のテスト）も
+REQUIRED_PR に挙げ、issue 1062・1138 の解決策は REQUIRED_PR_WORKFLOW の .github/workflows/knowledge-enforcement.yml のジョブを指す wired_by でないと
+数えないようにした（ひな形 ci/knowledge-enforcement.yml の写しの必須チェックでなく、ほかのワークフローの pull_request のジョブから test_check.py を呼ぶだけでは、
+一覧がずれた PR を止めるとは読めないため）。
 議決 D-0053（Issue #1144）で、K-0004 の issue 1063・1144 の解決策（Engine に移す差分を ENGINE_REF の版で確かめる engine-test のジョブ）も、
 pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと wired にできないようにした（ci/knowledge-enforcement.yml を写した engine-test の
 unittest discover で満たす。check.py・test_check.py・test_ci.py を名指しで呼ぶ enforcement のジョブでは満たさない）。
@@ -180,14 +184,14 @@ REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "
                               ("K-0014", 1213): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076"),
                               ("K-0014", 1214): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076")}
 # (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
-# K-0004 の issue 1062 は議決 D-0052、Issue #1139。issue 1063・1144 は議決 D-0053、Issue #1144。
+# K-0004 の issue 1062 は議決 D-0052、Issue #1139。issue 1138 は議決 D-0075、Issue #1215。issue 1063・1144 は議決 D-0053、Issue #1144。
 # issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158。K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）、Issue #1182。
 # K-0004 の issue 986・1059・1129（check.py）は議決 D-0072（起票時の番号は D-0071）、Issue #1201 で外し、下の KNOWLEDGE_GATE ですべての解決策に求める）
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
 KNOWLEDGE_TEST = "tools/knowledge-enforcement-check/test_check.py"
 ENGINE_PATCH_TEST = "tools/knowledge-enforcement-check/test_engine_patch.py"
 REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043"), ("K-0010", 1103): ("tools/conflict-check/test_events.py", "D-0043"),
-               ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052"),
+               ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052・D-0075"), ("K-0004", 1138): (KNOWLEDGE_TEST, "D-0075"),
                ("K-0004", 1063): (ENGINE_PATCH_TEST, "D-0053"), ("K-0004", 1144): (ENGINE_PATCH_TEST, "D-0053"),
                ("K-0004", 1158): (SENDBACK_PROTECTION, "D-0059"),
                ("K-0001", 1182): ("tools/pr-body-check/engine.test.mjs", "D-0070")}
@@ -200,6 +204,10 @@ REQUIRED_PR_WORKFLOW = {("K-0001", 1182): f"{WORKFLOWS}/pr-body-engine.yml"}
 # ほかのワークフローから check.py を呼ぶだけでは、必須チェックにする写しとは読めない（議決 D-0072、Issue #1200））
 KNOWLEDGE_ENFORCEMENT_WORKFLOW = f"{WORKFLOWS}/knowledge-enforcement.yml"
 KNOWLEDGE_GATE = (KNOWLEDGE_CHECK, KNOWLEDGE_ENFORCEMENT_WORKFLOW, "D-0072")
+# K-0004 の issue 1062・1138（README の一覧を照らす test_check.py）は、同じ写しの pull_request のジョブから test_check.py を呼ぶ項目を求める
+# （議決 D-0075、Issue #1215。一覧がずれた PR を止めるのは、写しを必須チェックにした enforcement のジョブだけ）
+for _key in (("K-0004", 1062), ("K-0004", 1138)):
+    REQUIRED_PR_WORKFLOW[_key] = KNOWLEDGE_ENFORCEMENT_WORKFLOW
 KNOWLEDGE_GATE_UNWIRED = "knowledge_gate_unwired"
 # 知見 K-0012 の本文の直しのあとの再検査と、同じ check.mjs を使う K-0006 の見出しの検査を、1 つのマージ前の必須チェック pr-body-check にする
 # （議決 D-0100（起票時の番号は D-0071）、Issue #1196。ひな形 tools/pr-body-check/ci/pr-body-check.yml の写しでないと、Engine の supervisor が待つ
