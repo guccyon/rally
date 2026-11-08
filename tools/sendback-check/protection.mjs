@@ -27,6 +27,8 @@ import { REPO_ROOT } from "./order.mjs";
 
 /** 写しの道（リポジトリの根から）。ci.test.mjs が見張るのもこの道。 */
 export const COPY = ".github/workflows/sendback-engine.yml";
+/** ひな形の道（リポジトリの根から）。 */
+export const TEMPLATE = "tools/sendback-check/ci/sendback-engine.yml";
 /** 必須のチェックにするジョブ（ci/sendback-engine.yml の id）。 */
 export const REQUIRED_JOBS = Object.freeze(["engine-test", "wiring-order"]);
 /** そのジョブが報告するチェックの名前（ジョブの name:）。id のままの engine-test はほかのワークフローも報告するので使わない。 */
@@ -72,6 +74,19 @@ export function jobCheckNames(text) {
   return jobs;
 }
 
+/** ジョブ（jobCheckNames の結果）のうち、報告するチェックの名前が CHECK_NAMES と違うもの（ないジョブは見ない）。 */
+export function checkNameProblems(jobs) {
+  return REQUIRED_JOBS.filter((job) => jobs.has(job) && jobs.get(job) !== CHECK_NAMES[job])
+    .map((job) => ({ job, name: jobs.get(job), expected: CHECK_NAMES[job] }));
+}
+
+/** ほかのワークフロー（{ 道: 中身 }）のジョブのうち、names のどれかのチェックの名前を報告するもの。 */
+export function sharedCheckNames(names, others) {
+  const wanted = new Set(names);
+  return Object.entries(others).flatMap(([path, text]) =>
+    [...jobCheckNames(text)].filter(([, name]) => wanted.has(name)).map(([job, name]) => ({ path, job, name })));
+}
+
 /** 写しの中身（ないときは null）、ほかのワークフロー（{ 道: 中身 }）、branch protection の JSON を照らす。 */
 export function checkProtection({ workflow, others = {}, protection }) {
   const errors = [];
@@ -81,14 +96,14 @@ export function checkProtection({ workflow, others = {}, protection }) {
     return { contexts: [...contexts], errors };
   }
   const jobs = jobCheckNames(workflow);
-  const otherJobs = Object.entries(others).flatMap(([path, text]) => [...jobCheckNames(text)].map(([job, name]) => ({ path, job, name })));
+  const changed = new Map(checkNameProblems(jobs).map((p) => [p.job, p]));
   for (const job of REQUIRED_JOBS) {
     if (!jobs.has(job)) {
       errors.push({ rule: "workflow_not_copied", message: `${COPY} に ${job} のジョブがない` });
       continue;
     }
     const name = jobs.get(job);
-    if (name !== CHECK_NAMES[job]) {
+    if (changed.has(job)) {
       errors.push({ rule: "check_name_changed",
         message: `${job} のチェックの名前が ${name}（${CHECK_NAMES[job]} にする。ひな形から写し直す）` });
     }
@@ -96,7 +111,7 @@ export function checkProtection({ workflow, others = {}, protection }) {
       errors.push({ rule: "required_check_missing",
         message: `${job} のジョブ（チェックの名前 ${name}）が必須のチェックにない。写しを消す・ジョブの名前を変える PR が止まらない` });
     }
-    for (const other of otherJobs.filter((o) => o.name === name)) {
+    for (const other of sharedCheckNames([name], others)) {
       errors.push({ rule: "check_name_shared",
         message: `${other.path} の ${other.job} も同じチェックの名前 ${name} を報告する。どちらの報告でも必須のチェックが満たされ、${COPY} を消しても止まらない` });
     }
@@ -104,17 +119,29 @@ export function checkProtection({ workflow, others = {}, protection }) {
   return { contexts: [...contexts], errors };
 }
 
+/** dir の直下の YAML を { prefix/ファイル名: 中身 } で読む（skip の道は除く。dir がなければ空）。 */
+function readYamls(dir, prefix, skip) {
+  const out = {};
+  if (!existsSync(dir)) return out;
+  for (const f of readdirSync(dir).sort()) {
+    const path = `${prefix}/${f}`;
+    if (path !== skip && /\.ya?ml$/.test(f)) out[path] = readFileSync(join(dir, f), "utf8");
+  }
+  return out;
+}
+
 /** リポジトリの根から、写し（copy）と .github/workflows/ のほかのワークフローを読む。 */
 export function loadWorkflows(root, copy = COPY) {
-  const dir = join(root, ".github", "workflows");
-  const others = {};
-  if (existsSync(dir)) {
-    for (const f of readdirSync(dir).sort()) {
-      const path = `.github/workflows/${f}`;
-      if (path !== copy && /\.ya?ml$/.test(f)) others[path] = readFileSync(join(dir, f), "utf8");
-    }
-  }
-  return { workflow: existsSync(join(root, copy)) ? readFileSync(join(root, copy), "utf8") : null, others };
+  return { workflow: existsSync(join(root, copy)) ? readFileSync(join(root, copy), "utf8") : null,
+    others: readYamls(join(root, ".github", "workflows"), ".github/workflows", copy) };
+}
+
+/** リポジトリの根から、ツールのひな形（tools/<ツール>/ci/ の YAML）を読む（skip の道は除く）。 */
+export function loadTemplates(root, skip = TEMPLATE) {
+  const tools = join(root, "tools");
+  if (!existsSync(tools)) return {};
+  return Object.assign({}, ...readdirSync(tools, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort()
+    .map((name) => readYamls(join(tools, name, "ci"), `tools/${name}/ci`, skip)));
 }
 
 export function formatErrors(errors, annotate) {

@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0058
+pr: https://github.com/guccyon/rally/pull/1155
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に D-0038 の config の案を入れた記録を 1 件足しただけなので、D-0004 から D-0055 までの議決や README の決まり、specs/
+    の規範と矛盾しません。
+  - D-0038 の案は id の engine-test・wiring-order を必須にするとしていましたが、ci/knowledge-enforcement.yml
+    の engine-test と名前がぶつかる穴を what に明かしたうえで sendback-engine-test・sendback-wiring-order
+    の名前に替えており、案からの外れ方として筋が通っています。
+  - 'name: を付けて check_name_changed・check_name_shared で落とす形は、K-0001 の issue 1037 の解決策（pr-body-engine-test、D-0032・D-0044）と同じ型で、互いの名前も重ならないので、重複ではなく整合しています。'
+  - '新しい解決策にも wired: false・verified: false を書いているので、K-0004 は README の「すべての解決策に書いた知見」のままで、README
+    の一覧や test_check.py の照らし合わせとも食い違いません。'
+  - D-0036・D-0054 が求めた patch_stale の解決策への D-0025 の添え書きなど、前の議決で次の変更セットに回された直しは今回も手つかずなので、次に
+    K-0004 を直す変更セットで片づけてください。
+  - 配線も確認もまだなので confidence は hypothesis のままが妥当で、K-0004 に担保の仕組みの解決策が積み重なっている点は、主張に沿うものと置き場の担保を担うものを分けるよう委員会で見直すことを改めて勧めます。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した config の solution は issue 1083 と committee:D-0038 を指していて、D-0038 の enforcement
+    にある config の案（sendback-engine.yml を写して engine-test と wiring-order を必須のチェックにする）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - 'ci/knowledge-enforcement.yml にも id が engine-test のジョブがあり名前がぶつかるという主張は、差分の中でファイルを示しているだけで事例記録や
+    PR に結んでいないので、建設者が Issue #948 に記録するときにその実物の記録も添えてください。'
+  - '名前を外す・id に戻す・ほかで名乗る形で落ち、並べた形で通ることを確かめたのは ci.test.mjs の中のひな形と写しだけで、.github/workflows/
+    からも branch protection からもまだ効いておらず wired: false・verified: false としているので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのは issue と PR の番号、議決の id、ツールのパス、ジョブと rule の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0038 の config の案のうちワーカーが入れられる分の記録を
+    enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 'id のままの engine-test が ci/knowledge-enforcement.yml と重なり、必須のチェックがどちらの報告でも満たされるという抜け道を見つけ、name:
+    を sendback-engine-test・sendback-wiring-order に分けて check_name_changed・check_name_shared
+    で落とすのは、線がはっきりした決定論の担保で筋がよいです。'
+  - ただし本当に止める branch protection の必須のチェックはまだ設定されておらず、protection.mjs も本物の設定を読んで走ってはいないので、設定が外れたり名前が変わったりしても今は誰も気づけません。
+  - kind は config ですが、入ったのは ci.test.mjs と protection.mjs という検査で設定そのものは入っていないので、次に直すときは
+    test や ci_check と書き分けるか、未設定であることを what の頭で分かるようにしてください。
+  - D-0038 の 2 つ目の案（check.mjs --events が GITHUB_ACTIONS=true のとき自分で順序の見張りを先に走らせる実行時の守り）はまだ入っておらず、設定に頼らない守りは今もありません。
+  - 'wired: false・verified: false と正直に書かれており、本物の配線の PR で落ちる・通る記録もまだないので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0038 の config の案のうちワーカーの権限で入れられる分を
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 'id のままの engine-test が ci/knowledge-enforcement.yml にもあり必須のチェックが別のジョブの報告で満たされるという反例を自分で見つけ、name:
+    を sendback-engine-test・sendback-wiring-order に分けて check_name_shared で塞いだのは、D-0044
+    が K-0001 で採った形とも揃っています。'
+  - '反例として、check_name_shared は .github/workflows/ と tools/*/ci/ の静的な name: しか見ないので、name:
+    に式（${{ }}）や matrix で作った名前、Actions 以外のアプリや API が同じ名前で出す commit status は見逃すので、建設者は
+    branch protection の必須チェックを GitHub Actions のアプリに固定することを確かめてください。'
+  - 'wired・verified を true にする前に、本物の配線の PR で sendback-engine-test が落ちて止まる記録を Issue
+    #948 に残すという順は守ってください。'
+  - '写し・必須チェックの設定とも入っておらず wired: false・verified: false と合っているので、confidence は hypothesis
+    のままにしてください。'
+  - K-0004 の solutions が 30 件を超えて主張の担保と置き場の担保が混ざっているので、配線が入ったら整理する変更セットを別に出すことを勧めます。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/sendback-check/protection.mjs を .github/workflows/ から定期（schedule）と
+    PR ごとに走らせ、GitHub の branch protection の API で読んだ本物の必須のチェックに sendback-engine-test
+    と sendback-wiring-order が入っていないとき（required_check_missing・check_name_changed・check_name_shared）は
+    ::error で落とし、その実行の記録を Issue #948 と事例記録に残してから wired と verified を true にする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'D-0038 の 2 つ目の案のとおり、check.mjs --events が GITHUB_ACTIONS=true のとき自分で order.mjs
+    の見張りを先に走らせ、engine.test.mjs が未配線・todo・continue-on-error・if: 付きなら ::error で落とすようにし、必須のチェックの設定が外れても実行時に止まることをテストで確かめる。'

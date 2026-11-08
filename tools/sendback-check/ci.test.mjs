@@ -13,14 +13,14 @@
 // 通ったときも engine_head_passed として記録し、その記録を head-record.mjs が数えることも見る（議決 D-0031、Issue #1047）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { headRecords } from "./head-record.mjs";
-import { CHECK_NAMES, COPY, jobCheckNames, loadWorkflows } from "./protection.mjs";
+import { CHECK_NAMES, checkNameProblems, COPY, jobCheckNames, loadTemplates, loadWorkflows, sharedCheckNames } from "./protection.mjs";
 
 const template = readFileSync(fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), "utf8");
 const copyPath = fileURLToPath(new URL("../../.github/workflows/sendback-engine.yml", import.meta.url));
@@ -104,9 +104,8 @@ function requiredCheckProblems(text) {
     if (!wiring.some((l) => /^\s*run: node --test (.* )?ci\.test\.mjs(\s|$)/.test(l))) problems.push("wiring-order が ci.test.mjs を走らせていない");
   }
   if (engine === null) problems.push("engine-test のジョブがない（必須のチェックの名前）");
-  const jobs = jobCheckNames(lines.join("\n"));
-  for (const [job, name] of Object.entries(CHECK_NAMES)) {
-    if (jobs.has(job) && jobs.get(job) !== name) problems.push(`${job} の name: を ${name} にする（id のままの名前はほかのワークフローも報告し、必須のチェックがどちらでも満たされる）`);
+  for (const { job, expected } of checkNameProblems(jobCheckNames(lines.join("\n")))) {
+    problems.push(`${job} の name: を ${expected} にする（id のままの名前はほかのワークフローも報告し、必須のチェックがどちらでも満たされる）`);
   }
   if (engine !== null) {
     if (!engine.some((l) => /^\s*ENGINE_DIR: \S/.test(l))) problems.push("engine-test が ENGINE_DIR を渡していない（渡さないと Engine がないときに飛ばす）");
@@ -147,39 +146,23 @@ test("見張りを外す・飛ばす・絞るひな形の直しは外れにな�
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 /** sendback-engine-test・sendback-wiring-order をほかのジョブも報告する所（空なら通る）。 */
-function sharedCheckNames(workflows) {
-  const reserved = new Set(Object.values(CHECK_NAMES));
-  return Object.entries(workflows).flatMap(([path, text]) =>
-    [...jobCheckNames(text)].filter(([, name]) => reserved.has(name)).map(([job, name]) => `${path} の ${job} が ${name} を報告する`));
-}
-
-function otherWorkflows(root) {
-  const workflows = { ...loadWorkflows(root).others };
-  for (const tool of readdirSync(join(root, "tools"), { withFileTypes: true }).filter((d) => d.isDirectory())) {
-    const dir = join(root, "tools", tool.name, "ci");
-    if (!existsSync(dir)) continue;
-    for (const f of readdirSync(dir).filter((f) => /\.ya?ml$/.test(f))) {
-      const path = `tools/${tool.name}/ci/${f}`;
-      if (path !== "tools/sendback-check/ci/sendback-engine.yml") workflows[path] = readFileSync(join(dir, f), "utf8");
-    }
-  }
-  return workflows;
-}
+const reservedShared = (workflows) => sharedCheckNames(Object.values(CHECK_NAMES), workflows).map(({ path, job, name }) => `${path} の ${job} が ${name} を報告する`);
+const otherWorkflows = (root) => ({ ...loadWorkflows(root).others, ...loadTemplates(root) });
 
 test("sendback-engine-test・sendback-wiring-order は、ほかのツールのひな形と .github/workflows/ のどのジョブも報告しない", () => {
   const workflows = otherWorkflows(repoRoot);
   assert.ok(Object.keys(workflows).includes("tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml"), "ほかのひな形を読めていない");
   assert.ok(!Object.keys(workflows).includes(COPY), "写しはほかのワークフローに数えない");
-  assert.deepEqual(sharedCheckNames(workflows), []);
+  assert.deepEqual(reservedShared(workflows), []);
 });
 
 test("ほかのワークフローのジョブがその名前を名乗ると外れになり、id の engine-test のままのジョブは外れにしない", () => {
   const events = (name) => `name: x\non:\n  pull_request:\njobs:\n  events:\n${name ? `    name: ${name}\n` : ""}    runs-on: ubuntu-latest\n    steps:\n` +
     "      - run: node tools/sendback-check/check.mjs --events events.json\n";
   for (const name of Object.values(CHECK_NAMES)) {
-    assert.deepEqual(sharedCheckNames({ ".github/workflows/x.yml": events(name) }), [`.github/workflows/x.yml の events が ${name} を報告する`]);
+    assert.deepEqual(reservedShared({ ".github/workflows/x.yml": events(name) }), [`.github/workflows/x.yml の events が ${name} を報告する`]);
   }
-  assert.deepEqual(sharedCheckNames({ ".github/workflows/x.yml": events("engine-test"), ".github/workflows/y.yml": events(null) }), []);
+  assert.deepEqual(reservedShared({ ".github/workflows/x.yml": events("engine-test"), ".github/workflows/y.yml": events(null) }), []);
 });
 
 // ENGINE_REF の行を変える PR で engine-test が必ず走るか（議決 D-0028、Issue #1024）。Engine を上げる PR が変えるのは写しの ENGINE_REF の行だけなので、

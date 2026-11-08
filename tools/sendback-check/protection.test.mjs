@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { CHECK_NAMES, checkProtection, COPY, jobCheckNames, loadWorkflows, requiredContexts } from "./protection.mjs";
+import { CHECK_NAMES, checkNameProblems, checkProtection, COPY, jobCheckNames, loadTemplates, loadWorkflows, requiredContexts, sharedCheckNames,
+  TEMPLATE } from "./protection.mjs";
 import { REPO_ROOT } from "./order.mjs";
 
 const script = fileURLToPath(new URL("./protection.mjs", import.meta.url));
@@ -99,6 +100,26 @@ test("写しのほかの .github/workflows/ の YAML を読んで照らす", () 
   assert.equal(workflow, template);
   assert.deepEqual(Object.keys(others), [".github/workflows/knowledge-enforcement.yml"]);
   assert.equal(loadWorkflows(repoWith({})).workflow, null);
+});
+
+test("checkNameProblems は CHECK_NAMES と違う名前のジョブだけを返し、sharedCheckNames は渡した名前を報告するほかのジョブを返す", () => {
+  assert.deepEqual(checkNameProblems(jobCheckNames(template)), []);
+  assert.deepEqual(checkNameProblems(jobCheckNames(template.replace(`    name: ${ENGINE}\n`, ""))),
+    [{ job: "engine-test", name: "engine-test", expected: ENGINE }]);
+  assert.deepEqual(checkNameProblems(jobCheckNames(template.replace("  wiring-order:\n", "  order:\n"))), []);
+  const others = { ".github/workflows/knowledge-enforcement.yml": knowledgeEnforcement, ".github/workflows/pr-body-engine.yml": prBody };
+  assert.deepEqual(sharedCheckNames(["engine-test"], others), [{ path: ".github/workflows/knowledge-enforcement.yml", job: "engine-test", name: "engine-test" }]);
+  assert.deepEqual(sharedCheckNames(Object.values(CHECK_NAMES), others), []);
+});
+
+test("loadTemplates はツールのひな形（tools/<ツール>/ci/ の YAML）を読み、sendback-engine.yml のひな形は除く", () => {
+  const dir = repoWith({});
+  for (const [path, text] of [[TEMPLATE, template], ["tools/a/ci/a.yml", "x"], ["tools/a/ci/README.md", "x"], ["tools/b/b.yml", "x"]]) {
+    mkdirSync(join(dir, path, ".."), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  assert.deepEqual(Object.keys(loadTemplates(dir)), ["tools/a/ci/a.yml"]);
+  assert.deepEqual(loadTemplates(join(dir, "none")), {});
 });
 
 test("CLI: 通れば 0、外れれば 1（GitHub Actions では ::error）、読めなければ 2", () => {
