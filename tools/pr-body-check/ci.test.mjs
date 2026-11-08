@@ -6,6 +6,7 @@
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
 // 字面の照合だけに頼らず、gate.test.mjs と engine.test.mjs を TAP で走らせた結果で、通る側のテストと (10) が pass と数えられたかも見る（議決 D-0070 の test の案、Issue #1183）。
+// (10) と、そこから呼ぶ assertWritesEveryTime に、条件付きの早い return・短絡・三項・try/catch のような飛ばさずに pass になる外し方がないことも見る（議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案、Issue #1187）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
 // PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable で飛ばさず落ちることも見る（議決 D-0068 の test の案、Issue #1180）。
@@ -21,7 +22,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseTapReport } from "../sendback-check/order.mjs";
 import { jobCheckNames } from "../sendback-check/protection.mjs";
-import { PASSING_REPORTS } from "./c0005.mjs";
+import { PASSING_REPORTS, REASONS } from "./c0005.mjs";
 import { CHECK_NAME, REQUIRED_JOB } from "./protection.mjs";
 
 const template = readFileSync(fileURLToPath(new URL("./ci/pr-body-engine.yml", import.meta.url)), "utf8");
@@ -262,6 +263,91 @@ test("gate.test.mjs と engine.test.mjs の (10) を外す・飛ばす直しは�
       assert.notEqual(text, original, `${file} ${name}: 置き換えが効いていない`);
       assert.notDeepEqual(exclusionProblems(file, text), [], `${file} ${name} が通った`);
     }
+  }
+});
+
+// (10) の中の条件付きの飛ばしの見張り（知見 K-0001 の担保。議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案、Issue #1187）。exclusionProblems は skip・todo・only を、
+// 走らせた結果の見張りは SKIP・TODO を捕まえるが、テストの中の条件付きの早い return（if (…) return;）や、短絡・三項・try/catch で確かめを
+// 通さない書き方は、飛ばさずに pass と数えられるのですり抜ける（Issue #1183 の残り）。(10) の本体と、そこから呼ぶ assertWritesEveryTime の本体に
+// 分かれ道（return・if・else・switch・try・catch・break・continue・三項・&&・||・??）と環境変数の読み取りがなく、(10) が need("update") と
+// assertWritesEveryTime(parts.update, report) を本体の上の段で呼び、assertWritesEveryTime が C-0005 の 21 回（REASONS）を絞らずに回すことを見る。注釈の行は見ない。
+const WRITES_FN = "function assertWritesEveryTime(update, report) {";
+const WRITES_LOOP = "  REASONS.forEach((reason, i) => {";
+const TEN_CALLS = ['    need("update");', "    assertWritesEveryTime(parts.update, report);"];
+const BRANCHES = [
+  [/\breturn\b/, "return"],
+  [/\b(if|else|switch|case)\b/, "if・else・switch"],
+  [/\b(try|catch|finally)\b/, "try・catch"],
+  [/\b(break|continue)\b/, "break・continue"],
+  [/\?(?![.?])/, "三項（? :）"],
+  [/&&|\|\||\?\?/, "&&・||・??"],
+  // 子のプロセスに PATH を渡すのは飛ばしではないので除く
+  [/\bprocess\.env\b(?!\.PATH\b)|\bprocess\.(argv|exit)\b/, "環境変数・引数の読み取り"],
+  [/\b(skip|todo|only)\b/, "skip・todo・only"],
+];
+
+/** start の行の次から、close と同じ行の前までの行。閉じがなければ null。 */
+function blockBody(lines, start, close) {
+  const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && l === close);
+  return end < 0 ? null : lines.slice(start + 1, end);
+}
+
+/** 本体の行に分かれ道があれば、その外れ（where は外れの文に出す場所）。 */
+const branchProblems = (where, body) =>
+  BRANCHES.filter(([re]) => body.some((l) => re.test(l))).map(([, what]) => `${ENGINE_TEST}: ${where}に ${what} がある（条件で確かめを通さずに pass になる）`);
+
+/** engine.test.mjs の (10) に、飛ばさずに pass と数えられる条件付きの飛ばしがないかの外れ（空なら通る）。 */
+function conditionalSkipProblems(text) {
+  const lines = codeLines(text);
+  const loop = lines.indexOf(PASSING_LOOP);
+  const ten = /^\s+test\(`\(10\) /.test(lines[loop + 1] ?? "") ? blockBody(lines, loop + 1, "  });") : null;
+  const writes = blockBody(lines, lines.indexOf(WRITES_FN), "}");
+  const problems = [];
+  if (ten === null) problems.push(`${ENGINE_TEST}: (10) のテストの本体を見つけられない`);
+  else {
+    problems.push(...branchProblems("(10) の本体", ten));
+    for (const call of TEN_CALLS) {
+      if (!ten.includes(call)) problems.push(`${ENGINE_TEST}: (10) の本体の上の段で ${call.trim()} を呼んでいない`);
+    }
+  }
+  if (writes === null) problems.push(`${ENGINE_TEST}: (10) が呼ぶ ${WRITES_FN.slice(0, -2)} がない`);
+  else {
+    problems.push(...branchProblems("assertWritesEveryTime の本体", writes));
+    if (!writes.includes(WRITES_LOOP)) problems.push(`${ENGINE_TEST}: assertWritesEveryTime が C-0005 の 21 回（REASONS）を絞らずに回していない`);
+  }
+  return problems;
+}
+
+test("engine.test.mjs の (10) には条件付きの飛ばし（早い return・短絡・三項・try/catch・環境変数での分かれ道）がなく、C-0005 の 21 回を回す", () => {
+  assert.deepEqual(conditionalSkipProblems(readTest(ENGINE_TEST)), []);
+  assert.equal(REASONS.length, 21, "C-0005 の 21 回の続きのジョブ（c0005.mjs の REASONS）が 21 回でない");
+});
+
+test("(10) に条件付きの飛ばしを入れる直しは、字面の skip・todo の見張りをすり抜けても外れになる", () => {
+  const engineText = readTest(ENGINE_TEST);
+  const [needCall, writesCall] = TEN_CALLS;
+  const tenWrites = new RegExp(`(\\(10\\) [\\s\\S]*?)${writesCall.replace(/[()]/g, "\\$&")}`);
+  const cases = {
+    "(10) の頭で条件付きで return する": engineText.replace(`${needCall}\n`, `${needCall}\n    if (!process.env.CI) return;\n`),
+    "(10) で短絡（&&）で確かめを通さない": engineText.replace(tenWrites, "$1    label.length > 999 && assertWritesEveryTime(parts.update, report);"),
+    "(10) で三項で確かめを通さない": engineText.replace(tenWrites, "$1    label ? null : assertWritesEveryTime(parts.update, report);"),
+    "(10) で落ちを try/catch で飲む": engineText.replace(tenWrites, "$1    try {\n      assertWritesEveryTime(parts.update, report);\n    } catch {}"),
+    "(10) で確かめを入れ子の関数に入れて呼ばない":
+      engineText.replace(tenWrites, "$1    const later = () => {\n      assertWritesEveryTime(parts.update, report);\n    };"),
+    "(10) で確かめを呼ばない": engineText.replace(tenWrites, "$1    void report;"),
+    "(10) で need を呼ばない": engineText.replace(/(\(10\) [\s\S]*?)    need\("update"\);\n/, "$1"),
+    "assertWritesEveryTime の頭で条件付きで return する": engineText.replace(`${WRITES_FN}\n`, `${WRITES_FN}\n  if (!update) return;\n`),
+    "21 回のうち 2 回目から条件付きで return する": engineText.replace(`${WRITES_LOOP}\n`, `${WRITES_LOOP}\n    if (i > 0) return;\n`),
+    "21 回を絞る": engineText.replace(WRITES_LOOP, "  REASONS.slice(0, 1).forEach((reason, i) => {"),
+    "環境変数で回数を絞る": engineText.replace(WRITES_LOOP, "  REASONS.slice(0, Number(process.env.QUICK_RUNS) || 21).forEach((reason, i) => {"),
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    assert.notEqual(text, engineText, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(conditionalSkipProblems(text), [], `${name} が通った`);
+  }
+  // 字面の skip・todo の見張り（Issue #1109）だけでは捕まえられない形があることも確かめる（この見張りが要る理由）
+  for (const name of ["(10) の頭で条件付きで return する", "21 回のうち 2 回目から条件付きで return する", "(10) で落ちを try/catch で飲む"]) {
+    assert.deepEqual(exclusionProblems(ENGINE_TEST, cases[name]), [], `${name}: 字面の見張りが捕まえた（すり抜けの例になっていない）`);
   }
 });
 

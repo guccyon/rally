@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0102
+pr: https://github.com/guccyon/rally/pull/1274
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、既存の知見や specs/ と矛盾しません。
+  - '足した項目の decided_by: committee:D-0099 と PR #1184 は D-0099 の pr と合っており、内容も D-0099
+    の enforcement の 2 件目（kind: ci_check、D-0045 の案どおり (10) の条件付きの飛ばしを照らす案）とそのまま対応しています。'
+  - 既存の issue 1109 の項目（字面の見張り）と issue 1183 の項目（走らせた結果の見張り）を置き換えず、両方で捕まえられなかった条件付きの早い
+    return を塞ぐ分だけを別の項目にしているので、重複ではなく補い合う関係になっています。
+  - issue 1183 の項目に書かれた「条件付きの早い return は捕まえられない」という限界に、今回の項目がそのまま応えているので、前の記録とのつながりも筋が通っています。
+  - '「起票時の番号は D-0069」は、D-0069 が PR #1177 の別の議決なので D-0094 が D-0067 について指摘したのと同じく取り違えられうるため、次に直すときは
+    Issue #1187 の起票時の仮の番号だと分かる書き方にするとよいです。'
+  - 'wired: false・verified: false のままで、配線も本物の記録での確認もまだないので、K-0001 の confidence は hypothesis
+    のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0099 を指していて、D-0099 の pr は PR #1184
+    で what の記述と合い、D-0099 の 2 つ目の ci_check の案（(10) を必ず対象に含め、skip・todo・条件付きの飛ばしがないことを照らす）にそのまま辿れます。'
+  - '「Issue #1187 の起票時の番号は D-0069」という書き添えは、D-0069 が PR #1177 の別の議決であることと食い違いますが、起票時の番号の取り違えを断ったうえで正しい議決
+    D-0099 を指しているので、根拠を辿る妨げにはなりません。'
+  - 'Issue #1109・#1183・#1187 や手元の Engine 9f8f6b4 での結果はこの材料の外の記録で確かめられませんが、担保の記録であって主張の根拠を増やすものではなく、ENGINE_REF
+    の 9fee9c2 では走らせていないと正直に書いています。'
+  - 配線も本物の記録での効き目の確認もまだで wired と verified を false にしており、statement・evidence・confidence
+    は変えていないので、K-0001 の confidence は hypothesis のままが妥当です。
+  - 差分にはコミットの番号・ファイルの道・Issue 番号・議決 id など工場の識別子しかなく、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は D-0099 の ci_check の案のうち、まだ塞いでいなかった条件付きの飛ばしを ci.test.mjs の見張りで塞いだ記録を K-0001
+    の enforcement.solutions に 1 件足すだけで、担保の観点では採ってよいです。
+  - (10) と assertWritesEveryTime の本体に分かれ道・環境変数の読み取り・skip・todo・only がないことと 21 回を絞らないことを機械で照らし、11
+    通りの外し方がどれも落ちることを確かめているので、繰り返し起きる外し方に対する決定論の線として確かです。
+  - ci/pr-body-engine.yml が .github/workflows/ に写されておらず ENGINE_REF（9fee9c2）でも走らせていないので、wired
+    と verified を false のままにしたのは言い過ぎていません。
+  - D-0099 のもう 1 つの案である test（ENGINE_DIR の Engine で (10) と (11) のちょうど一方だけが走って通ることを確かめる）はまだ記録がなく、関所を呼ぶかの判定が誤ると
+    (10) が飛んで (11) だけが走る外し方は今回の本体の静的な見張りでは捕まらないので、次の変更セットで入れてください。
+  - 本体の字面を見る静的な見張りは書き方の変更で誤検知しやすいので、ワークフローを配線するときに本物の engine-test の走った結果（(10) の件数と
+    pass）を照らす見張りと組にして効き目を確かめてください。
+  - 配線も本物の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0099 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - 足した項目は D-0070 の test の項目が自分で書いていた「条件付きの早い return は捕まえられない」という穴を塞ぐもので、前の項目と食い違う反例は見当たりません。
+  - 反例として、見張りは (10) と assertWritesEveryTime の本体だけを見るので、need や関所の呼び出しなどその先の関数の中に分かれ道を入れて確かめを通さない外し方は捕まえられない恐れがあり、次の変更セットでその範囲を
+    what に書き添えてください。
+  - D-0099 のもう 1 つの test の案（(10) と (11) のちょうど一方だけが走って通ることを確かめる）はこの差分に入っていないので、まだ残っていることを次の変更セットで記録してください。
+  - ENGINE_REF（9fee9c2）では走らせておらず、配線もされていないと what に書き、wired と verified を false のままにしているので、担保が効いているように言い過ぎてはいません。
+  - 配線も本物の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: D-0099 の案どおり、tools/pr-body-check/ci.test.mjs か engine.test.mjs に、ENGINE_DIR
+    の Engine について engine.test.mjs の (10) と (11) のちょうど一方だけが走って通ることを確かめるテストを足し、関所を呼ぶかの判定が誤って
+    (10) が飛ぶか両方が飛ぶ形になったら落ちるようにする。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test
+    を既定ブランチの必須のチェックにし、ENGINE_REF の Engine で ci.test.mjs の条件付きの飛ばしの見張りと (10) が通ることを記録したら、この解決策の
+    wired を true にして wired_by（ワークフローのファイル・job・tools/pr-body-check/ci.test.mjs）を書く。
