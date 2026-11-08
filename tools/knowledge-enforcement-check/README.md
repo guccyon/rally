@@ -77,15 +77,17 @@ ENGINE_DIR=/path/to/factory-engine python3 -m unittest discover -s tools/knowled
 
 `test_engine.py` は Engine のチェックアウトの今の中身に差分を当てるので、製品の CI が使う版（`knowledge-check.yml` の `ENGINE_REF`）と違う版を渡すと、その版では当たらないことに気づけない（議決 `D-0024`、Issue #1014）。`test_engine_patch.py` は `.github/workflows/knowledge-check.yml` の `ENGINE_REF` を読み、`ENGINE_DIR` のチェックアウトからその版を名指しで取り出して `git apply --check` で差分を当て、次のときに `patch_stale` で落とす（GitHub Actions では `::error` も出す）。
 
-- 差分が当たらず、しかも Engine 側にまだ入っていない（`git apply --reverse --check` も通らず、`core-gates/knowledge_check.py` に差分で最後に足した `check_wired_by` もない）
+- 差分が当たらず、しかも Engine 側にまだ入っていない（`git apply --reverse --check` も通らず、`core-gates/knowledge_check.py` に差分で足した `enforcement_label`・`check_wired_by` もない）
 
-当たるか、もう入っていれば通る。チェックアウトに `ENGINE_REF` の版がないときは飛ばすが、`ENGINE_DIR` を渡したときと CI では落とす（`ci/knowledge-enforcement.yml` の `ENGINE_REF` が `knowledge-check.yml` とそろっていないとこれで落ちる）。判定そのものは、作った git の版（当たる・入っている・入れたあと変わった・どちらでもない）で Engine なしに確かめる。`ci/knowledge-enforcement.yml` の `engine-test` のジョブで `test_engine.py` と一緒に走る。
+差分で足した関数（`enforcement_label`・`check_wired_by` のどれか）はあるのに `git apply --reverse --check` が通らない版（差分の一部だけが入った・入れたあと変わった）は、もう入っているとは数えずに `patch_partially_applied` で落とす（GitHub Actions では `::error` も出す。議決 `D-0036`、Issue #1077）。関数の名前があるだけでは、一部だけ入った版や名前だけが別の中身で入った版でも通ってしまうため。落ちたら差分を今の Engine に合わせて作り直す（全部入れて `ENGINE_REF` を上げたなら差分を消す）。
+
+当たるか、もう入っていれば（`git apply --reverse --check` が通るときだけ）通る。チェックアウトに `ENGINE_REF` の版がないときは飛ばすが、`ENGINE_DIR` を渡したときと CI では落とす（`ci/knowledge-enforcement.yml` の `ENGINE_REF` が `knowledge-check.yml` とそろっていないとこれで落ちる）。判定そのものは、作った git の版（当たる・入っている・一部だけ入った・入れたあと変わった・どれでもない）で Engine なしに確かめる。`ci/knowledge-enforcement.yml` の `engine-test` のジョブで `test_engine.py` と一緒に走る。
 
 ## CI のひな形（`ci/knowledge-enforcement.yml`）
 
 ジョブは 2 つ。
 
-- `engine-test`: `ENGINE_REF` の版の Engine を取り、`test_engine_patch.py` と `test_engine.py` を `CI=true`・`ENGINE_DIR` を渡し、pytest を入れて走らせる。差分が `ENGINE_REF` に当たらない（`patch_stale`）か、差分で足したテストや担保の表示の比べが落ちれば、どの PR でもジョブが落ちる。写したらこのジョブを branch protection の必須チェックに入れて PR を止める（議決 `D-0035`、Issue #1063）
+- `engine-test`: `ENGINE_REF` の版の Engine を取り、`test_engine_patch.py` と `test_engine.py` を `CI=true`・`ENGINE_DIR` を渡し、pytest を入れて走らせる。差分が `ENGINE_REF` に当たらない（`patch_stale`）か一部だけ入っている（`patch_partially_applied`）か、差分で足したテストや担保の表示の比べが落ちれば、どの PR でもジョブが落ちる。写したらこのジョブを branch protection の必須チェックに入れて PR を止める（議決 `D-0035`、Issue #1063）
 - `enforcement`: Engine の要らないテスト（`test_check.py`・`test_ci.py`）と `check.py` を走らせる。`check.py` の結果で落とすのは、PR が `.factory-config/knowledge/` か `tools/knowledge-enforcement-check/` を変えたときだけ
 
 `test_ci.py` がひな形（写してあれば写しも）の `engine-test` の形を見て、外れたら落とす。絞り込みのない `pull_request` だけで走る、ジョブと手順に `if:`・`continue-on-error:`・`needs:` がない、`ENGINE_REF` がワークフローの `env` に 1 行だけあって `knowledge-check.yml` と同じ版、最初の手順で 40 桁の SHA かを確かめる、Engine を `ref: ${{ env.ENGINE_REF }}`・`path: .engine` で取る、テストの手順が `CI: "true"`・`ENGINE_DIR` を渡して pytest を入れ、2 つのテストを（`check.py` の配線先の照合で）呼び、失敗を `|| true` などで握りつぶさない。写しは `ENGINE_REF` の行のほかがひな形と同じであること（`ENGINE_REF` も `knowledge-check.yml` とそろえるので、実際は同じ中身）。ひな形を 15 とおりに書き換えた写しで、それぞれ外れることも確かめる。

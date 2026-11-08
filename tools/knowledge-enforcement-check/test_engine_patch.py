@@ -1,8 +1,10 @@
 """Engine に移す差分が ENGINE_REF の版に当たるかの検査（知見 K-0004 の担保、議決 D-0024、Issue #1014）。
 
 engine/knowledge-enforcement.patch を、.github/workflows/knowledge-check.yml の ENGINE_REF の版の Engine に git apply --check で当て、
-当たらず、しかも Engine 側にまだ入っていない（git apply --reverse --check が通らず、check_wired_by もない）ときは patch_stale で落とす。
-差分が当たるか、もう入っていれば通る。test_engine.py は ENGINE_DIR のチェックアウトの今の中身に当てるが、こちらは ENGINE_REF の版を
+当たらず、しかも Engine 側にまだ入っていない（git apply --reverse --check が通らず、差分で足した enforcement_label・check_wired_by も
+ない）ときは patch_stale で落とす。差分が当たるか、もう入っていれば（git apply --reverse --check が通るときだけ）通る。差分で足した関数は
+あるのに --reverse --check が通らない版（差分の一部だけが入った・入れたあと変わった）は、入っているとは数えずに patch_partially_applied で
+落とす（知見 K-0004 の担保、議決 D-0036、Issue #1077）。test_engine.py は ENGINE_DIR のチェックアウトの今の中身に当てるが、こちらは ENGINE_REF の版を
 名指しで取り出して当てるので、チェックアウトが別の版でも製品の CI が使う版で確かめられる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。チェックアウトがないか、ENGINE_REF の版を
 含まないときは飛ばす。ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（test_engine.py と同じ）。
@@ -24,12 +26,13 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 PATCH = HERE / "engine" / "knowledge-enforcement.patch"
 WORKFLOW = REPO / ".github" / "workflows" / "knowledge-check.yml"
-MARKER = ("core-gates/knowledge_check.py", "def check_wired_by(")   # 差分で最後に足したもの（Issue #1060）
+# 差分で Engine に足す関数。どれかがあるのに --reverse --check が通らなければ、一部だけ入ったか入れたあと変わった（Issue #1077）
+MARKERS = (("core-gates/knowledge_check.py", "def enforcement_label("), ("core-gates/knowledge_check.py", "def check_wired_by("))
 
 ENGINE = Path(os.environ.get("ENGINE_DIR") or REPO.parent / "engine")
 REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
 
-APPLIES, MERGED, STALE = "applies", "merged", "patch_stale"
+APPLIES, MERGED, STALE, PARTIAL = "applies", "merged", "patch_stale", "patch_partially_applied"
 
 
 def engine_ref(workflow: Path = WORKFLOW) -> str:
@@ -45,8 +48,10 @@ def has_commit(engine: Path, ref: str) -> bool:
     return r.returncode == 0
 
 
-def patch_state(engine: Path, ref: str, patch: Path = PATCH, marker: tuple[str, str] = MARKER) -> tuple[str, str]:
-    """ref の版の Engine に対する差分の状態と、git apply の出力。APPLIES = 当たる、MERGED = もう入っている、STALE = どちらでもない。"""
+def patch_state(engine: Path, ref: str, patch: Path = PATCH,
+                markers: tuple[tuple[str, str], ...] = MARKERS) -> tuple[str, str]:
+    """ref の版の Engine に対する差分の状態と、git apply の出力。APPLIES = 当たる、MERGED = もう入っている（--reverse --check が通る）、
+    PARTIAL = 差分で足した関数はあるが --reverse --check が通らない、STALE = どれでもない。"""
     tar = subprocess.run(["git", "-C", str(engine), "archive", "--format=tar", ref], capture_output=True, check=True).stdout
     with tempfile.TemporaryDirectory() as t:
         with tarfile.open(fileobj=io.BytesIO(tar)) as f:
@@ -57,9 +62,10 @@ def patch_state(engine: Path, ref: str, patch: Path = PATCH, marker: tuple[str, 
             return APPLIES, ""
         if apply("--reverse").returncode == 0:
             return MERGED, ""
-        path = Path(t) / marker[0]
-        if path.is_file() and marker[1] in path.read_text(encoding="utf-8"):
-            return MERGED, ""
+        found = [name.removeprefix("def ").rstrip("(") for f, name in markers
+                 if (Path(t) / f).is_file() and name in (Path(t) / f).read_text(encoding="utf-8")]
+        if found:
+            return PARTIAL, f"{', '.join(found)} はあるが git apply --reverse --check が通らない"
         return STALE, fwd.stderr.strip()
 
 
@@ -70,7 +76,8 @@ def git(cwd: Path, *args: str) -> str:
 
 
 class PatchStateTest(unittest.TestCase):
-    """作った Engine の写し（git の版を 3 つ）で、当たる・入っている・どちらでもないの判定を確かめる。Engine は要らない。"""
+    """作った Engine の写し（git の版）で、当たる・入っている・一部だけ入った・入れたあと変わった・どれでもないの判定を確かめる。
+    Engine は要らない。"""
 
     @classmethod
     def setUpClass(cls):
@@ -79,19 +86,26 @@ class PatchStateTest(unittest.TestCase):
         (d / "core-gates").mkdir(parents=True)
         git(d, "init", "-q")
         f = d / "core-gates" / "knowledge_check.py"
-        f.write_text("a\nb\nc\n", encoding="utf-8")
+        mid = "".join(f"m{i}\n" for i in range(10))   # 2 つの関数を別の hunk に分ける
+        f.write_text(f"a\nb\nc\n{mid}x\ny\nz\n", encoding="utf-8")
         git(d, "add", ".")
         git(d, "commit", "-qm", "base")
         cls.base = git(d, "rev-parse", "HEAD")
-        f.write_text("a\nb\ndef check_wired_by(x):\nc\n", encoding="utf-8")
+        f.write_text(f"a\nb\ndef enforcement_label(k):\nc\n{mid}x\ny\ndef check_wired_by(x):\nz\n", encoding="utf-8")
         cls.patch = Path(cls.tmp.name) / "p.patch"
         cls.patch.write_text(git(d, "diff") + "\n", encoding="utf-8")
         git(d, "commit", "-qam", "merged")
         cls.merged = git(d, "rev-parse", "HEAD")
-        f.write_text("a\nB\ndef check_wired_by(x, y):\nc\n", encoding="utf-8")
+        f.write_text(f"a\nB\ndef enforcement_label(k, v):\nc\n{mid}x\ny\ndef check_wired_by(x, y):\nz\n", encoding="utf-8")
         git(d, "commit", "-qam", "merged-then-changed")
         cls.changed = git(d, "rev-parse", "HEAD")
-        f.write_text("x\ny\nz\n", encoding="utf-8")
+        f.write_text(f"a\nb\ndef enforcement_label(k):\nc\n{mid}x\ny\nz\n", encoding="utf-8")
+        git(d, "commit", "-qam", "label-only")
+        cls.partial = git(d, "rev-parse", "HEAD")
+        f.write_text(f"a\nb\nc\n{mid}X\ny\ndef check_wired_by(x):\nz\n", encoding="utf-8")
+        git(d, "commit", "-qam", "wired-by-only-then-changed")
+        cls.wired_only = git(d, "rev-parse", "HEAD")
+        f.write_text("p\nq\nr\n", encoding="utf-8")
         git(d, "commit", "-qam", "moved")
         cls.moved = git(d, "rev-parse", "HEAD")
 
@@ -108,8 +122,18 @@ class PatchStateTest(unittest.TestCase):
     def test_もう入っている版は通る(self):
         self.assertEqual(self.state(self.merged), MERGED)
 
-    def test_入れたあと変わった版も目印があれば通る(self):
-        self.assertEqual(self.state(self.changed), MERGED)
+    def test_入れたあと変わった版は関数があっても_patch_partially_applied(self):
+        state, err = patch_state(self.dir, self.changed, self.patch)
+        self.assertEqual(state, PARTIAL)
+        self.assertIn("enforcement_label", err)
+        self.assertIn("check_wired_by", err)
+
+    def test_一部だけ入った版は_patch_partially_applied(self):
+        state, err = patch_state(self.dir, self.partial, self.patch)
+        self.assertEqual(state, PARTIAL)
+        self.assertIn("enforcement_label", err)
+        self.assertNotIn("check_wired_by", err)
+        self.assertEqual(self.state(self.wired_only), PARTIAL)
 
     def test_当たらずまだ入っていない版は_patch_stale(self):
         state, err = patch_state(self.dir, self.moved, self.patch)
@@ -129,6 +153,12 @@ HAS_ENGINE = (ENGINE / ".git").exists() and has_commit(ENGINE, engine_ref())
 
 @unittest.skipUnless(HAS_ENGINE or REQUIRED, f"ENGINE_REF の版を含む Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
 class EngineRefPatchTest(unittest.TestCase):
+    def fail_with_annotation(self, msg: str):
+        """GitHub Actions では msg の 1 行目を差分のファイルへの ::error にも出して落とす。"""
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::error file={PATCH.relative_to(REPO)}::{msg.splitlines()[0]}")
+        self.fail(msg)
+
     def test_差分が_ENGINE_REF_の版に当たるかもう入っている(self):
         ref = engine_ref()
         if not HAS_ENGINE:
@@ -138,9 +168,11 @@ class EngineRefPatchTest(unittest.TestCase):
         if state == STALE:
             msg = (f"patch_stale: {PATCH.relative_to(REPO)} が ENGINE_REF {ref} の Engine に当たらず、Engine 側にもまだ入っていない。"
                    f"今の Engine に合わせて作り直す: {err}")
-            if os.environ.get("GITHUB_ACTIONS") == "true":
-                print(f"::error file={PATCH.relative_to(REPO)}::{msg.splitlines()[0]}")
-            self.fail(msg)
+            self.fail_with_annotation(msg)
+        if state == PARTIAL:
+            msg = (f"patch_partially_applied: ENGINE_REF {ref} の Engine に {err}（差分の一部だけが入ったか、入れたあと変わった）。"
+                   f"{PATCH.relative_to(REPO)} を今の Engine に合わせて作り直す（全部入れて ENGINE_REF を上げたなら差分を消す）")
+            self.fail_with_annotation(msg)
         self.assertIn(state, (APPLIES, MERGED))
 
 
