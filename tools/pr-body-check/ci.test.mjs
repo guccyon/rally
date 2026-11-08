@@ -162,7 +162,7 @@ test("GitHub Actions では写し（.github/workflows/pr-body-engine.yml）が�
 // 写すときに変えてよいのは ENGINE_REF の行だけなので、写しの中身がほかの 1 行でもひな形とずれたら落とす。ずれは見張り（workflowProblems）を
 // 外さない直し（手順の名前・Node の版・要約の書き出し・足した手順など）でも落とし、どの行がずれたかを返す。このテストは写しの engine-test の中で走るので、
 // 写しから ci.test.mjs を外す直しはここでは止まらない。それは tools/knowledge-enforcement-check/check.py が、この解決策の wired_by に
-// 写しの pull_request のジョブから ci.test.mjs を呼ぶ項目を求めて止める（REQUIRED_PR の ("K-0012", 1205)）。
+// 写しの pull_request のジョブから ci.test.mjs を呼ぶ項目を求めて止める（K-0012 の issue 1205 の解決策の requires_check）。
 
 /** 写しの外れ（空なら通る）。ENGINE_REF の行のほかのずれ・見張りの外れ・写しの sendback-engine.yml との版のずれ（sendbackCopy を渡したとき）。 */
 function copyProblems(copy, base, sendbackCopy = null) {

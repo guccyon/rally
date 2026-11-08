@@ -86,6 +86,13 @@ Engine の handoff.saved の形で確かめた schema の解決策。照らす�
 .github/workflows/conflict-schema.yml の schedule でも走るジョブから tools/conflict-check/schema.py を呼ぶ項目がないと wired にできないようにした
 （issue 1136・1207 と同じ conflict-schema のジョブで満たす）。
 
+呼ぶ検査を解決策に書く（議決 D-0077（Issue #1216。起票時の番号は D-0075）の schema の案）: 上で REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO に
+(知見の id, 解決策の issue) の名前で並べていた組をやめ、解決策の requires_check（検査の道か、道か {runs, workflow} の列）に書く形に一般化した。
+wired: true の解決策は、requires_check に挙げた検査ごとに、on.pull_request のあるワークフロー（workflow を書いた検査はそのファイル）の pull_request でも走る
+ジョブからそれを呼ぶ wired_by の項目がないと requires_check_unwired で落とす。requires_check の形の誤りと、挙げた検査がリポジトリにないことは、
+wired を問わず requires_check_invalid で落とす。上で REQUIRED_PR などに挙げたと書いた組は、今はそれぞれの解決策の requires_check に同じ中身で書いてある
+（組を check.py に足し忘れると、その解決策が wired: true でも黙って通っていた。検査の求めを解決策そのものに置き、足す場所を 1 つにする）。
+
 Engine の merge_step の照合（議決 D-0100（起票時の番号は D-0071）、Issue #1196）: REQUIRED_ENGINE_WAIT の解決策（K-0012 の issue 1122・1196）が
 wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の版の Engine の orchestrator/dispatcher/supervisor.py で、merge_step が
 body_recheck_pending（tools/pr-body-check/engine/pr-body-recheck.patch で足す、直した本文の pr-body-check を待つ関数）を定義どおりに呼んでいることを
@@ -153,10 +160,10 @@ DECIDED_BY_RE = re.compile(r"^committee:(D-\d{4,})$")
 DECISION_MISMATCH = "decision_mismatch"
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106。
-# K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。REQUIRED_PR にも挙げ、schedule と pull_request の両方のジョブから呼ぶことを求める。
+# K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。requires_check にも書き、schedule と pull_request の両方のジョブから呼ぶことを求める。
 # K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160。
 # K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs。
-# K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）。REQUIRED_PR にも挙げる。
+# K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）。requires_check にも書く。
 # K-0014 の issue 1136・1207 は議決 D-0101（起票時の番号は D-0073）、Issue #1207。衝突したファイルの列を直近の窓のイベント列で照らす schema.py。
 # K-0014 の issue 1214 は議決 D-0076（起票時の番号は D-0074）、Issue #1214。直近の窓に積まれた衝突の続きのジョブを照らす events.py）
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
@@ -183,59 +190,25 @@ REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "
                               ("K-0014", 1207): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
                               ("K-0014", 1213): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076"),
                               ("K-0014", 1214): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076")}
-# (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
-# K-0004 の issue 1062 は議決 D-0052、Issue #1139。issue 1138 は議決 D-0075、Issue #1215。issue 1063・1144 は議決 D-0053、Issue #1144。
-# issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158。K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）、Issue #1182。
-# K-0004 の issue 986・1059・1129（check.py）は議決 D-0072（起票時の番号は D-0071）、Issue #1201 で外し、下の KNOWLEDGE_GATE ですべての解決策に求める）
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
-KNOWLEDGE_TEST = "tools/knowledge-enforcement-check/test_check.py"
-ENGINE_PATCH_TEST = "tools/knowledge-enforcement-check/test_engine_patch.py"
-REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043"), ("K-0010", 1103): ("tools/conflict-check/test_events.py", "D-0043"),
-               ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052・D-0075"), ("K-0004", 1138): (KNOWLEDGE_TEST, "D-0075"),
-               ("K-0004", 1063): (ENGINE_PATCH_TEST, "D-0053"), ("K-0004", 1144): (ENGINE_PATCH_TEST, "D-0053"),
-               ("K-0004", 1158): (SENDBACK_PROTECTION, "D-0059"),
-               ("K-0001", 1182): ("tools/pr-body-check/engine.test.mjs", "D-0070")}
-# (知見の id, 解決策の issue) → REQUIRED_PR の検査を呼ぶジョブがあることを求めるワークフロー（議決 D-0070（起票時の番号は D-0067）、Issue #1182。
-# ひな形 tools/pr-body-check/ci/pr-body-engine.yml の写しのほかで engine.test.mjs を走らせても、必須のチェック pr-body-engine-test の写しとは読めないため）
-REQUIRED_PR_WORKFLOW = {("K-0001", 1182): f"{WORKFLOWS}/pr-body-engine.yml"}
+# 解決策が pull_request でも走るジョブから呼ぶことを求める検査は、その解決策の requires_check に書く（議決 D-0077（起票時の番号は D-0075）の schema の案、Issue #1216）。
+# 前は (知見の id, 解決策の issue) の名前で並べた組（REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO）をここに持っていて、
+# 組を足し忘れた解決策は wired: true にしても黙って通っていた。前の組は同じ中身でそれぞれの解決策の requires_check に移した（議決 D-0043・D-0052・D-0053・D-0059・D-0070・D-0074・D-0075・D-0100）
+REQUIRES_CHECK = "requires_check"
+REQUIRES_CHECK_KEYS = ("runs", "workflow")
+REQUIRES_CHECK_DECISION = "D-0077"
+REQUIRES_CHECK_INVALID = "requires_check_invalid"
+REQUIRES_CHECK_UNWIRED = "requires_check_unwired"
 # wired: true の解決策は、知見と issue を問わずどれも、ひな形 ci/knowledge-enforcement.yml の写しの .github/workflows/knowledge-enforcement.yml の
 # pull_request でも走るジョブから check.py を呼ぶ項目を wired_by に要する（議決 D-0072（起票時の番号は D-0071）の test の案、Issue #1201。
 # 前は K-0004 の issue 986・1059・1129 を REQUIRED_PR に名前で挙げていて、ほかの知見の解決策は組を足し忘れると黙って通っていた。
 # ほかのワークフローから check.py を呼ぶだけでは、必須チェックにする写しとは読めない（議決 D-0072、Issue #1200））
 KNOWLEDGE_ENFORCEMENT_WORKFLOW = f"{WORKFLOWS}/knowledge-enforcement.yml"
 KNOWLEDGE_GATE = (KNOWLEDGE_CHECK, KNOWLEDGE_ENFORCEMENT_WORKFLOW, "D-0072")
-# K-0004 の issue 1062・1138（README の一覧を照らす test_check.py）は、同じ写しの pull_request のジョブから test_check.py を呼ぶ項目を求める
-# （議決 D-0075、Issue #1215。一覧がずれた PR を止めるのは、写しを必須チェックにした enforcement のジョブだけ）
-for _key in (("K-0004", 1062), ("K-0004", 1138)):
-    REQUIRED_PR_WORKFLOW[_key] = KNOWLEDGE_ENFORCEMENT_WORKFLOW
 KNOWLEDGE_GATE_UNWIRED = "knowledge_gate_unwired"
-# 知見 K-0012 の本文の直しのあとの再検査と、同じ check.mjs を使う K-0006 の見出しの検査を、1 つのマージ前の必須チェック pr-body-check にする
-# （議決 D-0100（起票時の番号は D-0071）、Issue #1196。ひな形 tools/pr-body-check/ci/pr-body-check.yml の写しでないと、Engine の supervisor が待つ
-# チェックの名前とワークフローの道に合わない）。K-0012 の 2 つは Engine の merge_step の待ちも求める（REQUIRED_PR_ALSO・REQUIRED_ENGINE_WAIT）
-PR_BODY_CHECK = "tools/pr-body-check/check.mjs"
-PR_BODY_CHECK_WORKFLOW = f"{WORKFLOWS}/pr-body-check.yml"
-PR_BODY_ENGINE_TEST = "tools/pr-body-check/engine.test.mjs"
+# 知見 K-0012 の本文の直しのあとの再検査（issue 1122・1196）は Engine の merge_step の待ちも求める（REQUIRED_ENGINE_WAIT。議決 D-0100（起票時の番号は D-0071）、Issue #1196）
 PR_BODY_ENGINE_WORKFLOW = f"{WORKFLOWS}/pr-body-engine.yml"
 PR_BODY_RECHECK = (("K-0012", 1122), ("K-0012", 1196))
-for _key in (*PR_BODY_RECHECK, ("K-0006", 906)):
-    REQUIRED_PR[_key] = (PR_BODY_CHECK, "D-0100")
-    REQUIRED_PR_WORKFLOW[_key] = PR_BODY_CHECK_WORKFLOW
-# (知見の id, 解決策の issue) → REQUIRED_PR に加えて pull_request のジョブから呼ぶことを求める (検査, ワークフロー, 議決) の列（議決 D-0100、Issue #1196）
-REQUIRED_PR_ALSO = {key: ((PR_BODY_ENGINE_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"),) for key in PR_BODY_RECHECK}
-# K-0012 の issue 1197（test）は、3 つのテストを pr-body-engine.yml の写しの pull_request のジョブから走らせることを求める（議決 D-0100（起票時の番号は D-0071）、Issue #1197。
-# Engine の merge_step の待ちは issue 1122・1196 の解決策が照らすので、ここでは求めない）
-PR_BODY_RECHECK_TEST = "tools/pr-body-check/recheck.test.mjs"
-PR_BODY_CI_TEST = "tools/pr-body-check/ci.test.mjs"
-REQUIRED_PR[("K-0012", 1197)] = (PR_BODY_RECHECK_TEST, "D-0100")
-REQUIRED_PR_WORKFLOW[("K-0012", 1197)] = PR_BODY_ENGINE_WORKFLOW
-REQUIRED_PR_ALSO[("K-0012", 1197)] = ((PR_BODY_ENGINE_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"), (PR_BODY_CI_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"))
-# K-0012 の issue 1131（ci_check。recheck.test.mjs を engine-test で走らせる）は、pr-body-engine.yml の写しの pull_request のジョブから recheck.test.mjs を、
-# issue 1205（ci_check。写しとひな形のずれを ci.test.mjs で落とす）は同じジョブから ci.test.mjs を呼ぶ項目を求める（議決 D-0074（起票時の番号は D-0072）、Issue #1205。
-# 写しから ci.test.mjs を外すと、写しの中で走るずれの見張りそのものが止まるので、ここで止める）
-REQUIRED_PR[("K-0012", 1131)] = (PR_BODY_RECHECK_TEST, "D-0074")
-REQUIRED_PR[("K-0012", 1205)] = (PR_BODY_CI_TEST, "D-0074")
-for _key in (("K-0012", 1131), ("K-0012", 1205)):
-    REQUIRED_PR_WORKFLOW[_key] = PR_BODY_ENGINE_WORKFLOW
 # (知見の id, 解決策の issue)。wired: true にするには、ENGINE_REF の Engine の merge_step が待ちの関数を呼んでいることを求める（議決 D-0100、Issue #1196）
 REQUIRED_ENGINE_WAIT = set(PR_BODY_RECHECK)
 ENGINE_SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
@@ -561,27 +534,60 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def required_checks(s: dict) -> tuple[list[tuple[str, str | None]], list[str]]:
+    """解決策の requires_check を (検査の道, ワークフロー（なければ None）) の列にする（議決 D-0077（起票時の番号は D-0075）、Issue #1216）。
+
+    値は検査の道の文字列か、その列。列の項目は道の文字列か {runs, workflow}（workflow は書けばそのワークフローのジョブを指す wired_by だけを数える）。
+    書いていなければ空の列。形の誤りは 2 つ目に返す"""
+    if REQUIRES_CHECK not in s:
+        return [], []
+    v = s[REQUIRES_CHECK]
+    entries = [v] if isinstance(v, str) else v
+    if not isinstance(entries, list) or not entries:
+        return [], [f"{REQUIRES_CHECK} は検査の道か、道か {{runs, workflow}} の空でない列（{v!r}）"]
+    out, bad = [], []
+    for j, x in enumerate(entries):
+        if isinstance(x, str):
+            x = {"runs": x}
+        ok = (isinstance(x, dict) and set(x) <= set(REQUIRES_CHECK_KEYS) and "runs" in x
+              and all(isinstance(x[key], str) and x[key] for key in x))
+        runs = norm("", x["runs"]) if ok else None
+        if not runs:
+            bad.append(f"{REQUIRES_CHECK}[{j}]: 検査の道の文字列か、runs（とあれば workflow）を空でない文字列で書いた項目（{entries[j]!r}）")
+        elif "workflow" in x and not is_workflow(x["workflow"]):
+            bad.append(f"{REQUIRES_CHECK}[{j}]: workflow は {WORKFLOWS}/ の直下のファイル（{x['workflow']}）")
+        else:
+            out.append((runs, x.get("workflow")))
+    return out, bad
+
+
 def check_pull_request(k: dict, repo: Path) -> list[str]:
-    """REQUIRED_PR の解決策が wired: true なら、pull_request のジョブから検査を呼ぶ wired_by を求める（議決 D-0043、Issue #1103）。
-    REQUIRED_PR_WORKFLOW に挙げた解決策は、そのワークフローのジョブを指す項目だけを数える（議決 D-0070、Issue #1182）。
-    REQUIRED_PR_ALSO に挙げた解決策は、そこに挙げた検査とワークフローの組もそれぞれ求める（議決 D-0100、Issue #1196・#1197）"""
+    """requires_check を書いた解決策を照らす（議決 D-0077（起票時の番号は D-0075）の schema の案、Issue #1216）。
+
+    形が誤っているか、挙げた検査がリポジトリにないなら requires_check_invalid で落とす（wired を問わない）。
+    wired: true なら、挙げた検査ごとに、pull_request でも走るジョブからそれを呼ぶ wired_by の項目（workflow を書いた検査はそのワークフローの項目だけ）を求め、
+    なければ requires_check_unwired で落とす。前は (知見の id, 解決策の issue) の組を REQUIRED_PR に並べていて、組を足し忘れると黙って通っていた"""
     f, e = k.get("_file", str(k.get("id"))), []
     read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
-        if not isinstance(s, dict) or s.get("wired") is not True:
+        if not isinstance(s, dict):
             continue
-        key = (k.get("id"), s.get("issue"))
-        required = REQUIRED_PR.get(key)
-        if required is None:
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        required, bad = required_checks(s)
+        e += [f"{where}: {REQUIRES_CHECK_INVALID}: {b}" for b in bad]
+        for target, _ in required:
+            if read(target) is None:
+                e.append(f"{where}: {REQUIRES_CHECK_INVALID}: {REQUIRES_CHECK} の {target} がない")
+        if s.get("wired") is not True:
             continue
-        for target, workflow, decision in ((required[0], REQUIRED_PR_WORKFLOW.get(key), required[1]), *REQUIRED_PR_ALSO.get(key, ())):
-            if pr_job_calls(s, repo, read, target, workflow):
+        for target, workflow in required:
+            if read(target) is None or pr_job_calls(s, repo, read, target, workflow):
                 continue
-            where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
             place = workflow or f"{WORKFLOWS}/ のワークフロー"
-            e.append(f"{where}: wired にするには wired_by に、on.pull_request のある {place} で pull_request でも走るジョブから"
-                     f" {target} を呼ぶ項目が要る（ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。議決 {decision}）")
+            e.append(f"{where}: {REQUIRES_CHECK_UNWIRED}: wired にするには wired_by に、on.pull_request のある {place} で pull_request でも走るジョブから"
+                     f" {target} を呼ぶ項目が要る（{REQUIRES_CHECK} に挙げた検査。ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。"
+                     f"議決 {REQUIRES_CHECK_DECISION}）")
     return e
 
 

@@ -39,6 +39,9 @@ enforcement:
       issue: 906
       at: 2026-11-05
       decided_by: committee:D-0006
+      requires_check:
+        - runs: tools/pr-body-check/check.mjs
+          workflow: .github/workflows/pr-body-check.yml
       wired: false
       verified: false
     - kind: ci_check
