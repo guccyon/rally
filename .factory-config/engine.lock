@@ -1,0 +1,3 @@
+# 製品の CI が使う factory-engine の版（main にある commit の 40 桁の SHA）。ADR 0041 の決定 4
+# 版上げはこの行だけを変える（ワークフローは触らない）。書き方は factory-engine の templates/ci/README.md
+ad5c659e090faf91beedf9f2bd9f95043f9505d7
