@@ -257,4 +257,24 @@ enforcement:
       decided_by: committee:D-0070
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案（D-0045 の案どおり、ci.test.mjs で pr-body-engine-test のジョブの node --test が gate.test.mjs と
+        engine.test.mjs の (10) を必ず対象に含み、(10) に skip・todo・条件付きの飛ばしがないことを照らし、外したら落とす）のうち、まだ塞いでいなかった
+        条件付きの飛ばしを入れた。対象に含むこと（道・名前・NODE_OPTIONS の絞り込みがない）と skip・todo は Issue #1109 の字面の見張りと Issue #1183 の
+        走らせた結果の見張りで見ていたが、テストの中の条件付きの早い return のように飛ばさずに pass と数えられる外し方は捕まえられなかった。
+        tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）に、engine.test.mjs の (10) の本体と、そこから呼ぶ assertWritesEveryTime の本体に
+        分かれ道（return・if・else・switch・try・catch・break・continue・三項・&&・||・??）と環境変数・引数の読み取り（子のプロセスに渡す process.env.PATH は除く）と
+        skip・todo・only がないこと、(10) が本体の上の段で need("update") と assertWritesEveryTime(parts.update, report) を呼ぶこと、assertWritesEveryTime が
+        REASONS.forEach で C-0005 の 21 回を絞らずに回し、c0005.mjs の REASONS が 21 回であることの見張りを足した。(10) や assertWritesEveryTime の頭や
+        21 回の途中での条件付きの return、短絡・三項・try/catch で確かめを通さない、確かめを入れ子の関数に入れて呼ばない、need を呼ばない、回数を絞るの
+        11 通りの直しがどれも外れになり、そのうち条件付きの return（2 通り）と try/catch は Issue #1109 の字面の見張りをすり抜けることと、今の engine.test.mjs は通ることを確かめた。
+        手元の Engine（9f8f6b4。ENGINE_REF の 9fee9c2 は手元になく、その版では走らせていない）では、新しいテストは通り、ほかは前からの (3)・(10) とそれを走らせた結果の見張りが
+        関所を呼ばない Engine なので落ちるだけだった。ワークフローの側の絞り込みは前からの workflowProblems で見る。ci/pr-body-engine.yml はまだ .github/workflows/ に写されておらず
+        （手順は tools/pr-body-check/README.md の「配線の手順（建設者）」）、配線されておらず効き目は確かめていない
+      issue: 1187
+      at: 2026-11-08
+      decided_by: committee:D-0099
+      wired: false
+      verified: false
 decided_by: committee:D-0001
