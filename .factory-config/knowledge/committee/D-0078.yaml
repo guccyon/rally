@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0078
+pr: https://github.com/guccyon/rally/pull/1222
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 足したのは K-0004 の enforcement.solutions への 1 項目だけで、statement・scope・evidence・confidence
+    は変えておらず、README の「担保した知見も消さず solutions に残す」の決まりに合っています。
+  - 'what の括弧の中は D-0053 の enforcement の ci_check の案と文面が同じで、decided_by: committee:D-0053
+    と D-0053 の pr（#1142）で機械で辿れ、起票時の番号 D-0050 との違いも D-0052 の項目と同じ書き方で断っています。'
+  - 新しい項目は REQUIRED_PR に issue 1063 の解決策（committee:D-0035）と test_engine_patch.py の組を足すもので、既存の
+    issue 1129（check.py）と issue 1139（test_check.py）の組とは照らす検査が分かれていて重複ではありません。
+  - CI=true のときに飛ばさず落とす線は D-0037 の ci_check の案とも重なるので、次にこの解決策か issue 1063 の項目を直すときは
+    what か decided_by に D-0037 との結び付きを書いてください。
+  - 'wired: false・verified: false を書いているので、README の K-0004 を「すべての解決策に書いた」側に置く一覧と食い違わず、未配線の表示の決まりとも合います。'
+  - どの解決策も本物の記録で効き目を確かめておらず、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した ci_check の解決策の括弧内の案は、議決 D-0053 の enforcement の 2 つ目の案（solution_kind:
+    ci_check）と文面が同じで、decided_by: committee:D-0053 から機械的に辿れます。'
+  - 'D-0053 の pr は PR #1142 で what の書きぶりと合い、起票時の番号 D-0050 は別の PR #1128 の議決なので、番号のずれを断り書きしてあるのは辿るうえで妥当です。'
+  - 'test_ci.py と test_check.py で確かめたという中身は知見の置き場のほかの記録には出てこず what の申告しか根拠がないので、建設者が配線するときに
+    Issue #1144 の差分とテストの実行記録で確かめてください。'
+  - 'engine-test がまだ PR ごとに走っておらず、差分が ENGINE_REF に当たらない PR で落ちた記録もないと断って wired: false・verified:
+    false にしているので、記録より強く言っていません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・環境変数の名前・Issue と PR と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は K-0004 の enforcement.solutions に D-0053 の ci_check の案のうちワーカーの権限で入れた分を
+    1 項目足しただけで、wired: false・verified: false のままなので、担保を実態より強く見せていません。'
+  - 写しがないときに CI=true か wired_by に写しを書いた記録があれば飛ばさず落とすこと、REQUIRED_PR で test_engine_patch.py
+    を pull_request のジョブから呼ぶ wired_by を求めることは、線がはっきりした決定論になっていて向きは正しいです。
+  - ただし .github/workflows/ への写しがまだないので、CI=true で落とす線も PR ごとには走っておらず、建設者が写すまでは外れても何も止まらないものとして扱ってください。
+  - D-0053 の test の案（ci/knowledge-enforcement.yml と knowledge-check.yml の ENGINE_REF
+    が一致しなければ落とす）はこの PR にも K-0004 のほかの項目にも入っておらず、ENGINE_REF を上げるたびに繰り返し起き、作る費用も小さいので、先に入れるべきです。
+  - REQUIRED_PR に知見と issue の組を手で足す形は D-0072・D-0077 でも穴として挙がっており、今回も組を 1 つ足しただけなので、足し忘れで黙って通る痛さが残ります。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0053 の ci_check の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - '足した項目は wired: false・verified: false のままで、写しと branch protection がまだなく engine-test
+    が PR ごとに走っていないことを自分で断っているので、記録より強く言っていません。'
+  - 反例として、test_ci.py がいま .github/workflows/ の既存のワークフロー（knowledge-check.yml など）から CI=true
+    で呼ばれていると、写しがまだないために全 PR で落ち始めるので、建設者が写す前に test_ci.py を呼ぶ既存のジョブがないことを確かめてください。
+  - 差し戻しの判定についての K-0004 に知見の置き場の CI の仕組みの解決策がたまり続けているずれは今回も広がっていますが、D-0053 以降と同じ扱いなので採否には響かず、別の知見に分けるかは引き続き委員会で見直してください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  - 差分にはファイルの道・Issue と PR と議決の番号だけがあり、人を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'D-0053 の test の案を入れる: test_ci.py に、ci/knowledge-enforcement.yml（と写してあれば
+    .github/workflows/knowledge-enforcement.yml）の ENGINE_REF が knowledge-check.yml
+    の ENGINE_REF と一致しなければ落ちるテストを足し、片方だけ上げた PR を止める。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'check.py で、.github/workflows/knowledge-enforcement.yml が実在するのに issue
+    1063・1144 の解決策が wired: false のままなら落とし、建設者が写したあとに記録の更新が遅れて未配線と表示され続けるずれを止める。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: 'REQUIRED_PR の知見と issue の組の列挙をやめ、enforcement.solutions に呼ぶべき検査の道（例: requires_check:
+    tools/knowledge-enforcement-check/test_engine_patch.py）を書く欄を足し、wired: true の項目ではその道を
+    pull_request で走るジョブから呼ぶ wired_by がなければ落とす形に一般化する。'
