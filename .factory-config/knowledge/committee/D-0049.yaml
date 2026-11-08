@@ -1,0 +1,64 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0049
+pr: https://github.com/guccyon/rally/pull/1133
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0004 の enforcement.solutions に議決 D-0034 の schema の案の実装を 1 件足しただけで、既存の解決策（D-0034
+    の ci_check、D-0021 の wired_by の照合）と役割が分かれていて重複しません。
+  - wired_by の項目を workflow・job・runs にしたのは D-0034 の案の書き方（file・job・runs）と字面が違いますが、check.py
+    の既存の形と README の決まりに合わせたもので、矛盾ではありません。
+  - '差分を Engine に当てることと .github/workflows/ への写しは建設者が行うとして wired: false・verified: false
+    にしており、README の wired・verified の決まりと食い違いません。'
+  - Engine の差分は D-0024・D-0036 で決めた knowledge-enforcement.patch 1 本にまとめる扱いに沿っていて、ENGINE_REF
+    に合わせて作り直したことも記録されています。
+  - ほかの知見に影響を与えない追記なので、変更セットとして既存の知見の扱いを足す必要はなく、扱いは妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した schema の解決策は issue 1060 と committee:D-0034 を指し、D-0034 の enforcement の 3 つ目の案（Engine
+    の definitions/knowledge.yaml に wired_by を足し、wired が true のときに必須とし、knowledge_check.py
+    でも同じ形を落とす）にそのまま対応しているので、一次記録に辿れます。
+  - D-0034 の案では wired_by の項目を file・job・runs と書いていましたが、差分では workflow・job・runs になっていて、これは
+    D-0043 や README の書き方と同じなので、根拠からずれてはいません。
+  - '差分を Engine に当てることも ENGINE_REF を上げることも .github/workflows/ に写すこともまだなので、wired: false・verified:
+    false と正直に書いていて、記録より強く言っていません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - 'どの解決策も未配線・未確認のままなので、confidence は hypothesis のままが妥当で、verified_by 付きの verified:
+    true の解決策が出るまでは上げないでください。'
+  - 差分に出てくるのはツールのパス・項目名・issue の番号・コミットの短い SHA・議決の id・知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この変更は議決 D-0034 で出た schema の案を K-0004 の enforcement.solutions に 1 件として記録するだけで、それ自体が決定論の担保（Engine
+    の定義の required_when と knowledge_check.py の check_wired_by()、test_engine.py の一致の確かめ）なので、担保の観点で新しく求める仕組みはありません。
+  - 差分が ENGINE_REF に当たらなくなる危険は D-0024 の ci_check ですでに見張る形になっているので、この件のために別の検査を足す必要はありません。
+  - '差分を Engine に当てることと .github/workflows/ への写しが建設者の作業として残っているので wired: false と verified:
+    false のままにしたのは正しく、確かさも hypothesis のままでよいです。'
+  - D-0034 の案は wired_by の項目を file・job・runs と書いていましたが、この解決策は check.py（issue 986 の解決策）と同じ
+    workflow・job・runs にそろえていて、test_engine.py が両方の値の一致を確かめるので、ずれは決定論で押さえられています。
+  - 知見の記録に利用者や人を指す情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0034 の schema の案を入れた記録を 1 件足しただけで、statement・scope・confidence
+    を変えていないので、範囲は広すぎません。
+  - '足した解決策は K-0004 の主張（差し戻しを adopt の件数で起こさない）ではなく知見の置き場の wired_by の形を担保するものですが、D-0034
+    がこの案を knowledge: K-0004 として議決しているので、置き場所は議決どおりです。'
+  - 反例として、D-0034 の案は wired_by の項目を file・job・runs と書いていますが、この解決策は workflow・job・runs
+    としているので、Engine の定義と check.py と README で項目の名前がそろっているかを建設者が差分を当てるときに確かめてください。
+  - '反例として、差分は ENGINE_REF 9d3713a に合わせて作り直しただけで、Engine の先頭が進むとまた当たらなくなるおそれがありますが、wired:
+    false・verified: false と正直に書いているので採らない理由にはなりません。'
+  - '既存の issue 935 の解決策に wired: false が 2 回書かれている重複はこの PR の変更ではありませんが、次に K-0004 を直す変更セットで消すのがよいです。'
+  - どの解決策も未配線・未確認なので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
