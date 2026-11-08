@@ -155,4 +155,19 @@ enforcement:
       decided_by: committee:D-0044
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0045 の ci_check の案（建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test を必須のチェックにするとき、
+        同じジョブの node --test で gate.test.mjs・CLI のテスト・engine.test.mjs の (10) が必ず走るようにし、外したら落とす）のうち、ワーカーの権限で入れられる分を入れた。
+        tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）に、gate.test.mjs と engine.test.mjs の (10) が実行の対象から外れていないことの見張りを足した。
+        gate.test.mjs に skip がなく、CLI のテストが 3 件以上（通る側の CLI のテストを含む）あり、通る側の 3 通りの形（c0005.mjs の PASSING_REPORTS。3 通り以上）を回すテストがあること、
+        engine.test.mjs の飛ばしが ENGINE_DIR を渡すと false になる共通の skip の 1 つの宣言だけで、(10) が PASSING_REPORTS を回して { skip } だけを渡すテストであること、
+        どちらにも todo・only・test.skip・t.skip などがないことを見る。ワークフローの側は、道を渡さないことに加えて --test-name-pattern・--test-skip-pattern・--test-only と
+        NODE_OPTIONS での絞り込みも外れにした。外す直し（gate.test.mjs で 9 通り、engine.test.mjs で 8 通り、ワークフローで 5 通り）がどれも外れになり、今のテストのファイルとひな形は
+        通ることを確かめた。ひな形の写しと必須のチェックへの登録は建設者が行うので（tools/pr-body-check/README.md の「配線の手順（建設者）」）、まだ配線されておらず効き目は確かめていない
+      issue: 1109
+      at: 2026-11-08
+      decided_by: committee:D-0045
+      wired: false
+      verified: false
 decided_by: committee:D-0001
