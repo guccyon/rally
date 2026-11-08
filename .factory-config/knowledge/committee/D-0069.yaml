@@ -1,0 +1,72 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0069
+pr: https://github.com/guccyon/rally/pull/1184
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に test の項目を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりと変更セットの扱いに合っています。
+  - '足した項目の decided_by: committee:D-0045 と「PR #1108」は D-0045 の pr と合っており、内容も D-0045
+    の 2 つ目の test の案（(10) を写しではなく ENGINE_REF の Engine そのもので走らせる）にそのまま対応しています。'
+  - 案は「差分が Engine に入ったら」の条件でしたが、ENGINE_REF の Engine で (10) が通るまで wired と verified
+    を false のままにしており、条件と食い違いません。
+  - D-0068 が次に K-0001 を直す変更セットに求めた「D-0019 と D-0032 の項目に、差分が当たらず写しで全部通るという記述が古くなった旨を書き添える」ことはこの差分に入っておらず、新しい項目自身も
+    FACTORY_RESULT の hunk が当たらず手で合わせたと書いているので、次の変更セットで必ず書き添えてください。
+  - D-0045 の 1 つ目の ci_check の案（ci.test.mjs で gate.test.mjs と (10) が skip・todo・絞り込みで外れていないことを見る）はまだ記録がなく、今回
+    (11) を条件付きで飛ばす形にしたので、その検査が (11) の正当な飛ばしと (10) の外しを見分けるように次の変更セットで決めてください。
+  - 配線も本物の記録での確認もまだなので、K-0001 は active・hypothesis のままが妥当で、INDEX.md の行とも食い違いません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0045 と PR #1108 を指しており、D-0045 の pr と enforcement
+    の test の案（ENGINE_REF の Engine そのもので engine.test.mjs の (10) を走らせる）にそのまま辿れます。'
+  - D-0045 の案は wired と verified を true にする前に ENGINE_REF の Engine で (10) が通ることを確かめるよう求めており、まだ
+    ENGINE_REF（9fee9c2）で走らせていないので false のままにしたのは案の条件と合っています。
+  - '手元の Engine 57069a8 での結果や Issue #1110 はこの材料の外の記録で確かめられませんが、担保の記録であって主張の根拠を増やすものではないので採る妨げにはなりません。'
+  - 差分は enforcement.solutions に 1 件足すだけで statement・evidence・confidence は変えておらず、配線も本物の記録での確認もまだなので
+    confidence は hypothesis のままが妥当です。
+  - 差分にはコミットの番号・ファイルの道・Issue 番号など工場の識別子しかなく、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は D-0045 の test の案（engine.test.mjs の (10) を差分を当てた写しではなく ENGINE_REF の Engine
+    そのもので走らせる）を K-0001 の enforcement.solutions に 1 件足すだけで、担保の観点で採ってよいです。
+  - '(10) は todo や飛ばしのない必須のテストで、関所を呼ばない Engine では落ち、続きのジョブの記録の見出しを ## に戻すと 3 件が落ちることを確かめているので、本物の
+    Engine の外れを捕まえる決定論の線になっています。'
+  - ENGINE_REF（9fee9c2）の Engine ではまだ走らせておらず wired と verified を false のままにしているので、担保が効いているように言い過ぎてはいません。
+  - 一方で (11) は「Engine が関所を呼ぶかどうか」の判定で飛ぶ条件付きのテストなので、その判定が誤ると (10) が落ちる側でなく (11) だけが飛ぶ形にずれる恐れがあり、(10)
+    と (11) のどちらか片方が必ず走ることを機械で見るべきです。
+  - D-0045 の ci_check の案（ci.test.mjs で gate.test.mjs と (10) が skip・todo・道の絞り込みで外れていないことを見る）はこの差分でもまだ入っていないので、次の変更セットで入れてください。
+  - entrypoint.sh の FACTORY_RESULT の hunk を手で合わせたと書いてあり、D-0068 が求めた engine/pr-body-gate.patch
+    の当たり具合の定期の照合が要ることを裏づけているので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0045 の test の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - 足した項目は D-0045 の担保の票が求めた「写しではなく ENGINE_REF の Engine で (10) が通ることを必須にする」にそのまま応えていて、議決と食い違う反例は見当たりません。
+  - 手で合わせた写しでの確認だけで ENGINE_REF（9fee9c2）では走らせていないと what に書き、wired と verified を false
+    のままにしているので、担保が効いているように言い過ぎてはいません。
+  - (11) の写しでの確かめが Engine が関所を呼ぶようになると飛ぶため、その切り替わりの前後で誤検知を見る線が途切れないかを、建設者が配線の手順の 6
+    で (10) の通過を記録するときに確かめてください。
+  - 配線も本物の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: tools/pr-body-check/ci.test.mjs か engine.test.mjs に、ENGINE_DIR の Engine
+    について (10) と (11) のちょうど一方だけが走って通ることを確かめるテストを足し、関所を呼ぶかの判定が誤って (10) が飛ぶか両方が飛ぶ形になったら落ちるようにする。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: D-0045 の案どおり、ci.test.mjs で pr-body-engine-test のジョブの node --test が gate.test.mjs
+    と engine.test.mjs の (10) を必ず対象に含み、(10) に skip・todo・条件付きの飛ばしがないことを照らし、外したら落ちるようにする。
