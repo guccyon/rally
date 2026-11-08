@@ -1,0 +1,72 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0069
+pr: https://github.com/guccyon/rally/pull/1185
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0047 の enforcement
+    の案（ci_check、head_record_missing で落とす）を入れた記録を enforcement.solutions に 1 件足しただけなので、D-0004
+    から D-0047 までの議決と矛盾しません。
+  - '足した solution は kind・what・issue・at・decided_by・wired・verified の形が既存の solutions
+    とそろっており、decided_by を提案元の committee:D-0047 にし、配線も本物の記録もないので wired: false・verified:
+    false にしているのも README の決まりと合っています。'
+  - HEAD_RECORD_SOLUTIONS が指す issue 977・1046・1047 はどれも K-0004 の solutions に実在し、issue
+    1047 の solution（記録を残す側）とは記録の有無を照らす側という別の段なので重複ではありません。
+  - D-0047 の consistency と dissent の票が求めた、harness_unknown_query の記録だけで issue 977 の
+    verified を true にしない書き分けは、新しい check_head_record() が head-record.mjs の数え方をそのまま使うのでまだ入っておらず、次に
+    977 を配線する変更セットで扱ってください。
+  - D-0047 で求めた issue 977 の what を今の振る舞いにそろえる直しもこの PR では未対応なので、同じく配線の変更セットで直してください。
+  - specs/ の用語や業務ルールには触れておらず、確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の solution は issue 1114 と committee:D-0047 を指していて、D-0047 の enforcement
+    の proposal（issue 977 などの engine-head に関わる解決策が verified: true になったら head-record.mjs
+    を走らせ、head_record_missing で落とす）とそのまま対応しているので、一次記録に辿れます。'
+  - 'HEAD_RECORD_SOLUTIONS が挙げる issue 977・1046・1047 は K-0004 の enforcement.solutions
+    に実在する解決策で、どれも Issue #948 への engine-head の記録に関わるものなので、対象の選び方にも根拠があります。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - 'test_check.py で確かめた場合の一覧は手元のテストの説明で、まだ本物の Issue #948 の記録で走らせておらず、配線も建設者に残っていると書いて
+    wired: false・verified: false にしているので、confidence は hypothesis のままが妥当です。'
+  - 建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して最初に走った実行の URL が出たら、その
+    URL を what に書き足すと効き目の記録に辿れるようになります。
+  - 差分に出てくるのはパス・関数名・印の名前・Issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0047 の ci_check
+    の案（verified: true の engine-head 系の解決策に head-record.mjs の照合を掛ける）をそのまま入れた解決策を enforcement.solutions
+    に 1 件記録しただけなので、採ってよいです。'
+  - check_head_record() は HEAD_RECORD_SOLUTIONS（issue 977・1046・1047）に絞り、記録がなければ head_record_missing、コメントがない・読めない・結果を書かずに抜けたときも
+    head_record_unchecked で落とす作りなので、確かめられないときに黙って通す痛い外し方を避けており、線の引き方として筋がよいです。
+  - test_check.py が、人が写した印だけ・JSON でない・結果を出さずに抜ける写しで落ちることと、ほかの知見・ほかの issue・verified
+    でない解決策を見ないことを確かめているので、誤って通す側と誤って止める側の両方が抑えられています。
+  - '照合は verified: true だけに掛かり wired: true だけへの書き換えは止めませんが、D-0047 の案が verified を対象にしており、wired
+    だけでは効き目を主張しないので、この PR で足す決定論は要りません。'
+  - 'ci/knowledge-enforcement.yml の .github/workflows/ への写しが建設者に残り、今は verified: true
+    の解決策もないので、wired: false・verified: false の記録は正しく、confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはパス・関数名・印の名前・Issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0047 の enforcement
+    の案を入れた解決策を enforcement.solutions に 1 件足すだけなので、範囲は広すぎません。
+  - '新しい解決策は wired: false・verified: false で、.github/workflows/ への写しが建設者に残っていて効き目をまだ確かめていないことを正直に書いているので、言い過ぎてはいません。'
+  - '反例として、D-0047 の反対の票が挙げたとおり head-record.mjs は harness_unknown_query の記録も 1 件に数えるので、Engine
+    の判定を見られなかった記録だけで check_head_record() が通り issue 977 の verified: true を許してしまう恐れがあり、次の変更セットで通った・落ちたの記録に絞ってください。'
+  - 'D-0047 の案は issue 977 の wired と verified の両方を true にする条件を問題にしていますが、check_head_record()
+    は verified: true のときだけ見るので、記録のないまま wired だけを true にする PR は止まらず、その差を what に書いておくとよいです。'
+  - 'HEAD_RECORD_SOLUTIONS に issue 1046・1047 も入れていますが、1046 は harness_unknown_query
+    で落とすテストなので Issue #948 の記録を verified の条件にするのが合うかは、それを verified にする変更セットで確かめてください。'
+  - 確かさは hypothesis のままでよく、この PR で上げる・下げる理由はありません。
+  personal_data: false
+enforcement: []
