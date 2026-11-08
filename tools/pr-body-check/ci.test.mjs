@@ -6,6 +6,7 @@
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
 // 字面の照合だけに頼らず、gate.test.mjs と engine.test.mjs を TAP で走らせた結果で、通る側のテストと (10) が pass と数えられたかも見る（議決 D-0070 の test の案、Issue #1183）。
+// engine.test.mjs の (12)（本文の直しのあとの再検査を待つ merge_step の線。知見 K-0012 の担保）も、TAP で走らせた結果で pass と数えられたかを見る（議決 D-0100（Issue #1197 の起票時の番号は D-0071）の test の案、Issue #1197）。
 // (10) と、そこから呼ぶ assertWritesEveryTime に、条件付きの早い return・短絡・三項・try/catch のような飛ばさずに pass になる外し方がないことも見る（議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案、Issue #1187）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
@@ -412,9 +413,13 @@ test("gate.test.mjs を TAP で走らせると、通る側のテストが pass �
   assert.deepEqual(runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES), [], tap);
 });
 
+/** engine.test.mjs の TAP（(10) と (12) の見張りで 1 回だけ走らせる）。 */
+let engineTap;
+const runEngineTap = () => (engineTap ??= runTap(ENGINE_TEST));
+
 test("engine.test.mjs を TAP で走らせると、(10) が通る側の 3 通りの形で pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
   assert.ok(PASSING_REPORTS.length >= 3, "通る側の形（c0005.mjs の PASSING_REPORTS）が 3 通りない");
-  const tap = runTap(ENGINE_TEST);
+  const tap = runEngineTap();
   assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], tap);
 });
 
@@ -458,6 +463,56 @@ test("字面の見張りをすり抜ける飛ばし方（別名で呼ぶ t.skip�
   const problems = runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES);
   assert.equal(problems.filter((p) => /pass と数えられていない（skip）/.test(p)).length, PASSING_REPORTS.length, tap);
   assert.ok(problems.includes(`${GATE_TEST}: skip の数が ${PASSING_REPORTS.length}（0 でない）`), tap);
+});
+
+// engine.test.mjs の (12)（知見 K-0012 の担保。Engine の supervisor の merge_step がマージの前に本文の直しの終わりと直した本文の pr-body-check を待つ線）も、
+// ひな形の engine-test の node --test で走らせた結果で pass と数えられ、skip・todo が 0 かを見る（議決 D-0100（Issue #1197 の起票時の番号は D-0071。PR #1192）の
+// test の案、Issue #1197）。(12) を消す・名前を変える・飛ばす・todo にする・落ちたままにする書き換えは、ここで外れになる。(12) の名前の一覧は
+// engine.test.mjs の (12) のテストと同じにする（足したらここにも足す。足さないと、新しい (12) が飛ばされても見張れない）。注釈の行は見ない。
+const ENGINE_RECHECK_NAMES = [
+  "(12) 再検査を待つ supervisor（engine/pr-body-recheck.patch）は、merge_step でマージより前に、本文の直しの終わりと直した本文の pr-body-check を待つ",
+  "(12) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ",
+  "(12) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）",
+  "(12) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る",
+  "(12) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）",
+  "(12) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）",
+];
+
+/** engine.test.mjs のコードの行にある (12) のテストの名前。 */
+const recheckWaitNames = (text) => codeLines(text).map((l) => l.match(/^test\("(\(12\) [^"]*)"/)?.[1]).filter(Boolean);
+
+test("engine.test.mjs の (12) のテストは、見張る名前の一覧と同じだけある", () => {
+  assert.deepEqual(recheckWaitNames(readTest(ENGINE_TEST)), ENGINE_RECHECK_NAMES);
+});
+
+test("engine.test.mjs を TAP で走らせると、(12) の再検査の待ちの線が pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
+  const tap = runEngineTap();
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), [], tap);
+});
+
+test("(12) を消す・名前を変える・飛ばす・todo にする・落ちたままにする書き換えは外れになる", () => {
+  const engineText = readTest(ENGINE_TEST);
+  const [first] = ENGINE_RECHECK_NAMES;
+  const renamed = engineText.replace(`test("${first}"`, `test("${first.replace("(12) ", "(13) ")}"`);
+  const removed = engineText.replace(`test("${first}"`, `void (() => ("${first}"`);
+  for (const [name, text] of [["(12) の名前を変える", renamed], ["(12) を消す", removed]]) {
+    assert.notEqual(text, engineText, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(recheckWaitNames(text), ENGINE_RECHECK_NAMES, `${name} が通った`);
+  }
+  const esc = (n) => n.replace(/[#\\]/g, "\\$&");
+  const tap = (lines, { skipped = 0, todo = 0 } = {}) =>
+    ["TAP version 13", ...lines.map((l, i) => l.replace("ok -", `ok ${i + 1} -`)), `1..${lines.length}`, `# tests ${lines.length}`, `# skipped ${skipped}`, `# todo ${todo}`].join("\n");
+  const rest = ENGINE_RECHECK_NAMES.slice(1).map((n) => `ok - ${esc(n)}`);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap([`ok - ${esc(first)}`, ...rest]), ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), []);
+  const cases = {
+    "(12) を SKIP にした": tap([`ok - ${esc(first)} # SKIP まだ`, ...rest], { skipped: 1 }),
+    "(12) を TODO にした": tap([`not ok - ${esc(first)} # TODO まだ`, ...rest], { todo: 1 }),
+    "(12) が落ちた（待ちを外した差分や Engine）": tap([`not ok - ${esc(first)}`, ...rest]),
+    "(12) が走っていない": tap(rest),
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    assert.notDeepEqual(runReportProblems(ENGINE_TEST, text, ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), [], `${name} が通った`);
+  }
 });
 
 // recheck.test.mjs（知見 K-0012 の担保）も、ひな形の engine-test の node --test で走る（議決 D-0050 の ci_check の案、Issue #1131）。

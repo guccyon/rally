@@ -58,6 +58,11 @@ wired にできないようにした（tools/sendback-check/ci/sendback-protecti
 tools/pr-body-check/check.mjs を呼ぶ項目がないと wired にできないようにした（tools/pr-body-check/ci/pr-body-check.yml を写した pr-body-check のジョブで満たす）。
 K-0012 の 2 つは REQUIRED_PR_ALSO で .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs
 （(12) が merge_step の待ちを確かめる）を呼ぶ項目も求め、下の「Engine の merge_step の照合」も通らないと wired にできない。
+議決 D-0100（Issue #1197。起票時の番号は D-0071）の test の案で、K-0012 の issue 1197 の解決策（recheck.test.mjs・engine.test.mjs・
+ci.test.mjs を PR ごとに走らせ、ひな形と Engine の待つチェックの名前のずれと、待ちの線を外す書き換えをマージ前に落とす）を REQUIRED_PR に挙げ、
+REQUIRED_PR_WORKFLOW の .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/recheck.test.mjs を呼ぶ項目と、
+REQUIRED_PR_ALSO で同じワークフローから tools/pr-body-check/engine.test.mjs と tools/pr-body-check/ci.test.mjs を呼ぶ項目がそれぞれないと
+wired にできないようにした（ci/pr-body-engine.yml を写した engine-test の node --test で 3 つとも満たす）。
 
 Engine の merge_step の照合（議決 D-0100（起票時の番号は D-0071）、Issue #1196）: REQUIRED_ENGINE_WAIT の解決策（K-0012 の issue 1122・1196）が
 wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の版の Engine の orchestrator/dispatcher/supervisor.py で、merge_step が
@@ -172,6 +177,13 @@ for _key in (*PR_BODY_RECHECK, ("K-0006", 906)):
     REQUIRED_PR_WORKFLOW[_key] = PR_BODY_CHECK_WORKFLOW
 # (知見の id, 解決策の issue) → REQUIRED_PR に加えて pull_request のジョブから呼ぶことを求める (検査, ワークフロー, 議決) の列（議決 D-0100、Issue #1196）
 REQUIRED_PR_ALSO = {key: ((PR_BODY_ENGINE_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"),) for key in PR_BODY_RECHECK}
+# K-0012 の issue 1197（test）は、3 つのテストを pr-body-engine.yml の写しの pull_request のジョブから走らせることを求める（議決 D-0100（起票時の番号は D-0071）、Issue #1197。
+# Engine の merge_step の待ちは issue 1122・1196 の解決策が照らすので、ここでは求めない）
+PR_BODY_RECHECK_TEST = "tools/pr-body-check/recheck.test.mjs"
+PR_BODY_CI_TEST = "tools/pr-body-check/ci.test.mjs"
+REQUIRED_PR[("K-0012", 1197)] = (PR_BODY_RECHECK_TEST, "D-0100")
+REQUIRED_PR_WORKFLOW[("K-0012", 1197)] = PR_BODY_ENGINE_WORKFLOW
+REQUIRED_PR_ALSO[("K-0012", 1197)] = ((PR_BODY_ENGINE_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"), (PR_BODY_CI_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"))
 # (知見の id, 解決策の issue)。wired: true にするには、ENGINE_REF の Engine の merge_step が待ちの関数を呼んでいることを求める（議決 D-0100、Issue #1196）
 REQUIRED_ENGINE_WAIT = set(PR_BODY_RECHECK)
 ENGINE_SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
@@ -500,7 +512,7 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
 def check_pull_request(k: dict, repo: Path) -> list[str]:
     """REQUIRED_PR の解決策が wired: true なら、pull_request のジョブから検査を呼ぶ wired_by を求める（議決 D-0043、Issue #1103）。
     REQUIRED_PR_WORKFLOW に挙げた解決策は、そのワークフローのジョブを指す項目だけを数える（議決 D-0070、Issue #1182）。
-    REQUIRED_PR_ALSO に挙げた解決策は、そこに挙げた検査とワークフローの組もそれぞれ求める（議決 D-0100、Issue #1196）"""
+    REQUIRED_PR_ALSO に挙げた解決策は、そこに挙げた検査とワークフローの組もそれぞれ求める（議決 D-0100、Issue #1196・#1197）"""
     f, e = k.get("_file", str(k.get("id"))), []
     read = repo_reader(repo)
 
