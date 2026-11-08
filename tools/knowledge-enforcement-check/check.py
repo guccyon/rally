@@ -74,6 +74,9 @@ wired にできないようにした（ci/pr-body-engine.yml を写した engine
 issue 1207 の解決策（それを直近の窓のイベント列に対して定期に走らせる）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
 .github/workflows/conflict-schema.yml の schedule でも走るジョブから tools/conflict-check/schema.py を呼ぶ項目がないと wired にできないようにした
 （tools/conflict-check/ci/conflict-schema.yml を写した conflict-schema のジョブで満たす）。
+議決 D-0076（Issue #1214。起票時の番号は D-0074）で、K-0014 の issue 1214 の解決策（events.py の missing_conflict_files を直近の窓に積まれた
+衝突の続きのジョブに対して定期に走らせる）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の .github/workflows/conflict-schema.yml の
+schedule でも走るジョブから tools/conflict-check/events.py を呼ぶ項目がないと wired にできないようにした（同じひな形の conflict-record のジョブで満たす）。
 
 Engine の merge_step の照合（議決 D-0100（起票時の番号は D-0071）、Issue #1196）: REQUIRED_ENGINE_WAIT の解決策（K-0012 の issue 1122・1196）が
 wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の版の Engine の orchestrator/dispatcher/supervisor.py で、merge_step が
@@ -146,11 +149,13 @@ EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160。
 # K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs。
 # K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）。REQUIRED_PR にも挙げる。
-# K-0014 の issue 1136・1207 は議決 D-0101（起票時の番号は D-0073）、Issue #1207。衝突したファイルの列を直近の窓のイベント列で照らす schema.py）
+# K-0014 の issue 1136・1207 は議決 D-0101（起票時の番号は D-0073）、Issue #1207。衝突したファイルの列を直近の窓のイベント列で照らす schema.py。
+# K-0014 の issue 1214 は議決 D-0076（起票時の番号は D-0074）、Issue #1214。直近の窓に積まれた衝突の続きのジョブを照らす events.py）
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
 PR_BODY_PROTECTION = "tools/pr-body-check/protection.mjs"
 SENDBACK_HEARTBEAT = "tools/sendback-check/heartbeat.mjs"
 CONFLICT_SCHEMA = "tools/conflict-check/schema.py"
+CONFLICT_EVENTS = "tools/conflict-check/events.py"
 REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
                      ("K-0001", 1106): PR_BODY_PROTECTION,
                      ("K-0001", 1182): PR_BODY_PROTECTION,
@@ -158,14 +163,16 @@ REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
                      ("K-0004", 1087): SENDBACK_PROTECTION,
                      ("K-0004", 1162): SENDBACK_HEARTBEAT,
                      ("K-0014", 1136): CONFLICT_SCHEMA,
-                     ("K-0014", 1207): CONFLICT_SCHEMA}
+                     ("K-0014", 1207): CONFLICT_SCHEMA,
+                     ("K-0014", 1214): CONFLICT_EVENTS}
 # (知見の id, 解決策の issue) → (REQUIRED_SCHEDULE の検査を呼ぶジョブがあることを求めるワークフロー, 落ちたときに挙げる議決)（議決 D-0060、Issue #1160）
 SENDBACK_PROTECTION_WORKFLOW = f"{WORKFLOWS}/sendback-protection.yml"
 REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
                               ("K-0004", 1087): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
                               ("K-0001", 1182): (f"{WORKFLOWS}/pr-body-protection.yml", "D-0070"),
                               ("K-0014", 1136): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
-                              ("K-0014", 1207): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101")}
+                              ("K-0014", 1207): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
+                              ("K-0014", 1214): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076")}
 # (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
 # K-0004 の issue 1062 は議決 D-0052、Issue #1139。issue 1063・1144 は議決 D-0053、Issue #1144。
 # issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158。K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）、Issue #1182。

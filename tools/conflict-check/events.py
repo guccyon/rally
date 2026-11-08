@@ -16,7 +16,11 @@
 解き方の tier（agent_tier）を出さない版）のときだけの扱いで、それらを出す版の Engine で agent_resumed か tier の照らせない件数が 1 以上なら
 test_events.py の EngineFinishedTest が落とす（議決 D-0030・Issue #1035）
 
-  python3 events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--json]
+  python3 events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--since <ISO 8601 の時刻>] [--record-only] [--json]
+  --since: Engine に engine/conflict-files.patch を当てた時刻。occurred_at がそれより前のイベントは組まない（照らさない）。
+           occurred_at がない・読めないイベントがあれば絞れないので終了コード 2（schema.py の --since と同じ。議決 D-0076・Issue #1214）
+  --record-only: record_check（missing_conflict_files）だけを出し、continuation.yaml の線（check）は照らさない。直近の窓の本物のイベント列を
+                 定期に照らすひな形 ci/conflict-schema.yml の conflict-record のジョブが使う（知見 K-0014 の担保。議決 D-0076・Issue #1214）
   終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定（continuation.yaml・conflict-files.yaml）を読めなかった
 """
 from __future__ import annotations
@@ -218,14 +222,23 @@ def main(argv: list[str]) -> int:
     except (OSError, schema.DefsError) as e:
         print(f"conflict-check: conflict-files.yaml の continue.enqueued の {INLINE} を読めない: {e}", file=sys.stderr)
         return 2
+    since = None
+    if "--since" in argv:
+        try:
+            since = schema.parse_time(arg("--since"))
+        except ValueError as e:
+            print(f"conflict-check: --since を時差つきの ISO 8601 の時刻で渡す: {e}", file=sys.stderr)
+            return 2
     try:
         events = parse_events(Path(path).read_text(encoding="utf-8"))
-    except (OSError, EventsError) as e:
+        skip = schema.before(events, since)
+    except (OSError, EventsError, schema.ev.EventsError) as e:   # コマンドで動かすと schema.py が取り込む events はこの __main__ と別のモジュール
         print(f"conflict-check: {path} を読めない: {e}", file=sys.stderr)
         return 2
-    prs = records_from_events(events, arg("--pr"))
+    prs = records_from_events([e for i, e in enumerate(events) if i not in skip], arg("--pr"))
+    rules = record_check if "--record-only" in argv else (lambda r: check(policy_, r) + record_check(r))
     results = [{"pr_url": url, "attempts": len(r["attempts"]), "conflicted_heads": len(r["conflicted_heads"]),
-                "unknown": unknown(r), "errors": check(policy_, r) + record_check(r)} for url, r in prs.items()]
+                "unknown": unknown(r), "errors": rules(r)} for url, r in prs.items()]
     errors = [e for r in results for e in r["errors"]]
     if "--json" in argv:
         json.dump({"ok": not errors, "prs": results}, sys.stdout, ensure_ascii=False)
@@ -237,7 +250,8 @@ def main(argv: list[str]) -> int:
             u = ", ".join(f"{k} {n} 件" for k, n in r["unknown"].items() if n)
             print(f"{r['pr_url']}: conflict の続きのジョブ {r['attempts']} 回・衝突した head {r['conflicted_heads']} 個・外れ {len(r['errors'])} 件"
                   + (f"（記録がなく照らせなかった: {u}）" if u else ""))
-        print(f"conflict-check: PR {len(results)} 件・外れ {len(errors)} 件")
+        tail = f"（{since.isoformat()} より前の {len(skip)} 件は照らさない）" if since else ""
+        print(f"conflict-check: PR {len(results)} 件・外れ {len(errors)} 件" + tail)
     return 1 if errors else 0
 
 

@@ -13,6 +13,14 @@
 # 写したら K-0014 の issue 1136 と 1207 の解決策を wired: true にし、wired_by に
 # {workflow: .github/workflows/conflict-schema.yml, job: conflict-schema, runs: tools/conflict-check/schema.py} を書く
 # （tools/knowledge-enforcement-check/check.py が、このワークフローの schedule でも走るジョブから schema.py を呼ぶことを求める）。
+# ジョブ conflict-record は、同じ窓に積まれた衝突の続きのジョブ（continue.enqueued（reason=conflict））と、同じ job_id の job.started・
+# job.finished・conflict.files を record-events.sql で読み、events.py --record-only の rule missing_conflict_files で照らす
+# （知見 K-0014 の担保。議決 D-0076（Issue #1214 の起票時の番号は D-0074。PR #1203）、Issue #1214）。積んだその場で衝突したファイルが
+# 載っていない回（continue.enqueued の conflict_files がなく、conflict.files もないか backfill かジョブが動き出したあとのものしかない）が 1 回でも
+# あれば落ちる。K-0010 の線（over_limit など）は照らさない（そちらは watch.py）。CONFLICT_FILES_SINCE とシークレットは conflict-schema と同じ。
+# 写したら K-0014 の issue 1214 の解決策を wired: true にし、wired_by に
+# {workflow: .github/workflows/conflict-schema.yml, job: conflict-record, runs: tools/conflict-check/events.py} を書く
+# （tools/knowledge-enforcement-check/check.py が、このワークフローの schedule でも走るジョブから events.py を呼ぶことを求める）。
 # test_schema_ci.py（ci/conflict-check.yml の unittest discover で走る）が、このファイルの形・手順の振る舞い・写しとのずれを見る。
 name: conflict-schema
 
@@ -70,4 +78,43 @@ jobs:
           python3 -B tools/conflict-check/schema.py --events conflict-events.json --since "$CONFLICT_FILES_SINCE" > conflict-schema.txt || code=$?
           cat conflict-schema.txt
           { echo '```'; cat conflict-schema.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+  conflict-record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 差分を当てた時刻を確かめる（K-0014）
+        shell: bash
+        run: |
+          if ! [[ "${CONFLICT_FILES_SINCE:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
+            echo "::error title=conflict-record conflict_files_since_missing::CONFLICT_FILES_SINCE に Engine に engine/conflict-files.patch を当てた時刻を時差つきの ISO 8601 で書く（今は '${CONFLICT_FILES_SINCE:-}'）"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: PyYAML を入れる
+        run: python3 -m pip install pyyaml
+      - name: 直近の窓に積まれた衝突の続きのジョブを読む（K-0014）
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.CONFLICT_EVENTS_DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error title=conflict-record events_unreadable::シークレット CONFLICT_EVENTS_DATABASE_URL がない（制御プレーンの events を読める接続先を置く）"
+            exit 1
+          fi
+          if ! psql "$DATABASE_URL" -X -q -A -t -v ON_ERROR_STOP=1 -v since="$CONFLICT_FILES_SINCE" -v window_days="$WINDOW_DAYS" \
+              -f tools/conflict-check/record-events.sql > conflict-record-events.json; then
+            echo "::error title=conflict-record events_unreadable::制御プレーンの events を読めなかった（接続先と権限を確かめる）"
+            exit 1
+          fi
+      - name: 衝突したファイルがその場で記録されたかを照らす（K-0014）
+        shell: bash
+        run: |
+          code=0
+          python3 -B tools/conflict-check/events.py --events conflict-record-events.json --since "$CONFLICT_FILES_SINCE" --record-only > conflict-record.txt || code=$?
+          cat conflict-record.txt
+          { echo '```'; cat conflict-record.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$code"
