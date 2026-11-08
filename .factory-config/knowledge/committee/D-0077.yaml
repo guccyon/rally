@@ -1,0 +1,85 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0077
+pr: https://github.com/guccyon/rally/pull/1212
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge:
+- K-0015
+- K-0016
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0015 は、K-0010（上限のないエージェントの重い続きのジョブ）や K-0013（衝突を解く時機）と主張の芯が違い、C-0008 の「既存の知見の扱い」で重なりの切り分けと
+    related の足し方が書かれているので、重複とはみなしません。
+  - 'K-0015 は K-0010 の線に「機械的な解消は tools/changelog-check/ に通ったときだけ」の条件があるとしていますが、K-0010
+    の enforcement.solutions（decided_by: committee:D-0013）の what にはその条件がなく、議決にもその記録が見当たらないため、K-0010
+    の what を continuation.yaml の今の線に合わせて直すか、K-0015 に根拠（D-0023 の dissent とオーナーの差し戻し）を書き添えてください。'
+  - C-0008 では CHANGELOG.md だけの衝突が機械的な解消に回っており、K-0010 の invalidate_when の 2 つ目に当たる見込みがあるので、K-0010
+    の status をどうするかを次の定例の再確認で決めてください。
+  - 'K-0016 の invalidate_when の 1 つ目（組み立てたあとに先頭が ## 概要 で始まるかを機械で確かめる）は、K-0006 の ci_check（必須の見出しの欠けと順の違いを見る）や
+    K-0001 の関所 tools/pr-body-check/gate.mjs とほぼ重なるので、related に K-0001 を足し、既存の検査とどこが違うか（##
+    概要 の前の文を見ること、組み立ての時点で見ること）を statement か invalidate_when に書き分けてください。'
+  - K-0002・K-0009・K-0010・K-0013 への変更は related と evidence を足しただけで statement と確かさを変えておらず、INDEX.md
+    の行も新しい 2 件と合っているので、変更セットの扱いは妥当です。
+  - specs/ の用語や業務ルールを新しく定めるものはなく、確かさはどちらも事例が少なく欠けた場所も確かめていないので hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0015 と K-0016 の evidence（C-0008・PR #678・case.analyzed:370961、K-0016 はさらに C-0006・PR
+    #821・case.analyzed:370935）は事例記録に実在し、記録の「出来事」と「なぜなぜ」の記述（機械的な解消 13 回 3414〜3822、job
+    3324・3873 の summary.md の頭の欠け）まで辿れます。'
+  - 'K-0016 の 2 件目の根拠 C-0006 は、session.txt では ## 概要 と ## 対応内容 があったのに summary.md では抜けていたことを記録しており、同じ現象の
+    2 件目として根拠に足すのは妥当です。'
+  - K-0015 が引く K-0010 の担保の線（機械的に解いた回は上限に数えない）は議決 D-0023 の dissent と K-0010 の enforcement
+    に書かれていて一次記録まで辿れ、Engine が検査を呼んでいないことは確かめていないと statement と invalidate_when に正直に書いてあります。
+  - どちらも事例 1〜2 件で、欠けた場所や Engine の挙動が推測のままなので、確かさを hypothesis にしたのは妥当で、上げる材料はありません。
+  - K-0002 への C-0008 の根拠の追加は、CHANGELOG.md を直接書き換えて衝突したという前半の因果と合っており、後半の重い続きのジョブには当たらないので
+    statement を変えなかった判断も根拠に沿っています。
+  - C-0008 に出てくるのは PR・Issue・job の番号と、実装役が書いた報告の断片だけで、利用者や人を特定できる氏名・連絡先・利用者 ID・利用者の本文の引用はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'K-0016 は「組み立てた PR 本文の先頭が決まりの見出し ## 概要 で始まり、その前に Closes 行のほかに文がないか」で線を引けて、C-0006
+    と C-0008 の 2 件で繰り返しており、既存の tools/pr-body-check/ に足せば安く作れるので、決定論で担保すべきです。'
+  - K-0015 は K-0010 の線（continuation.yaml の conflict と、機械的な解消の前に tools/changelog-check/
+    を通すこと）がそのまま担保になります。足りないのは、同じ PR で検査を通さずに機械的な解消が繰り返されたことを見つける照合だけで、これは tools/conflict-check/events.py
+    に rule を 1 つ足せば作れます。
+  - K-0015 と K-0016 は enforcement.level が context ですが、どちらも線がはっきりしていて、外すと 13 回の解き直しや
+    5 回の body_fix が起きて痛いので、確かさが上がったら deterministic に直すのがよいです。
+  - K-0015 は、13 回の機械的な解消のときに Engine が検査を呼んでいなかったことを確かめていないので、確かさは hypothesis のままが妥当です。担保の効き目も、配線したあとに本物のイベント列で確かめる必要があります。
+  - K-0009 は related だけを直していて、README.md が「次に直す変更セットで書く」としている未記入の wired と verified
+    が今回も埋まっていません。次に K-0009 を直す変更セットでは、必ず書いてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - K-0015 は、繰り返しの 2 種類（機械的な衝突の解消の 13 回と body_fix の 5 回）を分けて前者だけに絞っており、scope も dev.build・CHANGELOG.md
+    と changelog.d/・supervisor に狭まっているので、範囲は広すぎません。
+  - 'K-0015 には別の原因も考えられます: node_modules の混入で検査が job 3852 まで動かず DOC-002 を出せなかったことが、元の直しが遅れた主な原因だった可能性があります。確かさを上げる前にこの点を確かめる必要があります。'
+  - 上の別の原因は invalidate_when に入っていないので、次に K-0015 を直すときは「検査が動いていた PR でも、機械的な解消が数えられずに繰り返したか」を確かめる条件を足すのが望ましいです。
+  - K-0015 の statement は K-0010 の担保の線の説明が長く占めていますが、主張そのもの（検査を通さずに解く機械的な解消は、上限に数えられないまま繰り返す）は
+    K-0010 の主張（引き継ぐ文脈の分だけ費用が増える）と重なっていません。
+  - K-0016 は「summary.md から本文を組み立てる受け渡しで欠ける」と書いていますが、C-0008 と C-0006 では summary.md
+    の時点ですでに頭が欠けていました。それでも組み立てたあとに本文の先頭を確かめる段はどちらの場合にも効くので、採らない理由にはなりません。ただし roles
+    のうち judge と body_fix は原因の側ではないので、次に直すときは implement に絞るのが望ましいです。
+  - どちらも事例は 1〜2 件で、欠けた場所も Engine の今の形も確かめられていないので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0016
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/pr-body-check/gate.mjs（K-0001 の本文更新の関所）を、続きのジョブだけでなく、summary.md
+    から最初の PR 本文を組み立てたとき（gh pr create・gh pr edit の直前）にも呼ぶ形に広げる。そのうえで、本文の先頭（Closes 行を除く）の空でない最初の行が
+    template.json の最初の見出し（## 概要）でないか、その前に見出しのない文や箇条書きがあれば落とす。C-0008（「  - テストで次を確かめます。」から始まる本文と、##
+    概要 の前に 1 文が付いた本文）と C-0006（冒頭の段落と ## 対応内容 の欠け）の形を fixture にしてテストで確かめる。'
+- knowledge: K-0015
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/conflict-check/events.py に rule mechanical_without_verify を足す。PR
+    の差分が CHANGELOG.md を直接書き換えている（tools/changelog-check/check.mjs が落ちる）のに、tier none（機械的）で衝突を解いた回があれば落とす。あわせて、同じ
+    PR・同じファイルの機械的な解消が 3 回を超えたら件数を出す。test_events.py で、C-0008 の流れ（PR #678 の 13 回の機械的な解消）の
+    fixture が落ち、線どおりの積み方（検査に落ちてエージェントの回になり、3 回で停止）なら通ることを確かめる。'

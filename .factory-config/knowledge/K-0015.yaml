@@ -21,7 +21,7 @@ evidence:
   - case: C-0008
   - pr: 678
   - event: "case.analyzed:370961"
-status: draft
+status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
@@ -30,3 +30,4 @@ invalidate_when:
   - "Engine が continuation.yaml の conflict の線を読み、機械的な解消の前に tools/changelog-check/ を通すようになった（その後も同じ PR の機械的な解消が繰り返すかで確かめる）"
   - "線を配線したあとも、直接の書き換えのある PR で機械的な解消が上限に数えられずに繰り返した（原因は配線ではなく線の作り）"
   - "13 回の機械的な解消が、Engine が検査を呼んで通った回だったと分かった（その場合は検査の側の見落としの知見に直す）"
+decided_by: committee:D-0077

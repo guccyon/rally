@@ -20,7 +20,7 @@ evidence:
   - case: C-0006
   - pr: 821
   - event: "case.analyzed:370935"
-status: draft
+status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
@@ -28,3 +28,4 @@ related: [K-0005, K-0006, K-0009]
 invalidate_when:
   - "summary.md から本文を組み立てたあとに、先頭が ## 概要 で始まるか、その前に文が混じっていないかを機械で確かめるようになった"
   - "実装役の会話の記録と summary.md を突き合わせ、欠けが実装役の書き出しの側だと分かった（その場合は Engine の組み立てではなく実装役への指示の知見に直す）"
+decided_by: committee:D-0077
