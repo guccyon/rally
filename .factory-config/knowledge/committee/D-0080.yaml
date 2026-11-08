@@ -1,0 +1,82 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0080
+pr: https://github.com/guccyon/rally/pull/1228
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に D-0054 の 1 つめの test の案（+def の行から関数を取り出し、その関数だけが入った版を patch_partially_applied
+    で落とす）を入れた記録を 1 件足しただけで、案の中身と合っています。
+  - 'decided_by: committee:D-0054 は PR #1146 の議決を正しく指し、起票時の番号のずれ（D-0053）も what に書いてあるので、D-0053
+    の項目（issue 1143）と取り違えるおそれはありません。'
+  - 'README の決まりどおり wired: false・verified: false を書き、写しがまだで未配線・未確認と明記しているので、confidence
+    は hypothesis のままが妥当です。'
+  - D-0054 の 2 つの ci_check の案（ENGINE_REF の版を取れないときに落とす手順と、Engine の先頭を定期で見て issue 968
+    に記録する分）はまだ入っていないので、次の変更セットで記録してください。
+  - D-0036・D-0054・D-0059 が求めた issue 1014 の解決策への D-0025 の添え書きは今回も手つかずなので、次に K-0004
+    を直す変更セットで片づけてください。
+  - 知見の置き場の CI の担保を差し戻しの判定についての K-0004 に積み続けるずれは D-0053・D-0072・D-0079 で指摘済みで今回も広がっているので、別の知見に分けるかを委員会か人が見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の解決策は issue 1149 と committee:D-0054 を指しており、D-0054 の enforcement の 1 つ目の案（MARKERS
+    をやめて knowledge-enforcement.patch の +def から取り出し、その関数だけが入った版が patch_partially_applied
+    で落ちることを確かめる）と中身が対応しているので、一次記録に辿れます。
+  - 'what に書いた D-0054 の pr（PR #1146）は committee/D-0054.yaml の pr と一致し、起票時の番号が D-0053
+    だったことも書き添えているので、番号のずれで辿れなくなることはありません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '確かめたのは作った Engine の版だけで ENGINE_REF の版と .github/workflows/ への写しでは確かめていないため、wired:
+    false・verified: false と confidence: hypothesis のままが妥当で、PR ごとに走る実行を事例記録に残すまで上げないでください。'
+  - added_functions() は core-gates/knowledge_check.py の +def だけを見るので、D-0054 の dissent
+    が挙げた definitions/knowledge.yaml の側だけが入った版の扱いはこの記録の根拠に含まれておらず、次に K-0004 を直す変更セットで確かめた結果を書いてください。
+  - 差分に出てくるのは issue・PR の番号、議決の id、ツールのパス、関数や判定の名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0054 の 1 つめの案（test
+    の案）を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 関数の名前を手で書いた MARKERS をやめて差分の +def の行から取り出すのは、毎回同じ答えが出て安く作れ、一覧の直し忘れで patch_partially_applied
+    を patch_stale と取り違える痛さを止めるので、決定論の担保として筋がよいです。
+  - D-0054 の 2 つめの案（ENGINE_REF の版を取れないときに飛ばさず落とす ci_check）と 3 つめの案（既定のブランチの先頭を定期で見て
+    issue 968 に記録する ci_check）はまだ入っていないので、ENGINE_REF が古いまま先頭が進んでも気づけない穴が残っています。
+  - 'what に「Issue #1149 の起票時の番号は D-0053」と議決の番号のずれを手で注記していて、decided_by の議決が実在し、その議決の
+    enforcement に同じ知見と同じ kind の案があるかは今は人の目でしか照らされていません。'
+  - 'test_engine_patch.py は .github/workflows/ への写しがまだで PR ごとには走っておらず、wired: false・verified:
+    false と合っているので、confidence は hypothesis のままにしてください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0054 の test の案を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 'what に .github/workflows/ への写しがまだで効き目を確かめていないことが書いてあり、wired: false・verified:
+    false と合っていて言い過ぎていないので、confidence は hypothesis のままにしてください。'
+  - 反例として、added_functions() は +def の行だけを拾うので、差分が既にある関数の中身を直すだけの変更や、definitions/knowledge.yaml
+    の側だけが入った版は一覧に出ず patch_partially_applied で拾えないため、その場合に patch_stale として落ちることを確かめてください。
+  - 反例として、字下げしたメソッドや入れ子の関数（+    def）を拾うか拾わないかが what からは読めないので、どちらにしたかを記録に書いてください。
+  - D-0054 の 2 つの ci_check の案（ENGINE_REF の版が取れないときに落とすこと、既定のブランチの先頭を定期で見て issue 968
+    に記録すること）と D-0025 の添え書きは今回も入っていないので、次に K-0004 を直す変更セットで入れてください。
+  - K-0004 には差し戻しの判定という主張と関係の薄い知見の置き場の検査ツールの解決策が積み重なり続けているので、別の知見に分けるかを引き続き人が決めてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'D-0054 の 2 つめの案のとおり、ci/knowledge-enforcement.yml の test_engine_patch.py
+    の手順で ENGINE_REF の版の Engine を取れないときは飛ばさずに落とすようにし、建設者が .github/workflows/ に写したあと最初の
+    PR の実行で merged・当たる・patch_partially_applied・patch_stale のどれになったかを事例記録に残してから、issue
+    1149 の解決策を wired: true にする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: tools/knowledge-enforcement-check/check.py に、enforcement.solutions の各項目の
+    decided_by が指す committee/D-NNNN.yaml が実在し、その議決の enforcement に同じ knowledge の id
+    と同じ solution_kind の案があることを照らす検査を足し、議決の番号を取り違えた記録（起票時の番号のずれなど）を落とすテストを test_check.py
+    に入れる。
