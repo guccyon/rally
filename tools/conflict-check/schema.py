@@ -104,11 +104,13 @@ def before(events: list[dict], since: datetime | None) -> set[int]:
     return out
 
 
-def check(defs: dict[str, dict], events: list[dict], since: datetime | None = None) -> list[dict]:
+def check(defs: dict[str, dict], events: list[dict], since: datetime | None = None, skip: set[int] | None = None) -> list[dict]:
     """定義にあるイベントを 1 件ずつ照らし、外れたものを [{ rule, index, name, job_id, pr_url, field, message }] で返す。
     要る欄は、ないか null なら missing_field、あれば形を見る。要らない欄でも、あって null でなければ形を見る。
-    since を渡したら、occurred_at がそれより前のイベントは照らさない（before）"""
-    errors, skip = [], before(events, since)
+    since を渡したら、occurred_at がそれより前のイベントは照らさない（before）。before の結果を skip で渡せば読み直さない"""
+    errors = []
+    if skip is None:
+        skip = before(events, since)
     for i, e in enumerate(events):
         defn = defs.get(e["name"])
         if defn is None or i in skip:
@@ -158,18 +160,18 @@ def main(argv: list[str]) -> int:
         print(f"conflict-check schema: {path} を読めない: {e}", file=sys.stderr)
         return 2
     try:
-        skipped = len(before(events, since))
-        errors = check(defs, events, since)
+        skip = before(events, since)
+        errors = check(defs, events, skip=skip)
     except ev.EventsError as e:
         print(f"conflict-check schema: {path} を読めない: {e}", file=sys.stderr)
         return 2
     if "--json" in argv:
-        json.dump({"ok": not errors, "errors": errors, "skipped": skipped}, sys.stdout, ensure_ascii=False)
+        json.dump({"ok": not errors, "errors": errors, "skipped": len(skip)}, sys.stdout, ensure_ascii=False)
         print()
     else:
         for x in errors:
             print(f"{x['pr_url']} {x['name']} job={x['job_id']} {x['rule']}: {x['message']}")
-        tail = f"（{since.isoformat()} より前の {skipped} 件は照らさない）" if since else ""
+        tail = f"（{since.isoformat()} より前の {len(skip)} 件は照らさない）" if since else ""
         print(f"conflict-check schema: イベント {len(events)} 件{tail}・外れ {len(errors)} 件")
     return 1 if errors else 0
 

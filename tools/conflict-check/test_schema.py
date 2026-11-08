@@ -130,6 +130,7 @@ class SinceTest(unittest.TestCase):
         self.assertEqual(schema.check(self.defs, events, self.since), [])
         self.assertEqual(schema.before(events, self.since), {0, 1})
         self.assertEqual(len(schema.check(self.defs, events)), 2)   # 渡さなければ前のイベントも照らす
+        self.assertEqual(schema.check(self.defs, events, skip={0, 1}), [])   # before の結果を渡しても同じ
 
     def test_当てた後のイベントは照らして落とす(self):
         events = [at(conflicted(), "2026-11-09T00:00:00+00:00"), at(enqueued(), "2026-11-10T09:00:00+09:00"),
