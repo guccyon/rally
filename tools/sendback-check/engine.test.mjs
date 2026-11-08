@@ -5,7 +5,7 @@
 // ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（議決 D-0011、Issue #948）。
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -182,13 +182,26 @@ test("(3) Engine が LEGACY_BASIS と違う言い回しで adopt の合計だけ
 // イベントの経路（Issue #945）: Engine が記録したイベント列を、README の SQL と同じ形で check.mjs に渡す。
 // ci_check がワークフローで走らせるのと同じ呼び方（--events --pr --summary、GITHUB_ACTIONS=true）で CLI を動かす
 
+/**
+ * 配線の順序を守ったリポジトリの写し（ci/sendback-engine.yml を写し、todo のない engine.test.mjs を置く）。check.mjs --events は GitHub Actions では
+ * 動いていること自体を配線と数えて配線の順序も見る（Issue #1084）ので、イベントの経路だけを見るためにこの写しを GITHUB_WORKSPACE に渡す
+ */
+function wiredWorkspace(dir) {
+  mkdirSync(join(dir, ".github/workflows"), { recursive: true });
+  mkdirSync(join(dir, "tools/sendback-check"), { recursive: true });
+  cpSync(fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), join(dir, ".github/workflows/sendback-engine.yml"));
+  writeFileSync(join(dir, "tools/sendback-check/engine.test.mjs"), "// 配線の順序を守った写し（todo なし）\n");
+  return dir;
+}
+
 /** イベント列を ci_check と同じ呼び方で check.mjs に渡し、終了コード・標準出力・JSON・要約を返す */
 function ciCheck(events, prUrl = PR_395.pr_url) {
   const dir = mkdtempSync(join(tmpdir(), "sendback-engine-events-"));
+  const workspace = wiredWorkspace(join(dir, "repo"));
   writeFileSync(join(dir, "events.json"), JSON.stringify(events, null, 2));
   writeFileSync(join(dir, "summary.md"), "");
   const r = spawnSync("node", [script, "--events", join(dir, "events.json"), "--pr", prUrl, "--json", join(dir, "out.json"),
-    "--summary", join(dir, "summary.md")], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+    "--summary", join(dir, "summary.md")], { env: { ...process.env, GITHUB_ACTIONS: "true", GITHUB_WORKSPACE: workspace }, encoding: "utf8" });
   return { status: r.status, stdout: r.stdout, result: JSON.parse(readFileSync(join(dir, "out.json"), "utf8")),
     summary: readFileSync(join(dir, "summary.md"), "utf8") };
 }
