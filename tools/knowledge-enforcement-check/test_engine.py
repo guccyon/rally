@@ -7,8 +7,8 @@ Engine がもう差分を取り込んでいれば（check_wired_by がある）�
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（sendback-check/engine.test.mjs と同じ）。
 Engine のファイルは、チェックアウトに .github/workflows/knowledge-check.yml の ENGINE_REF の版があればその版から取る（製品の CI が使う版で
-確かめる。議決 D-0035、Issue #1063）。その版がなければ、CI では落とし、手元ではチェックアウトの今の中身で確かめる。
-CI では pytest がなくても飛ばさずに落とす（差分で Engine に足したテストを走らせずに通さない）。
+確かめる。議決 D-0035、Issue #1063）。その版がなければ、ENGINE_DIR を渡したときと CI では落とし、../engine を使う手元ではチェックアウトの今の中身で確かめる。
+ENGINE_DIR を渡したときと CI では pytest がなくても飛ばさずに落とす（差分で Engine に足したテストを走らせずに通さない。議決 D-0037、Issue #1080）。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
 """
@@ -64,9 +64,10 @@ class EnginePatchTest(unittest.TestCase):
             raise AssertionError(f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
         ref = patch_check.engine_ref()
         cls.ref = ref if (ENGINE / ".git").exists() and patch_check.has_commit(ENGINE, ref) else None
-        if cls.ref is None and IN_CI:
+        if cls.ref is None and REQUIRED:
             raise AssertionError(f"Engine のチェックアウト（ENGINE_DIR={ENGINE}）に knowledge-check.yml の ENGINE_REF {ref} の版がない。"
-                                 "ci/knowledge-enforcement.yml の ENGINE_REF を knowledge-check.yml と同じ版にそろえる")
+                                 "ci/knowledge-enforcement.yml の ENGINE_REF を knowledge-check.yml と同じ版にそろえる"
+                                 "（手元では git -C \"$ENGINE_DIR\" fetch でその版を取る）")
         cls.tmp = tempfile.TemporaryDirectory()
         cls.dir = Path(cls.tmp.name)
         for f in FILES:
@@ -175,8 +176,8 @@ class EnginePatchTest(unittest.TestCase):
 
     def test_Engine_に足したテストが通る(self):
         if importlib.util.find_spec("pytest") is None:
-            if IN_CI:
-                self.fail("pytest がない。CI では差分で Engine に足したテストを飛ばさずに走らせる（pip install pytest）")
+            if REQUIRED:
+                self.fail("pytest がない。ENGINE_DIR を渡したときと CI では差分で Engine に足したテストを飛ばさずに走らせる（pip install pytest）")
             self.skipTest("pytest がない")
         r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", FILES[2]], cwd=self.dir, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
