@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0085
+pr: https://github.com/guccyon/rally/pull/1243
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1160 の lint を 1 件足しただけなので、README の変更セットの決まりや specs/ の規範と矛盾しません。
+  - '足した解決策は D-0060 の enforcement の 3 つめの案（issue 1087 と 1018 の解決策を wired: true にするには
+    .github/workflows/sendback-protection.yml の schedule のジョブを wired_by に求める lint）と中身が合っていて、decided_by:
+    committee:D-0060 は正しいです。'
+  - issue 1088（D-0061）で入れた REQUIRED_SCHEDULE は issue 1018 の組だけで、ワークフローの名前を問わなかったので、今回の
+    issue 1087 の追加と REQUIRED_SCHEDULE_WORKFLOW による名前の絞り込みはそれを広げるもので重複ではありませんが、what
+    で issue 1088 の解決策を広げたことを明記すると辿りやすくなります。
+  - issue 1158 と K-0001 の解決策はワークフローの名前を問わないままとテストで確かめており、D-0068・D-0084 で決めた REQUIRED_SCHEDULE
+    と REQUIRED_PR の扱いともぶつかりません。
+  - D-0084 が求めた issue 1087 の what の古くなった記述（schedule と手動だけで走る）への書き添えはこの変更セットでも手つかずなので、次に
+    K-0004 を直す変更セットで片づけてください。
+  - 'wired: false・verified: false で、対象の解決策がまだ wired でなくこの検査は何も落とさないと正直に書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した lint の解決策（issue 1160）は decided_by の committee:D-0060 の 3 つめの enforcement
+    の案と中身が一致し、さらに D-0039 の lint の案（issue 1018 の solution を wired: true にするには schedule
+    のジョブを要る）にも辿れます。'
+  - 'Issue #1160 の起票時の番号が D-0056 だった取り違えを what の中で明かしており、D-0056 は PR #1147 の別の議決なので、辿り先を
+    D-0060 にしたのは正しく、Issue #1160 の本文も D-0060 に直しておくと後で迷いません。'
+  - '確かめたのは手元の test_check.py だけで、check.py は .github/workflows/ にまだ写しておらず PR ごとに走っていないと書き、wired:
+    false・verified: false にしているので、効き目を言い過ぎていません。'
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の配線で落ちる記録もまだないので、確かさは
+    hypothesis のままが妥当です。
+  - 差分にあるのは議決の id、issue と PR の番号、ツールとワークフローのパスだけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0060 の enforcement
+    にある lint の案（D-0039 の 2 つめの案）を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - issue 1087 と 1018 の解決策の wired_by に、sendback-protection.yml の空でない cron を持つ schedule
+    のジョブから protection.mjs を呼ぶ項目を求める線ははっきりしていて、ほかのワークフローの名前を見ない改変でも落ちることを確かめているので、決定論の担保として筋がよいです。
+  - ただし対象を issue 番号（1087 と 1018）で引いているため、同じ protection.mjs の見張りを別の issue 番号の解決策として足すと検査をすり抜けるので、表どうしのずれを照らすテストを足すべきです。
+  - REQUIRED_SCHEDULE と REQUIRED_SCHEDULE_WORKFLOW の 2 つの表と tools/sendback-check/ci/
+    のひな形の名前は手でそろえるしかなく、片方だけ直すと黙って効かなくなるので、ずれを落とすテストが安い費用で効きます。
+  - check.py がまだ .github/workflows/ に写されておらず PR ごとに走っていないので、この lint も今は何も守っておらず、写しは建設者の作業として残っています。
+  - 'wired: false・verified: false と書き、本物の実行の記録もまだないので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0060 の 3 つめの案（lint）を入れた記録を issue 1160
+    として 1 件足しただけで、statement・scope・evidence・confidence は変えていないので、範囲は広すぎません。
+  - 検査は issue 1087 と 1018 の解決策だけに絞り、issue 1158 と K-0001 の解決策はワークフローの名前を問わないことをテストで確かめているので、ほかの解決策を巻き込む広がりもありません。
+  - '反例として、ワークフローの名前を sendback-protection.yml に固定したため、建設者が別の名前で写すと正しい配線でも wired: true
+    にできなくなるので、名前を変えるときは REQUIRED_SCHEDULE_WORKFLOW も直すことを what か README に書き添えることを勧めます。'
+  - on.schedule に空でない cron があるかだけを見るので、2 月 30 日のように実際には走らない cron でも通るという反例が残り、D-0060
+    で挙がった schedule が止まる穴（最後に通った日を照らす案）とあわせて次の変更セットで扱ってください。
+  - 'issue 1087 と 1018 の解決策は今 wired: false なのでこの検査は何も落とさず、check.py も .github/workflows/
+    に写しておらず効き目を確かめていないと本文自身が書き、wired: false・verified: false としているので、confidence は hypothesis
+    のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/knowledge-enforcement-check/test_check.py に、REQUIRED_SCHEDULE_WORKFLOW
+    の鍵が REQUIRED_SCHEDULE の鍵に含まれること、REQUIRED_SCHEDULE_WORKFLOW のワークフローの名前が tools/sendback-check/ci/
+    にあるひな形のファイル名と一致することを照らすテストを足し、表とひな形のどれか 1 つだけを直したら落ちるようにする。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: 'tools/knowledge-enforcement-check/check.py で、issue 番号ではなく wired_by に
+    tools/sendback-check/protection.mjs を呼ぶ項目を持つ解決策をすべて対象にし、wired: true にするなら sendback-protection.yml
+    の schedule のジョブを必須にして、別の issue 番号で足した見張りがすり抜けないようにする。'
