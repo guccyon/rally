@@ -172,6 +172,22 @@ enforcement:
       verified: false
     - kind: test
       what: >-
+        議決 D-0068（Issue #1180 の起票時の番号は D-0066。PR #1176）の test の案を入れた。ci.test.mjs は写しがひな形と同じかを見るだけで、
+        ひな形と写しを一緒に変えると、定期の照合（pr-body-protection.yml）そのものが黙って止まる外れ方を見張れなかった。
+        tools/pr-body-check/ci.test.mjs に、ひな形と、.github/workflows/pr-body-protection.yml の写しがあれば写しそのものについて、
+        on の schedule に cron があり workflow_dispatch があること、continue-on-error がなく、protection のジョブと PR_BODY_PROTECTION_TOKEN を読む手順に if: がないこと、
+        その手順を偽の gh で動かし、トークンがない・権限がない（403）・rulesets を読めないのどれでも protection_unreadable の ::error を出して飛ばさず落ちることを確かめるテストを足した。
+        schedule・cron・workflow_dispatch を外す、on を 1 行の列にする、ジョブや読む手順に if: や continue-on-error を足す、読めないときに 0 で抜ける、ジョブの id を変えるの
+        11 通りの直しがどれも外れになり、今のひな形は通ることを確かめた。写しを置いた仮のリポジトリで、ひな形のままの写しは通り、workflow_dispatch を外した写しは落ちることも確かめた。
+        このテストは engine-test の node --test の中で走るが、ひな形 ci/pr-body-engine.yml と ci/pr-body-protection.yml はまだ .github/workflows/ に写されておらず
+        （手順は tools/pr-body-check/README.md の「配線の手順（建設者）」と「定期の照合」）、写しがない間は写しのテストは飛ぶので、配線されておらず効き目は確かめていない
+      issue: 1180
+      at: 2026-11-08
+      decided_by: committee:D-0068
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
         議決 D-0070（Issue #1183 の起票時の番号は D-0067。PR #1181）の test の案を入れた。tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）が、
         Issue #1109 の字面の見張りに加えて、gate.test.mjs と engine.test.mjs をそれぞれ node --test --test-reporter=tap で走らせ（外の node --test の NODE_TEST_CONTEXT は渡さない）、
         gate.test.mjs の通る側のテスト（書いてよい本文の 2 件、通る側の 3 通りの形、通る側の CLI のテスト）と engine.test.mjs の (10)（3 通りの形）が
