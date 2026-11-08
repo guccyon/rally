@@ -1,6 +1,28 @@
 # 知見の担保の配線と効き目の検査（tools/knowledge-enforcement-check/、知見 K-0004 の担保、議決 D-0015）。決定論（LLM を使わない）。
 # .github/workflows/ に写すのは建設者（ワーカーの権限にない）。写すまでこの検査は PR ごとには走らない。
-# PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければジョブを落とす。ほかの PR では結果を Job Summary に残すだけ
+# engine-test のジョブは、ENGINE_REF の版の Engine で test_engine.py と test_engine_patch.py を CI=true・ENGINE_DIR を渡して走らせ、
+# engine/knowledge-enforcement.patch が ENGINE_REF に当たらないか、差分で足したテストが落ちれば、どの PR でも落とす（議決 D-0035、Issue #1063）。
+# テストは unittest discover でまとめて走らせ、その出力で skipped が 1 件以上あっても落とす（飛ばして緑にしない。議決 D-0037、Issue #1080）。
+# 続けて test_ci.py --log で、unittest.TestCase を定義するのに discover の既定の形（test*.py）に合わず拾われないファイルと、
+# その出力にテストが 1 件も走った跡のないファイルがあれば落とす（議決 D-0057（起票時の番号は D-0055）、Issue #1154）。
+# 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
+# enforcement のジョブも必須チェックに入れ、そのあとで K-0004 の issue 986・1059 の解決策を wired: true にし、wired_by に
+# {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py} を書く
+# （pull_request のジョブから check.py を呼ぶ項目がないと check.py が落とす。議決 D-0048、Issue #1129）。
+# README の一覧と K-*.yaml がずれた PR で enforcement のジョブの test_check.py が落ちる実行を記録してから、K-0004 の issue 1062 の解決策を
+# wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/test_check.py} を書く
+# （pull_request のジョブから test_check.py を呼ぶ項目がないと check.py が落とす。議決 D-0052、Issue #1139）。
+# engine/knowledge-enforcement.patch が ENGINE_REF に当たらない PR で engine-test のジョブが落ちる実行を記録してから、K-0004 の issue 1063・1144 の解決策を
+# wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: engine-test, runs: tools/knowledge-enforcement-check/test_engine_patch.py} を書く
+# （pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと check.py が落とす。写したあとは、CI か記録が写しを wired_by に書いていれば
+# 写しがないことを test_ci.py が飛ばさずに落とす。議決 D-0053、Issue #1144）。
+# enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときと、配線先（.github/workflows/）か
+# check.py が呼ぶことを求める検査の置き場（tools/conflict-check/・tools/sendback-check/・tools/pr-body-check/）を変えたときに、通らなければ落とす
+# （wired: true の解決策の配線先のジョブから REQUIRED_RUNS などの検査を外した PR を止める。議決 D-0066（起票時の番号は D-0062）、Issue #1173）。
+# ほかの PR では結果を Job Summary に残すだけ。落とす範囲が check.py の挙げた検査と wired_by を覆うことと、手順の振る舞いは test_ci.py の EnforcementScopeTest が見る
+# check.py には PR の base（--base）と Engine の全履歴のチェックアウト（--engine）を渡し、K-0010 の review_by を延ばす PR では
+# conflict-check の ENGINE_REF の Engine で EngineFinishedTest が todo のままなら落とす（議決 D-0067、Issue #1178）
+# 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
 name: knowledge-enforcement
 
 on:
@@ -12,46 +34,99 @@ permissions:
 env:
   # Engine の固定した版（40 桁のコミット SHA）。engine/knowledge-enforcement.patch がこの版に当たり、担保の表示が check.py と同じ線になるかを
   # test_engine.py で確かめる（議決 D-0016・D-0017、Issue #965・#968）。knowledge-check.yml の ENGINE_REF と同じ版にそろえる
-  ENGINE_REF: f44a3720060faf309e692fdd67cea528cc48dc73
+  # （test_engine_patch.py が knowledge-check.yml の ENGINE_REF の版をこのチェックアウトから取り出し、差分が当たらずまだ入ってもいなければ
+  # patch_stale で落とす。版がそろっていないとチェックアウトにその版がなく落ちる。議決 D-0024、Issue #1014）
+  ENGINE_REF: 9d3713a69b7784fc31069bf370002d554bfc3a64
 
 concurrency:
   group: knowledge-enforcement-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  engine-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）
+        shell: bash
+        run: |
+          if [[ ! "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=knowledge-enforcement engine_ref_not_sha::ENGINE_REF は 40 桁のコミット SHA（小文字の 16 進）にする（ENGINE_REF=${ENGINE_REF}）"
+            exit 1
+          fi
+          echo "ENGINE_REF=${ENGINE_REF}"
+      - uses: actions/checkout@v4
+      - name: Engine を取る（固定した版）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - name: Engine に移す差分のテスト（ENGINE_REF の版に当たるか・足したテストが通るか。K-0004）
+        shell: bash
+        env:
+          CI: "true"
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          set -o pipefail
+          python3 -m pip install --quiet pyyaml pytest
+          python3 -B -m unittest discover -s tools/knowledge-enforcement-check -v 2>&1 | tee knowledge-enforcement-unittest.log
+      - name: 飛ばしたテストがないか（K-0004）
+        shell: bash
+        run: |
+          log=knowledge-enforcement-unittest.log
+          if ! grep -qE '^Ran [1-9][0-9]* tests? in ' "$log" 2>/dev/null; then
+            echo "::error title=knowledge-enforcement unittest_not_run::unittest discover の出力（${log}）に走らせたテストの件数がない"
+            exit 1
+          fi
+          skipped=$(grep -oE '^(OK|FAILED) \(.*skipped=[0-9]+' "$log" | grep -oE '[0-9]+$' || true)
+          if [ "${skipped:-0}" -gt 0 ]; then
+            echo "::error title=knowledge-enforcement tests_skipped::unittest discover で ${skipped} 件のテストを飛ばした。CI では Engine のチェックアウト・ENGINE_REF の版・pytest がなくても飛ばさずに落とす"
+            grep -E "\.\.\. skipped " "$log" || true
+            exit 1
+          fi
+          echo "skipped=0"
+      - name: テストのファイルがすべて拾われて走ったか（K-0004）
+        shell: bash
+        run: |
+          python3 -B tools/knowledge-enforcement-check/test_ci.py --log knowledge-enforcement-unittest.log
   enforcement:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: 担保の記録を変えた PR か
+      - name: 担保の記録か配線先を変えた PR か
         id: scope
         env:
           PR_BASE: ${{ github.base_ref }}
         run: |
-          if git diff --name-only "origin/$PR_BASE...HEAD" | grep -qE '^(\.factory-config/knowledge/|tools/knowledge-enforcement-check/)'; then
+          if git diff --name-only "origin/$PR_BASE...HEAD" | grep -qE '^(\.factory-config/knowledge/|tools/knowledge-enforcement-check/|\.github/workflows/|tools/conflict-check/|tools/sendback-check/|tools/pr-body-check/)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      # K-0010 の review_by を延ばす PR で、conflict-check の ENGINE_REF の版の Engine を check.py が照らすため（議決 D-0067、Issue #1178）。
+      # 版は check.py が tools/conflict-check/ci/conflict-check.yml（写しがあれば写し）から読むので、全履歴で取る
+      - name: Engine を取る（全履歴。K-0010 の review_by の先送りの照合）
+        if: steps.scope.outputs.changed == 'true'
+        uses: actions/checkout@v4
         with:
           repository: guccyon/factory-engine
-          ref: ${{ env.ENGINE_REF }}
+          fetch-depth: 0
           path: .engine
-      - name: 検査のテスト（Engine に移す差分のテストを含む）
-        env:
-          ENGINE_DIR: ${{ github.workspace }}/.engine
+      - name: 検査とひな形の形のテスト（Engine のテストは engine-test のジョブ）
         run: |
-          python3 -m pip install --quiet pyyaml pytest
-          python3 -m unittest discover -s tools/knowledge-enforcement-check
+          python3 -m pip install --quiet pyyaml
+          python3 -B tools/knowledge-enforcement-check/test_check.py -v
+          python3 -B tools/knowledge-enforcement-check/test_ci.py -v
       - name: 担保の配線と効き目
         env:
           CHANGED: ${{ steps.scope.outputs.changed }}
+          PR_BASE: ${{ github.base_ref }}
         run: |
           rc=0
-          python3 tools/knowledge-enforcement-check/check.py --repo . --json knowledge-enforcement.json --summary "$GITHUB_STEP_SUMMARY" || rc=$?
+          python3 tools/knowledge-enforcement-check/check.py --repo . --json knowledge-enforcement.json --summary "$GITHUB_STEP_SUMMARY" \
+            --base "origin/$PR_BASE" --engine .engine || rc=$?
           if [ "$CHANGED" = "true" ]; then exit $rc; fi
       - uses: actions/upload-artifact@v4
         if: always()

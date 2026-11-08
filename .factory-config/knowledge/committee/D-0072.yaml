@@ -1,0 +1,75 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0072
+pr: https://github.com/guccyon/rally/pull/1198
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0048 の ci_check の案を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、D-0004 から D-0048 までの議決と矛盾しません。
+  - 'D-0048 の enforcement には knowledge が K-0004、solution_kind が ci_check の案があり、足した解決策の
+    decided_by: committee:D-0048 と kind: ci_check はそれに当たるので、check_decision の照合とも食い違いません。'
+  - issue 986 の解決策は wired_by の実在と呼び出しを照らす一般の検査で、今回の issue 1129 は issue 986・1059 の解決策に限って
+    pull_request で走るジョブからの check.py の呼び出しを求める別の段なので、重複ではありません。
+  - REQUIRED_PR の組を足すやり方は K-0010 の issue 1103（D-0043）と同じ形で、K-0010 は D-0043 のままと書いて組ごとに議決を分けている点も既存の揃え方と合っています。
+  - 'wired: false・verified: false で、what にも .github/workflows/ への写しと必須チェックは建設者が行い未配線・未確認と書かれているので、confidence
+    は hypothesis のままが妥当です。'
+  - 知見の置き場の CI の解決策を差し戻しの判定についての K-0004 に積み続けている点は D-0048・D-0053・D-0056 で指摘済みで、今回の採否には響きませんが、別の知見に分けるかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の解決策は committee:D-0048 と issue 1129 を指していて、D-0048 の enforcement
+    にある 1 つ目の ci_check の案（ci/knowledge-enforcement.yml を写し、そのあと issue 986・1059 の解決策を
+    wired: true にする）にそのまま対応しているので、一次記録に辿れます。'
+  - 'what が参照している issue 986・1059 の解決策は K-0004 にあり、K-0010 は D-0043 のままという記述も K-0010
+    の decided_by: committee:D-0043 と合っています。'
+  - 'wired: false・verified: false と書き、what にも check.py がまだ PR ごとに走っておらず未配線・未確認だと明記しているので、記録より強く言っていません。'
+  - K-0004 の statement・evidence（C-0002・PR 395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので根拠の段は崩れていません。
+  - 'どの解決策も未配線・未確認なので confidence は hypothesis のままが妥当で、verified_by で cases/ の事例記録を指す
+    verified: true の解決策が出るまでは上げないでください。'
+  - 差分に出てくるのはツールのパス・項目名・issue の番号・議決の id・知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は D-0048 の ci_check の案のうちワーカーが入れられる分として、issue 986・1059 の解決策を wired: true
+    にするとき wired_by が pull_request で走るジョブから check.py を呼んでいなければ落とす線を check.py に足した記録で、担保の観点では採ってよいです。'
+  - '手動・定期・push だけのワークフロー、engine-test のジョブ、test_check.py を指す項目、pull_request を除く if:
+    のジョブを落とすことをテストで確かめ、REQUIRED_PR から組を外すとテストが落ちることまで見ているので、線は安全側に引かれています。'
+  - ただし check.py はまだ .github/workflows/ に写されておらずブランチ保護の必須チェックにも入っていないので、今は何も止まらず、建設者による配線が残っています。
+  - REQUIRED_PR は K-0004 の issue 986・1059 の組を名前で足す形なので、ほかの知見の解決策に同じ線を広げるときは組を足し忘れると黙って素通りする穴が残ります。
+  - '足した解決策は wired: false・verified: false と正直に書かれ、どの解決策も未配線・未確認なので、K-0004 の confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0048 の ci_check の案のうちワーカーが入れられる分の記録を
+    solutions に 1 件足しただけなので、範囲は広すぎません。
+  - '足した項目は wired: false・verified: false で、.github/workflows/ への写しと必須チェックは建設者がまだ行っておらず
+    check.py が PR ごとに走っていないと書いているので、記録より強く言っていません。'
+  - '反例として、REQUIRED_PR の照合は wired_by とワークフローの字面を見るだけなので、必須チェックに入っていない pull_request
+    のジョブから check.py を呼ぶ形でも wired: true にできる余地が残り、branch protection 側の照合（issue 1087
+    の protection.mjs の仕組み）を check.py にも広げるかを次の変更で検討してください。'
+  - 反例として、REQUIRED_PR は K-0004 の issue 986・1059 の組だけを見るので、同じ検査を担保に書くほかの知見の解決策には効かず、組を足し忘れると黙って通る点は残ります。
+  - 知見の置き場の検査ツールの担保を差し戻しの判定についての K-0004 に積み続けているのは主張と担保の対象がずれていますが、D-0048 までの扱いと同じなので今回の採否には響かず、別の知見に分けるかは人が決めてください。
+  - どの解決策も未配線・未確認なので、K-0004 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が ci/knowledge-enforcement.yml を .github/workflows/knowledge-enforcement.yml
+    に写して check.py を on.pull_request で走らせ、enforcement のジョブをブランチ保護の必須チェックに入れ、そのあとで issue
+    986・1059 と issue 1129 の解決策を wired: true（wired_by にその workflow・job・check.py を書く）にする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'REQUIRED_PR を知見と issue の名前の列挙に頼らず、wired: true の解決策はどれも pull_request で走り
+    check.py を呼ぶジョブを wired_by に要する形に広げ、test_check.py で K-0004 以外の知見の解決策でも同じ線で落ちることを確かめる。'

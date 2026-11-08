@@ -24,8 +24,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
     contract::{
-        account_id_from_contract, admin_web_sport, booking_canceller_to_contract,
-        date_from_contract, date_time_to_contract, date_to_contract, lesson_menu_id_from_contract,
+        account_id_from_contract, admin_web_sport, booking_canceller_from_contract,
+        booking_canceller_to_contract, date_from_contract, date_time_to_contract, date_to_contract,
+        lesson_menu_id_from_contract,
     },
     error::ApiError,
 };
@@ -47,6 +48,7 @@ pub struct ListCancelledBookingsParams {
     student_id: Option<String>,
     lesson_menu_id: Option<String>,
     sport: Option<String>,
+    cancelled_by: Option<String>,
 }
 
 /// admin-web の `CancelledBookingList`。
@@ -74,10 +76,12 @@ pub struct CancelledBookingBody {
 }
 
 /// `GET /bookings/cancelled`。本部だけが呼べる（役割は `require_role` の層が確かめる）。`from`・`to` が `YYYY-MM-DD` の
-/// 日付でないとき・`coach_id`・`student_id`・`lesson_menu_id` が UUID でないとき・`sport` が `Sport` の値でないときと、
-/// 期間の違反は 422（期間の違反の応答は [`crate::scheduling_error`] が決める。`coach_id`・`student_id`・`lesson_menu_id`・
-/// `sport` の検証も含めて `listBookings` と同じ）。`sport` は予約した枠のコーチの提供スポーツで絞る（規則は domain の
-/// [`domain::scheduling::Booking::matches_coach_sport`]）。
+/// 日付でないとき・`coach_id`・`student_id`・`lesson_menu_id` が UUID でないとき・`sport` が `Sport` の値でないとき・
+/// `cancelled_by` が `BookingCanceller` の値でないときと、期間の違反は 422（期間の違反の応答は
+/// [`crate::scheduling_error`] が決める。`coach_id`・`student_id`・`lesson_menu_id`・`sport` の検証も含めて
+/// `listBookings` と同じ）。`sport` は予約した枠のコーチの提供スポーツで絞る（規則は domain の
+/// [`domain::scheduling::Booking::matches_coach_sport`]）。`cancelled_by` はキャンセルした人で絞る（規則は domain の
+/// [`domain::scheduling::Booking::matches_canceller`]）。
 pub async fn list_cancelled_bookings<B, A, K, D, C>(
     State(state): State<Shared<B, A, K, D, C>>,
     _account: AuthenticatedAccount,
@@ -119,6 +123,11 @@ where
             .map(|id| lesson_menu_id_from_contract("lesson_menu_id", id))
             .transpose()?,
         sport: params.sport.as_deref().map(admin_web_sport).transpose()?,
+        cancelled_by: params
+            .cancelled_by
+            .as_deref()
+            .map(booking_canceller_from_contract)
+            .transpose()?,
     };
     let list = state
         .list_cancelled_bookings

@@ -3,17 +3,25 @@
 test_engine.py から呼ぶ。policy.py の線（参照の実装）ではなく、Engine の次の処理をそのまま動かして結果を返す。
 
 - supervisor（積む側）: orchestrator/dispatcher/supervisor.py の conflict_step・ci_failure_step と、continuation.py（enqueue・attempts・pending）。
-  同じ PR が head ごとに衝突し続ける流れ（C-0005 の PR #659）を周期ごとに回し、積んだ続きのジョブ（attempt・model_tier）と、開いた停止を返す
+  同じ PR が head ごとに衝突し続ける流れ（C-0005 の PR #659）を周期ごとに回し、積んだ続きのジョブ（attempt・model_tier）と、開いた停止を返す。
+  積んだ続きのジョブの解き方（エージェントか機械的か）は job.finished の agent_tier・cost_usd に残す（--resolved。既定は agent）
 - worker（解く側）: orchestrator/worker/entrypoint.sh の、衝突を機械的に解く手順（SEEN_CONFLICTS= から「[worker] continue」の echo の前まで）。
-  一時の git リポジトリで本物の衝突を起こしてから動かし、残った衝突と、エージェントを使わなかったか（MECHANICAL）を返す
+  一時の git リポジトリで本物の衝突を起こしてから動かし、残った衝突と、エージェントを使わなかったか（MECHANICAL）と、
+  機械的に解いた結果が policy.py の verify_mechanical（K-0002 の check.mjs）に通ったか（verified）を返す
 - worker（引き継ぎ）: entrypoint.sh の STATE_ARGS の行。conflict の続きのジョブでエージェントに --state-dir（セッションの引き継ぎ）を渡すかを返す
+- watch（見張り）: watch.py の apply を、orchestrator/dispatcher/stoppage.py の本物の open_stoppage に渡して動かす（議決 D-0030・Issue #1034）。
+  イベント列から開いた停止と、同じイベント列でもう一度回したときに開き直したか（同じ key は開き直さない）を返す
+- finished（記録の欄）: orchestrator/dispatcher/dispatcher.py が、ワーカーを動かし終えたジョブに出す job.finished（cost_usd を持つもの）の
+  payload の欄を構文木から読んで返す（動かさない。議決 D-0030・Issue #1035）。test_events.py が、Engine が agent_resumed と解き方の tier を出すかを見る
 
 supervisor.py は読み込むと DB と GitHub に繋ぐので、使う関数だけを構文木から取り出して、偽の cursor と停止・GitHub の差し替えを渡して動かす。
 entrypoint.sh は手順の行をそのまま bash で動かす。変えるのは一時ファイルの置き場（/work/cl.* を一時ディレクトリに）だけ。
 
-  python3 engine_harness.py supervisor <Engine のチェックアウト> [--heads N]
-  python3 engine_harness.py worker <Engine のチェックアウト> <衝突させるファイル>...
+  python3 engine_harness.py supervisor <Engine のチェックアウト> [--heads N] [--resolved agent|mechanical]
+  python3 engine_harness.py worker <Engine のチェックアウト> [--changelog direct|compiled] <衝突させるファイル>...
   python3 engine_harness.py resume <Engine のチェックアウト>
+  python3 engine_harness.py watch <Engine のチェックアウト> --events <イベントの JSON か JSONL>
+  python3 engine_harness.py finished <Engine のチェックアウト>
   python3 engine_harness.py --check <Engine のチェックアウト>   # 取り出せるかだけを見る（取り出せなければ終了コード 1）
 """
 from __future__ import annotations
@@ -27,11 +35,19 @@ import tempfile
 import types
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # python3 -I で動かしても隣の policy.py を読む
+import events  # noqa: E402
+import policy  # noqa: E402
+import watch as watch_  # noqa: E402
+
 SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
 CONTINUATION = "orchestrator/dispatcher/continuation.py"
+STOPPAGE = "orchestrator/dispatcher/stoppage.py"
+DISPATCHER = "orchestrator/dispatcher/dispatcher.py"
 ENTRYPOINT = "orchestrator/worker/entrypoint.sh"
 SUPERVISOR_FUNCTIONS = ["conflict_step", "ci_failure_step"]
 CONTINUATION_FUNCTIONS = ["enqueue", "attempts", "pending"]
+STOPPAGE_FUNCTIONS = ["open_stoppage"]
 MECHANICAL_START = 'SEEN_CONFLICTS="${CONFLICTS:-}"'
 MECHANICAL_END = 'echo "[worker] continue ${CONTINUE_REASON}'
 PR_URL = "https://github.com/guccyon/rally/pull/659"
@@ -51,8 +67,8 @@ def _unwrap(v):
 
 
 def _insert(sql: str, params: tuple) -> tuple[str, dict]:
-    """insert into <表>(<列>) values (<%s か文字列>) を、表の名前と {列: 値} にする"""
-    m = re.match(r"insert into (\w+)\s*\(([^)]*)\) values \((.*?)\)( returning \w+)?$", sql)
+    """insert into <表>(<列>) values (<%s か文字列>) [on conflict (dedupe_key) do nothing] を、表の名前と {列: 値} にする"""
+    m = re.match(r"insert into (\w+)\s*\(([^)]*)\) values \((.*?)\)( on conflict \(dedupe_key\) do nothing)?( returning \w+)?$", sql)
     if not m:
         raise AssertionError(f"engine_harness が読めない insert: {sql}")
     cols = [c.strip() for c in m.group(2).split(",")]
@@ -70,8 +86,9 @@ class FakeCursor:
         self.jobs: list[dict] = []
         self._rows: list[dict] = []
 
-    def add_event(self, name: str, payload: dict, job_id=None, dedupe_key=None):
-        self.events.append({"id": len(self.events) + 1, "name": name, "payload": payload, "job_id": job_id, "dedupe_key": dedupe_key})
+    def add_event(self, name: str, payload: dict, job_id=None, dedupe_key=None, correlation_id=None):
+        self.events.append({"id": len(self.events) + 1, "name": name, "payload": payload, "job_id": job_id, "dedupe_key": dedupe_key,
+                            "correlation_id": correlation_id})
 
     def execute(self, sql: str, params=()):
         sql = " ".join(sql.split())
@@ -83,7 +100,10 @@ class FakeCursor:
                 self.jobs.append({"id": 100 + len(self.jobs), "state": "queued", **row})
                 self._rows = [{"id": self.jobs[-1]["id"]}]
             elif table == "events":
-                self.add_event(row["name"], row.get("payload") or {}, row.get("job_id"), row.get("dedupe_key"))
+                if "on conflict (dedupe_key) do nothing" in sql and row.get("dedupe_key") is not None \
+                        and any(e["dedupe_key"] == row["dedupe_key"] for e in self.events):
+                    return   # 同じ dedupe_key の記録がある（返す行なし）
+                self.add_event(row["name"], row.get("payload") or {}, row.get("job_id"), row.get("dedupe_key"), row.get("correlation_id"))
                 self._rows = [{"id": self.events[-1]["id"]}]
             else:
                 raise AssertionError(f"engine_harness の偽の cursor が知らない表への insert: {sql}")
@@ -135,14 +155,19 @@ def _functions(path: Path, names: list[str], namespace: dict) -> dict:
     return namespace
 
 
-def load_continuation(engine: Path):
-    """continuation.py は psycopg（Jsonb・UniqueViolation）だけに依存するので、それを差し替えてそのまま読み込む"""
+def _stub_psycopg():
+    """continuation.py と stoppage.py が使う psycopg（Jsonb・UniqueViolation）だけを差し替える"""
     psycopg = types.ModuleType("psycopg")
     psycopg.types = types.ModuleType("psycopg.types")
     psycopg.types.json = types.ModuleType("psycopg.types.json")
     psycopg.types.json.Jsonb = Jsonb
     psycopg.errors = types.SimpleNamespace(UniqueViolation=type("UniqueViolation", (Exception,), {}))
     sys.modules.update({"psycopg": psycopg, "psycopg.types": psycopg.types, "psycopg.types.json": psycopg.types.json})
+
+
+def load_continuation(engine: Path):
+    """continuation.py は psycopg（Jsonb・UniqueViolation）だけに依存するので、それを差し替えてそのまま読み込む"""
+    _stub_psycopg()
     _need(engine, CONTINUATION)
     sys.path.insert(0, str(engine / "orchestrator/dispatcher"))
     import continuation
@@ -173,9 +198,13 @@ def state_args_lines(engine: Path) -> str:
 
 
 # ------------------------------------------------------------------ supervisor
-def supervisor(engine: Path, heads: int) -> dict:
+RESOLVED = {"agent": {"agent_tier": "tier-large", "cost_usd": 1.95}, "mechanical": {"agent_tier": "none", "cost_usd": 0}}
+
+
+def supervisor(engine: Path, heads: int, resolved: str = "agent") -> dict:
     """同じ PR が head ごとに衝突し続ける流れを、supervisor の周期（merge_step の conflict_step → ci_failure_step）で回す。
     積んだ続きのジョブは終わって新しい head を push し、その head もまた衝突する（C-0005 の PR #659 と同じ流れ）。
+    続きのジョブの解き方は resolved（agent = エージェントで解いた、mechanical = 機械的に解いて検査に通った）で、job.finished に残す。
     積まなかった周期で止める（新しい head が来ない）"""
     continuation = load_continuation(engine)
     stoppages: list[dict] = []
@@ -204,6 +233,8 @@ def supervisor(engine: Path, heads: int) -> dict:
         cycles.append({"head_sha": sha, "enqueued": [{"attempt": cont.get(j["id"], {}).get("attempt"), "reason": cont.get(j["id"], {}).get("reason"),
                                                       "model_tier": j.get("model_tier")} for j in new_jobs],
                        "stoppages": stoppages[before_stop:]})
+        for j in new_jobs:
+            cur.add_event("job.finished", {"state": "succeeded", **RESOLVED[resolved]}, job_id=j["id"])
         for j in cur.jobs:
             j["state"] = "done"   # 続きのジョブが終わって push した（次の head）
         if not new_jobs:
@@ -211,13 +242,67 @@ def supervisor(engine: Path, heads: int) -> dict:
     return {"cycles": cycles, "gh_calls": gh_calls}
 
 
+# ------------------------------------------------------------------ watch
+def load_stoppage(engine: Path):
+    """stoppage.py は psycopg（Jsonb）だけに依存するので、それを差し替えてそのまま読み込む。通知はログだけ（NOTIFIER=log）にし、
+    ログは標準エラーに出す（標準出力は結果の JSON）"""
+    _stub_psycopg()
+    _need(engine, STOPPAGE)
+    path = str(engine / "orchestrator/dispatcher")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    import stoppage
+    missing = [n for n in STOPPAGE_FUNCTIONS if not callable(getattr(stoppage, n, None))]
+    if missing:
+        raise SystemExit(f"Engine の {STOPPAGE} に {', '.join(missing)} がない（関数の名前が変わったら engine_harness.py を合わせる）")
+    if watch_.CATEGORY not in getattr(stoppage, "CATEGORIES", ()):
+        raise SystemExit(f"Engine の {STOPPAGE} の CATEGORIES に watch.py の {watch_.CATEGORY} がない（停止の種類が変わったら watch.py を合わせる）")
+    stoppage.NOTIFIER = "log"
+    stoppage._log = lambda *a: print("[stoppage]", *a, file=sys.stderr)
+    return stoppage
+
+
+def watch(engine: Path, events_path: Path) -> dict:
+    """イベント列を watch.py で照らし、外れた PR の停止を Engine の本物の open_stoppage で開く。同じイベント列でもう一度回し、
+    開き直さないこと（同じ key は dedupe）を返す。開いた停止は偽の cursor の events に残った stoppage.opened から読む"""
+    stoppage = load_stoppage(engine)
+    found = watch_.stoppages(policy.load(), events.parse_events(events_path.read_text(encoding="utf-8")))
+    cur = FakeCursor()
+    first = watch_.apply(cur, stoppage, found)
+    again = watch_.apply(cur, stoppage, found)
+    return {"opened": first, "reopened": again,
+            "recorded": [{"key": e["payload"]["key"], "category": e["payload"]["category"], "detected_by": e["payload"]["detected_by"],
+                          "waiting_for": e["payload"]["waiting_for"], "correlation_id": e["correlation_id"], "job_id": e["job_id"],
+                          "dedupe_key": e["dedupe_key"]}
+                         for e in cur.events if e["name"] == "stoppage.opened"]}
+
+
+# ------------------------------------------------------------------ finished
+def finished(engine: Path) -> dict:
+    """dispatcher.py の record_event(cur, "job.finished", corr, job_id, {...}) のうち、ワーカーを動かし終えたもの（payload に cost_usd を持つ）の
+    payload の欄を返す。payload が辞書の式でない（変数や関数で組む）か、そういう呼び出しがなければ読めないので落とす"""
+    path = _need(engine, DISPATCHER)
+    calls = [n for n in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
+             if isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", None)) == "record_event"
+             and len(n.args) >= 2 and isinstance(n.args[1], ast.Constant) and n.args[1].value == "job.finished"]
+    if any(len(c.args) < 5 or not isinstance(c.args[4], ast.Dict) for c in calls):
+        raise SystemExit(f"Engine の {DISPATCHER} の job.finished の payload が辞書の式でない（出し方が変わったら engine_harness.py を合わせる）")
+    keys = [[k.value for k in c.args[4].keys if isinstance(k, ast.Constant)] for c in calls]
+    ran = [k for k in keys if "cost_usd" in k]
+    if not ran:
+        raise SystemExit(f"Engine の {DISPATCHER} に、cost_usd を持つ job.finished がない（出し方が変わったら engine_harness.py を合わせる）")
+    return {"fields": sorted({f for k in ran for f in k})}
+
+
 # ------------------------------------------------------------------ worker
 def _git(cwd: Path, *args: str, check=True) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=check, capture_output=True, text=True).stdout
 
 
-def conflicted_repo(root: Path, files: list[str]) -> Path:
-    """既定ブランチ（main）と PR のブランチ（pr）が files の同じ場所を変えた一時のリポジトリを作り、pr に main を取り込んで衝突させる"""
+def conflicted_repo(root: Path, files: list[str], changelog: str = "direct") -> Path:
+    """既定ブランチ（main）と PR のブランチ（pr）が files の同じ場所を変えた一時のリポジトリを作り、pr に main を取り込んで衝突させる。
+    CHANGELOG.md の変え方は changelog で選ぶ。direct = PR が [Unreleased] に直接 1 行足した（K-0002 の検査に通らない）、
+    compiled = PR が断片 changelog.d/10.md を [Unreleased] に取りまとめた（断片を消して行を移した。検査に通る）。main はどちらも 1 行足す"""
     repo = root / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
@@ -226,6 +311,7 @@ def conflicted_repo(root: Path, files: list[str]) -> Path:
     (repo / "CHANGELOG.md").write_text("# 変更履歴\n\n## [Unreleased]\n\n### 追加\n- 前からある行（#1）\n\n## [0.1.0]\n", encoding="utf-8")
     (repo / "changelog.d").mkdir()
     (repo / "changelog.d/README.md").write_text("# 断片\n", encoding="utf-8")
+    (repo / "changelog.d/10.md").write_text("### 追加\n- 断片の行（#10）\n", encoding="utf-8")
     (repo / "src").mkdir()
     (repo / "src/app.txt").write_text("value = 1\n", encoding="utf-8")
     _git(repo, "add", "-A")
@@ -236,7 +322,10 @@ def conflicted_repo(root: Path, files: list[str]) -> Path:
         for f in files:
             path = repo / f
             path.parent.mkdir(parents=True, exist_ok=True)
-            if f == "CHANGELOG.md":
+            if f == "CHANGELOG.md" and side == "pr" and changelog == "compiled":
+                path.write_text(path.read_text(encoding="utf-8").replace("（#1）\n", "（#1）\n- 断片の行（#10）\n"), encoding="utf-8")
+                (repo / "changelog.d/10.md").unlink()
+            elif f == "CHANGELOG.md":
                 path.write_text(path.read_text(encoding="utf-8").replace("（#1）\n", f"（#1）\n- {side} の行（#{side}）\n"), encoding="utf-8")
             elif f.startswith("changelog.d/"):
                 path.write_text(f"### 追加\n- {side} の断片（#{side}）\n", encoding="utf-8")   # 同じ名前の断片を両方が足す（add/add）
@@ -253,12 +342,13 @@ def conflicted_repo(root: Path, files: list[str]) -> Path:
     return repo
 
 
-def worker(engine: Path, files: list[str]) -> dict:
-    """entrypoint.sh の衝突を機械的に解く手順を、本物の衝突の上で動かす"""
+def worker(engine: Path, files: list[str], changelog: str = "direct") -> dict:
+    """entrypoint.sh の衝突を機械的に解く手順を、本物の衝突の上で動かす。機械的に解けたら（MECHANICAL があり衝突が残っていない）
+    取り込みをコミットして、policy.py の verify_mechanical（K-0002 の check.mjs）にかけた結果を verified に返す（解けなければ None）"""
     block = mechanical_block(engine)
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        repo = conflicted_repo(root, files)
+        repo = conflicted_repo(root, files, changelog)
         script = ("set -euo pipefail\n"
                   'CONFLICTS=$(git diff --name-only --diff-filter=U | tr \'\\n\' \' \')\n'
                   'BEFORE="${CONFLICTS}"\n'
@@ -271,9 +361,15 @@ def worker(engine: Path, files: list[str]) -> dict:
             raise SystemExit(f"entrypoint.sh の衝突を解く手順が落ちた（{p.returncode}）: {p.stderr[-500:]}")
         out = json.loads(p.stdout.strip().splitlines()[-1])
         markers = sorted(f for f in files if (repo / f).is_file() and "<<<<<<<" in (repo / f).read_text(encoding="utf-8"))
+        unmerged = sorted(_git(repo, "diff", "--name-only", "--diff-filter=U").split())
+        verified = None
+        if out["mechanical"] and not out["conflicts"].split() and not unmerged and not markers:
+            _git(repo, "commit", "-q", "--no-edit")
+            v = policy.verify_mechanical(policy.load(), repo, "main")
+            verified = v["ok"]
         return {"before": sorted(out["before"].split()), "conflicts": sorted(out["conflicts"].split()),
                 "agent": not out["mechanical"], "mechanical": out["mechanical"], "markers": markers,
-                "unmerged": sorted(_git(repo, "diff", "--name-only", "--diff-filter=U").split())}
+                "unmerged": unmerged, "verified": verified}
 
 
 def resume(engine: Path) -> dict:
@@ -292,21 +388,32 @@ def resume(engine: Path) -> dict:
 def check(engine: Path) -> dict:
     """動かさず、取り出す関数と手順がすべて Engine のチェックアウトにあるかだけを見る（CI で飛ばさずに落とすため）"""
     load_continuation(engine)
+    load_stoppage(engine)
     _functions(_need(engine, SUPERVISOR), SUPERVISOR_FUNCTIONS, {"__name__": "engine_harness_scope"})
     mechanical_block(engine)
     state_args_lines(engine)
-    return {"functions": SUPERVISOR_FUNCTIONS + CONTINUATION_FUNCTIONS, "entrypoint": ["mechanical", "state_args"]}
+    return {"functions": SUPERVISOR_FUNCTIONS + CONTINUATION_FUNCTIONS + STOPPAGE_FUNCTIONS, "entrypoint": ["mechanical", "state_args"]}
 
 
 def main(argv: list[str]):
     if len(argv) == 2 and argv[0] == "--check":
         out = check(Path(argv[1]))
     elif len(argv) >= 2 and argv[0] == "supervisor":
-        out = supervisor(Path(argv[1]), int(argv[argv.index("--heads") + 1]) if "--heads" in argv else 6)
+        out = supervisor(Path(argv[1]), int(argv[argv.index("--heads") + 1]) if "--heads" in argv else 6,
+                         argv[argv.index("--resolved") + 1] if "--resolved" in argv else "agent")
     elif len(argv) >= 3 and argv[0] == "worker":
-        out = worker(Path(argv[1]), argv[2:])
+        rest = argv[2:]
+        changelog = "direct"
+        if "--changelog" in rest:
+            k = rest.index("--changelog")
+            changelog, rest = rest[k + 1], rest[:k] + rest[k + 2:]
+        out = worker(Path(argv[1]), rest, changelog)
     elif len(argv) == 2 and argv[0] == "resume":
         out = resume(Path(argv[1]))
+    elif len(argv) == 4 and argv[0] == "watch" and argv[2] == "--events":
+        out = watch(Path(argv[1]), Path(argv[3]))
+    elif len(argv) == 2 and argv[0] == "finished":
+        out = finished(Path(argv[1]))
     else:
         raise SystemExit(__doc__)
     json.dump(out, sys.stdout, ensure_ascii=False)

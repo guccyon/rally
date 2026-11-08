@@ -187,7 +187,7 @@ async fn headquarters_puts_a_coach_on_leave_and_the_student_is_notified(pool: Pg
     assert_eq!(status, StatusCode::OK, "{notifications}");
     assert_eq!(
         notifications["notifications"][0]["kind"],
-        "booking_confirmed"
+        "booking_cancelled_by_headquarters"
     );
     assert_eq!(
         notifications["notifications"][0]["body"],

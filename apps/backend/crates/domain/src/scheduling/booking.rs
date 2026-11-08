@@ -312,6 +312,13 @@ impl Booking {
         self.cancelled_by
     }
 
+    /// 一覧を絞るキャンセルした人の指定に当てはまるか。指定があればキャンセルした人（[`Self::cancelled_by`]）がそれと同じ
+    /// ときだけ、なければどの予約も当てはまる。キャンセルした人のない予約（キャンセルしていない予約）は、指定があればどの
+    /// 指定にも当てはまらない。本部が見るキャンセルされた予約の一覧が使う。
+    pub fn matches_canceller(&self, canceller: Option<BookingCanceller>) -> bool {
+        canceller.is_none_or(|canceller| self.cancelled_by == Some(canceller))
+    }
+
     /// 予約した時点のレッスンメニューの写し。メニューなしの予約は `None`。
     pub const fn lesson_menu(&self) -> Option<&BookingLessonMenu> {
         self.lesson_menu.as_ref()
@@ -1162,6 +1169,30 @@ mod tests {
         let booking = reserve(2, STUDENT, false, &mut without, &[]).unwrap();
         assert!(booking.matches_lesson_menu(None));
         assert!(!booking.matches_lesson_menu(Some(menu)));
+    }
+
+    #[test]
+    fn matches_canceller_only_the_canceller_or_any_without_one() {
+        let mut first = slot(10, SlotStatus::Open);
+        let pending = reserve(1, STUDENT, false, &mut first, &[]).unwrap();
+        assert!(pending.matches_canceller(None), "指定がなければどの予約も");
+        // キャンセルしていない予約は、指定があればどの指定にも当てはまらない
+        assert!(!pending.matches_canceller(Some(BookingCanceller::Student)));
+        assert!(!pending.matches_canceller(Some(BookingCanceller::Headquarters)));
+
+        let by_student = cancelled(pending);
+        assert!(by_student.matches_canceller(None));
+        assert!(by_student.matches_canceller(Some(BookingCanceller::Student)));
+        assert!(!by_student.matches_canceller(Some(BookingCanceller::Coach)));
+        assert!(!by_student.matches_canceller(Some(BookingCanceller::Headquarters)));
+
+        let mut other = slot(11, SlotStatus::Open);
+        let mut by_headquarters = reserve(2, STUDENT, false, &mut other, &[]).unwrap();
+        by_headquarters
+            .cancel_by_headquarters(&mut other, NOW)
+            .unwrap();
+        assert!(by_headquarters.matches_canceller(Some(BookingCanceller::Headquarters)));
+        assert!(!by_headquarters.matches_canceller(Some(BookingCanceller::Student)));
     }
 
     #[test]

@@ -1,0 +1,342 @@
+prd:
+  goal: 本部の担当者として、コーチのお休み（#455）で本部がまとめてキャンセルした予約を、生徒が自分でキャンセルした予約と混ぜずに、 あとから「キャンセルされた予約」の一覧で見返したい。
+  scope:
+    in:
+    - 「キャンセルされた予約」（/headquarters/cancelled-bookings）の絞り込みのフォームに「キャンセルした人」の選択欄を足す
+    - 件数の行と 0 件の文言に、選んだキャンセルした人を出す
+    - 選んだキャンセルした人を URL のクエリ ?cancelled_by= に残す（ほかの絞り込みと同じ扱い）
+    - listCancelledBookings に任意のクエリ cancelled_by を足す（contract_needs）
+    out:
+    - 「記録なし」（cancelled_by が null の予約）だけで絞る選択肢（open_questions の 2）
+    - コーチのお休みの画面の「キャンセルされた予約を見る」から本部で絞った一覧を開くこと（open_questions の 3）
+    - 表の列・並び順・ほかの絞り込みの見た目と振る舞い（今のまま）
+    - お休みの記録（どのお休みでキャンセルしたか）での絞り込み
+  source: 'Issue guccyon/rally#992（本文だけで、受け入れ条件の箇条はない）。前提は #455 の UXSpec（product/specs/ux/issue-455.yaml）と、
+    契約の listCancelledBookings（product/specs/contracts/api/admin-web/openapi.yaml。cancelled_by
+    は応答にはあるがクエリにはない）。 PRD の文書は specs/ にない。'
+  success: 本部が「キャンセルされた予約」で「キャンセルした人」に「本部」を選んで「この条件で見る」を押すと、期間・コーチ・レッスンメニュー・ スポーツの絞り込みと組み合わせたまま、本部がキャンセルした予約だけが出る。選んだ条件は
+    URL に残り、再読み込み・共有でも同じ一覧が開く。
+notes:
+- 案は admin-web（PC の管理画面）なので desktop（1280×900）で描いた
+- 動くプロトタイプの入口は a.html。「キャンセルした人」で「本部」を選んで「この条件で見る」→ a-loading.html →「（モック）読み込みが終わった画面へ進む」→
+  a-filtered.html。「コーチ」を選ぶと a-empty.html へ移る（a.html の中の小さなスクリプトで、通信はしない）
+- 画面の下の「モックの注記」の行はコマへのリンクで、製品の画面には出さない。「本部の画面へ戻る」はモックでは a.html に戻る
+- サンプルの名前・日時は架空（2026-11-06 を今日とし、11/5 に山田 花子のお休みで本部が 3 件をまとめてキャンセルした想定）。日時の書き方は今の
+  formatDateTime の出力のまま
+states:
+- 'hqCancelledBookings 開いたときの読み込み中: 期間の欄は無効で「期間を読み込んでいます…」、一覧は「キャンセルされた予約を読み込んでいます…」、画面の上に
+  bar（frame first）。キャンセルした人の選択欄は固定の選択肢なので使える'
+- 'hqCancelledBookings 中身あり（すべて）: 7 件の混ざった一覧（案 a の代表）'
+- 'hqCancelledBookings 読み直し中: ボタンの spinner と一覧の section_text（frame loading）'
+- 'hqCancelledBookings 本部で絞った中身あり: 件数の行に「キャンセルした人: 本部」と、本部の行だけの表（frame filtered）'
+- 'hqCancelledBookings 空（絞った結果が 0 件）: empty_state（section）で条件の変え方（frame empty）'
+- 'hqCancelledBookings 入力の誤り（期間）: 期間の欄の下に error_text。送らない（frame invalid）'
+- 'hqCancelledBookings 失敗（422・そのほか）: notice（danger）。条件は残す（frame failed）'
+- 'hqCancelledBookings コーチ・レッスンメニューの選択肢を読めない: 今のまま（その選択欄を無効にし、notice で知らせる）。キャンセルした人には影響しない'
+- 'hqCancelledBookings 権限がない（本部以外・未ログイン）: RoleGate が「読み込み中…」のあとログイン画面へ戻す。API の 401・403
+  は失敗の文言を notice で'
+- 'hqCancelledBookings 送信中・確認: 起きない（照会だけで何も変えない画面。確認のダイアログはない）'
+ticket: guccyon/rally#992
+changes:
+- kind: changed
+  after: 'スポーツの右に「キャンセルした人」の選択欄（すべて・生徒・コーチ・本部。既定は「すべて」）を足し、ほかの絞り込みと一緒に「この条件で見る」で API
+    の cancelled_by に渡す。件数の行に「キャンセルした人: 本部」を添え、URL に ?cancelled_by= を残す。0 件の文言にキャンセルした人を入れ、
+    empty_state（section）の形にそろえる。表・並び・ほかの欄は変えない。'
+  before: 絞り込みは期間（開始日・終了日）・コーチ・レッスンメニュー・スポーツの 4 つで、「この条件で見る」で読み直す。表には「キャンセルした人」の 列があるが、それでは絞れない。0
+    件のときは文 1 行（empty_state の形ではない）。
+  screen: hqCancelledBookings
+screens:
+- id: hqCancelledBookings
+  new: false
+  more:
+    copy:
+      count: 'キャンセルした人: 本部・3 件'
+      label: キャンセルした人
+      options:
+      - すべて
+      - 生徒
+      - コーチ
+      - 本部
+      glossary: 生徒（student）・コーチ（coach）・予約（booking）・キャンセル済み。本部は glossary に項目がないので、今の画面と契約の呼び名「本部」を使う
+      empty_filtered: この期間に本部がキャンセルした予約はありません。キャンセルした人を「すべて」にするか、期間を変えて見てください。
+      empty_filtered_with_coach: この期間にこのコーチの枠で本部がキャンセルした予約はありません。キャンセルした人を「すべて」にするか、期間を変えて見てください。
+    analytics: 発火しない（listCancelledBookings は x-analytics-events が空。本部の照会の画面で、events.yaml
+      に本部の行動イベントはない）
+    accessibility:
+    - 選択欄は見えるラベル「キャンセルした人」を label で結ぶ（placeholder にしない）
+    - 件数の行は読み直しが終わったら role=status で読み上げる
+    - 押せる部品の高さは 48px（選択欄・ボタン）。フォーカスは focus_ring 2px
+    - 色だけで伝えるものはない（絞り込みは文字の件数の行で分かる）
+    contract_needs:
+    - add: '任意のクエリ cancelled_by（BookingCanceller: student / coach / headquarters）。あれば
+        cancelled_by がその値の予約だけに絞る（null の予約は出ない）。 期間・coach_id・student_id・lesson_menu_id・sport
+        と組み合わせられ、期間の規則と並べ方は変わらない。BookingCanceller の値でなければ 422 validation_failed。該当がなければ
+        bookings は空の配列（404 にしない）'
+      api: listCancelledBookings（GET /bookings/cancelled）
+      backend: ListCancelledBookingsQuery に cancelled_by を足し、絞る規則は domain の Booking::cancelled_by
+        を使う 1 か所に置く
+    microinteractions:
+    - きっかけ「この条件で見る」→ ルール 期間を確かめてから読む → フィードバック ボタンの spinner と「…を読み込んでいます…」、終わったら件数の行と表
+      → 繰り返し 押すたびに同じ
+  route: /headquarters/cancelled-bookings
+  purpose: 本部が、キャンセルされた予約を期間・コーチ・レッスンメニュー・スポーツ・キャンセルした人で絞って見比べる。今回はとくに、コーチのお休みで 本部がまとめてキャンセルした予約を、生徒のキャンセルと分けて見返す。本部のホームの下にある、照会だけの画面（何も変えない）。
+  audience: 本部（headquarters のロール）。コーチ・生徒は見られない
+  elements:
+  - name: 本部の画面へ戻る
+    note: 今のまま
+    source: 固定
+    content: 「本部の画面へ戻る」
+    required: true
+    component: 文字のリンク（patterns の navigation.admin_web）
+  - name: 欄の見出し
+    note: 今のまま
+    source: 固定
+    content: 「キャンセルされた予約」
+    required: true
+    component: Section（title）
+  - name: 説明の文
+    note: 「・キャンセルした人」を足すだけ。1 行 40em まで
+    source: 固定（31 は MAX_PERIOD_DAYS）
+    content: 「すべてのコーチの枠への予約のうちキャンセルされたものを、キャンセルした日付（日本時間）・コーチ・レッスンメニュー・スポーツ・キャンセルした人で
+      絞って、キャンセルの新しい順に見られます。期間は 31 日まで選べます。」
+    required: true
+    component: 本文（small）
+  - name: 期間
+    note: 今のまま
+    source: 開いたときは API の応答の from・to
+    content: 開始日 〜 終了日
+    required: true
+    component: date_field（date_range）
+  - name: コーチ・レッスンメニュー・スポーツ
+    note: 今のまま
+    source: listCoaches・listLessonMenus・Sport の値
+    content: 「すべて」と各選択肢
+    required: false
+    component: 選択欄（select。design_system_gaps）
+  - name: キャンセルした人（新）
+    note: 既定は「すべて」（cancelled_by を送らない）。スポーツの右、「この条件で見る」の左に置く。API を読まない固定の選択肢なので、読み込み中・
+      読み込みの失敗はない（無効にもしない）。ラベルは表の列の見出しと同じ「キャンセルした人」
+    source: 固定（契約の BookingCanceller の enum。呼び名は admin-web の BOOKING_CANCELLER_LABELS
+      と glossary の student・coach の ja）
+    content: 「すべて」「生徒」「コーチ」「本部」の 4 つ。この順
+    required: false
+    component: 選択欄（select。design_system_gaps）。見た目は text_field の field（高さ 48px・border_strong・md
+      の角丸）を写す
+  - name: この条件で見る
+    note: 今のまま。読み直しのあいだは loading（spinner）
+    source: 固定
+    content: 「この条件で見る」
+    required: true
+    component: button（primary。画面に 1 つ）
+  - name: 件数の行
+    note: 'スポーツの表示（「テニス 3 件」）は今のまま。キャンセルした人は labels の書き方（「ラベル: 値」）で添える。選んだだけで読み直していない値は出さない。
+      0 件のときは件数を出さない（content の numbers。今は「0 件」と出ているのを直す）'
+    source: API の応答の from・to・bookings の件数と、読みにいったときの cancelled_by
+    content: '「2026年10月31日（土） 〜 2026年11月6日（金）・キャンセルした人: 本部・3 件」。キャンセルした人が「すべて」なら「キャンセルした人:
+      …・」を出さない'
+    required: true
+    component: 本文（small）
+  - name: キャンセルされた予約の一覧
+    note: 列・並び（キャンセルの新しい順。API の返した順のまま）は今のまま。本部で絞っても「キャンセルした人」の列は消さない
+    source: listCancelledBookings の bookings
+    content: キャンセルした日時・枠の開始・コーチ・生徒・キャンセルした人
+    required: true
+    component: data_table（text の列だけ）
+  - name: 0 件の表示
+    note: 画面に primary（この条件で見る）があるので section の形で、ボタンは置かない
+    source: 読みにいったときの条件
+    content: 「この期間に{条件}でキャンセルされた予約はありません。」に、キャンセルした人で絞っていれば「この期間に{条件}{人}がキャンセルした予約はありません。
+      キャンセルした人を「すべて」にするか、期間を変えて見てください。」
+    required: false
+    component: empty_state（section。文だけ）
+  - name: 読めなかったときの知らせ
+    note: 自動で消さない。入れた条件は消さない
+    source: listCancelledBookings の応答
+    content: 422 の文言（behaviors）か、サーバーの文言
+    required: false
+    component: notice（inline・danger）
+  behaviors:
+  - action: 選ぶ
+    result: 選択欄の値だけが変わる。一覧はまだ読み直さない（ほかの絞り込みと同じく「この条件で見る」で読み直す）
+    target: キャンセルした人
+    condition: いつでも
+  - action: 押す
+    result: listCancelledBookings を from・to・coach_id・lesson_menu_id・sport・cancelled_by（「すべて」なら付けない）で読み直す。URL
+      を ?cancelled_by=headquarters などに置き換える（router.replace。履歴は積まない。「すべて」はクエリに出さない）。読み直しのあいだ一覧を
+      「キャンセルされた予約を読み込んでいます…」にし、ボタンを loading にする
+    target: この条件で見る
+    condition: 期間が正しい
+  - action: 続けて押す（二重押し・条件を変えて押し直す）
+    result: 押せない（loading のあいだ）。条件を変えて押し直せたときも、今の latestRequest の番号で、遅れて返った前の条件の結果では上書きしない（今の仕組みのまま）
+    target: この条件で見る
+    condition: 前の読み直しが終わっていない
+  - action: 押す
+    result: 送らない。期間の欄の下に date_field の errors の文言（「終了日が開始日より前です。…」）。キャンセルした人の選択は消さない
+    target: この条件で見る
+    condition: 期間が空・終了日が開始日より前・31 日を超える
+  - action: 読み直しが返る
+    result: notice（danger）「期間・コーチ・レッスンメニュー・スポーツ・キャンセルした人の指定が正しくありません。期間は 1〜31 日で、終了日は開始日と
+      同じかそれより後の日付にしてください。コーチ・レッスンメニュー・スポーツ・キャンセルした人は一覧から選び直してください。」（今の VALIDATION_FAILED
+      に キャンセルした人を足す）
+    target: 一覧
+    condition: 422 validation_failed（送る前の確かめをすり抜けた）
+  - action: 読み直しが返る
+    result: notice（danger）にサーバーの文言（errorMessage.ts）をそのまま出す。入れた条件は残す
+    target: 一覧
+    condition: そのほかの失敗（通信・500・401・403）
+  - action: 読み直しが返る
+    result: 表を出さず empty_state（section）。キャンセルした人で絞っていれば、その人の語を入れた文言（elements の 0 件の表示）
+    target: 一覧
+    condition: 0 件
+  - action: 開く
+    result: 値が student / coach / headquarters ならその選択で開いて読む（API の既定の期間）。それ以外の値（手で書き換えた
+      URL）は「すべて」で開き、 cancelled_by を付けずに読む（sport と同じ扱い。422 にしない）
+    target: 画面
+    condition: URL に ?cancelled_by= がある
+  - action: 「すべて」に戻して「この条件で見る」
+    result: cancelled_by を付けずに読み直し、URL から ?cancelled_by= を消す。照会だけの画面なので、確認のダイアログは出さない
+    target: 取り消し
+    condition: いつでも
+  transitions:
+    exits:
+    - to: /headquarters
+      action: 「本部の画面へ戻る」
+    - to: 同じ画面（URL のクエリを置き換え。履歴は積まない）
+      action: 「この条件で見る」
+    - to: RoleGate がログイン画面へ戻す
+      action: 本部以外・未ログインで開いた
+    entries:
+    - data: なし（期間は API の既定の今日までの 7 日、絞り込みはすべて「すべて」）
+      from: 本部のホームの「キャンセルされた予約」
+      condition: 本部でログインしている
+    - data: クエリ coach_id・lesson_menu_id・sport・cancelled_by（新）。cancelled_by が student
+        / coach / headquarters 以外なら「すべて」で開く
+      from: URL（再読み込み・共有・コーチのお休みの画面の「キャンセルされた予約を見る」）
+      condition: 本部でログインしている
+summary: 本部の「キャンセルされた予約」の絞り込みに「キャンセルした人」（すべて・生徒・コーチ・本部）の選択欄を 1 つ足し、 コーチのお休みで本部がまとめてキャンセルした予約だけを一覧で見返せるようにする。
+judgments:
+- kind: scope
+  note: 既存の画面の絞り込みに欄を 1 つ足す小さな追加なので 1 案。とらなかった案は rationale.rejected に書いた
+  question: 体験の案をいくつ作るか
+- kind: ui
+  note: すぐ読み直さず、ほかの絞り込みと同じく「この条件で見る」で読む（date_field の behavior の例外にそろえる）
+  question: キャンセルした人を選んだらすぐ読み直すか
+- kind: system_interface
+  note: API の listCancelledBookings に任意のクエリ cancelled_by を足す（contract_needs）。ほかの絞り込みと同じ扱い
+  question: 画面の中で絞るか、API で絞るか
+- kind: error_handling
+  note: sport と同じく「すべて」で開き、422 にしない。API に送って 422 になったときは VALIDATION_FAILED の文言にキャンセルした人を足す
+  question: URL の ?cancelled_by= が正しくない値のとき
+- kind: ui
+  note: 今は文 1 行だが、デザインシステムの empty_state（section）にそろえ、条件の変え方を書く。件数の行には「0 件」と出さない
+  question: 0 件の表示を empty_state にするか
+- kind: aesthetic
+  note: デザインシステムに select がないので text_field の field の形を写し、design_system_gaps に出した
+  question: 選択欄の見た目
+prototype: true
+rationale:
+  why: 要求は「キャンセルした人で絞りたい」で、今の画面はすでに期間・コーチ・レッスンメニュー・スポーツの絞り込みを「この条件で見る」でまとめて読む形に なっている。同じ並びに選択欄を
+    1 つ足せば、お休みのコーチ（コーチ）とお休みの期間（期間）と本部（キャンセルした人）を組み合わせて、お休みで まとめてキャンセルした予約をちょうど引ける。URL
+    にも残るので、あとから同じ一覧を開き直せる。既存の画面への小さな追加なので体験の案は 1 つにした。
+  rejected:
+  - idea: 一覧の上に「すべて・生徒・コーチ・本部」の絞り込みのチップを置き、押したらすぐ読み直す
+    reason: チップの部品がデザインシステムにない（button の not_for で「未定義」）。ほかの絞り込みは「この条件で見る」で読むので、1 つだけすぐ読み直すと期間の入れかけが送られるなど振る舞いが混ざる
+  - idea: 表の「キャンセルした人」の列の見出しで絞る（列のフィルター）
+    reason: data_table に列で絞る振る舞いがなく、ほかの条件は表の外にあるので、絞り込みの置き場が 2 か所に分かれる
+  - idea: 選択欄を使わず「本部がキャンセルした予約だけ見る」のチェックを 1 つ足す
+    reason: 要求の「生徒・コーチ・本部で絞る」のうち本部しか満たさず、生徒のキャンセルだけを見る使い方（キャンセルを繰り返す生徒の相談など）に広げられない
+  - idea: 画面の中で（API を変えずに）読んだ一覧を cancelled_by で絞る
+    reason: 件数の行・0 件の文言と API の応答がずれ、patterns の list の「API が返した順と中身のまま出す」に反する。ほかの絞り込みと同じく
+      API の cancelled_by で絞る
+  requirement_map:
+  - how: 絞り込みのフォームの「キャンセルした人」の選択欄（すべて・生徒・コーチ・本部）と、API の cancelled_by
+    requirement: キャンセルした人（生徒・コーチ・本部）で絞れる
+  - how: 「本部」を選び、必要ならコーチ・期間と組み合わせて「この条件で見る」（frame filtered）
+    requirement: コーチのお休みで本部がまとめてキャンセルした予約だけを見返せる
+  - how: '本部で絞ると cancelled_by が headquarters の行だけが出る。件数の行に「キャンセルした人: 本部」と出て、絞っていることが分かる'
+    requirement: 生徒が自分でキャンセルしたものと混ざらない
+  - how: 選んだキャンセルした人を URL の ?cancelled_by= に残し、再読み込み・共有で同じ絞り込みで開く
+    requirement: あとから見返せる
+  - how: ほかの欄・表・並び・読み直しの手順は変えず、組み合わせて送る
+    requirement: 今の期間・コーチ・メニュー・スポーツの絞り込みはそのまま
+user_flow:
+- to: hqCancelledBookings（既定の期間・絞り込みなし）
+  from: 本部のホーム（/headquarters）
+  action: 「キャンセルされた予約」のリンクを押す
+- to: hqCancelledBookings（本部がキャンセルした予約だけ。URL は ?cancelled_by=headquarters に置き換わる）
+  from: hqCancelledBookings
+  action: 「キャンセルした人」で「本部」を選び、「この条件で見る」を押す
+- to: hqCancelledBookings（そのコーチの枠で本部がキャンセルした予約）
+  from: hqCancelledBookings
+  action: 必要ならコーチ・期間も選んで「この条件で見る」を押す（お休みのコーチと期間に合わせる）
+- to: hqCancelledBookings（「キャンセルした人」が「本部」で選ばれた状態で読む）
+  from: 共有された URL・ブラウザーの再読み込み（?cancelled_by=headquarters 付き）
+  action: 開く
+- to: 本部のホーム（/headquarters）
+  from: hqCancelledBookings
+  action: 「本部の画面へ戻る」を押す
+brand_impact: false
+open_questions:
+- note: 今コーチは予約をキャンセルできない（契約の説明では、キャンセルできるのは生徒と本部だけ）ので、「コーチ」を選ぶといつも 0 件になる。外すなら API
+    の enum とずれる
+  question: 選択肢に「コーチ」を入れるか
+  tentative: 入れる（契約の BookingCanceller の enum が student・coach・headquarters なので、そろえておく）
+- note: 契約では記録を残し始める前の生徒のキャンセルも student なので、null はほぼ起きない想定。要るなら API に none のような値が要る
+  question: 「記録なし」（cancelled_by が null の予約）で絞る選択肢を入れるか
+  tentative: 入れない。生徒・コーチ・本部を選ぶと記録なしの予約は出ず、「すべて」でだけ出る
+- question: コーチのお休みの画面（hqCoachLeave）の「キャンセルされた予約を見る」で、cancelled_by=headquarters も付けて開くか
+  tentative: 今回は入れない（変える画面を 1 つにする）。入れれば、お休みの直後に本部のキャンセルだけの一覧へ 1 手で行ける
+- question: 選択欄の置き場所（スポーツの右）
+  tentative: スポーツの右・ボタンの左。PC の幅では 2 行目に回る。期間の次（コーチの前）に置く案もあるが、今の並びを動かさないほうを選んだ
+design_system_gaps:
+- why: text_field・date_field の not_for が「決まった選択肢 → 選択欄（select）」と指すが、components.yaml
+    に定義がない。admin-web の絞り込み （コーチ・レッスンメニュー・スポーツ・今回のキャンセルした人）は素の select で、高さ・余白が画面ごとにずれている
+  scope: この画面のタスクとは別に、デザインシステムに部品を足すタスクを切る（今回の画面は写した形で描く）
+  proposal: text_field の field と同じ形（高さ 48px・border_strong・md の角丸・focus_ring 2px・disabled
+    は surface）で、label・helper・error_text を持つ部品として足す
+  component: select（選択欄）
+design_system_constraints:
+- 画面の型は patterns の list と search_filter、admin-web の common_layout（Section・wide 1280px・左右
+  24px）に従った
+- 期間は date_field（date_range）の文言と誤りの型、件数と表は data_table（text の列・API の返した順・wrapper だけ横に動く）、0
+  件は empty_state の section、失敗は notice の inline（danger）、ボタンは button の primary を 1 つ
+- 色・余白・角丸・書体は tokens.yaml の値だけ（モックの out/rally.css は tokens と components.yaml の preview_css
+  を写したもの）。admin-web の headline 24px
+- 選択欄（select）はデザインシステムに部品がないので、text_field の field の形（高さ 48px・border_strong 1px・md
+  の角丸・左右 16px）を写した。今の実装の select（px-2 py-1・rounded-md）は 48px に足りない
+- patterns の search_filter は「選んだらすぐ読み直す」だが、この画面は期間と一緒に「この条件で見る」で読み直す（date_field の
+  behavior の例外）。新しい欄も同じにそろえた
+- '文言は content.yaml（ラベルと値は「キャンセルした人: 本部」、0 件は「0 件」と出さず文に、admin-web は感嘆符なし）と glossary
+  の語'
+variant:
+  id: a
+  axis: flow
+  name: 絞り込みの欄に「キャンセルした人」の選択欄を 1 つ足す
+  frames:
+  - id: first
+    state: loading
+    screen: hqCancelledBookings
+    caption: 本部のホームから開いた直後（期間を API の既定で読んでいるあいだ）
+  - id: loading
+    state: submitting
+    screen: hqCancelledBookings
+    caption: 「キャンセルした人」で「本部」を選び、「この条件で見る」を押した直後
+  - id: filtered
+    state: loaded
+    screen: hqCancelledBookings
+    caption: 読み直しが終わった後（本部がキャンセルした 3 件だけ）
+  - id: empty
+    state: empty
+    screen: hqCancelledBookings
+    caption: 「コーチ」で絞って「この条件で見る」を押し、0 件だった後
+  - id: invalid
+    state: validation_error
+    screen: hqCancelledBookings
+    caption: 終了日を開始日より前にして「この条件で見る」を押した後（送らない）
+  - id: failed
+    state: error
+    screen: hqCancelledBookings
+    caption: 読み直しが 422 で断られた後
+  tradeoff: 今の 4 つの絞り込みと同じ置き方・同じ「この条件で見る」で覚え直しがなく、ほかの条件と組み合わせられる代わりに、本部の分を見るのに 選んでから押す
+    2 手がかかる
+  viewport: desktop

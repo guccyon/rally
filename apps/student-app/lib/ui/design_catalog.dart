@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import 'components/booking_card.dart';
 import 'components/confirm_dialog.dart';
 import 'components/empty_state.dart';
+import 'components/join_bar.dart';
+import 'components/level_meter.dart';
 import 'components/list_row.dart';
+import 'components/media_toggle.dart';
 import 'components/notice.dart';
 import 'components/rally_button.dart';
+import 'components/rally_camera_preview.dart';
 import 'components/rally_card.dart';
 import 'components/score_panel.dart';
 import 'components/section_loading.dart';
@@ -37,6 +41,8 @@ class CatalogEntry {
 const notInStudentCatalog = <String, String>{
   'date_field':
       'components.yaml の not_for に student-app では今は使わないとある（admin-web の一覧の絞り込み）',
+  'select':
+      'components.yaml の not_for に student-app では今は使わないとある（絞り込みは patterns の search_filter のチップ）',
   'data_table':
       'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
   'notice / toast':
@@ -116,6 +122,67 @@ Widget _textField(String variant, String state) => TextFormField(
     errorText: state == 'error' ? '表示名は 1〜20 文字で入れてください。' : null,
   ),
 );
+
+/// [MediaToggleKind] → components.yaml の media_toggle.variants のキー
+const _mediaToggleVariants = {
+  MediaToggleKind.mic: 'mic',
+  MediaToggleKind.camera: 'camera',
+  MediaToggleKind.speakerTest: 'speaker_test',
+};
+
+/// 入・切の切り替えの見本。入と切の 2 つを幅を等分して並べる
+Widget _mediaTogglePair(MediaToggleKind kind, String state) => Row(
+  spacing: RallySpacing.sm,
+  children: [
+    for (final on in const [true, false])
+      Expanded(
+        child: MediaToggle(
+          kind: kind,
+          on: on,
+          onToggle: _noop,
+          loading: state == 'loading',
+          disabled: state == 'disabled',
+        ),
+      ),
+  ],
+);
+
+/// カメラの映りの枠の見本（components.yaml の camera_preview.states → 枠の状態と見本の名前）。
+/// 映っている（default）は、カタログではカメラを開かないので地の色だけ
+const _cameraPreviewExamples = [
+  ('default', CameraPreviewState.live, '映像なし'),
+  ('loading', CameraPreviewState.waiting, null),
+  ('disabled', CameraPreviewState.off, null),
+  ('error', CameraPreviewState.denied, '使えない'),
+  ('error', CameraPreviewState.none, 'ない'),
+];
+
+/// 入室の帯の見本（components.yaml の join_bar.states → 開始までの残り・読み込み中・失敗）。
+/// 帯は画面の下に固定するので、カタログでは枠の中に置く
+const _joinBarExamples = <String, JoinBar>{
+  'disabled': JoinBar(
+    startTime: '12:00',
+    remaining: Duration(minutes: 2, seconds: 48),
+    onJoin: _noop,
+  ),
+  'default': JoinBar(
+    startTime: '12:00',
+    remaining: Duration.zero,
+    onJoin: _noop,
+  ),
+  'loading': JoinBar(
+    startTime: '12:00',
+    remaining: Duration.zero,
+    loading: true,
+    onJoin: _noop,
+  ),
+  'error': JoinBar(
+    startTime: '12:00',
+    remaining: Duration.zero,
+    error: 'この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。',
+    onJoin: _noop,
+  ),
+};
 
 /// 部品 × 種類 × 状態の見本。components.yaml に部品や種類を足したら、ここにも足す。
 final designCatalog = <CatalogEntry>[
@@ -347,4 +414,79 @@ final designCatalog = <CatalogEntry>[
       ),
     ),
   ),
+  for (final kind in MediaToggleKind.values)
+    for (final state in const ['default', 'disabled', 'loading'])
+      CatalogEntry(
+        'media_toggle',
+        (_) => _mediaTogglePair(kind, state),
+        variant: _mediaToggleVariants[kind],
+        state: state,
+      ),
+  CatalogEntry(
+    'media_toggle',
+    (_) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: RallySpacing.sm,
+      children: [
+        const Notice(
+          message: 'マイクを切り替えられませんでした。もう一度押してください。',
+          status: RallyStatus.danger,
+        ),
+        _mediaTogglePair(MediaToggleKind.mic, 'default'),
+      ],
+    ),
+    variant: 'mic',
+    state: 'error',
+  ),
+  for (final (state, preview, example) in _cameraPreviewExamples)
+    CatalogEntry(
+      'camera_preview',
+      (_) => RallyCameraPreview(
+        state: preview,
+        caption: preview == CameraPreviewState.live
+            ? '映像はこの端末の中だけで映し、送りも残しもしません'
+            : null,
+      ),
+      state: state,
+      example: example,
+    ),
+  CatalogEntry(
+    'level_meter',
+    (_) => const LevelMeter(level: 6, label: '音が届いています'),
+    state: 'default',
+  ),
+  CatalogEntry(
+    'level_meter',
+    (_) => const LevelMeter(level: 0, label: 'マイクの許可を待っています', stopped: true),
+    state: 'loading',
+  ),
+  CatalogEntry(
+    'level_meter',
+    (_) => const LevelMeter(level: 0, label: 'マイクを切っています', stopped: true),
+    state: 'disabled',
+  ),
+  CatalogEntry(
+    'level_meter',
+    (_) => const LevelMeter(
+      level: 0,
+      label: 'マイクが見つかりません。なくても、開始時刻から入室できます。',
+      stopped: true,
+    ),
+    state: 'error',
+  ),
+  for (final MapEntry(key: state, value: bar) in _joinBarExamples.entries)
+    CatalogEntry(
+      'join_bar',
+      (_) => DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: RallyColors.border),
+          borderRadius: BorderRadius.circular(RallyRadius.md),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(top: RallySpacing.md),
+          child: bar,
+        ),
+      ),
+      state: state,
+    ),
 ];

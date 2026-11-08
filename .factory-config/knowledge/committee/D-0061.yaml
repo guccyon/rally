@@ -1,0 +1,78 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0061
+pr: https://github.com/guccyon/rally/pull/1161
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に 1 件足しただけで statement・scope・evidence・confidence
+    は変えていないので、過去の議決や README の決まり、specs/ の規範と矛盾しません。
+  - '足した lint は D-0039 の enforcement の 2 つめの案（issue 1018 の solution を wired: true
+    にするには protection.mjs を呼ぶ schedule のジョブを wired_by に要る）と中身が合っていて、decided_by: committee:D-0039
+    は正しいです。'
+  - 既存の issue 1018 の ci_check は protection.mjs で必須のチェックを照らす中身で、今回の lint はその solution
+    を wired にする条件を README（D-0021 の wired_by の照合）の上に強めるものなので、重複も衝突もありません。
+  - D-0039 の 1 つめの案（sendback-protection.yml を schedule と workflow_dispatch で走らせる ci_check）はまだ
+    K-0004 に入っていないので、それを入れる変更セットで今回の lint が通ることも確かめてください。
+  - REQUIRED_SCHEDULE は今 K-0004 の issue 1018 だけを持つので、D-0044 が K-0001 の pr-body-check
+    の protection.mjs に出した push と schedule の案を入れるときに、この表へ足すかを決めると扱いが揃います。
+  - 'wired: false・verified: false で check.py の写しもまだと書いているので confidence は hypothesis
+    のままが妥当ですが、D-0036・D-0037・D-0039 で次に回された K-0004 の片づけは今回も手つかずなので早めにまとめてください。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した solution の decided_by の committee:D-0039 は、knowledge/committee/D-0039.yaml
+    の 2 つめの enforcement（lint、issue 1018 の solution を wired: true にするときは wired_by に
+    protection.mjs を呼ぶ schedule のジョブを必須にする案）と中身が合っていて、一次記録に辿れます。'
+  - what に書いた REQUIRED_SCHEDULE と check_schedule() の対象は、K-0004 の既存の issue 1018 の solution（tools/sendback-check/protection.mjs）と一致しています。
+  - 'issue 1018 の solution が今 wired: false なのでこの検査は何も落とさず、check.py も .github/workflows/
+    に写しておらず効き目を確かめていないと書き、wired と verified をどちらも false にしているので、効き目を言い過ぎていません。'
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の記録で落ちる・通る確認もまだないので、確かさは
+    hypothesis のままが妥当です。
+  - test_check.py で確かめた場合は手元の試験であり事例記録ではないので、verified_by に使えるのは建設者の配線の後に cases/ に残す本物の記録だけだと覚えておいてください。
+  - 差分にあるのは issue と議決の id、ツールのパス、関数の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0039 の lint の案を issue 1088 として 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、担保の観点では採ってよいです。
+  - issue 1018 を手で走らせた記録だけで wired にできないようにする線は、wired_by と .github/workflows/ の字面で照らせるのではっきりしていて、作る費用も小さく、決定論で担保する対象として向いています。
+  - 'ただし if: を字面で見るだけなので、式を組み合わせた条件や、ジョブが needs で飛ばされる場合はすり抜けうるため、通る形を許可リストで絞る方が確かです。'
+  - schedule のワークフローは、置いてあっても GitHub が長く動きのないリポジトリで止めたり、落ちても誰にも届かなかったりするので、置いてあることだけでなく最近走って通ったことを照らさないと、外したときの痛さが残ります。
+  - 'check.py 自体がまだ .github/workflows/ に写されておらず PR ごとに走っていないと本文が正直に書き、wired: false・verified:
+    false としているので、確かさは hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0039 の lint の案の記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - 検査は REQUIRED_SCHEDULE で K-0004 の issue 1018 と protection.mjs の組だけに絞っており、ほかの知見や
+    wired でない解決策は見ないとテストで確かめているので、巻き込みの反例は見当たりません。
+  - 反例として、schedule のワークフローは GitHub の UI で無効にされたり、公開リポジトリで 60 日動きがないと自動で止まったりしても字面は変わらないので、この
+    lint では捕まりません。
+  - '手順やジョブに continue-on-error: true があったり、branch protection を読める権限のトークンを渡していなかったりすると、走っても落ちたことが伝わらないので、次の変更セットで
+    test_check.py にその場合を足すことを勧めます。'
+  - D-0039 の ci_check の案（落ちたら Issue を開く sendback-protection.yml）とこの lint は対になっているので、片方だけが
+    wired になる取り違えがないように what で互いを辿れるように書くことを勧めます。
+  - '今は issue 1018 の解決策が wired: false でこの検査は何も落とさず、check.py も未配線と本文自身が書いて wired: false・verified:
+    false としているので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: issue 1018 の schedule のワークフロー（sendback-protection.yml）が通るたびに最後に通った時刻を記録（Issue
+    のコメントか成果物）し、別の検査が最後に通ってから 2 日より長くたっていれば落ちて Issue を開くようにして、schedule が止まったり落ち続けたりしても気づけるようにする。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: 'tools/knowledge-enforcement-check/check.py の check_schedule() で、ジョブと手順の
+    if: は無いか、github.event_name == ''schedule'' を含む決まった形だけを許し、それ以外の式（|| や needs による飛ばしを含む）は落とす許可リスト方式にして、test_check.py
+    にその場合を足す。'

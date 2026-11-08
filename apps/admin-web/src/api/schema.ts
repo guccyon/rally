@@ -212,6 +212,11 @@ export interface paths {
          *       `lesson_menu_id` と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりすべての競技。検証と扱いは
          *       `listBookings` の `sport` と同じで、`Sport` の値でなければ 422 `validation_failed`。期間にキャンセルがない競技は 404 にせず
          *       `bookings` が空の配列
+         *     - 任意の `cancelled_by` で、キャンセルした人（`BookingCanceller`）がその値のキャンセルされた予約だけに絞れる（コーチの
+         *       お休みで本部がまとめてキャンセルした予約を、生徒が自分でキャンセルした予約と分けて見返す）。キャンセルした人の記録が
+         *       ない予約（`cancelled_by` が null）は、`cancelled_by` を付ければ出ない。期間・`coach_id`・`student_id`・`lesson_menu_id`・
+         *       `sport` と組み合わせられ、期間の規則と並べ方は変わらない。省けば今までどおりキャンセルした人を問わない。
+         *       `BookingCanceller` の値でなければ 422 `validation_failed`。該当がなければ 404 にせず `bookings` が空の配列
          *     - 並べ方: キャンセルした時刻（`cancelled_at`）の新しい順。同じ時刻は `booking_id` の順。ページングはしない。
          *       キャンセルされた予約がなければ `bookings` は空の配列（404 にはしない）
          *     - 各項目には予約の ID・予約した生徒（`student_id` と表示名 `student_display_name`）・予約された枠のコーチ（`coach_id` と
@@ -834,9 +839,10 @@ export interface paths {
          *     - 予約のキャンセル: キャンセルした人は本部（`listCancelledBookings` の `cancelled_by` が `headquarters`）。生徒の都合で
          *       ないので、キャンセル規定によらず回数を消費しない（境界間イベント `BookingCancelled` の `consumes_quota` は false。
          *       判定は scheduling の 1 か所）。確定で使ったビデオ通話の暦月の枠は戻る
-         *     - お知らせ: 予約した生徒に予約ごとに 1 件（student-app の `listMyNotifications` に、種類 `booking_confirmed`（予約の通知）で
-         *       題「コーチのお休みで予約をキャンセルしました」と、コーチの表示名・予約の日時・枠を使わないこと・ほかの枠やコーチを
-         *       探せることの本文、`note` があれば改行して後ろに付けたもの）。プッシュ通知は生徒の受け取り設定の `booking_confirmed` に従う
+         *     - お知らせ: 予約した生徒に予約ごとに 1 件（student-app の `listMyNotifications` に、種類 `booking_cancelled_by_headquarters`
+         *       で題「コーチのお休みで予約をキャンセルしました」と、コーチの表示名・予約の日時・枠を使わないこと・ほかの枠やコーチを
+         *       探せることの本文、`note` があれば改行して後ろに付けたもの）。プッシュ通知は生徒の受け取り設定の
+         *       `booking_cancelled_by_headquarters` に従う
          *     - 枠の取り下げ: 期間に始まる終了でない枠をすべて終了（`closed`）にする（予約のあった枠も、キャンセルのあとに）。生徒の
          *       検索に出なくなる。期間の外の予約と枠はそのまま。お休みのあとにコーチが期間に公開した枠は取り下げない
          *     - `note` は生徒への一言（0〜200 文字。文字数は Unicode のコードポイントで数え、書いたとおりに送る）。省けば空文字列。
@@ -4187,6 +4193,12 @@ export interface operations {
                  *     省けばすべての競技。`Sport` の値でなければ 422 `validation_failed`
                  */
                 sport?: components["schemas"]["Sport"];
+                /**
+                 * @description あればこの人（`BookingCanceller`）がキャンセルした予約だけに絞る。省けばキャンセルした人を問わない。
+                 *     キャンセルした人の記録がない予約（`cancelled_by` が null）は、付ければ出ない。`BookingCanceller` の値でなければ
+                 *     422 `validation_failed`。該当がなければ 404 にせず空の一覧を返す（絞り込みの結果が 0 件）
+                 */
+                cancelled_by?: components["schemas"]["BookingCanceller"];
             };
             header?: never;
             path?: never;

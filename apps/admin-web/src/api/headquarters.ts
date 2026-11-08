@@ -196,6 +196,7 @@ export function headquartersApi(client: ApiClient) {
       coach_id?: string;
       lesson_menu_id?: string;
       sport?: Schemas["Sport"];
+      cancelled_by?: Schemas["BookingCanceller"];
     }) =>
       call(() => client.GET("/bookings/cancelled", { params: { query: filter } })),
     getBooking: (bookingId: string) =>

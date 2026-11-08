@@ -30,6 +30,9 @@ services:
       APP_VERSION: ${APP_VERSION:-unknown}
       ANALYTICS_APP_VERSION: ${APP_VERSION:-}
       ANALYTICS_RELEASE_ID: ${RELEASE_ID:-}
+      # サーバーの時計を実際より進める秒数。触れる環境で QA が「翌日」をまたぐ流れを確かめるときだけ、工場の shipper が渡す
+      # （.factory-config/ship.yaml の touch.clock_env。factory-engine の ADR 0028 の scenario_time）。本番には渡さないので 0 のまま
+      CLOCK_OFFSET_SECONDS: ${CLOCK_OFFSET_SECONDS:-0}
     depends_on:
       postgres: { condition: service_healthy }
     ports:

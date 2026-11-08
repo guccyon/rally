@@ -11,9 +11,9 @@ components:
     ja: ボタン
     lifecycle: trial
     use: 画面の操作を 1 つ実行する（予約する・送る・保存する）
-    not_for: 画面の移動だけ → list_row か文字のリンク。並ぶ選択肢 → チップ（未定義）
+    not_for: 画面の移動だけ → list_row か文字のリンク。並ぶ選択肢 → チップ（未定義）。マイク・カメラの入と切 → media_toggle（0.7.0）
     parts: [container, label, leading_icon（任意）, spinner]
-    variants:   # 0.5.0 で radius を pill から md に、secondary を線から塗りにした
+    variants:
       primary:   {container: primary, label: on_primary, radius: md, note: 1 画面に 1 つ}
       secondary: {container: primary_container, border: なし, label: text, radius: md}
       on_dark:   {container: secondary, label: on_secondary, radius: md, note: inverse_surface の面の中だけ}
@@ -62,7 +62,7 @@ components:
     ja: 入力欄
     lifecycle: trial
     use: 文字を 1 行か数行入れる（表示名・チャットの本文・評価の一言・自己紹介）
-    not_for: 決まった選択肢 → 選択欄（select）かラジオ。オンとオフ → スイッチ。日付と期間 → date_field（0.4.0）
+    not_for: 決まった選択肢 → 選択欄（select。0.6.0）かラジオ。オンとオフ → スイッチ。日付と期間 → date_field（0.4.0）
     parts: [label, field, helper, counter（上限のある欄）, error_text]
     variants: {single_line: 高さ 48px, multi_line: 3 行から伸びる}
     style: {field: background, border: border_strong 1px, radius: md, label: small 700 text, helper: small text_muted}
@@ -132,10 +132,68 @@ components:
         html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf"><label class="type-small">終了日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div></div><div class="help type-small"><span>31 日まで選べます</span></div></fieldset></div>'
       - label: "誤り（終わりが始まりより前）"
         html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf err"><label class="type-small">終了日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div></div><div class="etext type-small" role="alert"><i class="ic">!</i>終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。</div></fieldset></div>'
-      - label: "誤り（31 日を超える）"
-        html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf err"><label class="type-small">開始日</label><div class="field type-body">2026/10/01<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf err"><label class="type-small">終了日</label><div class="field type-body">2026/11/30<i class="cal"></i></div></div></div><div class="etext type-small" role="alert"><i class="ic">!</i>選んだ期間は 61 日です。期間は 31 日までにしてください。</div></fieldset></div>'
       - label: "読み込み中（既定の期間を読む）"
         html: '<div class="pv df"><fieldset class="dr" aria-busy="true"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf off"><label class="type-small">開始日</label><div class="field type-body"><i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf off"><label class="type-small">終了日</label><div class="field type-body"><i class="cal"></i></div></div></div><div class="help type-small" role="status"><span>期間を読み込んでいます…</span></div></fieldset></div>'
+
+  - id: select
+    ja: 選択欄
+    lifecycle: trial   # 0.6.0 で足した（#992）
+    use: 決まった選択肢から 1 つを選ぶ。admin-web の絞り込み（コーチ・レッスンメニュー・スポーツ・キャンセルした人）、本部からのお知らせの対象、コーチのスロットの公開とレッスンメニューの欄（スポーツ・レッスンメニュー・定員）
+    not_for: >-
+      自由な文字 → text_field。日付と期間 → date_field。いくつも選ぶ → checkbox（requests で保留）。
+      選択肢が 2〜3 個で並べて見せたい → ラジオかチップ（未定義）。student-app では今は使わない（絞り込みは patterns の search_filter のチップ）
+    parts: [label, field（素の select 要素）, value, chevron, helper, error_text]
+    style:
+      field: text_field の field と同じ（background・border_strong 1px・radius md・高さ 48px 以上・左 md 16px）。右は chevron の分 xl 40px
+      value: body text。1 行で、収まらないときは末尾を「…」で切る（選んだ値の全文は端末の選び方の中で読める）
+      chevron: expand_more の 20px（iconography の small）。色は text、右 md 16px。押せる場所は field 全体
+      width: 中身で決め、min_width 10em・max_width 20em。form の 1 段では幅いっぱい
+      label: small 700 text（field の上、あいだ xs 4px）
+      helper: small text_muted（field の下、あいだ xs 4px）
+    options:
+      first: 絞り込みは「すべて」（条件なし）。お知らせの対象は「生徒全員（ゴルフの生徒も含む）」。選ぶのが必須の欄は「選んでください」（値は空）
+      order: 先頭の行のあとは API が返した順のまま（スポーツ・キャンセルした人は契約の値の順）
+      labels: 呼び名は glossary と labels.ts の語（BOOKING_CANCELLER_LABELS の「生徒」「コーチ」「本部」など）
+      unknown_value: 選んだ値が一覧にないとき、その値の行を「（一覧にないコーチ）」のように残す。一覧を読んでいるあいだは「読み込み中…」
+    states:
+      default: border_strong 1px
+      pressed: 押すと端末の選び方（ブラウザのリスト）が開く。開いているあいだは focus と同じ見た目。リストの見た目は端末に任せ、自前で描かない
+      focus: focus_ring 2px
+      disabled: 面 surface・文字と chevron は text_muted。送っているあいだだけ（権限がなければ欄ごと出さない）。押せない理由を helper に書く
+      loading: 選択肢を API から読むあいだ。disabled の見た目と aria-busy、値は先頭の行のまま、helper に「〜の一覧を読み込んでいます…」（role=status）
+      failed: 選択肢を読めなかったとき。disabled の見た目のまま値は先頭の行、field の下に error_text で「何が起きたか」と「どうすればよいか」。輪郭は変えない（入れ方の誤りではない）。ほかの欄は使えるまま
+      error: 必須の欄を選んでいないとき（送るときに確かめる）。輪郭 danger.fg 2px と、下に error_text
+    errors:
+      load_failed: {text: "{名前}の一覧を読めませんでした。画面を更新すると、もう一度読み込めます。", note: 画面の上の notice に同じ文を重ねない}
+      not_selected: {text: "{名前}が選ばれていません。一覧から 1 つ選んでください。"}
+    behavior: >-
+      絞り込みでは選んだらすぐ一覧を読み直す（patterns の search_filter）。date_field と同じ絞り込みにあるときは、ほかの欄とそろえて「この条件で見る」で読み直す。
+      端末の select 要素をそのまま使う（キーボードと読み上げが端末のとおりに動く）。誤りは欄を変えたら消す
+    wording: ラベルは名詞（「コーチ」「レッスンメニュー」「スポーツ」「キャンセルした人」「対象」）。「選択してください」「--」を使わない
+    a11y: >-
+      label を field に結び付ける（text_field の must が効く。placeholder で代えない）。helper と error_text を aria-describedby で結び、error のときは aria-invalid。
+      loading は aria-busy、chevron は aria-hidden。押せる高さは 48px 以上
+    rules:
+      - level: should
+        statement: 決まった選択肢の欄は select の部品で描き、画面に素の select 要素を直に書かない
+        why: 欄の高さと余白が画面ごとにずれると、本部が絞り込みの並びを見比べにくい（#992。admin-web の 18 の部品が素の select だった）
+        check: deterministic
+      - level: should
+        statement: 選択肢を読めないときは、その欄の下に読めなかったことと読み直し方を書き、ほかの欄は使えるままにする
+        why: 1 つの一覧が読めないだけで絞り込み全体が止まると、本部がほかの条件でも探せなくなる
+        check: design_inspector
+    examples:
+      good: ラベル「コーチ」・値「すべて」・chevron。読めないときは欄の下に「コーチの一覧を読めませんでした。画面を更新すると、もう一度読み込めます。」
+      bad: ラベルのない素の select が高さ 32px で並び、隣の date_field（48px）と下端がそろわない。先頭の行が「選択してください」
+    preview:
+      - label: "通常"
+        html: '<div class="pv tf sl"><label class="type-small">コーチ</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div></div>'
+      - label: "読み込み中（選択肢を読む）"
+        html: '<div class="pv tf sl off" aria-busy="true"><label class="type-small">コーチ</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div><div class="help type-small" role="status"><span>コーチの一覧を読み込んでいます…</span></div></div>'
+      - label: "失敗（選択肢を読めない）"
+        html: '<div class="pv tf sl off"><label class="type-small">レッスンメニュー</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div><div class="etext type-small" role="alert"><i class="ic">!</i>レッスンメニューの一覧を読めませんでした。画面を更新すると、もう一度読み込めます。</div></div>'
+      - label: "誤り（必須の欄を選んでいない）"
+        html: '<div class="pv tf sl err"><label class="type-small">スポーツ</label><div class="field type-body" aria-invalid="true"><span class="v muted">選んでください</span><i class="chev"></i></div><div class="etext type-small" role="alert"><i class="ic">!</i>スポーツが選ばれていません。一覧から 1 つ選んでください。</div></div>'
 
   - id: card
     ja: カード
@@ -143,7 +201,7 @@ components:
     use: 1 件のまとまり（予約・コーチ・添削）を囲む
     not_for: 文 1 行だけ → list_row。主役の数字 → score_panel
     parts: [container, date_block（予約だけ）, title, meta, status_tag（任意）, action（任意）]
-    variants:   # 0.5.0 で surface の面から白地＋細い線にした
+    variants:
       plain:   {container: background, border: border 1px, radius: md, padding_px: 16, gap_px: 8, title: title}
       booking: {date_block: "幅 64px・角丸 sm・surface に月と曜日（caption）と日（figure）", title: figure_sm の時刻, note: 次のレッスンだけ date_block を secondary}
     style: {shadow: なし, nest: カードの中にカードを置かない}
@@ -316,7 +374,7 @@ components:
     ja: 知らせ
     lifecycle: trial
     use: 操作の結果と、読めなかったことを伝える
-    variants:   # 0.5.0 で淡い面をやめた。角丸は md
+    variants:
       inline: {container: background, border: "border 1px と左に status.*.fg の 4px", text: text, icon: "status.*.fg", note: 失敗・注意・情報。消えない}
       success: {container: inverse_surface, text: on_inverse_surface, mark: 完了の印（secondary の丸にチェック）, note: 成功だけ。inverse_surface の 1 か所に数えない}
       toast: {container: inverse_surface, mark: 完了の印, duration_ms: 4000, note: 成功だけ。画面の下、安全領域の上}
@@ -406,6 +464,137 @@ components:
       - label: "送る前の確認（primary）"
         html: '<div class="pv w scrim"><div class="dlg" role="dialog"><h4 class="type-title">体験予約を申し込みますか？</h4><p class="type-body">11/4（水）18:00〜18:30 の野球の体験予約を申し込みます。コーチが確定すると、チャットが開きます。</p><div class="acts"><span class="btn btn-secondary">やめる</span><span class="btn btn-primary">申し込む</span></div></div></div>'
 
+  - id: media_toggle
+    ja: 入・切の切り替えボタン
+    lifecycle: trial   # 0.7.0（#1040）
+    use: 入室前チェックで、マイク・カメラの入と切、試し音の「鳴らす⇄止める」を切り替える
+    not_for: 1 回きりの操作 → button。保存する設定 → settings のスイッチ
+    parts: [container（button の secondary）, leading_icon, label, spinner]
+    variants: {mic: 「マイクを切る」mic ⇄「マイクを入れる」mic_off, camera: 「カメラを切る」videocam ⇄「カメラを入れる」videocam_off, speaker_test: 「スピーカーを試す」volume_up ⇄「試し音を止める」stop_circle}
+    style: {container: primary_container, label: button と同じ, icon: text の 20px, height_px: 56, admin_web_height_px: 48, pair: gap sm で幅を等分し左右 sm。収まらなければ 2 行に折る}
+    states:
+      default: 今の入・切に合う文言とアイコン。面の色は入でも切でも同じ
+      pressed: primary_container_pressed。離したらその場で文言とアイコンを入れ替える
+      disabled: 面 surface・文字 text_muted。端末にない・許可がないとき（理由は camera_preview か近くの文）
+      loading: 許可を求めているあいだ。spinner を前に出し押せなくする
+      error: 切り替えに失敗したら文言を元に戻し、notice の inline（danger）
+    behavior: 確認せずに切り替え、結果を role=status で 1 回読む（「マイクを切りました」）。入・切は入室後の通話に引き継ぐ
+    wording: 押したら起きることを動詞で（「マイクを切る」）。今の状態（「マイク オン」）を書かない
+    a11y: aria-pressed を付けない（文言が操作を言うので、重ねると逆に聞こえる）。アイコンは aria-hidden
+    rules:
+      - level: should
+        statement: 入と切は文言とアイコンを入れ替えて示し、面の色だけで示さない
+        why: 色の見分けが難しい人も読み上げの利用者も、マイクが入っているかが分かる
+        check: design_inspector
+    examples: {good: 「マイクを切る」と「カメラを切る」を等分に並べる, bad: 切のとき面を赤くし文言は「マイク」のまま}
+    preview:
+      - label: "入（マイクとカメラ）"
+        html: '<div class="pv w mt2"><span class="btn btn-secondary"><i class="mi mic"></i>マイクを切る</span><span class="btn btn-secondary"><i class="mi vc"></i>カメラを切る</span></div>'
+      - label: "切・押下"
+        html: '<div class="pv w mt2"><span class="btn btn-secondary"><i class="mi mic"><b></b></i>マイクを入れる</span><span class="btn btn-secondary is-pressed"><i class="mi vc"><b></b></i>カメラを入れる</span></div>'
+      - label: "読み込み中・無効"
+        html: '<div class="pv w mt2"><span class="btn btn-secondary" aria-busy="true"><i class="spin"></i>カメラを切る</span><span class="btn btn-disabled" aria-disabled="true"><i class="mi mic"><b></b></i>マイクを入れる</span></div>'
+
+  - id: camera_preview
+    ja: カメラの映りの枠
+    lifecycle: trial
+    use: 入室前チェックで、本物のカメラの映りと背景を見せる。許可待ち・切・使えない・ないも同じ枠で示す
+    not_for: 通話の相手の映像（未定義）。コーチの顔写真 → imagery
+    parts: [container, video, placeholder（icon・title・small）, caption（任意）]
+    style: {container: inverse_surface・radius md, ratio: student-app 4:3・admin-web 16:9（512px まで）, video: object-fit cover・左右反転, placeholder: 中央寄せ・gap sm・title と small・icon 24px（40px は段にない）, caption: small text_muted}
+    states:
+      default: 映っている。video だけ
+      pressed: 押せない部品（入と切は media_toggle）
+      loading: 許可待ち。inverse_surface に on_inverse_surface の title と on_inverse_surface_muted の small
+      disabled: 切。surface に text の title・text_muted の small・videocam_off
+      error: 使えない・ない。切と同じ面に、何が起きたかとどうすればよいか。入室は止めない
+    errors:
+      denied: カメラが使えません／端末の設定で許可すると確かめられます。入室は開始時刻からできます。
+      none: カメラが見つかりません／カメラがなくても、開始時刻から入室できます。
+    behavior: 枠を出しているあいだだけカメラを開き、画面を離れたら止める
+    a11y: 映っているときは role=img・aria-label「自分のカメラの映り（左右反転）」。placeholder は文として読み、変わったら role=status で 1 回
+    rules:
+      - level: must
+        statement: カメラの映像とマイクの音を端末の外に送らず、録画・静止画・録音として残さない
+        why: 部屋の背景や姿は私的なもの。入室前チェックは見せて聞かせるだけと約束している（glossary の prejoin_check）
+        check: deterministic
+      - level: should
+        statement: camera_preview は inverse_surface の 1 か所に数え、同じ画面に score_panel やほかの濃い面を置かない
+        why: 自分の映りが主役。濃い面が 2 つあると目が迷う（one-hot-spot）
+        check: design_inspector
+    examples: {good: 断ったとき枠に理由と許可の仕方を出す, bad: 黒い枠のまま何も出さない}
+    preview:
+      - label: "通常（映っている。左右反転）"
+        html: '<div class="pv cpw"><div class="cam" role="img" aria-label="自分のカメラの映り（左右反転）"><i class="vid"></i></div><p class="type-small muted">映像はこの端末の中だけで映し、送りも残しもしません</p></div>'
+      - label: "読み込み中（許可待ち）"
+        html: '<div class="pv cpw"><div class="cam"><p class="type-title">カメラの許可を待っています</p><p class="type-small s">端末の確認で「許可」を選ぶと、ここに映ります</p></div></div>'
+      - label: "無効（切）"
+        html: '<div class="pv cpw"><div class="cam off"><i class="mi lg vc"><b></b></i><p class="type-title">カメラを切っています</p><p class="type-small s">入室したあとも切ったままです</p></div></div>'
+      - label: "失敗（admin-web 16:9・使えない）"
+        html: '<div class="pv cpa"><div class="cam wide off" role="status"><i class="mi lg vc"><b></b></i><p class="type-title">カメラが使えません</p><p class="type-small s">ブラウザーの設定で許可すると確かめられます。入室は開始時刻からできます。</p></div></div>'
+
+  - id: level_meter
+    ja: 音の大きさの表示
+    lifecycle: trial
+    use: 入室前チェックで、マイクに届いた声の大きさを見せる
+    not_for: 進み具合 → loading の bar
+    parts: [label（上の文）, segments（10）]
+    style: {segments: 10, height_px: 8, radius: pill, gap: xs, box_height_px: 24, reached: primary, rest: primary_container, stopped: 全部 surface, label: small text, note: 大きさは届いた段の数で読む（残りの段は地）}
+    states:
+      default: 届いた段まで primary。label「音が届いています」か「声を出すと、ここが動きます」
+      pressed: 押せない部品
+      loading: 許可待ち。全部 surface、label「マイクの許可を待っています」
+      disabled: マイクを切った。全部 surface、label「マイクを切っています」
+      error: 使えない・ない。全部 surface、label は camera_preview の errors の型
+    behavior: 書き換えは 1 秒に 10 回まで、補間の動きなし（reduced_motion でも同じ）。音は端末の中で計るだけ（camera_preview の must）。label は 2 秒続いたら替える
+    a11y: 段は aria-hidden。label は role=status
+    rules:
+      - level: should
+        statement: 読み上げは段の書き換えのたびに読まず、近くの文が変わったときだけ読む
+        why: 1 秒に何度も読むと、ほかの案内が聞こえなくなる
+        check: design_inspector
+    examples: {good: 文「音が届いています」と 6 段のインク, bad: 段の色だけで文がない}
+    preview:
+      - label: "通常（届いている）"
+        html: '<div class="pv lmw"><p class="type-small" role="status">音が届いています</p><div class="lm l6" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>'
+      - label: "無効（切）"
+        html: '<div class="pv lmw"><p class="type-small" role="status">マイクを切っています</p><div class="lm stop" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>'
+
+  - id: join_bar
+    ja: 入室の帯
+    lifecycle: trial
+    use: 入室前チェックで、開始時刻・残り時間・入室の条件と「入室する」を画面の下に固定する（patterns の detail の「下に固定」の形）
+    not_for: 主な操作 1 つだけの詳細 → button の primary
+    parts: [container, time_row（label・time・countdown）, reason, notice（失敗）, action（primary）, secondary_action（admin-web。任意）]
+    style: {container: background・上に border 1px・padding md（下は安全領域 + md）・sticky_bar・影なし, time_row: 「開始」small 700・時刻 figure_sm・右端に countdown, reason: small text_muted, gap: sm, action: student-app は幅いっぱい。admin-web は 768px の幅で右寄せ、左に secondary を 1 つまで}
+    states:
+      default: 開始時刻を過ぎた。action を押せる。reason「カメラとマイクの入・切は、そのまま通話に引き継ぎます」
+      pressed: action が primary_pressed
+      disabled: 開始時刻の前。action を無効にし、reason「開始時刻になると入室できます」と countdown
+      loading: 入室を始めているあいだ。action を loading
+      error: 入室に失敗した。action の上に notice の inline（danger）でサーバーの文言。action は押せるまま
+    behavior: 開始時刻になったら開き直さずに押せるようにし、「入室できます」を role=status で 1 回読む。本文の下に帯の高さの余白をとり、フォーカスを隠さない
+    a11y: role=region・aria-label「入室」。フォーカスは本文のあと
+    rules:
+      - level: should
+        statement: 開始時刻の前は action を無効にし、近くに理由・開始時刻・残り時間を書く（押してから断らない）
+        why: 押してから 409 で断られると、何度も押して焦る（#1009）
+        check: design_inspector
+      - level: should
+        statement: 文字 200% でも帯は画面の高さの半分まで。超えるときは固定をやめ本文の最後に置く
+        why: 帯が画面を覆うと、映りもマイクの切り替えも見えない
+        check: design_inspector
+    examples: {good: 「あと 2:48」と理由の文と無効の「入室する」, bad: 押せる見た目のまま押すと断られる}
+    preview:
+      - label: "無効（開始時刻の前）"
+        html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="cd"><span class="type-small b">あと</span> <span class="type-figure-sm">2:48</span></span></div><p class="type-small muted">開始時刻になると入室できます</p><span class="btn btn-disabled" aria-disabled="true">入室する</span></div>'
+      - label: "通常（開始時刻を過ぎた）"
+        html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span></div><p class="type-small muted">カメラとマイクの入・切は、そのまま通話に引き継ぎます</p><span class="btn btn-primary">入室する</span></div>'
+      - label: "失敗"
+        html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span></div><div class="notice n-danger type-small" role="alert"><i class="ic">!</i><p>この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。</p></div><span class="btn btn-primary">入室する</span></div>'
+      - label: "admin-web（768px・読み込み中）"
+        html: '<div class="pv jb jba"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="type-small muted">田中 美咲・フォアハンドの基礎（30 分）</span></div><div class="acts"><span class="btn btn-secondary btn-adm">予約の一覧に戻る</span><span class="btn btn-primary btn-adm" aria-busy="true"><i class="spin"></i>入室する</span></div></div>'
+
 preview_css: |
   .pv,.pv *{box-sizing:border-box}
   .pv{font-family:var(--font-sans);color:var(--color-text);width:320px}
@@ -429,7 +618,6 @@ preview_css: |
   .mark{background:var(--color-secondary);color:var(--color-on-secondary)}
   .tf label{display:block;font-weight:700;margin-bottom:var(--space-xs)}
   .tf .field{min-height:48px;display:flex;align-items:center;padding:0 var(--space-md);border:1px solid var(--color-border-strong);border-radius:var(--radius-md)}
-  .tf.focus .field{border:2px solid var(--color-focus-ring)}
   .tf.err .field{border:2px solid var(--color-danger-fg)}
   .tf .help,.tf .etext{display:flex;justify-content:space-between;gap:var(--space-xs);margin-top:var(--space-xs)}
   .tf .etext{justify-content:flex-start;align-items:center;color:var(--color-danger-fg)}
@@ -493,3 +681,32 @@ preview_css: |
   .dr .sep{color:var(--color-text-muted);min-height:48px;display:flex;align-items:center}
   .dr .help{display:flex;color:var(--color-text-muted);margin-top:var(--space-sm)}
   .dr .etext{display:flex;gap:var(--space-xs);align-items:flex-start;color:var(--color-danger-fg);margin-top:var(--space-sm);word-break:auto-phrase}
+  .sl .field{position:relative;padding-right:var(--space-xl)}
+  .sl .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sl .chev{position:absolute;right:var(--space-md);top:50%;width:8px;height:8px;margin-top:-6px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg)}
+  .sl.off .chev{color:var(--color-text-muted)}
+  .btn-adm{min-height:48px;font-weight:700}
+  .mt2{display:flex;gap:var(--space-sm)}.mt2 .btn{flex:1;min-width:0;padding:0 var(--space-sm)}
+  .mi{flex:none;position:relative;width:20px;height:20px}
+  .mi::before,.mi::after{content:"";position:absolute;box-sizing:border-box}
+  .mic::before{left:6px;top:1px;width:8px;height:12px;border:2px solid;border-radius:var(--radius-pill)}
+  .mic::after{left:3px;top:8px;width:14px;height:8px;border:2px solid;border-top:0;border-radius:0 0 var(--radius-pill) var(--radius-pill)}
+  .vc::before{left:1px;top:5px;width:13px;height:10px;border:2px solid}
+  .vc::after{left:14px;top:6px;border-left:5px solid;border-block:4px solid transparent}
+  .mi b{position:absolute;left:9px;top:-1px;width:2px;height:22px;background:currentColor;transform:rotate(-45deg)}
+  .mi.lg{transform:scale(1.2);margin:var(--space-xs)}
+  .btn-secondary.is-pressed{background:var(--color-primary-container-pressed)}
+  .pv.cpw{display:flex;flex-direction:column;gap:var(--space-sm)}.pv.cpa{width:512px}
+  .cam{position:relative;aspect-ratio:4/3;border-radius:var(--radius-md);overflow:hidden;background:var(--color-inverse-surface);color:var(--color-on-inverse-surface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-sm);padding:0 var(--space-md);text-align:center}
+  .cam.wide{aspect-ratio:16/9}.cam .s{color:var(--color-on-inverse-surface-muted)}
+  .cam.off{background:var(--color-surface);color:var(--color-text)}.cam.off .s{color:var(--color-text-muted)}
+  .vid{position:absolute;inset:0;background:var(--color-border-strong);transform:scaleX(-1)}
+  .vid::before,.vid::after{content:"";position:absolute;background:var(--color-primary-container);border-radius:var(--radius-pill)}
+  .vid::before{left:38%;top:22%;width:24%;height:32%}.vid::after{left:24%;top:58%;width:52%;height:50%}
+  .lmw{display:flex;flex-direction:column;gap:var(--space-xs)}
+  .lm{display:flex;align-items:center;gap:var(--space-xs);height:24px}
+  .lm i{flex:1;height:8px;border-radius:var(--radius-pill);background:var(--color-primary-container)}
+  .l6 i:nth-child(-n+6){background:var(--color-primary)}.lm.stop i{background:var(--color-surface)}
+  .pv.jb{width:360px;border-top:1px solid var(--color-border);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
+  .jb .tr{display:flex;align-items:baseline;gap:var(--space-sm)}.jb .b{font-weight:700}.jb .cd{margin-left:auto}
+  .jb > .btn{width:100%}.pv.jba{width:768px;padding:var(--space-md) 0}

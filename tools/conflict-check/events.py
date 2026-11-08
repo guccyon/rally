@@ -1,10 +1,19 @@
 """制御プレーンのイベント列から、PR ごとに conflict の続きのジョブを組み、policy.py の線に照らして落とす（知見 K-0010 の担保。議決 D-0023・Issue #972）。
+衝突したファイルがその場で記録されなかった回も落とす（知見 K-0014 の担保。議決 D-0049・Issue #1135）。
 
 組むもの（PR ごと、continue.enqueued（reason=conflict）の順に 1 件ずつ）: 何回目か・agent_resumed・tier・衝突したファイル。
 落とすもの（rule）:
   over_limit            同じ PR で max_attempts_per_pr を超えて積まれた（今の線では 4 回目以降）
   resumed_after_limit   resume_session_until_attempt より後の回（今の線では 2 回目以降）で agent_resumed=true
   agent_for_mechanical  衝突したファイルが mechanical.paths（CHANGELOG.md と changelog.d/）だけなのに、エージェントの tier（tier-large など）で解いた
+  missing_conflict_files  continue.enqueued の時点で、同じ job_id の conflict.files がその場で載っていない。ないか、backfill で後から足されたもの
+                          （payload.source が backfill）か、ジョブが動き出したあと（同じ job_id の job.started か job.finished より後）に記録されたもの
+                          しかない回。終わらずに止まった回も照らす（知見 K-0014 の担保。議決 D-0049・Issue #1135）。continuation.yaml の線ではないので
+                          check ではなく record_check が出し、watch.py の停止には使わない
+
+記録がない項目（agent_resumed・tier・衝突したファイル）は照らさずに件数を出す。これは Engine が今の形（job.finished に agent_resumed と
+解き方の tier（agent_tier）を出さない版）のときだけの扱いで、それらを出す版の Engine で agent_resumed か tier の照らせない件数が 1 以上なら
+test_events.py の EngineFinishedTest が落とす（議決 D-0030・Issue #1035）
 
   python3 events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--json]
   終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった
@@ -67,12 +76,16 @@ def _tier(enq: dict, started: dict, finished: dict) -> str | None:
 
 
 def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[str, dict]:
-    """PR ごとに { pr_url, conflicted_heads, attempts: [{ attempt, job_id, head_sha, agent_resumed, tier, files }] } を組む。
-    job.started・job.finished・conflict.files は job_id で continue.enqueued に結ぶ"""
+    """PR ごとに { pr_url, conflicted_heads, attempts: [{ attempt, job_id, head_sha, agent_resumed, tier, files, files_source, files_before_start }] }
+    を組む。job.started・job.finished・conflict.files は job_id で continue.enqueued に結ぶ。files_source は conflict.files の payload.source
+    （Engine の dispatcher がワーカーのログから記録したら worker_log、factoryctl learn backfill-conflicts で後から足したら backfill）。
+    files_before_start は conflict.files がジョブの動き出す前（同じ job_id の job.started・job.finished より前。並びはイベント列の順）に記録されたか"""
     by_job: dict[int, dict[str, dict]] = {}
-    for e in events:
+    at: dict[int, dict[str, int]] = {}   # job_id ごとの、各イベントが最初に出たイベント列の位置
+    for i, e in enumerate(events):
         if e["name"] in ("job.started", "job.finished", "conflict.files") and e.get("job_id") is not None:
             by_job.setdefault(e["job_id"], {}).setdefault(e["name"], e.get("payload") or {})
+            at.setdefault(e["job_id"], {}).setdefault(e["name"], i)
     prs: dict[str, dict] = {}
 
     def pr(url: str) -> dict:
@@ -92,12 +105,15 @@ def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[s
             linked = by_job.get(e.get("job_id"), {}) if e.get("job_id") is not None else {}
             started, finished = linked.get("job.started", {}), linked.get("job.finished", {})
             resumed = next((x["agent_resumed"] for x in (p, finished) if isinstance(x.get("agent_resumed"), bool)), None)
-            files = linked.get("conflict.files", {}).get("files")
+            files, source = linked.get("conflict.files", {}).get("files"), linked.get("conflict.files", {}).get("source")
+            pos = at.get(e.get("job_id"), {})
+            before_start = "conflict.files" in pos and all(pos["conflict.files"] < pos[k] for k in ("job.started", "job.finished") if k in pos)
             n = len(r["attempts"]) + 1
             if isinstance(p.get("attempt"), int) and not isinstance(p.get("attempt"), bool):
                 n = max(n, p["attempt"])   # イベント列が途中から始まっていても、Engine の数えた回を下回らない
             r["attempts"].append({"attempt": n, "job_id": e.get("job_id"), "head_sha": p.get("head_sha"), "agent_resumed": resumed,
-                                  "tier": _tier(p, started, finished), "files": files if isinstance(files, list) else None})
+                                  "tier": _tier(p, started, finished), "files": files if isinstance(files, list) else None,
+                                  "files_source": source if isinstance(source, str) else None, "files_before_start": before_start})
     return prs
 
 
@@ -118,6 +134,28 @@ def check(policy_: dict, record: dict) -> list[dict]:
             want = policy.resolution(policy_, a["files"])
             if want["mode"] == "mechanical" and a["tier"] != want["tier"]:
                 err("agent_for_mechanical", f"衝突したのが {', '.join(a['files'])} だけなのに {a['tier']} で解いた（機械的に解く。tier は {want['tier']}）")
+    return errors
+
+
+BACKFILL = "backfill"   # Engine の process_learn.record_conflict_files の source のうち、事後に埋めたもの（factoryctl learn backfill-conflicts）
+
+
+def record_check(record: dict) -> list[dict]:
+    """1 つの PR の記録で、continue.enqueued の時点で衝突したファイルがその場で記録されていない回を [{ rule, attempt, job_id, message }] で返す
+    （知見 K-0014・議決 D-0049）。終わっていない回・終わらずに止まった回も照らす（積んだ時点で載っているはずなので、終わるのを待たない）"""
+    errors = []
+    for a in record["attempts"]:
+        if a["files"] is None:
+            why = "conflict.files がない"
+        elif a["files_source"] == BACKFILL:
+            why = "conflict.files が backfill で後から足されたものしかない"
+        elif not a["files_before_start"]:
+            why = "conflict.files がジョブの動き出したあと（job.started か job.finished より後）に記録された"
+        else:
+            continue
+        errors.append({"rule": "missing_conflict_files", "attempt": a["attempt"], "job_id": a["job_id"],
+                       "message": f"{a['attempt']} 回目の conflict の続きのジョブに、衝突したファイルがその場で記録されていない（{why}。"
+                                  "同じファイルの衝突の型が集計で見えない。K-0014）"})
     return errors
 
 
@@ -146,7 +184,7 @@ def main(argv: list[str]) -> int:
         return 2
     prs = records_from_events(events, arg("--pr"))
     results = [{"pr_url": url, "attempts": len(r["attempts"]), "conflicted_heads": len(r["conflicted_heads"]),
-                "unknown": unknown(r), "errors": check(policy_, r)} for url, r in prs.items()]
+                "unknown": unknown(r), "errors": check(policy_, r) + record_check(r)} for url, r in prs.items()]
     errors = [e for r in results for e in r["errors"]]
     if "--json" in argv:
         json.dump({"ok": not errors, "prs": results}, sys.stdout, ensure_ascii=False)

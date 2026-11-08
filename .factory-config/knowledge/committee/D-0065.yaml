@@ -1,0 +1,88 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0065
+pr: https://github.com/guccyon/rally/pull/1172
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0010 の enforcement.solutions に 1 項目を足すだけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、K-0001・K-0002・K-0008・K-0013・K-0014 の扱いは「そのまま」でよく、INDEX.md の作り直しもいりません。
+  - '足した ci_check の中身は D-0043 の enforcement の 1 つ目の案（ひな形を写して ENGINE_REF を上げたら issue
+    1035 の項目を wired: true にし、check.py が wired_by のジョブが test_events.py を呼んでいるかを照らす）とそろっていて、decided_by:
+    committee:D-0043 で議決に辿れます。'
+  - pull_request でも走るジョブを求める REQUIRED_PR の形は、K-0004 の issue の項目で schedule について入れた同じ形の照合と並ぶもので、README
+    の「配線先の照合」（D-0021）と同じやり方で照らすと書いているので、既存の決まりと矛盾も重複もしません。
+  - 'D-0038 で議論した「if: を中身を問わず未配線に数える」扱いは sendback-check の order.mjs の決まりで、この REQUIRED_PR
+    が if: の中身（== ''pull_request''）を見ることとは別の道具の別の線なので食い違いではありませんが、知見をまたいで if: の扱いが違うことは建設者が配線するときに意識してください。'
+  - 'D-0043 の 2 つ目の案（todo で飛ばした件数を出し、review_by を過ぎても todo なら落とす test）はこの PR に入っておらず
+    what にも触れていないので、そのチケットで入れたら別の項目として decided_by: committee:D-0043 で記録してください。'
+  - 'wired: false・verified: false のままで効き目は確かめていないと書いているので、confidence は hypothesis
+    のままが妥当で、上げないでください。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は issue 1103 と committee:D-0043 を指しており、D-0043 の enforcement の
+    ci_check の案（wired: true にするとき check.py がその job が test_events.py を呼んでいるかを照らす）と中身が合うので、一次記録に辿れます。'
+  - D-0043 の案のうちワーカーが入れられる check.py の REQUIRED_PR の部分だけを入れ、.github/workflows/ への写しと
+    ENGINE_REF の引き上げは建設者に残したと what に書かれているので、どこまで満たしたかの辿りが崩れていません。
+  - 'what は test_check.py の PullRequestTest で確かめたことだけを書き、配線も本物のイベント列での確認もないと明記していて
+    wired: false・verified: false と合うので、confidence は hypothesis のままが妥当で上げないでください。'
+  - 'D-0043 のもう 1 つの test の案（EngineFinishedTest の todo の件数を出し、review_by を過ぎても todo
+    なら落とす）はこの項目では満たしていないので、入れるときは別の項目として decided_by: committee:D-0043 で記録してください。'
+  - 差分にあるのは Issue と PR の番号、議決の id、コミットの短い hash、ツールのパスとワークフローの書き方だけで、利用者や人を特定できる情報は入っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は D-0043 の ci_check の案のうち、check.py の REQUIRED_PR で「pull_request で走るジョブから
+    test_events.py を呼ばないと wired: true にできない」線を入れたことを K-0010 に記録するもので、issue 1103 と
+    committee:D-0043 に辿れるので担保の記録として採ってよいです。'
+  - '線は on.pull_request の有無と if: の github.event_name の条件という機械的に判定できる形で引かれ、ひな形の unittest
+    discover の形を呼んでいる側に数えることを PullRequestTest で確かめているので、決定論の形はできています。'
+  - 'ただし REQUIRED_PR の線そのものも check.py が pull_request で走らなければ効かず、ci/knowledge-enforcement.yml
+    はまだ .github/workflows/ に写されていないので、今は誤って wired: true にした PR も黙って通ります。'
+  - D-0043 の 2 つ目の案（EngineFinishedTest の todo の件数を出し、review_by の 2026-12-05 を過ぎても
+    todo なら落とす）はこの PR でも入っておらず、C-0005 と同じ積み直しが本物のイベント列で起きても気づけない状態が続くので、次の変更セットで入れてください。
+  - 'どの解決策も wired: false・verified: false で、what も効き目を確かめていないと書いているので、confidence は
+    hypothesis のままにしてください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0010 の enforcement.solutions に D-0043 の ci_check の案を 1 項目足すだけで、statement・scope・confidence
+    を変えていないので、範囲が広すぎるとは判断しません。
+  - 'what に、ひな形を .github/workflows/ に写していないこと、ENGINE_REF（2490db6）では EngineFinishedTest
+    が todo で飛ぶこと、効き目は確かめていないことが書かれていて、wired: false・verified: false と合っているので言い過ぎていません。'
+  - '反例として、unittest discover -s tools/conflict-check の形を呼んでいる側に数えると、-p で test_policy.py
+    などに絞ったジョブや on.pull_request に paths: の絞りがあるワークフローでも test_events.py を呼んでいるとみなされるおそれがあるので、-p
+    と paths: を見て外す照らし方を次のチケットで足してください。'
+  - '反例として、check.py はジョブの if: だけを見ているので、ステップの if: で pull_request のときだけ飛ばす形や、ワークフローは走っても必須のチェックになっていない形を通してしまうため、wired:
+    true の判定にそれらが抜けていることを what か README に書き添えてください。'
+  - D-0043 の 2 つ目の案（review_by の 2026-12-05 を過ぎても todo のままなら落とす test）はこの項目に入っておらず、what
+    にも触れていないので、入れていないことと回す先のチケットを次の変更セットで明記してください。
+  - 配線も本物のイベント列での確認もないので、confidence は hypothesis のままが妥当で、上げないでください。
+  personal_data: false
+enforcement:
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が tools/conflict-check/ci/conflict-check.yml を .github/workflows/conflict-check.yml
+    に、ci/knowledge-enforcement.yml を .github/workflows/ に写して両方を branch protection
+    の必須チェックにし、ENGINE_REF を job.finished に agent_resumed と agent_tier を出す Engine に上げてから、issue
+    1035・1103 の項目を wired: true（wired_by に workflow・job・検査の道）にする。'
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: test
+  proposal: D-0043 の 2 つ目の案のとおり、test_events.py か check.py で EngineFinishedTest を todo
+    で飛ばした件数を CI の出力に出し、K-0010 の review_by を過ぎても ENGINE_REF の Engine で todo のままなら落とす。
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'check.py の REQUIRED_PR の照合に、K-0001 の protection.mjs と同じやり方で wired_by
+    のジョブ名が branch protection の必須チェックに入っているかを gh api の結果で照らす項目を足し、必須でないジョブを指す wired:
+    true を落とす。'

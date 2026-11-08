@@ -1210,7 +1210,8 @@ paths:
         （既読にもしない）。
 
         - お知らせはプッシュ通知を送るときに作る（予約の確定・動画の添削の返却・担当コーチからのメッセージ・
-          本部からのお知らせ（admin-web の `sendAnnouncement`。生徒全員か、生徒のスポーツに送ったもの））。
+          本部からのお知らせ（admin-web の `sendAnnouncement`。生徒全員か、生徒のスポーツに送ったもの）・
+          コーチのお休みで本部が予約をキャンセルしたこと（admin-web の `startCoachLeave`））。
           通知の受け取り設定（`updateMyNotificationSettings`）で false の種類も、プッシュ通知を送らないだけで
           お知らせには残る
         - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ・同じ本部からのお知らせ）のお知らせは 1 件
@@ -2572,7 +2573,8 @@ components:
       description: |
         glossary の notification_settings（プッシュ通知の種類ごとに受け取るか。既定はすべて true）。
         種類は追加しうる（項目が増える）。
-      required: [student_id, booking_confirmed, video_review_returned, message_received, announcement]
+      required: [student_id, booking_confirmed, booking_cancelled_by_headquarters, video_review_returned, message_received,
+                 announcement]
       properties:
         student_id:
           type: string
@@ -2580,6 +2582,9 @@ components:
         booking_confirmed:
           type: boolean
           description: 予約が確定したときの通知を受け取るか
+        booking_cancelled_by_headquarters:
+          type: boolean
+          description: コーチのお休みで本部が予約をキャンセルしたときの通知を受け取るか
         video_review_returned:
           type: boolean
           description: 動画の添削が返却されたときの通知を受け取るか
@@ -2597,6 +2602,9 @@ components:
         booking_confirmed:
           type: boolean
           description: 予約が確定したときの通知を受け取るか
+        booking_cancelled_by_headquarters:
+          type: boolean
+          description: コーチのお休みで本部が予約をキャンセルしたときの通知を受け取るか
         video_review_returned:
           type: boolean
           description: 動画の添削が返却されたときの通知を受け取るか
@@ -2611,9 +2619,9 @@ components:
       type: string
       description: |
         お知らせ・プッシュ通知の種類（`NotificationSettings` の項目名と同じ綴り）。値は追加しうる（クライアントは未知の値を
-        汎用のお知らせとして扱う）。`booking_confirmed` は予約の通知で、予約の確定と、コーチのお休みで本部が予約を
-        キャンセルしたことの知らせ（本文「コーチのお休みで予約をキャンセルしました」から始まる）の両方。
-      enum: [booking_confirmed, video_review_returned, message_received, announcement]
+        汎用のお知らせとして扱う）。`booking_confirmed` は予約の確定の知らせ。`booking_cancelled_by_headquarters` は
+        コーチのお休みで本部が予約をキャンセルしたことの知らせ（本文「コーチのお休みで予約をキャンセルしました」から始まる）。
+      enum: [booking_confirmed, booking_cancelled_by_headquarters, video_review_returned, message_received, announcement]
 
     Notification:
       type: object

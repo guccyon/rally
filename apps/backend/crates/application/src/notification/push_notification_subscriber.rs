@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_headquarters_cancel_notifies_the_student_once_and_follows_the_booking_setting() {
+    async fn a_headquarters_cancel_notifies_the_student_once_and_follows_its_own_setting() {
         let event_id = Uuid::new_v4();
         let cancelled = DomainEvent::BookingCancelled {
             event_id,
@@ -484,9 +484,17 @@ mod tests {
         assert_eq!(subscriber.sender().sent(), vec![expected]);
         assert_eq!(recorded(&subscriber), vec![expected]);
 
-        // 予約の通知をオフにした生徒にはプッシュ通知を送らず、お知らせだけを残す
+        // 予約の確定の通知だけをオフにした生徒にも、キャンセルの知らせは送る
         let mut settings = NotificationSettings::new(STUDENT);
         settings.set(NotificationKind::BookingConfirmed, false);
+        let confirmed_off = InMemoryNotificationSettingsRepository::with_settings([settings]);
+        let subscriber = subscriber_with(RecordingPushSender::default(), confirmed_off);
+        subscriber.handle(&cancelled).await.unwrap();
+        assert_eq!(subscriber.sender().sent(), vec![expected]);
+
+        // 本部による予約のキャンセルの通知をオフにした生徒にはプッシュ通知を送らず、お知らせだけを残す
+        let mut settings = NotificationSettings::new(STUDENT);
+        settings.set(NotificationKind::BookingCancelledByHeadquarters, false);
         let quiet = InMemoryNotificationSettingsRepository::with_settings([settings]);
         let subscriber = subscriber_with(RecordingPushSender::default(), quiet);
         subscriber.handle(&cancelled).await.unwrap();

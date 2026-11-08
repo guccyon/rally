@@ -15,3 +15,7 @@
 | `error.svg` | 状態 danger と、入力欄の誤り（TextField） |
 | `do_not_disturb_on.svg` | 状態 neutral（キャンセル済みなど） |
 | `chevron_right.svg` | 一覧の行の詳細へ（ListRow） |
+| `expand_more.svg` | 選択欄の chevron（Select。取得 2026-11-07） |
+| `mic.svg`・`mic_off.svg` | マイクの入・切の切り替え（MediaToggle。取得 2026-11-08） |
+| `videocam.svg`・`videocam_off.svg` | カメラの入・切の切り替えと、カメラの映りの枠の切・使えない・ない（MediaToggle・CameraPreview。取得 2026-11-08） |
+| `volume_up.svg`・`stop_circle.svg` | 試し音の「スピーカーを試す」「試し音を止める」（MediaToggle。取得 2026-11-08） |

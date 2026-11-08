@@ -39,6 +39,7 @@ pub struct NotificationSettingsState<S> {
 pub struct NotificationSettingsBody {
     student_id: String,
     booking_confirmed: bool,
+    booking_cancelled_by_headquarters: bool,
     video_review_returned: bool,
     message_received: bool,
     announcement: bool,
@@ -48,6 +49,7 @@ pub struct NotificationSettingsBody {
 #[derive(Deserialize)]
 pub struct UpdateNotificationSettingsRequest {
     booking_confirmed: Option<bool>,
+    booking_cancelled_by_headquarters: Option<bool>,
     video_review_returned: Option<bool>,
     message_received: Option<bool>,
     announcement: Option<bool>,
@@ -93,6 +95,10 @@ where
         ),
         (NotificationKind::MessageReceived, request.message_received),
         (NotificationKind::Announcement, request.announcement),
+        (
+            NotificationKind::BookingCancelledByHeadquarters,
+            request.booking_cancelled_by_headquarters,
+        ),
     ]
     .into_iter()
     .filter_map(|(kind, enabled)| enabled.map(|enabled| (kind, enabled)))
@@ -115,6 +121,8 @@ fn notification_settings_body(settings: &NotificationSettings) -> NotificationSe
         video_review_returned: settings.is_enabled(NotificationKind::VideoReviewReturned),
         message_received: settings.is_enabled(NotificationKind::MessageReceived),
         announcement: settings.is_enabled(NotificationKind::Announcement),
+        booking_cancelled_by_headquarters: settings
+            .is_enabled(NotificationKind::BookingCancelledByHeadquarters),
     }
 }
 

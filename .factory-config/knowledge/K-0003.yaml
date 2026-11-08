@@ -3,7 +3,10 @@ theme: 4
 kind: causal
 statement: judge の verdict「adopt」は「仮決めを認める」と「欠陥を直す対象にする」の 2 つの意味で使われ、incident の adopted に区別なく数えられるので、adopted の数からは直すべき欠陥の数が読み取れない。
 scope:
+  work: [dev.review.judge]
+  artifacts: [Judgment]
   roles: [judge, supervisor]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0002

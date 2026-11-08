@@ -13,6 +13,10 @@ dispatcher.py と supervisor.py は読み込むと DB・オブジェクトスト
   python3 engine_harness.py <Engine のチェックアウト> < case.json > result.json
   python3 engine_harness.py --check <Engine のチェックアウト>   # 関数を取り出せるかだけを見る（取り出せなければ終了コード 1）
 
+偽の cursor が知らない問い合わせを Engine が引いたら、標準エラーに「harness_unknown_query: <問い合わせ>」を出して終了コード 3 で落ちる
+（議決 D-0031、Issue #1046）。Engine の判定が変わったのではなく、このハーネスが Engine の先頭に合わなくなったことの印で、
+ci/sendback-engine-head.yml がこれを engine_head_failed と分けて知らせる。Engine が例外を握りつぶしても、記録した問い合わせで落とす。
+
 入力: { "pr_url", "merged", "judgments": check.mjs の記録の judgments（subject・verdict・defect・already_applied） }
 出力: { "followups": [{ "kind" }], "basis": str | null, "approved": bool, "events": [{ "name", "payload", "judgment" }] }
 
@@ -42,6 +46,15 @@ EXPORTED_EVENTS = ("supervisor.judge_enqueued", "judgment.judged", "sendback.fil
                    "supervisor.inspector_approved", "supervisor.merged")
 
 
+# 偽の cursor が知らない問い合わせの印と終了コード。ci/sendback-engine-head.yml がこの印で、ハーネスのずれと Engine の判定の変化を分ける
+UNKNOWN_QUERY_MARK = "harness_unknown_query"
+UNKNOWN_QUERY_EXIT = 3
+
+
+class HarnessUnknownQuery(AssertionError):
+    """偽の cursor が知らない問い合わせ（Engine の判定の変化ではなく、ハーネスのずれ）"""
+
+
 class Jsonb:
     """psycopg.types.json.Jsonb の代わり。中身をそのまま持つ"""
 
@@ -62,6 +75,7 @@ class FakeCursor:
         self.jobs: list[dict] = []
         self._rows: list[dict] = []
         self._clock = 0
+        self.unknown_queries: list[str] = []   # Engine が例外を握りつぶしても落とせるよう、知らない問い合わせを覚えておく
 
     def now(self) -> datetime:
         self._clock += 1
@@ -96,6 +110,8 @@ class FakeCursor:
             # payload の項目をすべて返す（verdict のほか category など）。Engine の basis を欠陥と仮決めに分けて数える版でも同じ形で答える（Issue #961）
             self._rows = [{**e["payload"], "verdict": e["payload"].get("verdict")} for e in self.events if e["name"] == "judgment.judged"
                           and e["payload"].get("pr_url") == params[0] and e["occurred_at"] > params[1]]
+        elif "d.name='judgment.decided'" in sql and "judgment.fix_enqueued" in sql:
+            self._rows = []   # 人が直す答えを出して、まだ同じ担当に渡していない判断はない（judgment.pending_fixes）
         elif "name='sendback.filed' and payload->>'fix_corr'" in sql:
             self._rows = []   # この PR は差し戻しの直しではない
         elif "count(*)" in sql and "sendback.filed" in sql:
@@ -103,7 +119,8 @@ class FakeCursor:
         elif "from jobs where" in sql and "body_fix" in sql:
             self._rows = []   # 本文の直しは終わっている
         else:
-            raise AssertionError(f"engine_harness の偽の cursor が知らない問い合わせ: {sql}")
+            self.unknown_queries.append(sql)
+            raise HarnessUnknownQuery(f"{UNKNOWN_QUERY_MARK}: engine_harness の偽の cursor が知らない問い合わせ: {sql}")
 
     def fetchone(self):
         return self._rows[0] if self._rows else None
@@ -170,12 +187,12 @@ def judge_io(judgments: list[dict]) -> tuple[dict, dict]:
     return inp, verdicts
 
 
-def run(engine: Path, case: dict) -> dict:
+def run(engine: Path, case: dict, cur: FakeCursor | None = None) -> dict:
     judgment, psycopg = load_judgment(engine)
     pr_url = case["pr_url"]
     repo, pr_number = re.match(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)$", pr_url).groups()
     sha, corr, mode = "head1", f"github:{repo}#1", "unattended"
-    cur = FakeCursor()
+    cur = cur if cur is not None else FakeCursor()
     followups: list[dict] = []
 
     def gh(method, path, body=None):
@@ -241,7 +258,20 @@ def main():
         return
     if len(sys.argv) != 2:
         raise SystemExit("使い方: python3 engine_harness.py [--check] <Engine のチェックアウト> < case.json")
-    json.dump(run(Path(sys.argv[1]), json.load(sys.stdin)), sys.stdout, ensure_ascii=False)
+    case = json.load(sys.stdin)
+    cur = FakeCursor()
+    try:
+        result = run(Path(sys.argv[1]), case, cur)
+    except Exception:
+        if not cur.unknown_queries:
+            raise
+        result = None
+    if cur.unknown_queries:   # 判定の結果は信じられないので出さない（Engine が例外を握りつぶして通っても落とす）
+        for sql in dict.fromkeys(cur.unknown_queries):
+            print(f"{UNKNOWN_QUERY_MARK}: engine_harness の偽の cursor が知らない問い合わせ（Engine の先頭に合わせて engine_harness.py を直す）: {sql}",
+                  file=sys.stderr)
+        raise SystemExit(UNKNOWN_QUERY_EXIT)
+    json.dump(result, sys.stdout, ensure_ascii=False)
 
 
 if __name__ == "__main__":

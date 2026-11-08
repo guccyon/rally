@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -188,14 +188,20 @@ test("CLI --events は外れたら 1 で終わり、GitHub Actions では ::erro
   writeFileSync(join(dir, "395.jsonl"), EVENTS_395.map((e) => JSON.stringify(e)).join("\n"));
   writeFileSync(join(dir, "empty.json"), "[]");
   writeFileSync(join(dir, "summary.md"), "");
+  // GitHub Actions では配線の順序も見る（order.mjs。Issue #1084）ので、記録の検査だけを見るために順序を守った写しを GITHUB_WORKSPACE に渡す
+  const workspace = join(dir, "repo");
+  mkdirSync(join(workspace, ".github/workflows"), { recursive: true });
+  mkdirSync(join(workspace, "tools/sendback-check"), { recursive: true });
+  cpSync(fileURLToPath(new URL("./ci/sendback-engine.yml", import.meta.url)), join(workspace, ".github/workflows/sendback-engine.yml"));
+  writeFileSync(join(workspace, "tools/sendback-check/engine.test.mjs"), "// 配線の順序を守った写し（todo なし）\n");
   let out;
   assert.throws(() => execFileSync("node", [script, "--events", join(dir, "395.jsonl"), "--pr", URL_395, "--summary", join(dir, "summary.md")],
-    { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" }), (e) => { out = e.stdout; return e.status === 1; });
+    { env: { ...process.env, GITHUB_ACTIONS: "true", GITHUB_WORKSPACE: workspace }, encoding: "utf8" }), (e) => { out = e.stdout; return e.status === 1; });
   assert.match(out, /^::error title=sendback-check followup_without_defect::https:\/\/github\.com\/guccyon\/rally\/pull\/395@a1 /m);
   assert.match(out, /^::error title=sendback-check basis_not_split::/m);
   assert.match(out, /head 1 個・裁き 5 件（欠陥の採用 0・仮決めの承認 3）、外れ 2 件/);
   assert.match(readFileSync(join(dir, "summary.md"), "utf8"), /外れた: https:\/\/github\.com\/guccyon\/rally\/pull\/395@a1/);
-  const empty = execFileSync("node", [script, "--events", join(dir, "empty.json")], { encoding: "utf8" });
+  const empty = execFileSync("node", [script, "--events", join(dir, "empty.json")], { env: { ...process.env, GITHUB_ACTIONS: "" }, encoding: "utf8" });
   assert.match(empty, /head 0 個・裁き 0 件/);
   assert.throws(() => execFileSync("node", [script, "--events", join(dir, "missing.json")], { stdio: "pipe" }), (e) => e.status === 2);
   writeFileSync(join(dir, "no-name.json"), `{ "events": [{ "payload": { "pr_url": "${URL_395}" } }] }`);

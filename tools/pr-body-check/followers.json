@@ -1,0 +1,20 @@
+{
+  "canonical": "template.json",
+  "followers": [
+    {
+      "id": "claude-md",
+      "root": "repo",
+      "path": "CLAUDE.md",
+      "headings": { "pattern": "PR の説明は (.+?) の見出しで", "separator": " / " },
+      "required": { "pattern": "（必須は (.+?)。", "separator": " と " }
+    },
+    {
+      "id": "rubric-pr-002",
+      "root": "engine",
+      "path": "core-gates/rubric.yaml",
+      "rubric_id": "PR-002",
+      "field": "check",
+      "headings": { "pattern": "テンプレートの見出し（(.+?)）", "separator": "・" }
+    }
+  ]
+}

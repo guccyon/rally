@@ -2,15 +2,20 @@ import type { ReactNode } from "react";
 
 import { Badge } from "./Badge";
 import { Button, type ButtonVariant } from "./Button";
+import { CameraPreview, type CameraPreviewState } from "./CameraPreview";
 import { Card } from "./Card";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DataTable, type DataTableColumn } from "./DataTable";
 import { DateField, DateRangeField } from "./DateField";
 import { dateRangeError, type DateRange } from "./dateRange";
 import { EmptyState } from "./EmptyState";
+import { JoinBar } from "./JoinBar";
+import { LevelMeter } from "./LevelMeter";
 import { ListRow } from "./ListRow";
 import { LoadingBar, SectionLoading, Spinner } from "./Loading";
+import { MediaToggle, type MediaToggleKind } from "./MediaToggle";
 import { Notice } from "./Notice";
+import { Select, selectNotSelected } from "./Select";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
 import { SLOT_STATE_STATUS, type Status } from "./status";
@@ -96,6 +101,27 @@ const RANGE_EXAMPLES: { example: string; value: DateRange }[] = [
   { example: "31 日を超える", value: { from: "2026-10-01", to: "2026-11-30" } },
   { example: "空の欄", value: { from: "2026-10-28", to: "" } },
 ];
+
+/** 選択欄の見本の選択肢。先頭の行は絞り込みなら「すべて」、必須の欄なら「選んでください」（値は空）。 */
+function CoachOptions() {
+  return (
+    <>
+      <option value="">すべて</option>
+      <option value="c1">山田 花子</option>
+      <option value="c2">佐藤 健</option>
+    </>
+  );
+}
+
+function SportOptions({ first }: { first: string }) {
+  return (
+    <>
+      <option value="">{first}</option>
+      <option value="tennis">テニス</option>
+      <option value="baseball">野球</option>
+    </>
+  );
+}
 
 const NOTICE_MESSAGES: Record<Exclude<Status, "neutral">, string> = {
   info: "11月から、コートの予約はアプリから行えます。",
@@ -225,6 +251,41 @@ function DialogFrame({ children }: { children: ReactNode }) {
   return <div className="relative h-72 overflow-hidden rounded-md border [transform:translateZ(0)]">{children}</div>;
 }
 
+/** 入・切の切り替えの見本。状態（components.yaml の media_toggle.states）ごとに、入と切の 2 つを並べる。 */
+const MEDIA_TOGGLE_STATES = ["default", "disabled", "loading"] as const;
+
+function MediaTogglePair({ kind, state }: { kind: MediaToggleKind; state: (typeof MEDIA_TOGGLE_STATES)[number] }) {
+  return (
+    <div className="flex max-w-xl gap-2">
+      {[true, false].map((on) => (
+        <MediaToggle
+          key={String(on)}
+          kind={kind}
+          on={on}
+          onToggle={noop}
+          disabled={state === "disabled"}
+          loading={state === "loading"}
+          className="flex-1"
+        />
+      ))}
+    </div>
+  );
+}
+
+/** カメラの映りの枠の見本。映っている（default）は、カタログでは映像を開かないので地の色だけ。 */
+const CAMERA_PREVIEW_EXAMPLES: { state: string; preview: CameraPreviewState; example?: string }[] = [
+  { state: "default", preview: "live", example: "映像なし" },
+  { state: "loading", preview: "waiting" },
+  { state: "disabled", preview: "off" },
+  { state: "error", preview: "denied", example: "使えない" },
+  { state: "error", preview: "none", example: "ない" },
+];
+
+/** 入室の帯の見本。帯は画面の下に固定するので、カタログでは枠の中に置く。 */
+function JoinBarFrame({ children }: { children: ReactNode }) {
+  return <div className="overflow-hidden rounded-md border border-border pt-4">{children}</div>;
+}
+
 /** 部品 × 種類 × 状態の見本。components.yaml に部品や種類を足したら、ここにも足す。 */
 export const CATALOG: CatalogEntry[] = [
   ...(["primary", "secondary", "danger", "text"] as const).flatMap((variant) => [
@@ -324,6 +385,75 @@ export const CATALOG: CatalogEntry[] = [
     variant: "date_range",
     state: "loading",
     render: () => <DateRangeField value={{ from: "", to: "" }} onChange={noop} loading />,
+  },
+  {
+    component: "select",
+    state: "default",
+    render: () => (
+      <Select label="コーチ" defaultValue="">
+        <CoachOptions />
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "disabled",
+    render: () => (
+      <Select label="対象" helper="お知らせを送っているあいだは変えられません。" defaultValue="tennis" disabled>
+        <option value="">生徒全員（ゴルフの生徒も含む）</option>
+        <option value="tennis">テニスの生徒</option>
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "loading",
+    render: () => (
+      <Select label="コーチ" defaultValue="" loading>
+        <option value="">すべて</option>
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "failed",
+    render: () => (
+      <Select label="レッスンメニュー" defaultValue="" loadFailed>
+        <option value="">すべて</option>
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "error",
+    render: () => (
+      <Select label="スポーツ" defaultValue="" error={selectNotSelected("スポーツ")} fullWidth>
+        <SportOptions first="選んでください" />
+      </Select>
+    ),
+  },
+  {
+    component: "select",
+    state: "default",
+    example: "絞り込みの行",
+    render: () => (
+      <div className="flex flex-wrap items-end gap-4">
+        <DateField label="開始日" defaultValue="2026-10-28" />
+        <Select label="コーチ" defaultValue="c1">
+          <CoachOptions />
+        </Select>
+        <Select label="スポーツ" defaultValue="">
+          <SportOptions first="すべて" />
+        </Select>
+        <Select label="キャンセルした人" defaultValue="student">
+          <option value="">すべて</option>
+          <option value="student">生徒</option>
+          <option value="coach">コーチ</option>
+          <option value="headquarters">本部</option>
+        </Select>
+        <Button>この条件で見る</Button>
+      </div>
+    ),
   },
   {
     component: "card",
@@ -510,6 +640,109 @@ export const CATALOG: CatalogEntry[] = [
       </DialogFrame>
     ),
   })),
+  ...(["mic", "camera", "speaker_test"] as const).flatMap((kind) =>
+    MEDIA_TOGGLE_STATES.map((state) => ({
+      component: "media_toggle",
+      variant: kind,
+      state,
+      render: () => <MediaTogglePair kind={kind} state={state} />,
+    })),
+  ),
+  {
+    component: "media_toggle",
+    variant: "mic",
+    state: "error",
+    render: () => (
+      <div className="flex max-w-xl flex-col gap-2">
+        <Notice message="マイクを切り替えられませんでした。もう一度押してください。" status="danger" />
+        <MediaTogglePair kind="mic" state="default" />
+      </div>
+    ),
+  },
+  ...CAMERA_PREVIEW_EXAMPLES.map(({ state, preview, example }) => ({
+    component: "camera_preview",
+    state,
+    example,
+    render: () => (
+      <CameraPreview
+        state={preview}
+        caption={preview === "live" ? "映像はこの端末の中だけで映し、送りも残しもしません" : undefined}
+      />
+    ),
+  })),
+  {
+    component: "level_meter",
+    state: "default",
+    render: () => <LevelMeter level={6} label="音が届いています" />,
+  },
+  {
+    component: "level_meter",
+    state: "loading",
+    render: () => <LevelMeter level={0} label="マイクの許可を待っています" stopped />,
+  },
+  {
+    component: "level_meter",
+    state: "disabled",
+    render: () => <LevelMeter level={0} label="マイクを切っています" stopped />,
+  },
+  {
+    component: "level_meter",
+    state: "error",
+    render: () => <LevelMeter level={0} label="マイクが見つかりません。なくても、開始時刻から入室できます。" stopped />,
+  },
+  {
+    component: "join_bar",
+    state: "disabled",
+    render: () => (
+      <JoinBarFrame>
+        <JoinBar
+          startTime="12:00"
+          remainingSeconds={168}
+          meta="田中 美咲・フォアハンドの基礎（30 分）"
+          onJoin={noop}
+          secondaryAction={{ label: "予約の一覧に戻る", onClick: noop }}
+        />
+      </JoinBarFrame>
+    ),
+  },
+  {
+    component: "join_bar",
+    state: "default",
+    render: () => (
+      <JoinBarFrame>
+        <JoinBar
+          startTime="12:00"
+          remainingSeconds={0}
+          meta="田中 美咲・フォアハンドの基礎（30 分）"
+          onJoin={noop}
+          secondaryAction={{ label: "予約の一覧に戻る", onClick: noop }}
+        />
+      </JoinBarFrame>
+    ),
+  },
+  {
+    component: "join_bar",
+    state: "loading",
+    render: () => (
+      <JoinBarFrame>
+        <JoinBar startTime="12:00" remainingSeconds={0} loading onJoin={noop} />
+      </JoinBarFrame>
+    ),
+  },
+  {
+    component: "join_bar",
+    state: "error",
+    render: () => (
+      <JoinBarFrame>
+        <JoinBar
+          startTime="12:00"
+          remainingSeconds={0}
+          error="この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。"
+          onJoin={noop}
+        />
+      </JoinBarFrame>
+    ),
+  },
 ];
 
 /** カタログの枠の名前（見出しと突き合わせに使う）。例: `button / primary / disabled`、`status_tag / warning` */
