@@ -708,4 +708,25 @@ enforcement:
       decided_by: committee:D-0052
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0053（Issue #1144 の起票時の番号は D-0050。PR #1142）の ci_check の案（建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して
+        engine-test を branch protection の必須チェックに入れたあと、test_ci.py で写しがないときは飛ばさず落とすよう切り替え、knowledge-enforcement.patch が
+        ENGINE_REF に当たらない PR で engine-test が落ちた記録を verified_by に残してから wired・verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。
+        tools/knowledge-enforcement-check/test_ci.py の写しの検査を、写しがないとき、CI（CI=true）か、K-*.yaml の wired: true の解決策が wired_by に
+        .github/workflows/knowledge-enforcement.yml を書いているときは飛ばさずに落とすようにした（写したあとで写しを消した・名前を変えた PR を止める。
+        まだ写していない手元では今までどおり飛ばす）。check.py の REQUIRED_PR に、K-0004 の issue 1063 とこの解決策と
+        tools/knowledge-enforcement-check/test_engine_patch.py の組を足し、wired: true にするとき、wired_by に、on.pull_request のある .github/workflows/ の
+        ワークフローで pull_request でも走るジョブから test_engine_patch.py を呼ぶ項目がなければ落とす（ひな形の engine-test の unittest discover で満たし、
+        enforcement のジョブや check.py を指す項目では wired にできない）。test_ci.py で、写しがある・CI・記録が写しを書いている・どれでもないときの
+        落とすか飛ばすかを確かめ、手元で CI=true を渡すと写しがないことで落ちることも確かめた。test_check.py で、ひな形をそのまま写した engine-test の
+        ジョブなら通ること、on を workflow_dispatch・schedule・push に替えた写し、enforcement のジョブ、check.py を指す項目、テストの行を消したジョブ、
+        != 'pull_request' の if: を付けたジョブで落ちることを確かめた。.github/workflows/ への写しと branch protection の必須チェックは建設者が行う
+        （権限設定はワーカーが触れない）ので、engine-test はまだ PR ごとには走っておらず、差分が ENGINE_REF に当たらない PR で落ちた記録もまだない。
+        この解決策も issue 1063 の解決策も未配線・未確認
+      issue: 1144
+      at: 2026-11-08
+      decided_by: committee:D-0053
+      wired: false
+      verified: false
 decided_by: committee:D-0004

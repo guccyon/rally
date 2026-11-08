@@ -32,6 +32,9 @@ tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほか�
 この check.py を呼ぶ項目がないと wired にできないようにした（ci/knowledge-enforcement.yml を写した enforcement のジョブで満たす）。
 議決 D-0052（Issue #1139）で、K-0004 の issue 1062 の解決策（README の一覧と K-*.yaml を照らす test_check.py のテスト）も、pull_request のジョブから
 test_check.py を呼ぶ項目がないと wired にできないようにした（同じく enforcement のジョブで満たす）。
+議決 D-0053（Issue #1144）で、K-0004 の issue 1063・1144 の解決策（Engine に移す差分を ENGINE_REF の版で確かめる engine-test のジョブ）も、
+pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと wired にできないようにした（ci/knowledge-enforcement.yml を写した engine-test の
+unittest discover で満たす。check.py・test_check.py・test_ci.py を名指しで呼ぶ enforcement のジョブでは満たさない）。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
@@ -73,12 +76,14 @@ EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs",
                      ("K-0001", 1106): "tools/pr-body-check/protection.mjs"}
 # (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
-# K-0004 の issue 986・1059 は議決 D-0048、Issue #1129。issue 1062 は議決 D-0052、Issue #1139）
+# K-0004 の issue 986・1059 は議決 D-0048、Issue #1129。issue 1062 は議決 D-0052、Issue #1139。issue 1063・1144 は議決 D-0053、Issue #1144）
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
 KNOWLEDGE_TEST = "tools/knowledge-enforcement-check/test_check.py"
+ENGINE_PATCH_TEST = "tools/knowledge-enforcement-check/test_engine_patch.py"
 REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043"), ("K-0010", 1103): ("tools/conflict-check/test_events.py", "D-0043"),
                ("K-0004", 986): (KNOWLEDGE_CHECK, "D-0048"), ("K-0004", 1059): (KNOWLEDGE_CHECK, "D-0048"),
-               ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052")}
+               ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052"),
+               ("K-0004", 1063): (ENGINE_PATCH_TEST, "D-0053"), ("K-0004", 1144): (ENGINE_PATCH_TEST, "D-0053")}
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
