@@ -492,6 +492,85 @@ class DecisionTest(unittest.TestCase):
         self.assertIn("issue 2）: decision_mismatch: 議決 D-0001 の enforcement に K-0001 の lint の案がない", errors[0])
 
 
+class RequiredRunsTest(unittest.TestCase):
+    """K-0010 の issue 1034・1100 の解決策は 1 つのジョブから test_watch.py・test_engine.py を呼ばないと wired にできない（議決 D-0042、Issue #1100）"""
+
+    WATCH, ENGINE, POLICY = "tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py", "tools/conflict-check/test_policy.py"
+    TEMPLATE = REPO / "tools/conflict-check/ci/conflict-check.yml"
+
+    def repo(self, workflows: dict[str, str]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.WATCH: "", self.ENGINE: "", self.POLICY: "", **{f".github/workflows/{n}": w for n, w in workflows.items()}}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def wf(self, *runs: str, job="c") -> str:
+        steps = "".join(f"      - run: {r}\n" for r in runs)
+        return f"on: pull_request\njobs:\n  {job}:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n{steps}"
+
+    def items(self, *pairs) -> list[dict]:
+        return [{"workflow": f".github/workflows/{w}", "job": j, "runs": r} for w, j, r in pairs]
+
+    def errors(self, d: Path, wired_by=None, kid="K-0010", issue=1034, wired=True) -> list[str]:
+        wb = self.items(("c.yml", "c", self.WATCH), ("c.yml", "c", self.ENGINE)) if wired_by is None else wired_by
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
+        return check.check_required_runs(item, d)
+
+    DISCOVER = "python3 -m unittest discover -s tools/conflict-check -p 'test_*.py'"
+
+    def test_1_つのジョブから両方を呼べば通る(self):
+        self.assertEqual(self.errors(self.repo({"c.yml": self.wf(self.DISCOVER)})), [])
+        self.assertEqual(self.errors(self.repo({"c.yml": self.wf(f"python3 {self.WATCH}", f"python3 {self.ENGINE}")})), [])
+        self.assertEqual(self.errors(self.repo({"c.yml": self.wf(self.DISCOVER)}), issue=1100), [])
+
+    def test_ひな形をそのまま写せば通る(self):
+        d = self.repo({"conflict-check.yml": self.TEMPLATE.read_text(encoding="utf-8")})
+        wb = self.items(("conflict-check.yml", "conflict-check", self.WATCH), ("conflict-check.yml", "conflict-check", self.ENGINE))
+        self.assertEqual(self.errors(d, wb), [])
+
+    def test_片方しか呼ばないジョブでは落ちる(self):
+        for runs in ((f"python3 {self.WATCH}",), (f"python3 {self.ENGINE}",), (f"python3 {self.POLICY}",)):
+            e = self.errors(self.repo({"c.yml": self.wf(*runs)}))
+            self.assertEqual(len(e), 1, runs)
+            self.assertIn("test_watch.py・tools/conflict-check/test_engine.py をすべて呼ぶ", e[0])
+            self.assertIn("議決 D-0042", e[0])
+
+    def test_wired_by_に片方しか書かなければ落ちる(self):
+        d = self.repo({"c.yml": self.wf(self.DISCOVER)})
+        for wb in (self.items(("c.yml", "c", self.WATCH)), self.items(("c.yml", "c", self.ENGINE)), self.items(("c.yml", "c", self.POLICY)), []):
+            self.assertEqual(len(self.errors(d, wb)), 1, wb)
+
+    def test_別のジョブに分けて呼ぶだけでは落ちる(self):
+        d = self.repo({"a.yml": self.wf(f"python3 {self.WATCH}", job="a"), "b.yml": self.wf(f"python3 {self.ENGINE}", job="b")})
+        self.assertEqual(len(self.errors(d, self.items(("a.yml", "a", self.WATCH), ("b.yml", "b", self.ENGINE)))), 1)
+
+    def test_ひな形は配線先にならない(self):
+        d = self.repo({})
+        wb = [{"workflow": "tools/conflict-check/ci/conflict-check.yml", "job": "conflict-check", "runs": r} for r in (self.WATCH, self.ENGINE)]
+        self.assertEqual(len(self.errors(d, wb)), 1)
+
+    def test_対象でない解決策と配線していない解決策は見ない(self):
+        d = self.repo({"c.yml": self.wf(f"python3 {self.POLICY}")})
+        wb = self.items(("c.yml", "c", self.POLICY))
+        self.assertEqual(self.errors(d, wb, issue=972), [])
+        self.assertEqual(self.errors(d, wb, kid="K-0004"), [])
+        self.assertEqual(self.errors(d, wb, wired=False), [])
+
+    def test_main_で落とす(self):
+        d = self.repo({"c.yml": self.wf(f"python3 {self.WATCH}")})
+        MainTest.write(None, d, "K-0010.yaml", "id: K-0010\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1100, wired: true, wired_by: [{{workflow: .github/workflows/c.yml, job: c, runs: {self.WATCH}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1100）: wired にするには", errors[0])
+
+
 class RepoTest(unittest.TestCase):
     """このリポジトリの記録"""
 
