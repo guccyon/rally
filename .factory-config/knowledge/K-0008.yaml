@@ -8,7 +8,9 @@ statement: >-
   ただし判断待ちの間も main が速く進むと、並行で解いてもまた衝突し、continue を繰り返す費用が待ちの短縮を上回るおそれがある。
   判断の後まで continue が起きなかった理由（supervisor の仕組み）は確かめていない。
 scope:
+  work: [dev.review.judge]
   roles: [supervisor]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0004
