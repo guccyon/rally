@@ -1,0 +1,87 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0073
+pr: https://github.com/guccyon/rally/pull/1204
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この変更セットは K-0014 に議決 D-0049 の schema の案を入れた記録を enforcement.solutions に足しただけで、statement・confidence（hypothesis）・status・invalidate_when
+    は変えていないので、既存の知見との矛盾は生まれていません。
+  - 'wired: false・verified: false と issue・at・decided_by を書いていて README の決まりどおりで、INDEX.md
+    の担保の列が deterministic になったのも README にある「enforcement.level のまま出る」という扱いと合っています。'
+  - K-0010 の events.py は衝突したファイルを job_id で結ぶ別のイベント conflict.files として読んでいますが、今回の schema
+    は pr.conflicted などのイベントの中の欄 conflict_files を必須にしています。このように表し方が 2 通りあるので、Engine
+    に入れる前に、events.py が conflict_files の欄も読むのか、どちらか一方にそろえるのかを決めてください。
+  - K-0014 の invalidate_when の 1 つ目は「conflict.files」がその場で載ることを条件にしているので、schema の欄の名前
+    conflict_files に合わせて書き直すか、両方を条件にすると、無効になったかを判断しやすくなります。
+  - D-0049 のもう一つの案（events.py に rule missing_conflict_files を足す test）はまだ入っていませんが、今回の記録は
+    schema の案だけを入れたと書き分けているので、範囲の扱いは妥当です。
+  - specs の glossary・context-map には衝突やイベントの欄の用語がなく、製品の規範とぶつかるところはありません。確かさは本物のイベント列で確かめていないので
+    hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0014 に足した担保の記録は、議決 D-0049 の schema の案と Issue #1136 に辿れて、decided_by も committee:D-0049
+    とそろっています。'
+  - '担保は本物のイベント列で確かめておらず、Engine への差分の適用と schema.py の配線も残っているので、wired: false・verified:
+    false と書いたのは README の決まりどおりで正直な記録です。'
+  - この PR は statement・evidence・確かさを変えておらず、担保を足しても主張の確かめ（記録の欠けが手を打つ時期を遅らせたか）は進んでいないので、confidence
+    は hypothesis のままが妥当です。
+  - 'test_schema.py の fixture は D-0049 の案にあった C-0007 の流れではなく C-0005（PR #659）の流れで組まれているので、次に
+    K-0014 を直すときは C-0007 の PR #290・#295 の流れも fixture に足すと根拠の事例とそろいます。'
+  - INDEX.md の担保の列が deterministic になったのは、Engine の knowledge_check.py が未配線の表示に対応するまで
+    enforcement.level をそのまま出すという README の決まりどおりです。
+  - 差分に出てくるのはファイル名・イベント名・Issue と PR の番号・事例の id だけで、利用者の氏名・連絡先・ID・本文の引用はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0049 の enforcement の 2 つ目の案（schema）を K-0014 の enforcement.solutions
+    に記録するだけで、中身は議決の案とそろっており、担保の観点で採ってよいです。
+  - conflict_files の必須・空でない列という線は機械で照らせるうえ、衝突のたびに繰り返し、外すと C-0007 のように事後の backfill
+    がないと束が見えないので、決定論で担保する向きは妥当です。
+  - 'Engine への差分の適用、schema.py の配線、本物のイベント列での確認がまだなので wired: false・verified: false
+    と書いたのは README の決まりどおりで、正直な記録です。'
+  - INDEX.md の担保の列が deterministic と出るのは README にある既知の表示のずれ（knowledge_check.py が未配線を区別しない）によるもので、この
+    PR の誤りではありませんが、読む人は未配線と読み替える必要があります。
+  - D-0049 の 1 つ目の案（tools/conflict-check/events.py に missing_conflict_files の rule
+    を足す test）はまだどこにも記録されていないので、次に K-0014 を直す変更セットで別の解決策として足すか、見送る理由を書くのがよいです。
+  - 確かさは hypothesis のままが妥当で、schema が配線されて本物のイベント列で conflict_files が載るのを確かめても、それは invalidate_when
+    の 1 つ目に当たるので、確かさを上げる材料ではなく見直しの合図として扱ってください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0014 の statement・scope・確かさを変えず、議決 D-0049 で可決した schema の案を入れた記録を enforcement.solutions
+    に足すだけなので、主張の範囲は広がっていません。
+  - 'wired: false・verified: false と書き、Engine への差分の当て方、pr.conflicted が GitHub の mergeable_state
+    からしか衝突を知らない点、配線が残っている点を自分で断っているので、効き目を言い過ぎてはいません。'
+  - 反例になりうる点として、conflict_files を pr.conflicted では「いつも」1 件以上の必須にすると、Engine が衝突したファイルを取れなかったときに
+    pr.conflicted そのものを出せなくなるおそれがあるので、Engine に当てる前に、取れないときの扱い（出さないのか、理由付きで出すのか）を決めておくべきです。
+  - 'test_schema.py の fixture は K-0014 の根拠にない C-0005（PR #659）の流れなので、verified を true
+    にするときは根拠の C-0007（PR #290・#295）の本物のイベント列で確かめてください。'
+  - D-0049 のもう 1 つの案（events.py の rule missing_conflict_files）はこの PR に入っていないので、担保が
+    schema だけで足りるのかは次の変更セットで書き分けると読み違いが減ります。
+  - 解決策はまだ未配線・未確認なので、K-0014 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'Engine に tools/conflict-check/engine/conflict-files.patch を当てたあと、on.pull_request
+    か定期のワークフローで tools/conflict-check/schema.py を直近の窓のイベント列に対して走らせる job を足し、K-0014
+    の issue 1136 の項目を wired: true にして wired_by にそのワークフローのファイル・job・schema.py の道を書く。Engine
+    の差分が入る前に配線すると今のイベントがすべて missing_field で落ちるので、Engine の適用を先にし、適用日より前のイベントは照らさない。'
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: test
+  proposal: 'D-0049 の 1 つ目の案どおり tools/conflict-check/events.py に rule missing_conflict_files
+    を足し、continue.enqueued(reason=conflict) と同じ job_id の conflict.files がその場にない（backfill
+    で後から足された）ものを数えて終了コード 1 で落とす。test_events.py で C-0007 の流れ（PR #290・#295 の detail
+    が null の列）が落ち、その場で載せた列が通ることを確かめ、K-0014 に別の解決策として wired: false・verified: false
+    で記録する。'
