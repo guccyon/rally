@@ -1,0 +1,75 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0067
+pr: https://github.com/guccyon/rally/pull/1181
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。
+  - '足した項目の kind: ci_check・decided_by: committee:D-0045・issue 1109 は、D-0045 の enforcement
+    の 1 つ目の案（gate.test.mjs・CLI のテスト・engine.test.mjs の (10) が実行の対象から外れていないことを ci.test.mjs
+    で見る）とそのまま対応していて、食い違いはありません。'
+  - D-0045 の 2 つ目の案（Engine に差分が入ったら ENGINE_REF の Engine そのもので (10) を走らせる test）はこの差分では入れておらず、what
+    もそれを入れたとは書いていないので、案と記録の取り違えはありません。
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致し、README の wired_by・verified_by
+    の決まりにも反しません。'
+  - D-0046 以降で K-0001 に触れた議決（D-0048・D-0049・D-0052・D-0059 など）とも矛盾せず、specs/ の用語を新しく定義してもいないので、INDEX.md
+    の行もそのままでよいです。
+  - 配線も本物の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当で、配線が入ったら同じ変更セットで該当する
+    solutions の wired・verified と invalidate_when の 2 つ目に当たるかを見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0045 と issue 1109 を指していて、D-0045 の enforcement
+    の 1 つ目の案（ci.test.mjs で gate.test.mjs と engine.test.mjs の (10) が実行の対象から外れていないことを見て、外したら落とす）にそのまま辿れます。'
+  - what に書いた PASSING_REPORTS の 3 通りの形と (10) は、すでにある test の項目（issue 1038、committee:D-0032）の記述と合っていて、根拠を食い違えて書いていません。
+  - 外す直しの件数（9 通り・8 通り・5 通り）が外れになったというテストの結果は置き場の外の記録で、この材料では確かめられませんが、担保の記録であって主張の根拠を増やすものではないので採る妨げにはなりません。
+  - 'wired: false・verified: false と what の「まだ配線されておらず効き目は確かめていない」が合っていて、statement・evidence・confidence
+    は変えていないので、K-0001 の confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・議決の番号・Issue の番号など工場の識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は議決 D-0045 の 1 つ目の ci_check の案（gate.test.mjs・CLI のテスト・engine.test.mjs の (10)
+    が実行の対象から外れていないことを ci.test.mjs で見張る）を K-0001 の enforcement.solutions に 1 件足すだけで、担保の観点で採ってよいです。
+  - 外す直しを gate.test.mjs で 9 通り、engine.test.mjs で 8 通り、ワークフローで 5 通り入れてどれも落ちることを確かめているので、テストを黙って外すという外れを捕まえる決定論の線になっています。
+  - ただしこの見張りはテストのファイルの書き方を形で照らすものなので、列挙していない飛ばし方（別名で包んだ skip や条件付きの早い return など）はすり抜けうることを、配線のあと本物の記録で確かめてください。
+  - 'K-0001 の solutions は 7 件すべて wired: false のままで、どれも ci/pr-body-engine.yml を .github/workflows/
+    に写して pr-body-engine-test を必須にするという同じ 1 つの配線を待っているので、建設者の配線が担保の効き目を決める唯一の残りの一手です。'
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致しており、担保を言い過ぎていません。'
+  - 配線も本物の記録での確認もまだなので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0045 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - 足した項目は D-0045 の enforcement の 1 件目（gate.test.mjs・CLI のテスト・engine.test.mjs の (10)
+    が実行の対象から外れたら落とす）にそのまま対応し、2 件目（ENGINE_REF の Engine そのもので (10) を走らせる）を入れたとは書いていないので言い過ぎていません。
+  - 反例として、見張りはテストのファイルとワークフローの文字の形を見るだけなので、describe.skip や条件付きの skip、ENGINE_DIR が空の文字列で渡る場合、package.json
+    やテストの設定のファイルでの絞り込みなど、9・8・5 通りの外す直しに入っていない外し方は捕まえられない恐れがあり、配線のあと本物の CI の実行記録で (10)
+    が実際に走ったことを確かめてください。
+  - 'wired: false・verified: false とし、ひな形の写しと必須のチェックへの登録は建設者が行うのでまだ効き目は確かめていないと what
+    に書いているのは実態と合っています。'
+  - 配線も本物の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が tools/pr-body-check/ci/pr-body-engine.yml を .github/workflows/ に写し、pr-body-engine-test
+    を既定ブランチの必須のチェックに登録したうえで、tools/pr-body-check/protection.mjs を同じジョブか定期の CI で走らせて写しの欠け・名前の違い・必須からの外れを落とし、そのとき
+    K-0001 の該当する solutions の wired を true にして wired_by にワークフローのファイル・job・呼ぶ検査の道を書く。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: ci.test.mjs の見張りを形の照合だけに頼らず、node --test を --test-reporter=tap などで走らせた結果から
+    gate.test.mjs の通る側のテストと engine.test.mjs の (10) が実際に実行され pass と数えられた（skip・todo
+    の数が 0）ことを確かめ、実行されていなければ落とす。
