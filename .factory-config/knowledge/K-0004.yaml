@@ -487,6 +487,20 @@ enforcement:
       decided_by: committee:D-0036
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0037 の test の案（議決 D-0024 の総当たりの効き目を確かめた 2 つの改変は手元の写しで一度だけ試したもので、総当たりが将来ゆるめられても気づけない）を入れた。
+        tools/knowledge-enforcement-check/test_engine.py に、wired の "true" を配線済みに数える改変と、verified を真偽でなく値の有無で見る改変を、
+        差分を当てた Engine の写しの enforcement_label() にさらに当てる変異体（MUTANTS）として置き、変異体ごとに総当たり（exhaustive_mismatches）を走らせて
+        食い違いが 1 件も出なければ落とすテストを足した。置き換える字面が Engine の enforcement_label() になくなったときも落とす。
+        手元の Engine の写しで、今の総当たりでは両方の変異体で食い違いが出て通ること、総当たりの値を未記入・true・false だけにゆるめると
+        wired の "true" の変異体で落ちることを確かめた。test_engine.py は ci/knowledge-enforcement.yml の unittest discover で走るが、
+        そのひな形はまだ .github/workflows/ に写していない（建設者）ので PR ごとには走っておらず、効き目は確かめていない
+      issue: 1079
+      at: 2026-11-08
+      decided_by: committee:D-0037
+      wired: false
+      verified: false
     - kind: config
       what: >-
         議決 D-0038（PR #1082）の config の案（ci/sendback-engine.yml を .github/workflows/ に写し、engine-test と wiring-order を branch protection の
