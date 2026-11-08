@@ -426,4 +426,19 @@ enforcement:
       decided_by: committee:D-0034
       wired: false
       verified: false
+    - kind: schema
+      what: >-
+        議決 D-0034 の schema の案（wired_by を Engine の定義に書き、wired が true のときに必須とし、Engine の knowledge_check.py でも同じ形を落とす）を、
+        Engine に当てる差分 tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch に足した。definitions/knowledge.yaml の enforcement に
+        solution_wired_by（required_when: {wired: true}、items の workflow（.github/workflows/ の直下のファイルの形）・job・runs）を書き、
+        core-gates/knowledge_check.py の check_wired_by() が wired: true の解決策で wired_by がない・空・列でない、項目が 3 つの空でない文字列でない、
+        workflow が .github/workflows/ の直下でないときに落とす（ファイル・job の実在と呼び出しは check.py が照らす）。test_engine.py で、wired と wired_by の値の組ごとに
+        Engine の落とし方が check.py の形の誤りと一致すること、定義と両方の値がそろうことを確かめ、Engine の判定を壊した写しで落ちることも確かめた。
+        差分は knowledge-check.yml の ENGINE_REF（9d3713a）に当たらなくなっていたので、その版に合わせて作り直した。差分を Engine に当てて ENGINE_REF を上げることと、
+        ci/knowledge-enforcement.yml を .github/workflows/ に写すことは建設者が行うので、この解決策も未配線・未確認
+      issue: 1060
+      at: 2026-11-08
+      decided_by: committee:D-0034
+      wired: false
+      verified: false
 decided_by: committee:D-0004
