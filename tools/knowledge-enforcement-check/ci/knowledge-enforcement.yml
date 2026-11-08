@@ -2,6 +2,7 @@
 # .github/workflows/ に写すのは建設者（ワーカーの権限にない）。写すまでこの検査は PR ごとには走らない。
 # engine-test のジョブは、ENGINE_REF の版の Engine で test_engine.py と test_engine_patch.py を CI=true・ENGINE_DIR を渡して走らせ、
 # engine/knowledge-enforcement.patch が ENGINE_REF に当たらないか、差分で足したテストが落ちれば、どの PR でも落とす（議決 D-0035、Issue #1063）。
+# テストは unittest discover でまとめて走らせ、その出力で skipped が 1 件以上あっても落とす（飛ばして緑にしない。議決 D-0037、Issue #1080）。
 # 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
 # enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければ落とす。ほかの PR では結果を Job Summary に残すだけ
 # 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
@@ -44,13 +45,29 @@ jobs:
           ref: ${{ env.ENGINE_REF }}
           path: .engine
       - name: Engine に移す差分のテスト（ENGINE_REF の版に当たるか・足したテストが通るか。K-0004）
+        shell: bash
         env:
           CI: "true"
           ENGINE_DIR: ${{ github.workspace }}/.engine
         run: |
+          set -o pipefail
           python3 -m pip install --quiet pyyaml pytest
-          python3 -B tools/knowledge-enforcement-check/test_engine_patch.py -v
-          python3 -B tools/knowledge-enforcement-check/test_engine.py -v
+          python3 -B -m unittest discover -s tools/knowledge-enforcement-check -v 2>&1 | tee knowledge-enforcement-unittest.log
+      - name: 飛ばしたテストがないか（K-0004）
+        shell: bash
+        run: |
+          log=knowledge-enforcement-unittest.log
+          if ! grep -qE '^Ran [1-9][0-9]* tests? in ' "$log" 2>/dev/null; then
+            echo "::error title=knowledge-enforcement unittest_not_run::unittest discover の出力（${log}）に走らせたテストの件数がない"
+            exit 1
+          fi
+          skipped=$(grep -oE '^(OK|FAILED) \(.*skipped=[0-9]+' "$log" | grep -oE '[0-9]+$' || true)
+          if [ "${skipped:-0}" -gt 0 ]; then
+            echo "::error title=knowledge-enforcement tests_skipped::unittest discover で ${skipped} 件のテストを飛ばした。CI では Engine のチェックアウト・ENGINE_REF の版・pytest がなくても飛ばさずに落とす"
+            grep -E "\.\.\. skipped " "$log" || true
+            exit 1
+          fi
+          echo "skipped=0"
   enforcement:
     runs-on: ubuntu-latest
     steps:
