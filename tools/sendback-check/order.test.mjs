@@ -307,6 +307,13 @@ test("CLI: check.mjs --events を GitHub Actions で動かすと、通る記録�
   assert.match(bad.stdout, /^::error title=sendback-check engine_test_todo::/m);
   const good = run(fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED));
   assert.equal(good.status, 0, good.stdout);
+  // engine-test が order.mjs に TAP を渡さない（Engine の結果を見る手順がない）と engine_report_missing で落ちる（議決 D-0029、Issue #1026）
+  const withoutReport = template.replace(/node order\.mjs --engine-report engine-test\.tap /, "node order.mjs ");
+  assert.notEqual(withoutReport, template);
+  const noReport = run(fixture({ "sendback-engine.yml": withoutReport, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED));
+  assert.equal(noReport.status, 1);
+  assert.match(noReport.stdout, /^::error title=sendback-check engine_report_missing::.*order\.mjs --engine-report を呼ぶ手順がない/m);
+  assert.doesNotMatch(noReport.stdout, /engine_test_not_wired/);
 });
 
 // ENGINE_REF の Engine で走らせた engine.test.mjs の結果を見る（議決 D-0016、Issue #964）。
@@ -495,7 +502,7 @@ test("check.mjs --events を配線したのに TAP がない（渡されてい�
   assert.deepEqual(rules(order({ engineReport: tap({ basis: LEGACY_TODO }) })), ["engine_basis_not_passed", "engine_basis_not_passed"]);
   // 配線していなければ TAP がなくても通る（今のリポジトリ）
   assert.deepEqual(checkOrder({ ...loadRepo(REPO_ROOT), requireEngineReport: "here" }), { wired: [], errors: [] });
-  // 求めないとき（check.mjs の main からの見張り）は今までどおり
+  // 求めないとき（requireEngineReport を渡さない）は今までどおり
   assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED })), []);
 });
 
@@ -650,7 +657,8 @@ test("実行時の守り: 見張りは記録を読む前に走り、記録が外
     { name: "sendback.filed", payload: { origin_pr: pr } }], env);
   assert.equal(r.status, 1);
   const lines = r.stdout.split("\n").filter((l) => l.startsWith("::error"));
-  assert.deepEqual(lines.map((l) => l.match(/sendback-check (\w+)::/)[1]), ["engine_test_todo", "engine_test_not_wired", "followup_without_defect"]);
+  assert.deepEqual(lines.map((l) => l.match(/sendback-check (\w+)::/)[1]), ["engine_test_todo", "engine_report_missing", "engine_test_not_wired",
+    "followup_without_defect"]);   // engine_report_missing は Engine の結果を見る手順もないため（議決 D-0029、Issue #1026）
   assert.match(lines[0], /check\.mjs --events（\.github\/workflows\/hidden\.yml の hidden）/);
   // 記録を読めなくても（終了コード 2）、配線の順序の外れは出す
   const unreadable = launch(node, root, "{ 壊れた", env);

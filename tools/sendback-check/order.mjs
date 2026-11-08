@@ -403,7 +403,7 @@ const STATUS_TEXT = { todo: " todo になった（Engine の basis がまだ LEG
  * scripts・readFile は callsEventsCheck と同じ（npm scripts とラッパーのスクリプトを辿るため）。
  * engineReport は ENGINE_REF の Engine で走らせた engine.test.mjs の TAP（渡さなければ結果は見ない。議決 D-0016、Issue #964）。
  * requireEngineReport が "here" なら engineReport がない（null）か空のときに、"elsewhere" なら workflows に order.mjs --engine-report を呼ぶ
- * 手順がないときに engine_report_missing で外す（order.mjs の main が使う。議決 D-0029、Issue #1026）。engineReportPath は理由の文に出す TAP の道。
+ * 手順がないときに engine_report_missing で外す（"here" は order.mjs の main、"elsewhere" は order.mjs --engine-report-elsewhere と check.mjs の main が使う。議決 D-0029、Issue #1026）。engineReportPath は理由の文に出す TAP の道。
  * running は GitHub Actions で動いている check.mjs --events の在りか（runningFrom）。渡すと、.github/workflows/ に呼ぶ手順を見つけられなくても
  * 配線したと数えて見る（静的な辿りが見逃す呼び方への守り。議決 D-0026・D-0038、Issue #1084）。
  */
