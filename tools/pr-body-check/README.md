@@ -1,6 +1,6 @@
 # PR 本文の見出しの検査
 
-PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。議決 `D-0044` の案と Issue #1106 で、`protection.mjs` を既定のブランチへの push と毎日走らせ、必須のチェックが外れたら落ちて Issue を開くか更新するひな形（`ci/pr-body-protection.yml`）を足した。議決 `D-0045` の ci_check の案と Issue #1109 で、通る側のテスト（`gate.test.mjs`・`engine.test.mjs` の (10)）が CI の `node --test` の対象から外れていないかの見張りを `ci.test.mjs` に足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。知見 `K-0012` の担保として、議決 `D-0033`（Issue #1053 の起票時の番号は `D-0032`。PR #1051）の test の案と Issue #1053 で、本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る検査（`recheck.mjs`）を足した。知見 `K-0005` の担保として、Issue #1121（解決策の種類は config）で、見出しの正本（`template.json`）と、それに合わせる CLAUDE.md と Engine の rubric の `PR-002` を `followers.json` に書き、食い違ったら落とす照合（`followers.mjs`）を足した。
+PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。議決 `D-0044` の案と Issue #1106 で、`protection.mjs` を既定のブランチへの push と毎日走らせ、必須のチェックが外れたら落ちて Issue を開くか更新するひな形（`ci/pr-body-protection.yml`）を足した。議決 `D-0045` の ci_check の案と Issue #1109 で、通る側のテスト（`gate.test.mjs`・`engine.test.mjs` の (10)）が CI の `node --test` の対象から外れていないかの見張りを `ci.test.mjs` に足した。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。知見 `K-0012` の担保として、議決 `D-0033`（Issue #1053 の起票時の番号は `D-0032`。PR #1051）の test の案と Issue #1053 で、本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る検査（`recheck.mjs`）を足した。議決 `D-0050`（Issue #1131 の起票時の番号は `D-0048`。PR #1128）の ci_check の案と Issue #1131 で、`recheck.test.mjs` に事例 `C-0003` の列を足し、ひな形 `ci/pr-body-engine.yml` の `engine-test` で走るテストに数えて、`ci.test.mjs` でファイルの側で外していないかを見張るようにした。知見 `K-0005` の担保として、Issue #1121（解決策の種類は config）で、見出しの正本（`template.json`）と、それに合わせる CLAUDE.md と Engine の rubric の `PR-002` を `followers.json` に書き、食い違ったら落とす照合（`followers.mjs`）を足した。
 
 続きのジョブ（衝突の解消・CI 落ちの直しなど）の報告が、新しい PR と同じ見出しの組（`## 概要`・`## 対応内容` など）のまま本文の末尾に足されると、同じ見出しが 2 回出る。これを検査役（LLM）と判定役まで流さず、本文を更新した直後に止めるためのもの。差し戻しの直しで本文の末尾に追記するだけだと、見出しの順が崩れたり必須の見出しが欠けたりする（K-0006）ので、それも見る。
 
@@ -93,7 +93,7 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
 
 - 本文の検査は `gate.evaluated` で数え、`gate` は問わない（検査役の `rubric` も、`check.mjs` の結果を `gate: "pr-body-check"` で記録したものも数える）。直す前の検査とほかの PR の検査は数えない
 - 終了コード: 0 = 通る、1 = 外れた、2 = イベント列を読めなかった。標準出力に外れごとに「PR の URL rule: 理由」と、最後に件数の 1 行。`--json` は `{ ok, errors: [{ rule, pr_url, message }] }`
-- まだどこからも呼んでいない（CI にも Engine にも配線していない）。テストは `npm test` で走る
+- `recheck.mjs` はまだどこからも呼んでいない（Engine の supervisor に配線していない）。テスト（`recheck.test.mjs`）は `npm test` と、ひな形 `ci/pr-body-engine.yml` の `engine-test`（道を渡さない `node --test`）で走る。建設者がひな形を `.github/workflows/pr-body-engine.yml` に写すと PR ごとに走る（議決 `D-0050`、Issue #1131）
 
 ## テスト
 
@@ -113,10 +113,10 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
   - (8) 未完了の続きが仕上がった回（`CONTINUE_REASON=incomplete`・`INCOMPLETE` が空）に関所で外れても、報告を足さない本文で仕上げ（未完了の印を消す・`Refs` を `Closes` に直す・題を戻す・ドラフトを外す）だけは済ませ、`finished.applied` を true で残す。報告は body_fix に回し、人には回さない
   - (9) 同じ回で報告を足さない本文も関所で外れたら、仕上げも書かず `finished.applied` を false で残し、dispatcher が停止（`body_gate_finish:<PR の URL>`、human）を開いて人に回す
   - (10) 同じ写しで、C-0005 の 21 回の続きのジョブの報告の見出しを `###`・`####` に下げたか `## ` 見出しを持たない形なら、毎回関所を 1 回呼んで 0 が返り（`node` を包んで終了コードを残す）、`body_gate.json` を残さずに本文を書き、書いた本文が関所に通る（正しい更新まで止める誤検知がないこと。議決 `D-0032` の test の案、Issue #1038）。Engine がもう関所を呼んでいれば差分を当てずに写すので、配線したあとは本物の本文の更新を確かめる。議決 `D-0044` の test の案（Issue #1107）で、この通る側を必須のテストとして担保に記録した。Engine の行が変わって `engine/pr-body-gate.patch` が当たらなくなると (4)〜(10) がそろって落ち、通る側を確かめられなくなるので、そのときは同じ PR で差分を今の Engine に合わせて作り直す
-- `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`gate.test.mjs`・`engine.test.mjs` の (10) が実行の対象から外れていないこと、`ci/pr-body-protection.yml` の形と手順の振る舞い（下の「配線の手順（建設者）」と「定期の照合」）
+- `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`gate.test.mjs`・`engine.test.mjs` の (10)・`recheck.test.mjs`（skip・todo・only がなく、`C-0003`・`C-0005`・`C-0006` の列のテストがある）が実行の対象から外れていないこと、`ci/pr-body-protection.yml` の形と手順の振る舞い（下の「配線の手順（建設者）」と「定期の照合」）
 - `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
 - `followers.test.mjs`: 正本に合わせる側の照合（`followers.mjs`）。今の CLAUDE.md が通り、順・名前・数・必須を変えると落ち、`template.json` だけを変えると両方の合わせる側が落ち、Issue #1121 の時点の Engine の `PR-002` の形が `headings_mismatch` で落ち、一覧を取り出せない形は照らさずに読めなかったことにする。本物の Engine の rubric の照合は `engine.test.mjs` と同じ飛ばし方（`ENGINE_DIR` を渡したときと `CI=true` では落とす）。Engine の `PR-002` が Issue #1121 の時点の形のときだけ `todo`（その判定も、ほかの形や読めない rubric では `todo` にしないことを確かめる）
-- `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる
+- `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、事例 `C-0003`（PR #396。最後の本文の直しの job 572 のあと、検査を通さずに 14:23:30 にマージ）の列も `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
 
 ```sh
@@ -174,8 +174,11 @@ Engine は別のリポジトリなので、次は建設者が入れる。その�
 - `ENGINE_REF` がワークフローの `env` に 40 桁のコミット SHA で 1 行だけあり（ジョブや手順の `env`・`GITHUB_ENV` で上書きしない）、Engine を取る手順の `ref` が `${{ env.ENGINE_REF }}`
 - テストの手順が `tools/pr-body-check` で `ENGINE_DIR` を渡し、道を渡さずに `node --test` で全部のテストを走らせ（`--test-reporter` のほかの引数、`--test-name-pattern`・`--test-skip-pattern`・`--test-only` などを付けない。ワークフローのどこにも `NODE_OPTIONS` を置かない）、`exit $rc` で落ちる
 - 通る側のテストが実行の対象から外れていない（議決 `D-0045` の ci_check の案、Issue #1109）。同じ `node --test` で必ず走らせるのは、`gate.test.mjs` の関所と CLI のテスト（`test("CLI …")` が 3 件以上、通る側の CLI のテストを含む）と、`engine.test.mjs` の (10)（通る側の 3 通りの形 `PASSING_REPORTS` を回すテスト。形が 3 通り以上）。`gate.test.mjs` には `skip` を置かない。`engine.test.mjs` の飛ばしは、`ENGINE_DIR` を渡すと `false` になる共通の `skip`（`required` の行と `skip` の宣言は 1 つ。テストには `{ skip }` だけを渡す）にかぎる。どちらにも `todo`・`only`・`test.skip`・`t.skip` などを置かない。注釈の行は見ない。外す直し（`{ skip: true }`・`{ todo: true }`・`test.skip`・`t.skip()`・(10) だけ別の `skip`・`required` から `ENGINE_DIR` を外す・ループを空にするなど）が外れになることも確かめる
+- `recheck.test.mjs`（知見 `K-0012` の担保）が実行の対象から外れていない（議決 `D-0050` の ci_check の案、Issue #1131）。`skip`・`todo`・`only` を置かず、事例 `C-0003`・`C-0005`・`C-0006` の列が落ちるテスト（`test("C-NNNN の列は、…")`）が残っている。注釈の行は見ない
 - `engine-test` の `name:` が `pr-body-engine-test`。`tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml` にも id のままの `engine-test` のジョブがあるので（`tools/sendback-check/ci/sendback-engine.yml` の `engine-test` は `sendback-engine-test` を報告する。議決 `D-0038`）、同じ名前だと必須のチェックの「engine-test」がどちらの報告でも満たされ、この写しを消しても止まらない
 - ひな形の `ENGINE_REF` が `tools/sendback-check/ci/sendback-engine.yml` と同じ版。写しがあれば、`ENGINE_REF` の行のほかがひな形と同じで、`.github/workflows/sendback-engine.yml` の写しとも同じ版。GitHub Actions で写しがなければ落ちる
+
+写して `engine-test` を必須のチェックにしたら、知見 `K-0012` の Issue #1131 の解決策を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/pr-body-engine.yml, job: engine-test, runs: tools/pr-body-check/recheck.test.mjs}` を書く（`tools/knowledge-enforcement-check/check.py` は、ファイルを名指ししない `node --test` を `tools/pr-body-check` で走らせる形を `recheck.test.mjs` の呼び出しに数える）。
 
 `protection.mjs` は、`gh api` で取り出した branch protection（古い形か rulesets）の JSON を読み、写しの `engine-test` が報告するチェックの名前（`pr-body-engine-test`）が必須のチェックにあるかを照らす。branch protection は PR の `GITHUB_TOKEN` では読めないので、PR ごとには走らせず建設者が走らせる。
 
