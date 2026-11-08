@@ -48,6 +48,11 @@ REQUIRED_SCHEDULE_WORKFLOW の .github/workflows/sendback-protection.yml のジ�
 議決 D-0061（Issue #1162。起票時の番号は D-0058）で、K-0004 の issue 1162 の解決策（sendback-protection の定期の実行が最後に通ってから
 2 日より長ければ落とす heartbeat.mjs）を REQUIRED_SCHEDULE に挙げ、schedule でも走るジョブから tools/sendback-check/heartbeat.mjs を呼ぶ項目がないと
 wired にできないようにした（tools/sendback-check/ci/sendback-protection-heartbeat.yml を写した heartbeat のジョブで満たす）。
+議決 D-0070（Issue #1182。起票時の番号は D-0067）で、K-0001 の issue 1182 の解決策（建設者が pr-body-engine.yml を写して pr-body-engine-test を
+必須のチェックにし、protection.mjs を定期に走らせる）を REQUIRED_SCHEDULE と REQUIRED_PR の両方に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
+.github/workflows/pr-body-protection.yml の schedule でも走るジョブから tools/pr-body-check/protection.mjs を呼ぶ項目と、REQUIRED_PR_WORKFLOW の
+.github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs を呼ぶ項目の両方がないと wired にできないようにした
+（tools/pr-body-check/ci/pr-body-protection.yml を写した protection と、ci/pr-body-engine.yml を写した engine-test のジョブで満たす）。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
@@ -101,21 +106,25 @@ EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106。
 # K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。REQUIRED_PR にも挙げ、schedule と pull_request の両方のジョブから呼ぶことを求める。
 # K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160。
-# K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs）
+# K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs。
+# K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）。REQUIRED_PR にも挙げる）
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
+PR_BODY_PROTECTION = "tools/pr-body-check/protection.mjs"
 SENDBACK_HEARTBEAT = "tools/sendback-check/heartbeat.mjs"
 REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
-                     ("K-0001", 1106): "tools/pr-body-check/protection.mjs",
+                     ("K-0001", 1106): PR_BODY_PROTECTION,
+                     ("K-0001", 1182): PR_BODY_PROTECTION,
                      ("K-0004", 1158): SENDBACK_PROTECTION,
                      ("K-0004", 1087): SENDBACK_PROTECTION,
                      ("K-0004", 1162): SENDBACK_HEARTBEAT}
 # (知見の id, 解決策の issue) → (REQUIRED_SCHEDULE の検査を呼ぶジョブがあることを求めるワークフロー, 落ちたときに挙げる議決)（議決 D-0060、Issue #1160）
 SENDBACK_PROTECTION_WORKFLOW = f"{WORKFLOWS}/sendback-protection.yml"
 REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
-                              ("K-0004", 1087): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060")}
+                              ("K-0004", 1087): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
+                              ("K-0001", 1182): (f"{WORKFLOWS}/pr-body-protection.yml", "D-0070")}
 # (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
 # K-0004 の issue 986・1059 は議決 D-0048、Issue #1129。issue 1062 は議決 D-0052、Issue #1139。issue 1063・1144 は議決 D-0053、Issue #1144。
-# issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158）
+# issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158。K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）、Issue #1182）
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
 KNOWLEDGE_TEST = "tools/knowledge-enforcement-check/test_check.py"
 ENGINE_PATCH_TEST = "tools/knowledge-enforcement-check/test_engine_patch.py"
@@ -123,7 +132,11 @@ REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043
                ("K-0004", 986): (KNOWLEDGE_CHECK, "D-0048"), ("K-0004", 1059): (KNOWLEDGE_CHECK, "D-0048"),
                ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052"),
                ("K-0004", 1063): (ENGINE_PATCH_TEST, "D-0053"), ("K-0004", 1144): (ENGINE_PATCH_TEST, "D-0053"),
-               ("K-0004", 1158): (SENDBACK_PROTECTION, "D-0059")}
+               ("K-0004", 1158): (SENDBACK_PROTECTION, "D-0059"),
+               ("K-0001", 1182): ("tools/pr-body-check/engine.test.mjs", "D-0070")}
+# (知見の id, 解決策の issue) → REQUIRED_PR の検査を呼ぶジョブがあることを求めるワークフロー（議決 D-0070（起票時の番号は D-0067）、Issue #1182。
+# ひな形 tools/pr-body-check/ci/pr-body-engine.yml の写しのほかで engine.test.mjs を走らせても、必須のチェック pr-body-engine-test の写しとは読めないため）
+REQUIRED_PR_WORKFLOW = {("K-0001", 1182): f"{WORKFLOWS}/pr-body-engine.yml"}
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
@@ -436,7 +449,8 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
 
 
 def check_pull_request(k: dict, repo: Path) -> list[str]:
-    """REQUIRED_PR の解決策が wired: true なら、pull_request のジョブから検査を呼ぶ wired_by を求める（議決 D-0043、Issue #1103）"""
+    """REQUIRED_PR の解決策が wired: true なら、pull_request のジョブから検査を呼ぶ wired_by を求める（議決 D-0043、Issue #1103）。
+    REQUIRED_PR_WORKFLOW に挙げた解決策は、そのワークフローのジョブを指す項目だけを数える（議決 D-0070、Issue #1182）"""
     f, e = k.get("_file", str(k.get("id"))), []
     read = repo_reader(repo)
 
@@ -447,9 +461,12 @@ def check_pull_request(k: dict, repo: Path) -> list[str]:
         if required is None:
             continue
         target, decision = required
+        workflow = REQUIRED_PR_WORKFLOW.get((k.get("id"), s.get("issue")))
         ok = False
         for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
             if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+                continue
+            if workflow is not None and norm("", w["workflow"]) != workflow:
                 continue
             try:
                 doc = load_yaml(repo / w["workflow"])
@@ -460,7 +477,8 @@ def check_pull_request(k: dict, repo: Path) -> list[str]:
                 break
         if not ok:
             where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
-            e.append(f"{where}: wired にするには wired_by に、on.pull_request のある {WORKFLOWS}/ のワークフローで pull_request でも走るジョブから"
+            place = workflow or f"{WORKFLOWS}/ のワークフロー"
+            e.append(f"{where}: wired にするには wired_by に、on.pull_request のある {place} で pull_request でも走るジョブから"
                      f" {target} を呼ぶ項目が要る（ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。議決 {decision}）")
     return e
 

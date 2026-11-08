@@ -906,6 +906,109 @@ class SendbackHeartbeatScheduleTest(unittest.TestCase):
     def test_配線していなければ見ない(self):
         self.assertEqual(self.errors(self.repo("on:\n  workflow_dispatch:\njobs: {}\n"), wired=False), [])
 
+class PrBodyEngineWiringTest(unittest.TestCase):
+    """K-0001 の issue 1182 の解決策は、.github/workflows/pr-body-engine.yml の pull_request のジョブから engine.test.mjs を呼び、
+    .github/workflows/pr-body-protection.yml の schedule のジョブから protection.mjs を呼ばないと wired にできない（議決 D-0070（起票時の番号は D-0067）、Issue #1182）"""
+
+    ENGINE_TEST = "tools/pr-body-check/engine.test.mjs"
+    PROT = "tools/pr-body-check/protection.mjs"
+    ENGINE_TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-engine.yml"
+    PROT_TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-protection.yml"
+    ENGINE_WF = ".github/workflows/pr-body-engine.yml"
+    PROT_WF = ".github/workflows/pr-body-protection.yml"
+    OTHER = ".github/workflows/pr-body.yml"
+    WIRED_BY = ((ENGINE_WF, "engine-test", ENGINE_TEST), (PROT_WF, "protection", PROT))
+
+    def repo(self, files: dict[str, str] | None = None) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        base = {self.ENGINE_TEST: "", self.PROT: "", self.ENGINE_WF: self.engine(), self.PROT_WF: self.protection()}
+        for rel, text in {**base, **(files or {})}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def engine(self) -> str:
+        return self.ENGINE_TEMPLATE.read_text(encoding="utf-8")
+
+    def protection(self) -> str:
+        return self.PROT_TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, wired_by=WIRED_BY, issue=1182, wired=True) -> list[str]:
+        item = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": wf, "job": job, "runs": runs} for wf, job, runs in wired_by]}]}}
+        return check.check_schedule(item, d) + check.check_pull_request(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0001", 1182)], self.PROT)
+        self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0001", 1182)], (self.PROT_WF, "D-0070"))
+        self.assertEqual(check.REQUIRED_PR[("K-0001", 1182)], (self.ENGINE_TEST, "D-0070"))
+        self.assertEqual(check.REQUIRED_PR_WORKFLOW[("K-0001", 1182)], self.ENGINE_WF)
+
+    def test_2_つのひな形をそのまま写したジョブなら通る(self):
+        self.assertEqual(self.errors(self.repo()), [])
+
+    def test_片方の項目だけでは落ちる(self):
+        d = self.repo()
+        e = self.errors(d, wired_by=self.WIRED_BY[:1])
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"on.schedule（cron）のある {self.PROT_WF} で", e[0])
+        self.assertIn("議決 D-0070", e[0])
+        e = self.errors(d, wired_by=self.WIRED_BY[1:])
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"on.pull_request のある {self.ENGINE_WF} で", e[0])
+        self.assertIn("議決 D-0070", e[0])
+
+    def test_ほかのワークフローのジョブでは落ちる(self):
+        d = self.repo({self.OTHER: self.engine()})
+        e = self.errors(d, wired_by=((self.OTHER, "engine-test", self.ENGINE_TEST), self.WIRED_BY[1]))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.ENGINE_WF, e[0])
+        d = self.repo({self.OTHER: self.protection()})
+        e = self.errors(d, wired_by=(self.WIRED_BY[0], (self.OTHER, "protection", self.PROT)))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.PROT_WF, e[0])
+
+    def test_pull_request_か_schedule_を外した写しでは落ちる(self):
+        no_pr = self.engine().replace("on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n", 1)
+        self.assertNotEqual(no_pr, self.engine())
+        e = self.errors(self.repo({self.ENGINE_WF: no_pr}))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.pull_request", e[0])
+        no_sched = self.protection().replace('  schedule:\n    - cron: "30 20 * * *"\n', "", 1)
+        self.assertNotEqual(no_sched, self.protection())
+        e = self.errors(self.repo({self.PROT_WF: no_sched}))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_テストを走らせない_engine_test_では落ちる(self):
+        text = self.engine().replace("node --test --test-reporter=spec", "node --test --test-reporter=spec check.test.mjs", 1)
+        self.assertNotEqual(text, self.engine())
+        e = self.errors(self.repo({self.ENGINE_WF: text}))
+        self.assertEqual(len([x for x in e if "wired にするには" in x]), 1, e)
+        self.assertIn("engine.test.mjs", e[0])
+
+    def test_配線していない解決策とほかの解決策は見ない(self):
+        d = self.repo({self.ENGINE_WF: "on:\n  workflow_dispatch:\njobs: {}\n", self.PROT_WF: "on:\n  workflow_dispatch:\njobs: {}\n"})
+        self.assertEqual(self.errors(d, wired=False), [])
+        # issue 1106 の解決策は REQUIRED_PR に挙げておらず、ワークフローの名前も問わない
+        d = self.repo({self.OTHER: self.protection()})
+        self.assertEqual(self.errors(d, wired_by=((self.OTHER, "protection", self.PROT),), issue=1106), [])
+
+    def test_main_で落とす(self):
+        d = self.repo()
+        MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1182, wired: true, wired_by: [{{workflow: {self.PROT_WF}, job: protection, runs: {self.PROT}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1182）: wired にするには", errors[0])
+        self.assertIn(self.ENGINE_WF, errors[0])
+
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 

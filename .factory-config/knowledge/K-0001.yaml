@@ -206,6 +206,23 @@ enforcement:
       decided_by: committee:D-0068
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0070（Issue #1182 の起票時の番号は D-0067。PR #1181）の ci_check の案（建設者が ci/pr-body-engine.yml を .github/workflows/ に写して
+        pr-body-engine-test を既定ブランチの必須のチェックにし、protection.mjs を同じジョブか定期の CI で走らせ、そのときこの知見の solutions の wired を true にして
+        wired_by にワークフローのファイル・job・呼ぶ検査の道を書く）のうち、ワーカーの権限で入れられる分を入れた。tools/knowledge-enforcement-check/check.py の
+        REQUIRED_SCHEDULE と REQUIRED_PR の両方にこの解決策を挙げ、REQUIRED_SCHEDULE_WORKFLOW で .github/workflows/pr-body-protection.yml の schedule でも走るジョブから
+        tools/pr-body-check/protection.mjs を呼ぶ項目を、新しく足した REQUIRED_PR_WORKFLOW で .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから
+        tools/pr-body-check/engine.test.mjs を呼ぶ項目を求め、どちらかがなければ wired: true にできないようにした。branch protection は PR の GITHUB_TOKEN では
+        読めないので、protection.mjs は engine-test と同じジョブでなく定期の pr-body-protection.yml で走らせる側にした。test_check.py の PrBodyEngineWiringTest が、
+        2 つのひな形をそのまま写した engine-test と protection のジョブで通り、片方の項目だけ・別の名前のワークフロー・pull_request か schedule を外した写し・
+        engine.test.mjs を走らせない engine-test では落ちることを確かめる。写すこと・必須のチェックに登録すること・シークレットを置くこと・wired を true にして
+        wired_by を書くことは建設者が行うので（tools/pr-body-check/README.md の「配線の手順（建設者）」）、まだ配線されておらず効き目は確かめていない
+      issue: 1182
+      at: 2026-11-08
+      decided_by: committee:D-0070
+      wired: false
+      verified: false
     - kind: test
       what: >-
         議決 D-0070（Issue #1183 の起票時の番号は D-0067。PR #1181）の test の案を入れた。tools/pr-body-check/ci.test.mjs（engine-test の node --test の中で走る）が、
