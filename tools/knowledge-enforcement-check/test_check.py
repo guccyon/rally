@@ -348,6 +348,25 @@ class ScheduleTest(unittest.TestCase):
         self.assertEqual(self.errors(d, kid="K-0001"), [])
         self.assertEqual(self.errors(d, wired=False), [])
 
+    def test_K_0001_の_issue_1106_は_pr_body_check_の_protection_mjs_を_schedule_のジョブから呼ぶ(self):
+        """議決 D-0044、Issue #1106。push（既定のブランチ）と schedule の両方で走るワークフローから呼べば通る"""
+        prot = "tools/pr-body-check/protection.mjs"
+        on = "  push:\n    branches: [main]\n" + self.SCHEDULE
+        d = self.repo(self.wf(on).replace(self.PROT, prot))
+        (d / prot).parent.mkdir(parents=True, exist_ok=True)
+        (d / prot).write_text("", encoding="utf-8")
+        self.assertEqual(self.errors(d, kid="K-0001", issue=1106, runs=prot), [])
+        # push だけ・sendback-check の protection.mjs を呼ぶだけでは足りない
+        d2 = self.repo(self.wf("  push:\n    branches: [main]\n").replace(self.PROT, prot))
+        (d2 / prot).parent.mkdir(parents=True, exist_ok=True)
+        (d2 / prot).write_text("", encoding="utf-8")
+        e = self.errors(d2, kid="K-0001", issue=1106, runs=prot)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(prot, e[0])
+        e = self.errors(self.repo(self.wf(self.SCHEDULE)), kid="K-0001", issue=1106)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(prot, e[0])
+
     def test_main_で落とす(self):
         d = self.repo(self.wf("  workflow_dispatch:\n"))
         MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
