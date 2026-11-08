@@ -6,6 +6,9 @@ check.py と同じ線になること、差分で Engine の core-gates/tests/tes
 Engine がもう差分を取り込んでいれば（check_wired_by がある）当てずにそのまま確かめる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。どちらもなければ飛ばす。
 ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（sendback-check/engine.test.mjs と同じ）。
+Engine のファイルは、チェックアウトに .github/workflows/knowledge-check.yml の ENGINE_REF の版があればその版から取る（製品の CI が使う版で
+確かめる。議決 D-0035、Issue #1063）。その版がなければ、CI では落とし、手元ではチェックアウトの今の中身で確かめる。
+CI では pytest がなくても飛ばさずに落とす（差分で Engine に足したテストを走らせずに通さない）。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
 """
@@ -31,8 +34,13 @@ spec = importlib.util.spec_from_file_location("knowledge_enforcement_check_e", H
 check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check)  # type: ignore[union-attr]
 
+spec = importlib.util.spec_from_file_location("knowledge_enforcement_check_e_patch", HERE / "test_engine_patch.py")
+patch_check = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(patch_check)  # type: ignore[union-attr]
+
 ENGINE = Path(os.environ.get("ENGINE_DIR") or REPO.parent / "engine")
-REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
+IN_CI = os.environ.get("CI") == "true"
+REQUIRED = bool(os.environ.get("ENGINE_DIR")) or IN_CI
 HAS_ENGINE = all((ENGINE / f).is_file() for f in FILES)
 MISSING = object()  # 総当たりで「項目を書いていない」を表す
 
@@ -54,17 +62,26 @@ class EnginePatchTest(unittest.TestCase):
     def setUpClass(cls):
         if not HAS_ENGINE:
             raise AssertionError(f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE}）")
+        ref = patch_check.engine_ref()
+        cls.ref = ref if (ENGINE / ".git").exists() and patch_check.has_commit(ENGINE, ref) else None
+        if cls.ref is None and IN_CI:
+            raise AssertionError(f"Engine のチェックアウト（ENGINE_DIR={ENGINE}）に knowledge-check.yml の ENGINE_REF {ref} の版がない。"
+                                 "ci/knowledge-enforcement.yml の ENGINE_REF を knowledge-check.yml と同じ版にそろえる")
         cls.tmp = tempfile.TemporaryDirectory()
         cls.dir = Path(cls.tmp.name)
         for f in FILES:
             (cls.dir / f).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(ENGINE / f, cls.dir / f)
+            if cls.ref:
+                r = subprocess.run(["git", "-C", str(ENGINE), "show", f"{cls.ref}:{f}"], capture_output=True, check=True)
+                (cls.dir / f).write_bytes(r.stdout)
+            else:
+                shutil.copy(ENGINE / f, cls.dir / f)
         src = (cls.dir / FILES[0]).read_text(encoding="utf-8")
         cls.merged = "def check_wired_by(" in src
         if not cls.merged:
             r = subprocess.run(["git", "apply", str(PATCH)], cwd=cls.dir, capture_output=True, text=True)
             if r.returncode != 0:
-                raise AssertionError(f"差分が Engine（{ENGINE}）に当たらない。今の Engine に合わせて作り直す: {r.stderr}")
+                raise AssertionError(f"差分が Engine（{ENGINE}、版 {cls.ref or '今の中身'}）に当たらない。今の Engine に合わせて作り直す: {r.stderr}")
         s = importlib.util.spec_from_file_location("engine_knowledge_check", cls.dir / FILES[0])
         cls.kc = importlib.util.module_from_spec(s)
         s.loader.exec_module(cls.kc)  # type: ignore[union-attr]
@@ -158,6 +175,8 @@ class EnginePatchTest(unittest.TestCase):
 
     def test_Engine_に足したテストが通る(self):
         if importlib.util.find_spec("pytest") is None:
+            if IN_CI:
+                self.fail("pytest がない。CI では差分で Engine に足したテストを飛ばさずに走らせる（pip install pytest）")
             self.skipTest("pytest がない")
         r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", FILES[2]], cwd=self.dir, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

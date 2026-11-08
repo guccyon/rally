@@ -1,6 +1,10 @@
 # 知見の担保の配線と効き目の検査（tools/knowledge-enforcement-check/、知見 K-0004 の担保、議決 D-0015）。決定論（LLM を使わない）。
 # .github/workflows/ に写すのは建設者（ワーカーの権限にない）。写すまでこの検査は PR ごとには走らない。
-# PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければジョブを落とす。ほかの PR では結果を Job Summary に残すだけ
+# engine-test のジョブは、ENGINE_REF の版の Engine で test_engine.py と test_engine_patch.py を CI=true・ENGINE_DIR を渡して走らせ、
+# engine/knowledge-enforcement.patch が ENGINE_REF に当たらないか、差分で足したテストが落ちれば、どの PR でも落とす（議決 D-0035、Issue #1063）。
+# 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
+# enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければ落とす。ほかの PR では結果を Job Summary に残すだけ
+# 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
 name: knowledge-enforcement
 
 on:
@@ -21,6 +25,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  engine-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）
+        shell: bash
+        run: |
+          if [[ ! "$ENGINE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=knowledge-enforcement engine_ref_not_sha::ENGINE_REF は 40 桁のコミット SHA（小文字の 16 進）にする（ENGINE_REF=${ENGINE_REF}）"
+            exit 1
+          fi
+          echo "ENGINE_REF=${ENGINE_REF}"
+      - uses: actions/checkout@v4
+      - name: Engine を取る（固定した版）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - name: Engine に移す差分のテスト（ENGINE_REF の版に当たるか・足したテストが通るか。K-0004）
+        env:
+          CI: "true"
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          python3 -m pip install --quiet pyyaml pytest
+          python3 -B tools/knowledge-enforcement-check/test_engine_patch.py -v
+          python3 -B tools/knowledge-enforcement-check/test_engine.py -v
   enforcement:
     runs-on: ubuntu-latest
     steps:
@@ -37,17 +67,11 @@ jobs:
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
-        with:
-          repository: guccyon/factory-engine
-          ref: ${{ env.ENGINE_REF }}
-          path: .engine
-      - name: 検査のテスト（Engine に移す差分のテストと、差分が ENGINE_REF に当たるかの patch_stale を含む）
-        env:
-          ENGINE_DIR: ${{ github.workspace }}/.engine
+      - name: 検査とひな形の形のテスト（Engine のテストは engine-test のジョブ）
         run: |
-          python3 -m pip install --quiet pyyaml pytest
-          python3 -m unittest discover -s tools/knowledge-enforcement-check
+          python3 -m pip install --quiet pyyaml
+          python3 -B tools/knowledge-enforcement-check/test_check.py -v
+          python3 -B tools/knowledge-enforcement-check/test_ci.py -v
       - name: 担保の配線と効き目
         env:
           CHANGED: ${{ steps.scope.outputs.changed }}
