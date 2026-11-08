@@ -80,7 +80,7 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 衝突を解く続きのジョブに、衝突したファイルがその場で記録されていない回を落とす。知見 `K-0014`（記録がないと、同じファイルの衝突が繰り返している型が集計で見えない）の担保で、委員会の議決 `D-0049`（PR #1127）と Issue #1135 で作った。
 
 - 線は議決 `D-0049` の test の案どおり「`continue.enqueued`（reason=conflict）の時点で載っているか」。同じ `job_id` の `conflict.files` が、そのジョブの `job.started`・`job.finished` より前（イベント列の順。`id` があれば `id` の順）にあればその場で載ったとみなす
-- `continue.enqueued` の payload に衝突したファイルの欄 `conflict_files`（`conflict-files.yaml` の定義。`schema.py` と同じく空でない文字列の列で 1 件以上）が載っていれば、積んだその場の記録として通し、衝突したファイルにもその列を使う（`conflict.files` より先に見る）。形どおりでない（空の列・null・文字列の列でない）ときは載っていないとみなし、`conflict.files` で見る（議決 `D-0101`、Issue #1208。Engine が `engine/conflict-files.patch` どおりに欄を載せたあとも、この検査が落とし続けないように）
+- `continue.enqueued` の payload に衝突したファイルの欄 `conflict_files`が `conflict-files.yaml` の定義の形（空でない文字列の列で 1 件以上）で載っていれば、積んだその場の記録として通し、衝突したファイルにもその列を使う（`conflict.files` より先に見る）。形の判定は `schema.py` の `field_error` を使う（`events.py` では判定を持たない。定義を読めなければ終了コード 2）。形どおりでない（空の列・null・文字列の列でない）ときは載っていないとみなし、`conflict.files` で見る（議決 `D-0101`、Issue #1208。Engine が `engine/conflict-files.patch` どおりに欄を載せたあとも、この検査が落とし続けないように）
 - 外れにするのは、`conflict.files` がない回、`payload.source` が `backfill`（`factoryctl learn backfill-conflicts` で後から埋めた）のものしかない回、ジョブが動き出したあと（`job.started` か `job.finished` より後）に記録されたものしかない回。`source` のない記録は位置だけで見る。衝突がなかった回の空の列（`files: []`）は、その場で載っていれば通る
 - 終わっていない回・終わらずに止まった回（`job.finished` がない回）も照らす。積んだ時点で載っているはずなので、終わるのを待たない。積んだだけでまだ動き出していない回も、載っていなければ落ちる
 - backfill の中身（衝突したファイル）は、上の 3 つの rule（`agent_for_mechanical` など）にはそのまま使う

@@ -95,7 +95,7 @@ enforcement:
         rule missing_conflict_files を足し、continue.enqueued(reason=conflict) と同じ job_id の conflict.files がその場にないものを落とす）を入れた。
         rule・C-0007 の流れの fixtures/c0007-pr290-pr295-events.json・その場で載せた列が通るテストは issue 1135 の解決策ですでに入っていたので、
         この案では、その rule が issue 1136 の解決策（conflict-files.yaml）の欄 conflict_files も読むようにした。continue.enqueued の payload に
-        conflict_files が schema.py と同じ形（空でない文字列の列で 1 件以上）で載っていれば積んだその場の記録として通し、衝突したファイルにもその列を
+        conflict_files が conflict-files.yaml の形（空でない文字列の列で 1 件以上。判定は schema.py の field_error を使う）で載っていれば積んだその場の記録として通し、衝突したファイルにもその列を
         使う（conflict.files より先に見る）。形どおりでなければ載っていないとみなし、今までどおり conflict.files で見る。Engine が
         engine/conflict-files.patch どおりに欄を載せたあとも missing_conflict_files が落とし続けて、2 つの解決策が食い違わないようにするため。
         test_events.py の MissingConflictFilesTest で、C-0007 の流れ（PR #290 のジョブ 309 は backfill だけ、PR #295 のジョブ 318・325・338 は記録なし）が

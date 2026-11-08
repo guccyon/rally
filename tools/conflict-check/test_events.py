@@ -29,6 +29,7 @@ sys.path.insert(0, str(HERE))
 
 import events  # noqa: E402
 import policy  # noqa: E402
+import schema  # noqa: E402
 import test_engine  # noqa: E402   名前で取り込むと EngineTest がこのモジュールでも走るので、モジュールで取り込む
 
 C0005 = HERE / "fixtures" / "c0005-pr659-events.json"
@@ -248,6 +249,7 @@ class MissingConflictFilesTest(unittest.TestCase):
         # schema.py の bad_field・missing_field と同じ線（空でない文字列の列で 1 件以上）。ほかの記録がなければ落ちる
         for bad in ([], None, [""], ["  "], "CHANGELOG.md", [1]):
             self.assertEqual(recorded(stream([{"inline": bad}])), Counter({"missing_conflict_files": 1}), bad)
+            self.assertIsNotNone(schema.field_error(schema.load()["continue.enqueued"]["fields"]["conflict_files"], bad), bad)   # 判定は schema.py と同じ
         # 形どおりでなくても、その場の conflict.files があれば今までどおり通る
         self.assertEqual(recorded(stream([{"inline": [], "files": ["a.ts"]}])), Counter())
 

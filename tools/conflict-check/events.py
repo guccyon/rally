@@ -17,10 +17,11 @@
 test_events.py の EngineFinishedTest が落とす（議決 D-0030・Issue #1035）
 
   python3 events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--json]
-  終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった
+  終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定（continuation.yaml・conflict-files.yaml）を読めなかった
 """
 from __future__ import annotations
 
+import functools
 import json
 import sys
 from pathlib import Path
@@ -77,12 +78,21 @@ def _tier(enq: dict, started: dict, finished: dict) -> str | None:
     return None
 
 
+@functools.cache
+def _inline_spec() -> tuple:
+    """conflict-files.yaml の continue.enqueued の conflict_files の形と、それを照らす schema.field_error。
+    形の判定は schema.py が持つ（schema.py がこのモジュールを取り込むので、使うときに取り込む）。定義を読めなければ schema.DefsError か OSError"""
+    import schema
+    return schema.load()["continue.enqueued"]["fields"][INLINE], schema.field_error
+
+
 def _inline_files(payload: dict) -> list[str] | None:
-    """continue.enqueued の payload の conflict_files が conflict-files.yaml の形（空でない文字列の列で 1 件以上）ならその列。でなければ None"""
+    """continue.enqueued の payload の conflict_files が conflict-files.yaml の形（schema.py の field_error で外れがない）ならその列。でなければ None"""
     v = payload.get(INLINE)
-    if isinstance(v, list) and v and all(isinstance(x, str) and x.strip() for x in v):
-        return v
-    return None
+    if v is None:
+        return None
+    spec, field_error = _inline_spec()
+    return v if field_error(spec, v) is None else None
 
 
 def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[str, dict]:
@@ -193,6 +203,11 @@ def main(argv: list[str]) -> int:
         policy_ = policy.load(config)
     except (OSError, yaml.YAMLError, policy.PolicyError) as e:
         print(f"conflict-check: {config} を読めない: {e}", file=sys.stderr)
+        return 2
+    try:
+        _inline_spec()
+    except (OSError, yaml.YAMLError, ValueError, KeyError) as e:   # schema.DefsError は ValueError
+        print(f"conflict-check: conflict-files.yaml の continue.enqueued の {INLINE} を読めない: {e}", file=sys.stderr)
         return 2
     try:
         events = parse_events(Path(path).read_text(encoding="utf-8"))
