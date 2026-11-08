@@ -99,6 +99,7 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 - Engine が今の形（`agent_resumed` も `agent_tier` も出さない。`legacy_finished`）のときだけ `todo:` の理由で飛ばす。どちらかを出す版からは必須で、片方だけを出す版はもう片方が照らせずに落ちる。欄の名前を変えて出した版も今の形と見るので、その時は `FINISHED_FIELDS` を合わせる
 - Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ（`ENGINE_DIR` を渡したときと `CI=true` では飛ばさずに落とす）。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
 - 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`legacy_finished` の todo の呼び出しを消す
+- todo が黙って残らないよう、todo の理由に照らせない件数（`agent_resumed=3・tier=3` など）を添え、知見 `K-0010` の `review_by`（`.factory-config/knowledge/K-0010.yaml` から読む。2026-11-08 の時点で 2026-12-05）を過ぎても Engine が今の形なら、todo にせずに落とす（議決 `D-0043`、Issue #1104）。期限の日までは todo、翌日から落ちる（`core-gates/knowledge_check.py` の「過ぎた」と同じ）。`review_by` を読めないときも落ちる。直し方は、Engine を直して `ENGINE_REF` を上げるか、委員会で `K-0010` を再確認して `review_by` を動かす。今日の日付は環境変数 `CONFLICT_CHECK_TODAY`（`YYYY-MM-DD`）で差し替えられる
 
 ## supervisor の周期ごとの見張り（`watch.py`）
 
@@ -165,5 +166,7 @@ python3 -B tools/conflict-check/engine_harness.py --check /path/to/factory-engin
 ### CI への組み込み
 
 PR ごとのワークフローのひな形を `ci/conflict-check.yml` に置いた（議決 `D-0030`、Issue #1034）。Engine を固定した版（`ENGINE_REF`。2026-11-07 に走らせた `main` の `2490db6`）でチェックアウトして `ENGINE_DIR` を向け、`CI=true` で `unittest discover` を走らせる（`test_policy.py`・`test_events.py`・`test_watch.py`・`test_engine.py`・`test_ci.py`）。`CI=true` と `ENGINE_DIR` を渡すので、fixtures が読めない・Engine のチェックアウトがない・`engine_harness.py` が関数や手順を取り出せない・node か git がないときは飛ばさずに落ちる。Engine が今の形のときだけの `todo` は飛ばしとして結果に出る。
+
+todo で飛ばしたテスト（`test_engine.py` の `todo_while_legacy` と `test_events.py` の `EngineFinishedTest`）は `test_engine.py` の `todo` で数え、テストが終わったあと標準エラーに `conflict-check: todo で飛ばしたテスト N 件` の行と 1 件ずつの中身を出す。GitHub Actions（`GITHUB_ACTIONS=true`）では 1 件ずつ `::warning title=conflict-check todo::` の注記にもする（`OK (skipped=N)` に紛れて黙って残らないように。議決 `D-0043`、Issue #1104）。ほかの理由の飛ばし（写しがない・Engine のチェックアウトがない）は数えない
 
 ワーカーは `.github/workflows/` を変えられないので、建設者が `.github/workflows/conflict-check.yml` に写す。写すときに変えてよいのは `ENGINE_REF` の行だけ。`test_ci.py` がひな形の形（絞り込みのない `pull_request`・`if:` と `continue-on-error` なし・`ENGINE_REF` が 40 桁の SHA で最初の手順で確かめる・`CI=true` と `ENGINE_DIR` を渡してテストを走らせる）と、写しがあれば `ENGINE_REF` の行のほかがひな形と同じかを見る。写したら `conflict-check` を必須のチェックにするのも建設者。

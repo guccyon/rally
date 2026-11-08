@@ -91,4 +91,19 @@ enforcement:
       decided_by: committee:D-0030
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0043（PR #1102）の test の案を入れた。EngineFinishedTest の todo が黙って残らないよう、todo の理由に Engine の job.finished の欄で
+        組んだときの照らせない件数（今の形では agent_resumed=3・tier=3）を添え、この知見の review_by（このファイルから読む。2026-12-05）を過ぎても
+        Engine が今の形（agent_resumed も agent_tier も出さない）なら todo にせずに落とす検査を test_events.py に足した（期限の日までは todo、翌日から落ちる。
+        review_by を読めないときも落ちる）。あわせて test_engine.py の todo_while_legacy と EngineFinishedTest の todo を test_engine.py の todo で数え、
+        テストが終わったあと標準エラーに todo で飛ばした件数と中身を出し、GitHub Actions では 1 件ずつ ::warning の注記にした。Engine のチェックアウト
+        （main の 476573e。ENGINE_REF の 2490db6 は手元になく、その版では走らせていない）で、今日（2026-11-08）は 5 件の todo を数えて出し、
+        CONFLICT_CHECK_TODAY=2026-12-06 では EngineFinishedTest が落ちることを確かめた。ひな形 ci/conflict-check.yml を .github/workflows/ に写すのは
+        建設者なので、CI の出力では確かめておらず、効き目はまだ確かめていない
+      issue: 1104
+      at: 2026-11-08
+      decided_by: committee:D-0043
+      wired: false
+      verified: false
 decided_by: committee:D-0013
