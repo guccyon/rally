@@ -19,6 +19,9 @@ evidence と同じく 1 項目に 1 つの参照）を必須にし、case を 1 
 定期の配線の必須（議決 D-0039、Issue #1088）: REQUIRED_SCHEDULE の解決策（K-0004 の issue 1018 と K-0001 の issue 1106（議決 D-0044）。
 branch protection の必須のチェックを protection.mjs で照らす）を wired: true にするときは、wired_by に、on.schedule（cron）のあるワークフローで、schedule でも走る
 （if: が github.event_name を見るなら == 'schedule' を含み、!= 'schedule' を含まない）ジョブから runs の検査を呼ぶ項目を必須にする。手で走らせた記録だけでは wired にできない。
+議決 D-0061（Issue #1163。起票時の番号は D-0058）で、schedule でも走るかの読み方を許可リストにした。ジョブと呼ぶ手順の if: は、無いか、
+github.event_name == '<event>' を || でつないだだけで == 'schedule' を含む形（${{ }} で包んでもよい）だけを許し、それ以外の式
+（&& や needs.*・always()・ほかの条件を || でつないだ飛ばし）は走らない側に数える。
 
 呼ぶ検査の必須（議決 D-0042、Issue #1100）: REQUIRED_RUNS の解決策（K-0010 の issue 1034・1100。衝突の続きのジョブの検査）を wired: true にするときは、
 wired_by に、.github/workflows/ の 1 つのジョブから挙げた検査（tools/conflict-check/test_watch.py・test_engine.py）をすべて呼ぶ項目を必須にする。
@@ -348,7 +351,22 @@ def off_event(event: str):
     return off
 
 
-off_schedule = off_event("schedule")
+SCHEDULE_IF_TERM_RE = re.compile(r"\s*github\.event_name\s*==\s*'([\w-]+)'\s*")
+
+
+def off_schedule(cond) -> bool:
+    """schedule では走らないと数える if:（許可リスト。議決 D-0061（起票時の番号は D-0058）、Issue #1163）。
+
+    if: が無いか、github.event_name == '<event>' を || でつないだだけの式（${{ }} で包んでもよい）で、その中に == 'schedule' があるときだけ
+    走ると数える。それ以外の式（&& や needs・always()・ほかの条件を || でつないだもの、真偽の値も）は走らない側に数える。
+    """
+    if cond is None:
+        return False
+    if not isinstance(cond, str):
+        return True
+    m = re.fullmatch(r"\s*\$\{\{(.*)\}\}\s*", cond, re.S)
+    terms = [SCHEDULE_IF_TERM_RE.fullmatch(t) for t in (m.group(1) if m else cond).split("||")]
+    return not all(terms) or "schedule" not in {t.group(1) for t in terms}
 
 
 def has_pull_request(workflow: dict) -> bool:
@@ -388,7 +406,8 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
             where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
             place = f"on.schedule（cron）のある {workflow} で" if workflow else f"on.schedule（cron）のある {WORKFLOWS}/ のワークフローで"
             e.append(f"{where}: wired にするには wired_by に、{place} schedule でも走るジョブから"
-                     f" {target} を呼ぶ項目が要る（手で走らせた記録だけでは wired にできない。議決 {decision}）")
+                     f" {target} を呼ぶ項目が要る（手で走らせた記録だけでは wired にできない。議決 {decision}。"
+                     f"ジョブと手順の if: は無いか、github.event_name == 'schedule' を || でつないだ決まった形だけを許す。議決 D-0061）")
     return e
 
 
