@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseEvents } from "../sendback-check/check.mjs";
 import { newPrBody } from "./c0005.mjs";
-import { BODY_CHECKED, auditMerges, mergeGate } from "./merge-gate.mjs";
+import { BODY_CHECKED, EventShapeError, auditMerges, mergeGate } from "./merge-gate.mjs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const load = (name) => parseEvents(readFileSync(here(`./fixtures/${name}`), "utf8"));
@@ -106,8 +106,10 @@ test("今の本文（--body）を渡せば、列の終わりの再検査とし�
 });
 
 test("body_fix の job.enqueued に job_id がない・再検査の ok が真偽でないときは読めなかったとして投げる（黙って通さない）", () => {
-  assert.throws(() => mergeGate([{ name: "job.enqueued", payload: { kind: "body_fix", pr_url: C0006 } }], C0006), /job_id がない/);
-  assert.throws(() => mergeGate([{ name: BODY_CHECKED, payload: { pr_url: C0006, ok: "true" } }], C0006), /ok が真偽でない/);
+  assert.throws(() => mergeGate([{ name: "job.enqueued", payload: { kind: "body_fix", pr_url: C0006 } }], C0006),
+    (e) => e instanceof EventShapeError && /job_id がない/.test(e.reason));
+  assert.throws(() => mergeGate([{ name: BODY_CHECKED, payload: { pr_url: C0006, ok: "true" } }], C0006),
+    (e) => e instanceof EventShapeError && /ok が真偽でない/.test(e.reason));
 });
 
 test("CLI: C-0006 の記録の見直しは 1 で落ち、マージの前の判定は 1、再検査を足せば 0、読めなければ 2", () => {
@@ -133,6 +135,10 @@ test("CLI: C-0006 の記録の見直しは 1 で落ち、マージの前の判�
   writeFileSync(file, events.map((e) => JSON.stringify(e)).join("\n") + "\n");
   assert.equal(run(["--events", file, "--pr", C0006, "--body", body]).code, 0);
 
+  writeFileSync(file, JSON.stringify({ name: "job.enqueued", payload: { kind: "body_fix", pr_url: C0006 } }) + "\n");
+  const shape = run(["--events", file, "--pr", C0006]);
+  assert.equal(shape.code, 2);   // イベントの形の崩れ（EventShapeError）は読めなかった
+  assert.match(shape.err, /merge-gate: 読めなかった: 1 件目の body_fix の job.enqueued に job_id がない/);
   assert.equal(run(["--events", file]).code, 2);   // --pr がない
   writeFileSync(file, "{ not json\n");
   assert.equal(run(["--events", file, "--pr", C0006]).code, 2);

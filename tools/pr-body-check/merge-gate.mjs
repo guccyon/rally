@@ -22,6 +22,15 @@ export const BODY_CHECKED = "pr.body_checked";
 /** 本文の直しのジョブの種類（Engine の dispatcher.enqueue_body_fix）。 */
 export const BODY_FIX = "body_fix";
 
+/** イベントの形が崩れている（body_fix に job_id がない・再検査の ok が真偽でない）ときに投げる。境界の main で終了コード 2 にする。 */
+export class EventShapeError extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = "EventShapeError";
+    this.reason = reason;
+  }
+}
+
 const prOf = (e) => e.payload?.pr_url ?? null;
 const jobOf = (e) => e.job_id ?? e.payload?.job_id ?? null;
 
@@ -39,7 +48,7 @@ export function mergeGate(events, prUrl, { head = null, body = null } = {}) {
   events.forEach((e, pos) => {
     const job = jobOf(e);
     if (e.name === "job.enqueued" && e.payload?.kind === BODY_FIX && prOf(e) === prUrl) {
-      if (job === null) throw new Error(`${pos + 1} 件目の body_fix の job.enqueued に job_id がない`);
+      if (job === null) throw new EventShapeError(`${pos + 1} 件目の body_fix の job.enqueued に job_id がない`);
       fixes.set(job, { pos, state: null });
       return;
     }
@@ -58,7 +67,7 @@ export function mergeGate(events, prUrl, { head = null, body = null } = {}) {
       return;
     }
     if (e.name === BODY_CHECKED && prOf(e) === prUrl) {
-      if (typeof e.payload?.ok !== "boolean") throw new Error(`${pos + 1} 件目の ${BODY_CHECKED} の ok が真偽でない`);
+      if (typeof e.payload?.ok !== "boolean") throw new EventShapeError(`${pos + 1} 件目の ${BODY_CHECKED} の ok が真偽でない`);
       checks.push({ pos, head_sha: e.payload.head_sha ?? null, ok: e.payload.ok });
     }
   });
@@ -148,7 +157,8 @@ function main() {
       console.error(`merge-gate: 見出しの定義が不正: ${e.reason}`);
       process.exit(EXIT_TEMPLATE_ERROR);
     }
-    console.error(`merge-gate: 読めなかった: ${e.message}`);
+    if (!(e instanceof EventShapeError)) throw e;   // 形の崩れでない例外はこの関所の不具合なので、読めなかったに混ぜない
+    console.error(`merge-gate: 読めなかった: ${e.reason}`);
     process.exit(2);
   }
 }

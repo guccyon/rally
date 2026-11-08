@@ -123,7 +123,7 @@ jobs:
 | `body_not_rechecked` | 最後の body_fix が終わったあとに、マージする head（`--head`。省けばその PR のイベントの最後の `head_sha`）の本文の再検査（`pr.body_checked`）がない |
 | `body_check_failed` | 最後の body_fix が終わったあとの、その head の最後の再検査が `ok: false` |
 
-body_fix のない PR は待つものがないので 0 を返す。body_fix の `job.enqueued` に `job_id` がないとき・`pr.body_checked` の `ok` が真偽でないときは、黙って通さずに 2 にする。
+body_fix のない PR は待つものがないので 0 を返す。body_fix の `job.enqueued` に `job_id` がないとき・`pr.body_checked` の `ok` が真偽でないときは、専用の例外 `EventShapeError` を投げ、黙って通さずに 2 にする。それ以外の例外（`TypeError` など）は関所の不具合なので 2 に混ぜず、そのまま投げ直す（Node.js の未捕捉の例外で落ちる）。
 
 直した本文の再検査は `pr.body_checked`（`{ pr_url, head_sha, ok }`）で受ける。`pr.ci_passed` は head ごとに 1 回しか残らない（dedupe が `pr.ci_passed:<PR>@<head>`）ので、head の変わらない本文だけの直しのあとの結果を表せない。Engine が、body_fix の終わりより後に完了した `pr-body-check` のチェック（`ci/pr-body-check.yml`。`edited` で走る）の結果をこの名前で残す。今の本文を `--body` で渡せば、列の終わり（直しのあと）の再検査として `check.mjs` で照らしたものも数える（Engine が `gh` で取った本文を渡す形）。
 
