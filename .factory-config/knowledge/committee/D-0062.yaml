@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0062
+pr: https://github.com/guccyon/rally/pull/1166
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1093 の test を 1 件足しただけなので、D-0004 からこれまでの議決とも specs/ の規範とも矛盾しません。
+  - 足した項目の中身（t.skip に legacy_basis_not_found を付けて飛ばし、order.mjs の skipLines で数えて ENGINE_REF
+    を上げる PR で落とす）は D-0041 の enforcement の 1 つめの test の案とそのまま一致するので、decided_by を committee:D-0041
+    にしたのは正しいです。
+  - D-0041 の dissent と enforcement の票が求めた「写しが作れないときに黙って通さない」ことに応えており、過去の議決の宿題を閉じる向きで、既存の
+    issue 1025 などの写しのテストとは見ている段が違うので重複ではありません。
+  - 'kind・what・issue・at・decided_by・wired・verified の形は既存の solutions と揃っており、ENGINE_REF
+    の版で確かめておらず .github/workflows/ から走っていないので wired: false・verified: false と書いたのは README
+    の決まりに合っています。'
+  - D-0041 のもう 1 つの案（check.py で decided_by の議決と kind を照らす lint）はこの PR に入っていないので、別の変更セットで記録してください。
+  - 'wired: false・verified: false で CI での効き目の記録がないので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 1093 と committee:D-0041 を指し、D-0041 の enforcement の
+    1 つめの案（写しが作れないときは t.skip に legacy_basis_not_found を付けて飛ばし、order.mjs で skip も数えて
+    ENGINE_REF を上げる PR で落とす）と中身がそのまま対応しているので、一次記録に辿れます。
+  - D-0041 の enforcement と dissent の票が挙げた「写しが作れないと何も見ずに通る」指摘に応える記録で、議決の中の指摘にも辿れます。
+  - 手元の Engine の写し（先頭 476573e、defect.safe_record の呼び出しを外した写し）での確認と t.skip を return
+    に戻す改変で落ちることの確認は記録の置き場がないので、issue 1093 に写しの差分と TAP の出力を残してください。
+  - 'ENGINE_REF の版では確かめておらず .github/workflows/ からまだ走っていないと自分で書き、wired: false・verified:
+    false にしているので、K-0004 の confidence は hypothesis のままが妥当です。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっていません。'
+  - 差分に出てくるのはファイルの道・関数名・定数名・コミットの短い id・issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0041 の 1 つめの enforcement
+    の案（写しを作れないときは黙って return せず t.skip に legacy_basis_not_found を付け、ENGINE_REF を上げる
+    PR で skip が残れば落とす）を入れた記録を 1 件足しただけで、案と中身が一致するので担保の観点では採ってよいです。
+  - 黙った return を t.skip に変えて TAP に理由を出し、t.skip を return に戻す改変で落ちることも確かめているので、緑の結果と担保の効き目を区別できなかった穴を決定論で塞ぐ向きとして正しいです。
+  - ただし skipLines はソースの文字の形（t.skip(…)・test.skip(…)・skip:）を数えるだけなので、const s = t.skip
+    のような別名や動的な skip では数え漏れ、todo と同じく外れても気づけない穴が残ります。
+  - 手元の確認は dispatcher.py の defect.safe_record の呼び出しを外した Engine の写しでしかできておらず、engine_harness.py
+    が本物の ENGINE_REF の Engine を読めないこと自体が黙って担保を止めうるので、これも機械で照らすべきです。
+  - engine.test.mjs はまだ .github/workflows/ から走っていないので、このテストも今は外れても何も止めず、配線は D-0028・D-0039・D-0040
+    の ci_check の案で既に求めているのでここでは重ねません。
+  - 'wired: false・verified: false と正直に書かれ、ENGINE_REF の版でも本物の記録でも効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0041 の test の案（写しが作れないときに黙って通さず t.skip
+    に legacy_basis_not_found を付け、skip も数えて ENGINE_REF を上げる PR で落とす）に当たる記録を 1 件足しただけで、statement・scope・evidence・confidence
+    を変えていないので、範囲は広すぎません。
+  - '反例として、skipLines は t.skip(…)・test.skip(…)・skip: の字面だけを数えるので、it.skip・describe.skip・別名に入れた
+    t.skip や、t.skip を呼ばずに条件の早い return で抜ける別の形は数えられず、担保の範囲をこれらの字面より広く読まないでください。'
+  - 確かめたのは defect.safe_record の呼び出しを外した手元の Engine の写し（476573e）で、ENGINE_REF の版の Engine
+    でもハーネスの改変なしでもないので、ハーネスと本物の Engine のずれがあれば同じ結果になる保証はなく、engine_harness.py が safe_record
+    を扱えるよう直すかを次に決めてください。
+  - 「Engine がまだ今の形の basis を書くのに行だけが見つからないときは落とす」の判定を何で見分けるのかが what から読めず、その見分けが外れると落とすべき場合が
+    SKIP に紛れる反例が残るので、次に直すときに判定の根拠を書き足してください。
+  - Engine のチェックアウトがないときの { skip } を数えないので、CI で Engine を取り出し損ねた実行では写しのテストがまとめて飛ばされても落ちず、配線の段で取り出しの失敗を落とす扱いを決めてください。
+  - 'wired: false・verified: false で .github/workflows/ からまだ走っていないと正しく書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/sendback-check/order.mjs の skipLines のソースの文字の数え方に加えて、engine.test.mjs
+    を走らせた TAP の出力から # SKIP の行と理由を数え、理由が許した一覧（legacy_basis_not_found と Engine のチェックアウトがないとき）にないもの、またはソースから数えた
+    skipLines と件数が合わないものがあれば落とすテストを足し、別名や動的な skip による数え漏れを実行の結果で照らす。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/sendback-check/engine_harness.py が ENGINE_REF の版の Engine を手を加えずに読み込めること（dispatcher.py
+    の defect.safe_record などの取り出しで落ちないこと）を確かめるテストを足し、ハーネスが読めないときは写しのテストを skip にせず落として、ハーネスの壊れで担保が黙って止まらないようにする。
