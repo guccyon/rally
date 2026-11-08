@@ -487,6 +487,21 @@ enforcement:
       decided_by: committee:D-0036
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0036 の ci_check の案（test_engine_patch.py は ENGINE_REF の版だけを見るので、ENGINE_REF が古いまま Engine の先頭だけが進んで
+        差分が当たらなくなっても気づけない）を入れた。tools/knowledge-enforcement-check/ci/knowledge-enforcement-head.yml（sendback-engine-head.yml と同じ形で、
+        PR では走らせず 1 日 1 回と手動）が Engine を ref なしで既定のブランチの先頭から取り、test_engine_patch.py を新しい環境変数 ENGINE_PATCH_REF で
+        ENGINE_REF の代わりに先頭の版へ向けて走らせ、patch_stale なら ::error を出して issue 968 に先頭の版・その時の knowledge-check.yml の ENGINE_REF・
+        実行の URL・当たらなかったところを記録する（同じ先頭の版の patch_stale の記録があれば足さない。patch_stale でない落ち方は ::error だけで記録しない）。
+        test_ci_head.py で、ワークフローの形と、作った Engine で先頭に当たらないと patch_stale で落ちて記録し、もう入っていれば通って記録しないこと、
+        記録を重ねないこと、記録に失敗したら落ちることを偽の gh で確かめ、手元の Engine の先頭（56692cd）に ENGINE_PATCH_REF を向けて今の差分が通ることも確かめた。
+        .github/workflows/ への写しと schedule の実行は建設者が行うので、まだ定期には走っておらず効き目は確かめていない
+      issue: 1076
+      at: 2026-11-08
+      decided_by: committee:D-0036
+      wired: false
+      verified: false
     - kind: test
       what: >-
         議決 D-0037 の test の案（議決 D-0024 の総当たりの効き目を確かめた 2 つの改変は手元の写しで一度だけ試したもので、総当たりが将来ゆるめられても気づけない）を入れた。
@@ -497,6 +512,23 @@ enforcement:
         wired の "true" の変異体で落ちることを確かめた。test_engine.py は ci/knowledge-enforcement.yml の unittest discover で走るが、
         そのひな形はまだ .github/workflows/ に写していない（建設者）ので PR ごとには走っておらず、効き目は確かめていない
       issue: 1079
+      at: 2026-11-08
+      decided_by: committee:D-0037
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0037 の ci_check の案（test_engine.py を CI か ENGINE_DIR を渡したときは Engine のチェックアウトや ENGINE_REF の版がなくても
+        飛ばさずに落とし、ci/knowledge-enforcement.yml の unittest discover の出力で skipped が 1 件以上あれば落とす）を入れた。test_engine.py は、
+        これまで CI だけで落としていた ENGINE_REF の版がないときと pytest がないときも、ENGINE_DIR を渡せば落とす（ENGINE_DIR を渡さず ../engine を使う
+        手元では今までどおり今の中身で確かめ、pytest がなければ飛ばす。Engine のチェックアウトがないときは前から落としていた）。ci/knowledge-enforcement.yml の
+        engine-test のジョブは、2 つのファイルを名指しで走らせるのをやめて python3 -m unittest discover -s tools/knowledge-enforcement-check を
+        shell: bash・set -o pipefail で走らせて出力を knowledge-enforcement-unittest.log に残し、すぐ後の手順がその要約の skipped= が 1 件以上か、
+        走らせたテストの件数が出ていなければ落とす。test_ci.py がこの形（discover を -p・-k で絞らない、tee で出力を残す、pipefail、すぐ後の手順）を見て、
+        ひな形を 22 とおりに書き換えた写しで外れること、skipped を見る手順が作った出力で飛ばしたかテストが走っていないときだけ落ちることを確かめた。
+        手元の Engine には ENGINE_REF（9d3713a）の版がなく、ENGINE_DIR を渡すと飛ばさずに落ちることは確かめたが、その版で通るかは確かめていない。
+        .github/workflows/ への写しと必須チェックは建設者が行うので、まだ PR ごとには走っておらず、この解決策も未配線・未確認
+      issue: 1080
       at: 2026-11-08
       decided_by: committee:D-0037
       wired: false

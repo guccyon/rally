@@ -1,6 +1,6 @@
 # 知見の担保の配線と効き目の検査
 
-知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を足した。
+知見（`.factory-config/knowledge/K-*.yaml`）の `enforcement.solutions` の各項目が、CI や呼び出しに配線済みか（`wired`）と、本物の記録で効き目を確かめたか（`verified`）を決定論で（LLM を使わずに）見る。知見 `K-0004` の担保で、委員会の議決 `D-0015` と Issue #962 で作り、議決 `D-0021` と Issue #986 で `wired: true` の配線先（`wired_by`）を照らす検査を、議決 `D-0034` と Issue #1059 で `verified: true` の確認の記録（`verified_by`）を照らす検査を、議決 `D-0035` と Issue #1063 で Engine に移す差分を `ENGINE_REF` の版で必ず確かめる CI のジョブ（`engine-test`）とその形の検査（`test_ci.py`）を、議決 `D-0037` と Issue #1080 でそのジョブがテストを飛ばして緑にならない手順を足した。
 
 `K-0004` の解決策は 10 件になったが、どれも「効き目はまだ確かめていない」を `what` の文で書くだけで、`INDEX.md` の担保の列は `deterministic` と出ていた。配線も確認もしていない担保を決定論の担保と読み違えないように、真偽の項目にして機械で数える。
 
@@ -67,7 +67,7 @@ Engine（別のリポジトリ）に入れる変更を `engine/knowledge-enforce
 - `core-gates/knowledge_check.py` に `check_wired_by()` を足し、`check_item()` で `wired` が `true` の解決策の `wired_by` の形を落とす（列でない・空、項目が `workflow`・`job`・`runs` の空でない文字列でない、`workflow` が `.github/workflows/` の直下でない）。ファイル・job の実在と job が `runs` を呼ぶかは Engine では見ず、`check.py` の「配線先の照合」が照らす
 - `core-gates/tests/test_knowledge_check.py` に、その 3 つの Engine の側のテストを足す
 
-`test_engine.py` が、Engine のチェックアウトの写しに差分を当てて（Engine がもう取り込んでいれば当てずに）、担保の表示が `label()` と同じになること（手で選んだ組に加え、解決策の `wired`・`verified` の値（未記入・`true`・`false`・真偽でない値）の組を強さと `enforcement` の形ごとに総当たりで。議決 `D-0024`、Issue #1015。総当たりの効き目を確かめた 2 つの改変（`wired` の `"true"` を配線済みに数える、`verified` を真偽でなく値の有無で見る）を差分を当てた Engine の写しの `enforcement_label()` にさらに当てた変異体（`MUTANTS`）でも走らせ、どの変異体でも食い違いが 1 件以上出なければ落とす。置き換える字面が Engine になくなったときも落ちるので `MUTANTS` を今の書き方に合わせて直す。議決 `D-0037`、Issue #1079）、`INDEX.md` で `K-0004` が `未配線` と出ること、真偽の検査が落ちる・通ること、`wired_by` の形で落とすかが `check.py` の形の誤り（`wired_by` がない・項目が欠ける・`.github/workflows/` の直下でない）と `wired`・`wired_by` の値の組ごとに一致すること、定義の `solution_wired_by` が `check.py` と Engine の値とそろうこと、差分で Engine に足したテストが通ること（pytest があるとき）、このリポジトリの知見が作り直した `INDEX.md` で通ることを確かめる。Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばし、`ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす。Engine のファイルは、チェックアウトに `knowledge-check.yml` の `ENGINE_REF` の版があればその版から取る（チェックアウトの今の中身が別の版でも、製品の CI が使う版で確かめる）。その版がなければ CI では落とし、手元ではチェックアウトの今の中身で確かめる。差分で足したテストは pytest がないと手元では飛ばすが、CI では落とす（議決 `D-0035`、Issue #1063）。差分が Engine に当たらなくなったら今の Engine に合わせて作り直す（Issue #1060 で `knowledge-check.yml` の `ENGINE_REF`（`9d3713a`）に合わせて作り直し、`ci/knowledge-enforcement.yml` の `ENGINE_REF` もその版にそろえた）。
+`test_engine.py` が、Engine のチェックアウトの写しに差分を当てて（Engine がもう取り込んでいれば当てずに）、担保の表示が `label()` と同じになること（手で選んだ組に加え、解決策の `wired`・`verified` の値（未記入・`true`・`false`・真偽でない値）の組を強さと `enforcement` の形ごとに総当たりで。議決 `D-0024`、Issue #1015。総当たりの効き目を確かめた 2 つの改変（`wired` の `"true"` を配線済みに数える、`verified` を真偽でなく値の有無で見る）を差分を当てた Engine の写しの `enforcement_label()` にさらに当てた変異体（`MUTANTS`）でも走らせ、どの変異体でも食い違いが 1 件以上出なければ落とす。置き換える字面が Engine になくなったときも落ちるので `MUTANTS` を今の書き方に合わせて直す。議決 `D-0037`、Issue #1079）、`INDEX.md` で `K-0004` が `未配線` と出ること、真偽の検査が落ちる・通ること、`wired_by` の形で落とすかが `check.py` の形の誤り（`wired_by` がない・項目が欠ける・`.github/workflows/` の直下でない）と `wired`・`wired_by` の値の組ごとに一致すること、定義の `solution_wired_by` が `check.py` と Engine の値とそろうこと、差分で Engine に足したテストが通ること（pytest があるとき）、このリポジトリの知見が作り直した `INDEX.md` で通ることを確かめる。Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばし、`ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす。Engine のファイルは、チェックアウトに `knowledge-check.yml` の `ENGINE_REF` の版があればその版から取る（チェックアウトの今の中身が別の版でも、製品の CI が使う版で確かめる）。その版がなければ `ENGINE_DIR` を渡したときと CI では落とし、`ENGINE_DIR` を渡さず `../engine` を使う手元ではチェックアウトの今の中身で確かめる。差分で足したテストは pytest がないと `ENGINE_DIR` を渡さない手元では飛ばすが、`ENGINE_DIR` を渡したときと CI では落とす（議決 `D-0035`・`D-0037`、Issue #1063・#1080）。差分が Engine に当たらなくなったら今の Engine に合わせて作り直す（Issue #1060 で `knowledge-check.yml` の `ENGINE_REF`（`9d3713a`）に合わせて作り直し、`ci/knowledge-enforcement.yml` の `ENGINE_REF` もその版にそろえた）。
 
 ```sh
 ENGINE_DIR=/path/to/factory-engine python3 -m unittest discover -s tools/knowledge-enforcement-check
@@ -87,12 +87,30 @@ ENGINE_DIR=/path/to/factory-engine python3 -m unittest discover -s tools/knowled
 
 ジョブは 2 つ。
 
-- `engine-test`: `ENGINE_REF` の版の Engine を取り、`test_engine_patch.py` と `test_engine.py` を `CI=true`・`ENGINE_DIR` を渡し、pytest を入れて走らせる。差分が `ENGINE_REF` に当たらない（`patch_stale`）か一部だけ入っている（`patch_partially_applied`）か、差分で足したテストや担保の表示の比べが落ちれば、どの PR でもジョブが落ちる。写したらこのジョブを branch protection の必須チェックに入れて PR を止める（議決 `D-0035`、Issue #1063）
+- `engine-test`: `ENGINE_REF` の版の Engine を取り、`python3 -m unittest discover -s tools/knowledge-enforcement-check`（`test_engine_patch.py`・`test_engine.py` を含むすべてのテスト）を `CI=true`・`ENGINE_DIR` を渡し、pytest を入れて走らせ、出力を `knowledge-enforcement-unittest.log` に残す。差分が `ENGINE_REF` に当たらない（`patch_stale`）か一部だけ入っている（`patch_partially_applied`）か、差分で足したテストや担保の表示の比べが落ちれば、どの PR でもジョブが落ちる。次の手順（`飛ばしたテストがないか`）が、その出力の要約の `skipped=` が 1 件以上か、走らせたテストの件数（`Ran N tests`）が出ていなければ `tests_skipped`・`unittest_not_run` で落とす（飛ばす条件の取りこぼしで緑にしない。議決 `D-0037`、Issue #1080）。写したらこのジョブを branch protection の必須チェックに入れて PR を止める（議決 `D-0035`、Issue #1063）
 - `enforcement`: Engine の要らないテスト（`test_check.py`・`test_ci.py`）と `check.py` を走らせる。`check.py` の結果で落とすのは、PR が `.factory-config/knowledge/` か `tools/knowledge-enforcement-check/` を変えたときだけ
 
-`test_ci.py` がひな形（写してあれば写しも）の `engine-test` の形を見て、外れたら落とす。絞り込みのない `pull_request` だけで走る、ジョブと手順に `if:`・`continue-on-error:`・`needs:` がない、`ENGINE_REF` がワークフローの `env` に 1 行だけあって `knowledge-check.yml` と同じ版、最初の手順で 40 桁の SHA かを確かめる、Engine を `ref: ${{ env.ENGINE_REF }}`・`path: .engine` で取る、テストの手順が `CI: "true"`・`ENGINE_DIR` を渡して pytest を入れ、2 つのテストを（`check.py` の配線先の照合で）呼び、失敗を `|| true` などで握りつぶさない。写しは `ENGINE_REF` の行のほかがひな形と同じであること（`ENGINE_REF` も `knowledge-check.yml` とそろえるので、実際は同じ中身）。ひな形を 15 とおりに書き換えた写しで、それぞれ外れることも確かめる。
+`test_ci.py` がひな形（写してあれば写しも）の `engine-test` の形を見て、外れたら落とす。絞り込みのない `pull_request` だけで走る、ジョブと手順に `if:`・`continue-on-error:`・`needs:` がない、`ENGINE_REF` がワークフローの `env` に 1 行だけあって `knowledge-check.yml` と同じ版、最初の手順で 40 桁の SHA かを確かめる、Engine を `ref: ${{ env.ENGINE_REF }}`・`path: .engine` で取る、テストの手順が `CI: "true"`・`ENGINE_DIR` を渡して pytest を入れ、`unittest discover -s tools/knowledge-enforcement-check` を `-p`・`-k` で絞らずに走らせて 2 つのテストを（`check.py` の配線先の照合で）呼び、`shell: bash`・`set -o pipefail` で出力を `tee knowledge-enforcement-unittest.log` に残し、失敗を `|| true` などで握りつぶさない。そのすぐ後に、その出力の `skipped=` を見て落とす手順が bash で 1 つある。写しは `ENGINE_REF` の行のほかがひな形と同じであること（`ENGINE_REF` も `knowledge-check.yml` とそろえるので、実際は同じ中身）。ひな形を 22 とおりに書き換えた写しで、それぞれ外れることも確かめる。`skipped=` を見る手順は、作った出力（`skipped` なし・あり・失敗と一緒・テストが 0 件・出力がない）を渡して、飛ばしたかテストが走っていないときだけ落ちることを確かめる。
+
+### Engine の先頭で定期に見る（`ci/knowledge-enforcement-head.yml`）
+
+`test_engine_patch.py` は `ENGINE_REF` の版だけを見るので、`ENGINE_REF` が古いまま Engine の既定のブランチの先頭だけが進んで差分が当たらなくなっても気づけない（議決 `D-0036`、Issue #1076）。環境変数 `ENGINE_PATCH_REF` に版を渡すと、`test_engine_patch.py` は `ENGINE_REF` の代わりにその版に差分を当てる（`patch_stale` の文も `ENGINE_PATCH_REF <版>` と出す）。
+
+`ci/knowledge-enforcement-head.yml`（`tools/sendback-check/ci/sendback-engine-head.yml` と同じ形）は、PR では走らせず 1 日 1 回と手動で、Engine を `ref` なしで既定のブランチの先頭から取り、`ENGINE_PATCH_REF` を先頭の版にして `test_engine_patch.py` を走らせる。
+
+- 通ったら記録しない
+- `patch_stale` なら `::error` を出し、Issue #968 に先頭の版・その時の `knowledge-check.yml` の `ENGINE_REF`（`test_engine_patch.py` の `engine_ref()` で読む。読めなければ「読めなかった」と書く）・実行の URL・当たらなかったところを記録する。最初の行の印（`<!-- knowledge-enforcement-head: <先頭の版> patch_stale -->`）が #968 にすでにあれば足さない。これまでの記録が読めなければ足す側に倒し、記録に失敗したらジョブを落とす
+- `patch_stale` でない落ち方（Engine を取れなかった・テストが壊れた）は `::error`（`head_check_failed`）を出してジョブを落とすが、#968 には記録しない
+
+`test_ci_head.py` が、ワークフローの形（定期と手動だけ・`ref` なし・`issues: write`）と、作った Engine と偽の `gh` で手順を動かした振る舞い、`.github/workflows/` の写しがあればひな形と同じことを確かめる。
+
+```sh
+ENGINE_DIR=/path/to/factory-engine ENGINE_PATCH_REF=$(git -C /path/to/factory-engine rev-parse HEAD) \
+  python3 -m unittest discover -s tools/knowledge-enforcement-check -p test_engine_patch.py
+```
 
 ## まだ入っていないもの（建設者が入れる）
 
 - `engine/knowledge-enforcement.patch` を Engine に当てること。製品の CI（`knowledge-check`）は Engine の固定の版（`ENGINE_REF`）の `knowledge_check.py` で `INDEX.md` を作り直して比べるので、当てた版に `ENGINE_REF` を上げるまで `INDEX.md` の担保の列は `deterministic` のまま。`ENGINE_REF` を上げる PR で `--index` を作り直す（`K-0004` などが `未配線` になる）。上げたあとは `test_engine.py` は差分を当てずに Engine の版をそのまま確かめるので、差分のファイルは消してよい
 - `ci/knowledge-enforcement.yml` を `.github/workflows/` に写して PR ごとに走らせ、`engine-test` のジョブを branch protection の必須チェックに入れること。写すまでこの検査（`test_engine_patch.py` の `patch_stale` を含む）は未配線。写すときは `ENGINE_REF` を `knowledge-check.yml` と同じ版にそろえる（ずれていると `test_ci.py` が落ちる）
+- `ci/knowledge-enforcement-head.yml` を `.github/workflows/knowledge-enforcement-head.yml` にそのまま写すこと。写すまで Engine の先頭での `patch_stale` は定期に見ていない

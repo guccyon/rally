@@ -3,6 +3,7 @@
 ひな形の engine-test のジョブが、PR ごとに必ず走り（絞り込みのない pull_request・if: と continue-on-error と needs なし）、
 knowledge-check.yml と同じ ENGINE_REF の版の Engine を取り、test_engine.py と test_engine_patch.py を CI=true と ENGINE_DIR を渡し、
 pytest を入れて飛ばさずに走らせる形かを見る（差分が ENGINE_REF に当たらないか、差分で足したテストが落ちればジョブが落ちる）。
+テストは unittest discover でまとめて走らせて出力を残し、次の手順がその出力の skipped が 1 件以上なら落とす（議決 D-0037、Issue #1080）。
 .github/workflows/knowledge-enforcement.yml に写してあれば、その写しも同じ形かと、ENGINE_REF の行のほかがひな形と同じかも見る。
 形の検査（problems）が外れを見逃さないことは、ひな形を書き換えた写しで確かめる。
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -25,6 +27,8 @@ COPY = REPO / ".github" / "workflows" / "knowledge-enforcement.yml"
 JOB = "engine-test"
 TESTS = ("tools/knowledge-enforcement-check/test_engine.py", "tools/knowledge-enforcement-check/test_engine_patch.py")
 REF_LINE = re.compile(r"^\s*ENGINE_REF:\s*\S+\s*$", re.M)
+DIR = "tools/knowledge-enforcement-check"
+LOG = "knowledge-enforcement-unittest.log"
 
 spec = importlib.util.spec_from_file_location("knowledge_enforcement_check_c", HERE / "check.py")
 check = importlib.util.module_from_spec(spec)
@@ -74,10 +78,22 @@ def problems(text: str, ref: str) -> list[str]:
     engine = [s for s in steps if (s.get("with") or {}).get("repository") == "guccyon/factory-engine"]
     if len(engine) != 1 or engine[0]["with"].get("ref") != "${{ env.ENGINE_REF }}" or engine[0]["with"].get("path") != ".engine":
         e.append("Engine を ref: ${{ env.ENGINE_REF }}・path: .engine で 1 回だけ取る")
-    runs = [s for s in steps if any(t.rsplit("/", 1)[-1] in (s.get("run") or "") for t in TESTS)]
+    runs = [s for s in steps if DIR in (s.get("run") or "")]
     if len(runs) != 1:
-        return e + ["test_engine.py と test_engine_patch.py を 1 つの手順で走らせる"]
+        return e + [f"{DIR} のテストを 1 つの手順で走らせる"]
     s = runs[0]
+    if not re.search(rf"\bunittest\s+discover\s+-s\s+{re.escape(DIR)}\b", s["run"]):
+        e.append(f"テストは python3 -m unittest discover -s {DIR} でまとめて走らせる（飛ばした件数を出力で数える）")
+    if re.search(r"\s(-p|--pattern|-k)\b", s["run"]):
+        e.append("unittest discover に -p・-k を付けない（走らせるテストを絞らない）")
+    if not re.search(rf"\|\s*tee\s+{re.escape(LOG)}\s*$", s["run"], re.M):
+        e.append(f"unittest discover の出力を tee {LOG} で残す")
+    if s.get("shell") != "bash" or "set -o pipefail" not in s["run"]:
+        e.append("テストの手順は shell: bash と set -o pipefail で走らせる（tee で失敗を握りつぶさない）")
+    after = steps[steps.index(s) + 1:]
+    guard_skip = [x for x in after if LOG in (x.get("run") or "") and "skipped=" in (x.get("run") or "")]
+    if len(guard_skip) != 1 or guard_skip[0] is not (after[0] if after else None) or guard_skip[0].get("shell") != "bash":
+        e.append(f"テストの手順のすぐ後に、{LOG} の skipped が 1 件以上なら落とす手順を bash で 1 つ置く")
     env = s.get("env") or {}
     if env.get("CI") != "true":
         e.append("テストの手順に CI: \"true\" を渡す（Engine・ENGINE_REF の版・pytest がなければ飛ばさずに落とす）")
@@ -108,10 +124,32 @@ class TemplateTest(unittest.TestCase):
             p = subprocess.run(["bash", "-e", "-c", guard["run"]], env={"PATH": "/usr/bin:/bin", "ENGINE_REF": ref}, capture_output=True, text=True)
             self.assertEqual(p.returncode, rc, ref)
 
+    def test_飛ばした件数の手順はskippedが1件以上かテストが走っていないときに落ちる(self):
+        steps = load(self.text)["jobs"][JOB]["steps"]
+        guard = [s for s in steps if LOG in (s.get("run") or "") and "skipped=" in s["run"]][0]
+        ran = "Ran 12 tests in 0.345s\n\n"
+        cases = [
+            (None, 1), ("", 1), ("NO TESTS RAN\n", 1), ("Ran 0 tests in 0.000s\n\nOK\n", 1),
+            (ran + "OK\n", 0), (ran + "OK (expected failures=1)\n", 0),
+            ("test_x (m.T.test_x) ... skipped 'Engine のチェックアウトがない'\n" + ran + "OK (skipped=1)\n", 1),
+            (ran + "OK (skipped=3, expected failures=1)\n", 1), (ran + "FAILED (failures=1, skipped=2)\n", 1),
+        ]
+        for log, rc in cases:
+            with self.subTest(log), tempfile.TemporaryDirectory() as d:
+                if log is not None:
+                    (Path(d) / LOG).write_text(log, encoding="utf-8")
+                p = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", guard["run"]], cwd=d,
+                                   env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
+                self.assertEqual(p.returncode, rc, p.stdout + p.stderr)
+                if rc and log and "skipped=" in log:
+                    self.assertIn("tests_skipped", p.stdout)
+
     def test_外れた写しは落ちる(self):
         t = self.text
-        engine_step = "          python3 -B tools/knowledge-enforcement-check/test_engine.py -v\n"
+        engine_step = f"          python3 -B -m unittest discover -s {DIR} -v 2>&1 | tee {LOG}\n"
         self.assertIn(engine_step, t)
+        skip_step = "      - name: 飛ばしたテストがないか（K-0004）\n"
+        self.assertIn(skip_step, t)
         cases = {
             "paths の絞り込み": t.replace("  pull_request:\n", "  pull_request:\n    paths: ['.factory-config/**']\n", 1),
             "ENGINE_REF のずれ": t.replace(self.ref, "0" * 40),
@@ -124,9 +162,16 @@ class TemplateTest(unittest.TestCase):
             "ENGINE_DIR を渡さない": t.replace("          ENGINE_DIR: ${{ github.workspace }}/.engine\n", "", 1),
             "Engine の版を固定しない": t.replace("ref: ${{ env.ENGINE_REF }}", "ref: main", 1),
             "pytest を入れない": t.replace("pyyaml pytest", "pyyaml", 1),
-            "test_engine.py を呼ばない": t.replace(engine_step, ""),
-            "test_engine_patch.py を呼ばない": t.replace("          python3 -B tools/knowledge-enforcement-check/test_engine_patch.py -v\n", ""),
+            "テストを走らせない": t.replace(engine_step, ""),
+            "別のディレクトリを走らせる": t.replace(engine_step, engine_step.replace(f"-s {DIR}", f"-s {DIR}/engine")),
+            "テストを絞る": t.replace(engine_step, engine_step.replace(" -v ", " -p 'test_check.py' -v ")),
+            "test_engine.py だけを直に走らせる": t.replace(engine_step, f"          python3 -B {TESTS[0]} -v 2>&1 | tee {LOG}\n"),
             "失敗を握りつぶす": t.replace(engine_step, engine_step.rstrip("\n") + " || true\n"),
+            "出力を残さない": t.replace(engine_step, engine_step.replace(f" 2>&1 | tee {LOG}", "")),
+            "pipefail なし": t.replace("          set -o pipefail\n", "", 1),
+            "飛ばした件数を見ない": t[:t.index(skip_step)] + t[t.index("  enforcement:\n"):],
+            "飛ばした件数の手順がすぐ後でない": t.replace(skip_step, "      - name: x\n        run: echo ok\n" + skip_step, 1),
+            "飛ばした件数の手順の continue-on-error:": t.replace(skip_step + "        shell: bash\n", skip_step + "        continue-on-error: true\n        shell: bash\n", 1),
             "最初の手順がない": t.replace("      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）\n", "      - name: x\n", 1).replace(
                 "        shell: bash\n        run: |\n          if [[", "        run: |\n          if [[", 1),
         }
