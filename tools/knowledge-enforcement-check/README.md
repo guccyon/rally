@@ -92,7 +92,25 @@ ENGINE_DIR=/path/to/factory-engine python3 -m unittest discover -s tools/knowled
 
 `test_ci.py` がひな形（写してあれば写しも）の `engine-test` の形を見て、外れたら落とす。絞り込みのない `pull_request` だけで走る、ジョブと手順に `if:`・`continue-on-error:`・`needs:` がない、`ENGINE_REF` がワークフローの `env` に 1 行だけあって `knowledge-check.yml` と同じ版、最初の手順で 40 桁の SHA かを確かめる、Engine を `ref: ${{ env.ENGINE_REF }}`・`path: .engine` で取る、テストの手順が `CI: "true"`・`ENGINE_DIR` を渡して pytest を入れ、`unittest discover -s tools/knowledge-enforcement-check` を `-p`・`-k` で絞らずに走らせて 2 つのテストを（`check.py` の配線先の照合で）呼び、`shell: bash`・`set -o pipefail` で出力を `tee knowledge-enforcement-unittest.log` に残し、失敗を `|| true` などで握りつぶさない。そのすぐ後に、その出力の `skipped=` を見て落とす手順が bash で 1 つある。写しは `ENGINE_REF` の行のほかがひな形と同じであること（`ENGINE_REF` も `knowledge-check.yml` とそろえるので、実際は同じ中身）。ひな形を 22 とおりに書き換えた写しで、それぞれ外れることも確かめる。`skipped=` を見る手順は、作った出力（`skipped` なし・あり・失敗と一緒・テストが 0 件・出力がない）を渡して、飛ばしたかテストが走っていないときだけ落ちることを確かめる。
 
+### Engine の先頭で定期に見る（`ci/knowledge-enforcement-head.yml`）
+
+`test_engine_patch.py` は `ENGINE_REF` の版だけを見るので、`ENGINE_REF` が古いまま Engine の既定のブランチの先頭だけが進んで差分が当たらなくなっても気づけない（議決 `D-0036`、Issue #1076）。環境変数 `ENGINE_PATCH_REF` に版を渡すと、`test_engine_patch.py` は `ENGINE_REF` の代わりにその版に差分を当てる（`patch_stale` の文も `ENGINE_PATCH_REF <版>` と出す）。
+
+`ci/knowledge-enforcement-head.yml`（`tools/sendback-check/ci/sendback-engine-head.yml` と同じ形）は、PR では走らせず 1 日 1 回と手動で、Engine を `ref` なしで既定のブランチの先頭から取り、`ENGINE_PATCH_REF` を先頭の版にして `test_engine_patch.py` を走らせる。
+
+- 通ったら記録しない
+- `patch_stale` なら `::error` を出し、Issue #968 に先頭の版・その時の `knowledge-check.yml` の `ENGINE_REF`（`test_engine_patch.py` の `engine_ref()` で読む。読めなければ「読めなかった」と書く）・実行の URL・当たらなかったところを記録する。最初の行の印（`<!-- knowledge-enforcement-head: <先頭の版> patch_stale -->`）が #968 にすでにあれば足さない。これまでの記録が読めなければ足す側に倒し、記録に失敗したらジョブを落とす
+- `patch_stale` でない落ち方（Engine を取れなかった・テストが壊れた）は `::error`（`head_check_failed`）を出してジョブを落とすが、#968 には記録しない
+
+`test_ci_head.py` が、ワークフローの形（定期と手動だけ・`ref` なし・`issues: write`）と、作った Engine と偽の `gh` で手順を動かした振る舞い、`.github/workflows/` の写しがあればひな形と同じことを確かめる。
+
+```sh
+ENGINE_DIR=/path/to/factory-engine ENGINE_PATCH_REF=$(git -C /path/to/factory-engine rev-parse HEAD) \
+  python3 -m unittest discover -s tools/knowledge-enforcement-check -p test_engine_patch.py
+```
+
 ## まだ入っていないもの（建設者が入れる）
 
 - `engine/knowledge-enforcement.patch` を Engine に当てること。製品の CI（`knowledge-check`）は Engine の固定の版（`ENGINE_REF`）の `knowledge_check.py` で `INDEX.md` を作り直して比べるので、当てた版に `ENGINE_REF` を上げるまで `INDEX.md` の担保の列は `deterministic` のまま。`ENGINE_REF` を上げる PR で `--index` を作り直す（`K-0004` などが `未配線` になる）。上げたあとは `test_engine.py` は差分を当てずに Engine の版をそのまま確かめるので、差分のファイルは消してよい
 - `ci/knowledge-enforcement.yml` を `.github/workflows/` に写して PR ごとに走らせ、`engine-test` のジョブを branch protection の必須チェックに入れること。写すまでこの検査（`test_engine_patch.py` の `patch_stale` を含む）は未配線。写すときは `ENGINE_REF` を `knowledge-check.yml` と同じ版にそろえる（ずれていると `test_ci.py` が落ちる）
+- `ci/knowledge-enforcement-head.yml` を `.github/workflows/knowledge-enforcement-head.yml` にそのまま写すこと。写すまで Engine の先頭での `patch_stale` は定期に見ていない
