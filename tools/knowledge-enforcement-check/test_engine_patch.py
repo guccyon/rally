@@ -28,9 +28,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 PATCH = HERE / "engine" / "knowledge-enforcement.patch"
 WORKFLOW = REPO / ".github" / "workflows" / "knowledge-check.yml"
-# 差分で Engine に足す関数。どれかがあるのに --reverse --check が通らなければ、一部だけ入ったか入れたあと変わった（Issue #1077）
-MARKERS = (("core-gates/knowledge_check.py", "def enforcement_label("), ("core-gates/knowledge_check.py", "def check_wired_by("),
-           ("core-gates/knowledge_check.py", "def check_verified_by("))   # Issue #1130
+# 差分で Engine に足す関数を探すファイル。どれかがあるのに --reverse --check が通らなければ、一部だけ入ったか入れたあと変わった（Issue #1077）
+MARKER_FILE = "core-gates/knowledge_check.py"
 
 ENGINE = Path(os.environ.get("ENGINE_DIR") or REPO.parent / "engine")
 REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
@@ -57,10 +56,27 @@ def has_commit(engine: Path, ref: str) -> bool:
     return r.returncode == 0
 
 
+def added_functions(patch: Path = PATCH, file: str = MARKER_FILE) -> tuple[tuple[str, str], ...]:
+    """差分が file に足す関数（+def name( の行）を、(file, "def name(") の組で差分に出てくる順に返す。名前を手で書くと、
+    差分に関数を足したときに一覧から漏れて、その関数だけが入った版を patch_stale と取り違える（知見 K-0004 の担保、議決 D-0053、Issue #1149）。"""
+    found, cur = [], None
+    for line in patch.read_text(encoding="utf-8").splitlines():
+        if line.startswith("diff --git "):   # 中身の行は空白・+・-・\ で始まるので、+++ の行と違って足した行と取り違えない
+            cur = line.rsplit(" b/", 1)[-1]
+        elif cur == file and (m := re.match(r"^\+(def [A-Za-z_]\w*\()", line)):
+            found.append((file, m.group(1)))
+    return tuple(found)
+
+
+MARKERS = added_functions()
+
+
 def patch_state(engine: Path, ref: str, patch: Path = PATCH,
-                markers: tuple[tuple[str, str], ...] = MARKERS) -> tuple[str, str]:
+                markers: tuple[tuple[str, str], ...] | None = None) -> tuple[str, str]:
     """ref の版の Engine に対する差分の状態と、git apply の出力。APPLIES = 当たる、MERGED = もう入っている（--reverse --check が通る）、
-    PARTIAL = 差分で足した関数はあるが --reverse --check が通らない、STALE = どれでもない。"""
+    PARTIAL = 差分で足した関数はあるが --reverse --check が通らない、STALE = どれでもない。markers を渡さなければ patch から取り出す。"""
+    if markers is None:
+        markers = added_functions(patch)
     tar = subprocess.run(["git", "-C", str(engine), "archive", "--format=tar", ref], capture_output=True, check=True).stdout
     with tempfile.TemporaryDirectory() as t:
         with tarfile.open(fileobj=io.BytesIO(tar)) as f:
@@ -155,6 +171,61 @@ class PatchStateTest(unittest.TestCase):
         w.write_text("env:\n  ENGINE_REF: main\n", encoding="utf-8")
         with self.assertRaises(ValueError):
             engine_ref(w)
+
+
+class AddedFunctionsTest(unittest.TestCase):
+    """一部だけ入ったことを見る関数の名前を手で書かず、差分の core-gates/knowledge_check.py に足す行（+def ...）から取り出す
+    （知見 K-0004 の担保、議決 D-0053、Issue #1149）。差分に関数を 1 つ足した作った版で、その関数だけが入った Engine が
+    patch_stale ではなく patch_partially_applied で落ちることを確かめる。Engine は要らない。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        d = cls.dir = Path(cls.tmp.name) / "engine"
+        (d / "core-gates" / "tests").mkdir(parents=True)
+        git(d, "init", "-q")
+        f = d / "core-gates" / "knowledge_check.py"
+        t = d / "core-gates" / "tests" / "test_knowledge_check.py"
+        gap = lambda p: "".join(f"{p}{i}\n" for i in range(10))  # noqa: E731  関数ごとに別の hunk に分ける
+        body = lambda *fs: f"a\n{fs[0]}{gap('m')}x\n{fs[1]}{gap('n')}y\n{fs[2]}z\n"  # noqa: E731
+        f.write_text(body("", "", ""), encoding="utf-8")
+        t.write_text("t\n", encoding="utf-8")
+        git(d, "add", ".")
+        git(d, "commit", "-qm", "base")
+        cls.base = git(d, "rev-parse", "HEAD")
+        added = ("def enforcement_label(k):\n", "def check_wired_by(x):\n", "def check_added(y):\n")
+        f.write_text(body(*added), encoding="utf-8")
+        t.write_text("t\ndef test_check_added():\n", encoding="utf-8")
+        cls.patch = Path(cls.tmp.name) / "p.patch"
+        cls.patch.write_text(git(d, "diff") + "\n", encoding="utf-8")
+        git(d, "checkout", "-q", ".")
+        f.write_text(body("", "", added[2]), encoding="utf-8")
+        git(d, "commit", "-qam", "added-only")
+        cls.added_only = git(d, "rev-parse", "HEAD")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_差分の_knowledge_check_py_に足す関数だけを取り出す(self):
+        self.assertEqual(added_functions(self.patch), tuple((MARKER_FILE, f"def {n}(")
+                                                           for n in ("enforcement_label", "check_wired_by", "check_added")))
+
+    def test_差分に足した関数だけが入った版は_patch_stale_ではなく_patch_partially_applied(self):
+        state, err = patch_state(self.dir, self.added_only, self.patch)
+        self.assertEqual(state, PARTIAL)
+        self.assertIn("check_added", err)
+        self.assertNotIn("enforcement_label", err)
+        # 名前を手で書いた一覧（足した関数が漏れる）なら patch_stale と取り違える
+        old = ((MARKER_FILE, "def enforcement_label("), (MARKER_FILE, "def check_wired_by("))
+        self.assertEqual(patch_state(self.dir, self.added_only, self.patch, old)[0], STALE)
+
+    def test_Engine_に移す差分の関数を取り出す(self):
+        added = {line[1:].split("(")[0].removeprefix("def ") for line in
+                 PATCH.read_text(encoding="utf-8").split("diff --git ")[1].splitlines() if line.startswith("+def ")}
+        self.assertTrue(MARKERS)
+        self.assertEqual({name.removeprefix("def ").rstrip("(") for _, name in MARKERS}, added)
+        self.assertTrue(all(f == MARKER_FILE for f, _ in MARKERS))
 
 
 REF, REF_FROM = target_ref()
