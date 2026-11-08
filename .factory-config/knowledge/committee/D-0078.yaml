@@ -1,0 +1,66 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0078
+pr: https://github.com/guccyon/rally/pull/1218
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - '足したのは K-0004 の enforcement.solutions への test の項目 1 件だけで、statement・scope・evidence・confidence
+    は変えておらず、decided_by: committee:D-0053 の enforcement の 1 つ目の test の案（test_ci.py
+    で ENGINE_REF のずれを落とす）と中身が一致するので、変更セットの扱いは妥当です。'
+  - issue 1014 の test_engine_patch.py は ENGINE_REF の版がチェックアウトにないときに間接的に落ちるだけで、今回の項目は
+    3 つのファイルの ENGINE_REF を字面で直接比べるので担う範囲が分かれており、sendback 側の issue 960・1024 の ci.test.mjs
+    とも対象が別で、重複ではありません。
+  - 「写しがないときも飛ばさない」は ENGINE_REF の比較だけの話で、D-0053 の 2 つ目の ci_check の案（建設者が写したあとに形の検査を写しなしで落とすよう切り替える）とは食い違いませんが、次に直すときは両者の違いを
+    what に一言添えてください。
+  - '「Issue #1143 の起票時の番号は D-0050」は別の議決 D-0050（K-0012 の分）と紛れやすいものの、K-0012 などの既存の項目と同じ書きぶりで、decided_by
+    は D-0053 を正しく指しているので矛盾はありません。'
+  - 'wired: false・verified: false のままで未配線・未確認と文でも断っており、README の決まりと食い違わず、知見の置き場の CI
+    の仕組みの解決策が K-0004 に積み続けられている点（D-0053・D-0072 で指摘済み）は別の知見に分けるかを委員会で見直してください。'
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した test の解決策は decided_by: committee:D-0053 を指していて、D-0053 の pr は PR #1142
+    で、その enforcement の test の案（test_ci.py で ENGINE_REF のずれを落とす）と中身が合うので、議決まで機械で辿れます。'
+  - 'what に書いたのは手元で確かめた組（落ちる組・通る組・壊した写し）だけで、test_ci.py がひな形からしか走らないことを断って wired: false・verified:
+    false にしているので、記録より強く言っていません。'
+  - 'test_ci.py の ref_mismatches() と EngineRefTest の中身や手元の確認は知見の置き場のほかの記録には出てこず、この
+    what の申告しか根拠がないので、建設者が配線するときに Issue #1143 の差分で確かめてください。'
+  - '「起票時の番号は D-0050」と書いていますが、置き場の D-0050 は PR #1128 の K-0012 についての別の議決なので、取り違えないよう次に直すときは「Issue
+    起票時の仮の番号」だと分かる書き方にしてください。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのはファイルの道・Issue と PR の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0053 の test の案（ENGINE_REF のずれを test_ci.py
+    で照らす）を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence は変えていません。
+  - '足した項目の kind: test と decided_by: committee:D-0053 は D-0053 の enforcement の test
+    の案（knowledge: K-0004）と合っていて、議決と種類のずれは D-0041 の案で入った decision_mismatch の lint がすでに機械で照らしているので、新たな決定論の担保は要りません。'
+  - ENGINE_REF の一致は字面の比較という線の引きやすい決定論になっており、落ちる組と通る組に加えて壊した写しで落ちることも確かめていて、担保の作りとして足りています。
+  - 'test_ci.py はひな形からしか走らず .github/workflows/ への写しは建設者が置くので、wired: false・verified:
+    false のままにしているのは実態どおりで、担保を強く見せていません。'
+  - D-0053 の 2 つめの ci_check の案（写しを置いて必須チェックにしたあと写しがないときに落とし、本物の記録を verified_by に残す）はまだ入っていないので、建設者の配線のあとに別の変更セットで記録してください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の enforcement.solutions に D-0053 の test の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えておらず、wired: false・verified: false で未配線・未確認と断っているので、範囲は広すぎず記録より強くも言っていません。'
+  - 反例として、what は「字面で同じ版」と書きながら引用符で囲んだ値や行末に注釈を付けた値も通すとしているので、次に直すときは引用符と注釈を外してから比べると書き分けてください。
+  - 反例として、確かめた組はひな形の側で ENGINE_REF がない・2 行あるときだけで、knowledge-check.yml の側で ENGINE_REF
+    がない・2 行あるときに落ちるかは書かれていないので、建設者が配線する前にその組も確かめてください。
+  - 知見の置き場の CI の担保を差し戻しの判定についての K-0004 に積み続けるずれは D-0053 から D-0073 まで繰り返し指摘されたまま今回も広がっているので、別の知見に分けるかは知見の置き場の構造の話として人が決めてください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  - 差分にはファイルの道・関数名・Issue と議決と PR の番号だけがあり、人を特定できる情報はありません。
+  personal_data: false
+enforcement: []
