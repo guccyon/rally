@@ -1,0 +1,72 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0113
+pr: https://github.com/guccyon/rally/pull/1298
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は議決 D-0076（PR #1203）の 2 つ目の ci_check の案に沿っていて、decided_by: committee:D-0076
+    と「起票時の番号は D-0074」という書き方も K-0012 の D-0074 の項目と同じ決まりどおりです。'
+  - ジョブ conflict-record を issue 1207 の解決策と同じひな形 conflict-schema.yml に足し、CONFLICT_FILES_SINCE
+    とシークレットを分け合い、--since を schema.py と同じ線にしたので、既存の担保と食い違わず、照らす検査も schema.py と events.py
+    で分かれていて重複しません。
+  - --record-only で K-0010 の線（check）を照らさず record_check だけを出すのは、D-0049・D-0076 の票が求めた
+    K-0010 の停止の線と混ぜない扱いに合っています。
+  - 'D-0076 の案は Engine が積む時点で記録するようになってからの配線を想定しており、この項目は wired: false・verified: false
+    で建設者の手順を残しているので、前提を先取りした矛盾にはなっていません。'
+  - statement・confidence・evidence を変えない enforcement の追記だけなので、ほかの知見の扱いは「そのまま」でよく、confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0076 と issue 1214 で PR #1203 の議決に辿れて、what
+    に引いた案の中身も D-0076 の enforcement の ci_check の proposal とそのまま一致しています。'
+  - '「Issue #1214 の起票時の番号は D-0074」の断り書きは、D-0074 が別の PR #1202 の議決であることが committee/
+    から確かめられ、本当の議決 D-0076 を取り違えないための書き方として妥当です。'
+  - 直近 8 日の窓・CONFLICT_FILES_SINCE・シークレットの分け合いは、既にある issue 1207 の項目（D-0101、D-0111 で審査済み）と同じ線で、新しい根拠の要らない作り方です。
+  - 'C-0007 の fixture の「PR #295 のジョブ 318・325・338 は記録なし」は D-0076 でも指摘された事例記録より強い言い方のままですが、どちらでも落ちる側に入るので、この項目の結果は変わりません。'
+  - '本物のイベント列では確かめておらず wired: false・verified: false と書き、statement と confidence: hypothesis
+    は変えていないので、確かさの段はこのまま hypothesis が妥当です。'
+  - 差分にあるのは議決・PR・Issue・ジョブの番号とファイル名・環境変数名だけで、利用者の氏名・連絡先・ID・本文の引用はなく、個人情報は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0076 の ci_check の案のうち、ワーカーの権限で入れられる分を K-0014 の enforcement.solutions
+    に記録するもので、中身は D-0076 の案にそろっており、担保の観点で採ってよいです。
+  - 'tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW
+    にこの解決策を挙げ、schedule で走るジョブから events.py を呼ぶ wired_by がないと wired: true にできなくしたので、配線したと言い張る抜け道が機械でふさがれています。'
+  - CONFLICT_FILES_SINCE が空か形が違う・シークレットがない・events を読めないときに照らさずに落とすので、差分を当てる前の Engine
+    のイベントで落ちることも、照らさずに緑になることもなく、外したときの痛さが小さい作りです。
+  - ただし --since の絞り方（occurred_at が差分を当てた時刻より前なら組まず、ない・読めなければ終了コード 2）が schema.py と
+    events.py の 2 か所に別々にあり、片方だけ直すと conflict-schema と conflict-record の 2 つのジョブで照らす窓が食い違うので、同じ入力で両方の結果がそろうことを決定論で照らすべきです。
+  - 'wired: false・verified: false とし、本物のイベント列では確かめていないと書いたのは README の決まり（D-0021・D-0034）どおりの正直な記録です。'
+  - 担保を足しても記録の欠けが手を打つ時期を遅らせたかは確かめられていないので、K-0014 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0014 の statement・scope・evidence・確かさを変えず、議決 D-0076 の ci_check の案のうちワーカーの権限で入れられる分の記録を
+    enforcement.solutions に 1 項目足すだけなので、主張の範囲は広がっていません。
+  - 'D-0076 の案は「Engine が積む時点で出すようになったら」という条件付きでしたが、この項目はひな形と検査を先に置くだけで wired: false・verified:
+    false とし、配線と確認が残っていることを自分で断っているので、条件を先取りして効き目を言い過ぎてはいません。'
+  - 反例になりうる点として、毎日走るジョブが直近 8 日の窓を照らすので、1 回の欠けた記録が最大 8 日続けて赤を出すおそれがあり、配線の前に同じ欠けを何度も知らせるのを許すのか、新しく入った分だけで落とすのかを決めておくべきです。
+  - D-0076 の反対の票が挙げた点（missing_conflict_files が worker_log だけの回も落とすので、statement が言う害より線が厳しい）にはこの項目でも答えておらず、CONFLICT_FILES_SINCE
+    で差分を当てる前を外すだけなので、配線する前に積んだ時点に絞る理由を書き足してください。
+  - CONFLICT_FILES_SINCE を conflict-schema と分け合うので、Engine の差分の一部だけ（たとえば pr.conflicted
+    だけ）を先に当てたときは 2 つのジョブで適用の時刻が食い違うおそれがあり、当てる順を tools/conflict-check/README.md に書いておくと読み違いが減ります。
+  - 担保を足しても主張（記録の欠けが手を打つ時期を遅らせたか）の確かめは進んでおらず、K-0002 の反例も残っているので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: test
+  proposal: '--since の判定（時差つきの時刻の読み方、occurred_at が差分を当てた時刻より前のイベントを外すこと、occurred_at
+    がない・読めないときは終了コード 2）を tools/conflict-check/schema.py の 1 つの関数にまとめて events.py から呼ぶか、同じイベント列と時刻の組を
+    schema.py --since と events.py --record-only --since の両方に通して、外すイベントと終了コードがそろうことを照らすテスト（例:
+    test_events.py に SinceParityTest）を足し、片方だけ直されて 2 つのジョブの窓が食い違うのを CI で落とす。'
