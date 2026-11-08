@@ -21,6 +21,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -145,13 +146,13 @@ class WindowSqlTest(unittest.TestCase):
     def setUp(self):
         self.ns = f"conflict_schema_{uuid.uuid4().hex[:12]}"
         self.addCleanup(lambda: self.psql(sql=f"drop schema if exists {self.ns} cascade;"))
-        now = "now()"
+        # 時刻はどれも now() から決める（走らせる日で結果が変わらないように。since もテストの中で同じく決める）
         rows = [
-            ("pr.conflicted", "'2026-11-09T23:00:00+00:00'", {"pr_url": "u"}),                                  # 差分を当てる前
-            ("pr.conflicted", f"{now} - interval '1 hour'", {"pr_url": "u", "conflict_files": ["CHANGELOG.md"]}),
-            ("continue.enqueued", f"{now} - interval '2 hours'", {"pr_url": "u", "reason": "conflict"}),            # 窓の中で欄がない
-            ("handoff.saved", f"{now} - interval '30 days'", {"continue_reason": "conflict"}),                    # 窓の外
-            ("job.started", f"{now} - interval '1 hour'", {}),                                                     # 照らさないイベント
+            ("pr.conflicted", "now() - interval '4 days'", {"pr_url": "u"}),                                    # 窓の中だが since（3 日前）より前
+            ("pr.conflicted", "now() - interval '1 hour'", {"pr_url": "u", "conflict_files": ["CHANGELOG.md"]}),
+            ("continue.enqueued", "now() - interval '2 hours'", {"pr_url": "u", "reason": "conflict"}),            # 窓の中で欄がない
+            ("handoff.saved", "now() - interval '30 days'", {"continue_reason": "conflict"}),                    # 窓の外
+            ("job.started", "now() - interval '1 hour'", {}),                                                     # 照らさないイベント
         ]
         values = ",\n".join(f"('{n}', {t}, '{json.dumps(p)}'::jsonb)" for n, t, p in rows)
         p = self.psql(sql=f"""create schema {self.ns};
@@ -160,13 +161,22 @@ create table {self.ns}.events (id bigserial primary key, name text not null, occ
 insert into {self.ns}.events (name, occurred_at, payload) values {values};""")
         self.assertEqual(p.returncode, 0, p.stderr)
 
-    def test_窓と差分を当てた時刻より前とほかのイベントを出さない(self):
-        p = self.psql("-v", "since=2026-11-10T00:00:00Z", "-v", "window_days=8", "-f", str(SQL), search_path=self.ns)
+    def window(self, days_ago: int) -> tuple[str, list[dict]]:
+        """since を今から days_ago 日前にして window-events.sql を走らせ、(since, 出た列) を返す"""
+        since = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+        p = self.psql("-v", f"since={since}", "-v", "window_days=8", "-f", str(SQL), search_path=self.ns)
         self.assertEqual(p.returncode, 0, p.stderr)
-        events = json.loads(p.stdout)
+        return since, json.loads(p.stdout)
+
+    def test_窓と差分を当てた時刻より前とほかのイベントを出さない(self):
+        since, events = self.window(3)
         self.assertEqual([e["name"] for e in events], ["pr.conflicted", "continue.enqueued"])
-        errors = schema.check(schema.load(), events, schema.parse_time("2026-11-10T00:00:00Z"))   # occurred_at を schema.py が読める
+        errors = schema.check(schema.load(), events, schema.parse_time(since))   # occurred_at を schema.py が読める
         self.assertEqual([(x["name"], x["rule"]) for x in errors], [("continue.enqueued", "missing_field")])
+
+    def test_差分を当てた時刻が窓より前なら窓で絞る(self):
+        _, events = self.window(60)
+        self.assertEqual([e["name"] for e in events], ["pr.conflicted", "pr.conflicted", "continue.enqueued"])   # 30 日前の行は出ない
 
 
 class SqlNamesTest(unittest.TestCase):
