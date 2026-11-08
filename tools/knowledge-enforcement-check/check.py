@@ -198,6 +198,13 @@ PR_BODY_CI_TEST = "tools/pr-body-check/ci.test.mjs"
 REQUIRED_PR[("K-0012", 1197)] = (PR_BODY_RECHECK_TEST, "D-0100")
 REQUIRED_PR_WORKFLOW[("K-0012", 1197)] = PR_BODY_ENGINE_WORKFLOW
 REQUIRED_PR_ALSO[("K-0012", 1197)] = ((PR_BODY_ENGINE_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"), (PR_BODY_CI_TEST, PR_BODY_ENGINE_WORKFLOW, "D-0100"))
+# K-0012 の issue 1131（ci_check。recheck.test.mjs を engine-test で走らせる）は、pr-body-engine.yml の写しの pull_request のジョブから recheck.test.mjs を、
+# issue 1205（ci_check。写しとひな形のずれを ci.test.mjs で落とす）は同じジョブから ci.test.mjs を呼ぶ項目を求める（議決 D-0074（起票時の番号は D-0072）、Issue #1205。
+# 写しから ci.test.mjs を外すと、写しの中で走るずれの見張りそのものが止まるので、ここで止める）
+REQUIRED_PR[("K-0012", 1131)] = (PR_BODY_RECHECK_TEST, "D-0074")
+REQUIRED_PR[("K-0012", 1205)] = (PR_BODY_CI_TEST, "D-0074")
+for _key in (("K-0012", 1131), ("K-0012", 1205)):
+    REQUIRED_PR_WORKFLOW[_key] = PR_BODY_ENGINE_WORKFLOW
 # (知見の id, 解決策の issue)。wired: true にするには、ENGINE_REF の Engine の merge_step が待ちの関数を呼んでいることを求める（議決 D-0100、Issue #1196）
 REQUIRED_ENGINE_WAIT = set(PR_BODY_RECHECK)
 ENGINE_SUPERVISOR = "orchestrator/dispatcher/supervisor.py"

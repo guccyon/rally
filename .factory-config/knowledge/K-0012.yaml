@@ -134,4 +134,28 @@ enforcement:
       decided_by: committee:D-0100
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0074（Issue #1205 の起票時の番号は D-0072。PR #1202）の ci_check の案（建設者が tools/pr-body-check/ci/pr-body-engine.yml を
+        .github/workflows/pr-body-engine.yml に写して engine-test を必須のチェックにし、issue 1131 の解決策を wired: true にして wired_by に
+        {workflow: .github/workflows/pr-body-engine.yml, job: engine-test, runs: tools/pr-body-check/recheck.test.mjs} を書き、check.py の照らし合わせを通す。
+        あわせてひな形と写しの中身がずれたら落とす検査を ci.test.mjs に足す）のうち、ワーカーの権限で入れられる分を入れた。写しとのずれの見張りは
+        Issue #1037 からあったが、写しがないと飛ぶので落ちる側を確かめておらず、比べ方も深さを問わず ENGINE_REF: の行をすべて無視していた。
+        ci.test.mjs の写しの照合を copyProblems に切り出し、無視するのをワークフローの env の ENGINE_REF の 1 行だけにして、ずれた行を出すようにした。
+        見張り（workflowProblems）では落ちない 9 通りの直し（注釈・手順の名前・Node の版・Python の手順を外す・要約やログに出さない・手順やジョブを足す・
+        concurrency を変える）がずれで落ち、ENGINE_REF だけを変えた写し・CRLF の写しは通り、手順の env に ENGINE_REF を足す写しと
+        sendback-engine.yml の写しと版がずれる写しも落ちることを確かめた。ずれの判定を外す書き換えと、無視する行を元の深さを問わない形に戻す書き換えで
+        このテストが落ちることも確かめた。このずれの見張りは写しの engine-test の中で走るので、写しから ci.test.mjs を外す直しは自分では止められない。
+        そこで tools/knowledge-enforcement-check/check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW に issue 1131（recheck.test.mjs）とこの解決策（ci.test.mjs）を挙げ、
+        .github/workflows/pr-body-engine.yml の pull_request でも走るジョブからそれぞれを呼ぶ wired_by の項目がないと wired: true にできないようにした。
+        test_check.py の PrBodyEngineCopyWiringTest が、ひな形をそのまま写したジョブで通り、項目がない・別の名前のワークフロー・pull_request を外した写しで落ち、
+        道を渡して recheck.test.mjs だけを走らせる写しでは issue 1131 は通りこの解決策は落ちることを確かめた。.github/workflows/ への写しと必須のチェックは、
+        ふつうのワーカーの権限にない（CLAUDE.md の「やってはいけないこと」、Engine ADR 0041）ので建設者が行う。写したら、issue 1131 とこの解決策を wired: true にし、
+        wired_by にそれぞれ recheck.test.mjs・ci.test.mjs を runs にした engine-test の項目を書く（tools/pr-body-check/README.md の「配線の手順（建設者）」）。
+        check.py もまだ PR ごとには走っておらず、写しがないのでずれの見張りも PR ごとには走っていない。配線されておらず効き目は確かめていない
+      issue: 1205
+      at: 2026-11-08
+      decided_by: committee:D-0074
+      wired: false
+      verified: false
 decided_by: committee:D-0033

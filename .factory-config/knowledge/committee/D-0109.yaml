@@ -1,0 +1,92 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0109
+pr: https://github.com/guccyon/rally/pull/1289
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0074 の ci_check の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、過去の議決とも README の決まりとも矛盾しません。
+  - 'decided_by: committee:D-0074 の pr は #1202 で、what に引いた案の中身は D-0074 の enforcement
+    の 1 つ目の proposal と一致しており、項目の形も既存の項目と揃い、wired_by を書かずに wired: false にしています。'
+  - issue 1197 の解決策もすでに pr-body-engine.yml の engine-test から ci.test.mjs を呼ぶ項目を求めているので
+    issue 1205 の項目と求める配線が重なりますが、同じ写しの同じジョブで揃い別の検査は作っていないので矛盾ではなく、配線する変更セットでは issue
+    1131・1197・1205 の wired を同時に揃えてください。
+  - D-0070 と D-0074 の整合の票が求めた必須チェックの名前の書き分けについては、引用した案の外では「写しと必須のチェックは建設者が行う」とだけ書いて名前を
+    engine-test と言い切っていないので、D-0070 と食い違いません。
+  - D-0074 で持ち越した C-0003 を evidence に足すかどうかと、gate を本文の検査に絞るかどうかはこの差分では手つかずですが、statement
+    と evidence を直さない差分なので今回は求めず、次に K-0012 の statement か evidence を直す変更セットで応えてください。
+  - 配線も本物の記録での確かめもまだないので、K-0012 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0074 を指し、D-0074 の pr は PR #1202 で、その
+    enforcement の 1 つ目の ci_check の案（ひな形を .github/workflows/pr-body-engine.yml に写し、issue
+    1131 の解決策を wired: true にし、ひな形と写しのずれを ci.test.mjs で落とす）と what の中身が合っているので、議決まで辿れます。'
+  - what は案のうちワーカーの権限で入れた分（copyProblems への切り出しと check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW
+    への追加）と、建設者が行う残り（写し・必須のチェック・wired の書き換え）を分けて書いており、入れていない分を入れたように書いていません。
+  - '確かめたのはテストの中の写しの書き換えだけで、写しも check.py の PR ごとの実行もまだないと明記して wired: false・verified:
+    false にしているので、担保の効き目を言い過ぎていません。'
+  - この差分は担保の記録を足しただけで statement・evidence・confidence を変えておらず、本物の記録での確かめもないので、K-0012
+    の確かさは hypothesis のままが妥当です。
+  - D-0074 の 2 つ目の test の案（再検査として数える gate を本文の gate に絞る）はこの項目では手つかずなので、次に K-0012 を直す変更セットで入れるか見送る理由を書いてください。
+  - 差分にあるのは議決・Issue・PR の番号、ファイルの道、ジョブとテストの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 足した ci_check の項目は D-0074 の 1 つ目の案（ひな形と写しのずれを ci.test.mjs で落とす）に沿っていて、copyProblems
+    で無視する行をワークフローの env の ENGINE_REF の 1 行に絞り、9 通りの直しが落ちることと、線を外す書き換えでテストが落ちることを確かめているので、線ははっきりしていて決定論の見張りが付いています。
+  - 'ずれの見張りが写しの engine-test の中で走るため、写しから ci.test.mjs を外す直しは自分では止められませんが、check.py の
+    REQUIRED_PR・REQUIRED_PR_WORKFLOW で wired_by の項目がないと wired: true にできないようにしたので、外したときの痛さに見合った手当てになっています。'
+  - 'ただし .github/workflows/pr-body-engine.yml への写しも必須のチェックもまだなく、check.py も PR ごとに走っていないので担保はまだ効いておらず、wired:
+    false・verified: false にしたのは正しいです。'
+  - D-0074 の 2 つ目の案（recheck.mjs の再検査の数え方を本文を見る gate に絞り、本文と関係のない gate.evaluated だけでは
+    merged_without_body_recheck で落ちる列を recheck.test.mjs に足す）はこの PR でも手つかずで、K-0012
+    の 1 つ目の test の what にも「gate は問わず」と残っています。
+  - 配線も本物のイベント列での確かめもまだないので、K-0012 の確かさは hypothesis のままが妥当です。
+  - 差分にあるのは議決・Issue・PR の番号、ファイルの道、関数とテストの名前だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0074 の ci_check の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。
+  - what の中身は D-0074 の 1 つ目の enforcement の案（pr-body-engine.yml の写し、issue 1131 の wired_by、ひな形と写しのずれの検査）と対応していて、ほかの知見に
+    issue 1205 の重複した記録もありません。
+  - '写しから ci.test.mjs を外す直しはずれの見張り自身では止められないと認め、それを check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW
+    で補ったうえで、写しも必須のチェックもまだないので wired: false・verified: false にしており、効き目を言い過ぎていません。'
+  - 反例として、D-0074 の 2 つ目の test の案（gate.evaluated を gate を問わず再検査に数える抜け道を本文の gate に絞る）はこの
+    PR でも手つかずで、本文と関係のない検査が 1 回走るだけで merged_without_body_recheck をすり抜けるので、次に K-0012
+    を直す変更セットで塞ぐか塞がない理由を書いてください。
+  - D-0070 に合わせると必須のチェックの名前は pr-body-engine-test なので、what で「engine-test を必須のチェックにし」と書いた箇所は、議決の案を引いた文でも
+    job の id とチェックの名前を書き分けるほうが建設者の取り違えを防げます。
+  - C-0003 を evidence に足すかどうかと statement の「根拠の 2 件では」の書き分けは D-0033 から持ち越しのままで、配線も本物の記録での確かめもないので、K-0012
+    の確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が tools/pr-body-check/ci/pr-body-engine.yml を .github/workflows/pr-body-engine.yml
+    に写して pr-body-engine-test を必須のチェックにし、issue 1131 と issue 1205 の解決策を wired: true
+    にして wired_by にそれぞれ {workflow: .github/workflows/pr-body-engine.yml, job: engine-test,
+    runs: tools/pr-body-check/recheck.test.mjs} と {…, runs: tools/pr-body-check/ci.test.mjs}
+    を書き、check.py の照らし合わせを通す。'
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/knowledge-enforcement-check/check.py と test_check.py を .github/workflows/
+    の pull_request で走るジョブから呼んで必須のチェックにし、REQUIRED_PR の照合（写しから ci.test.mjs を外したまま wired:
+    true にする直し）を PR ごとに落とせるようにする。'
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: recheck.mjs の再検査の数え方を pr-body-check と本文の rubric の gate に絞り、recheck.test.mjs
+    に pr.body_amended のあと本文と関係のない gate の gate.evaluated だけが来てから supervisor.merged
+    が来る列を足して merged_without_body_recheck で落ちることを確かめる（D-0074 の 2 つ目の案）。
