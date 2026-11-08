@@ -33,6 +33,9 @@ pull_request でも走る（if: が github.event_name を見るなら == 'pull_r
 tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほかの検査（test_ci.py など）を呼ぶだけ、定期や手動だけでは wired にできない。
 議決 D-0048（Issue #1129）で、K-0004 の issue 986・1059 の解決策（wired_by・verified_by の照合）も、pull_request のジョブから
 この check.py を呼ぶ項目がないと wired にできないようにした（ci/knowledge-enforcement.yml を写した enforcement のジョブで満たす）。
+議決 D-0072（Issue #1200。起票時の番号は D-0071）で、K-0004 の issue 1129 の解決策（この段そのもの）も REQUIRED_PR に挙げ、issue 986・1059・1129 の
+解決策は REQUIRED_PR_WORKFLOW の .github/workflows/knowledge-enforcement.yml のジョブを指す wired_by でないと数えないようにした
+（ほかのワークフローの pull_request のジョブから check.py を呼ぶだけでは、ひな形の写しがなくても wired と読ませてしまうため）。
 議決 D-0052（Issue #1139）で、K-0004 の issue 1062 の解決策（README の一覧と K-*.yaml を照らす test_check.py のテスト）も、pull_request のジョブから
 test_check.py を呼ぶ項目がないと wired にできないようにした（同じく enforcement のジョブで満たす）。
 議決 D-0053（Issue #1144）で、K-0004 の issue 1063・1144 の解決策（Engine に移す差分を ENGINE_REF の版で確かめる engine-test のジョブ）も、
@@ -151,12 +154,14 @@ REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "
                               ("K-0001", 1182): (f"{WORKFLOWS}/pr-body-protection.yml", "D-0070")}
 # (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
 # K-0004 の issue 986・1059 は議決 D-0048、Issue #1129。issue 1062 は議決 D-0052、Issue #1139。issue 1063・1144 は議決 D-0053、Issue #1144。
-# issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158。K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）、Issue #1182）
+# issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158。K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）、Issue #1182。
+# K-0004 の issue 1129 は議決 D-0072（起票時の番号は D-0071）、Issue #1200。986・1059 の組も同じ議決で写しのワークフローを限る）
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
 KNOWLEDGE_TEST = "tools/knowledge-enforcement-check/test_check.py"
 ENGINE_PATCH_TEST = "tools/knowledge-enforcement-check/test_engine_patch.py"
 REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043"), ("K-0010", 1103): ("tools/conflict-check/test_events.py", "D-0043"),
-               ("K-0004", 986): (KNOWLEDGE_CHECK, "D-0048"), ("K-0004", 1059): (KNOWLEDGE_CHECK, "D-0048"),
+               ("K-0004", 986): (KNOWLEDGE_CHECK, "D-0048・D-0072"), ("K-0004", 1059): (KNOWLEDGE_CHECK, "D-0048・D-0072"),
+               ("K-0004", 1129): (KNOWLEDGE_CHECK, "D-0072"),
                ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052"),
                ("K-0004", 1063): (ENGINE_PATCH_TEST, "D-0053"), ("K-0004", 1144): (ENGINE_PATCH_TEST, "D-0053"),
                ("K-0004", 1158): (SENDBACK_PROTECTION, "D-0059"),
@@ -164,6 +169,11 @@ REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043
 # (知見の id, 解決策の issue) → REQUIRED_PR の検査を呼ぶジョブがあることを求めるワークフロー（議決 D-0070（起票時の番号は D-0067）、Issue #1182。
 # ひな形 tools/pr-body-check/ci/pr-body-engine.yml の写しのほかで engine.test.mjs を走らせても、必須のチェック pr-body-engine-test の写しとは読めないため）
 REQUIRED_PR_WORKFLOW = {("K-0001", 1182): f"{WORKFLOWS}/pr-body-engine.yml"}
+# K-0004 の issue 986・1059・1129 は、ひな形 ci/knowledge-enforcement.yml の写しの .github/workflows/knowledge-enforcement.yml のジョブに限る
+# （議決 D-0072（起票時の番号は D-0071）、Issue #1200。ほかのワークフローから check.py を呼ぶだけでは、必須チェックにする写しとは読めないため）
+KNOWLEDGE_ENFORCEMENT_WORKFLOW = f"{WORKFLOWS}/knowledge-enforcement.yml"
+for _key in (("K-0004", 986), ("K-0004", 1059), ("K-0004", 1129)):
+    REQUIRED_PR_WORKFLOW[_key] = KNOWLEDGE_ENFORCEMENT_WORKFLOW
 # 知見 K-0012 の本文の直しのあとの再検査と、同じ check.mjs を使う K-0006 の見出しの検査を、1 つのマージ前の必須チェック pr-body-check にする
 # （議決 D-0100（起票時の番号は D-0071）、Issue #1196。ひな形 tools/pr-body-check/ci/pr-body-check.yml の写しでないと、Engine の supervisor が待つ
 # チェックの名前とワークフローの道に合わない）。K-0012 の 2 つは Engine の merge_step の待ちも求める（REQUIRED_PR_ALSO・REQUIRED_ENGINE_WAIT）

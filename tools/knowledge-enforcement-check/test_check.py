@@ -566,7 +566,8 @@ class PullRequestTest(unittest.TestCase):
 
 
 class KnowledgeCheckPullRequestTest(unittest.TestCase):
-    """K-0004 の issue 986・1059 の解決策（wired_by・verified_by の照合）は pull_request のジョブから check.py を呼ばないと wired にできない（議決 D-0048、Issue #1129）"""
+    """K-0004 の issue 986・1059 の解決策（wired_by・verified_by の照合）は pull_request のジョブから check.py を呼ばないと wired にできない（議決 D-0048、Issue #1129）。
+    issue 1129 の解決策も同じく、3 つとも .github/workflows/knowledge-enforcement.yml のジョブに限る（議決 D-0072（起票時の番号は D-0071）、Issue #1200）"""
 
     CHECK = "tools/knowledge-enforcement-check/check.py"
     TEMPLATE = HERE / "ci/knowledge-enforcement.yml"
@@ -593,19 +594,39 @@ class KnowledgeCheckPullRequestTest(unittest.TestCase):
 
     def test_ひな形をそのまま写した_enforcement_のジョブなら通る(self):
         d = self.repo(self.template())
-        for issue in (986, 1059):
+        for issue in (986, 1059, 1129):
             self.assertEqual(self.errors(d, issue=issue), [], issue)
+
+    def test_対象に挙げてある(self):
+        # 議決 D-0072（起票時の番号は D-0071）、Issue #1200。issue 1129 の解決策も対象にし、3 つとも写しのワークフローに限る
+        for issue in (986, 1059, 1129):
+            self.assertEqual(check.REQUIRED_PR[("K-0004", issue)][0], self.CHECK, issue)
+            self.assertIn("D-0072", check.REQUIRED_PR[("K-0004", issue)][1], issue)
+            self.assertEqual(check.REQUIRED_PR_WORKFLOW[("K-0004", issue)], self.WF, issue)
+
+    def test_ほかのワークフローのジョブでは落ちる(self):
+        other = ".github/workflows/knowledge.yml"
+        d = self.repo(self.template())
+        (d / other).write_text(self.template(), encoding="utf-8")
+        for issue in (986, 1059, 1129):
+            item = {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+                {"kind": "ci_check", "issue": issue, "wired": True, "wired_by": [{"workflow": other, "job": "enforcement", "runs": self.CHECK}]}]}}
+            self.assertEqual(check.check_wiring(item, d), [], issue)
+            e = check.check_pull_request(item, d)
+            self.assertEqual(len(e), 1, (issue, e))
+            self.assertIn(f"on.pull_request のある {self.WF} で", e[0])
+            self.assertIn("D-0072", e[0])
 
     def test_定期や手動だけのワークフローでは落ちる(self):
         for on in ("  workflow_dispatch:\n", "  schedule:\n    - cron: '0 0 * * *'\n", "  push:\n    branches: [main]\n"):
             d = self.repo(self.template(on))
             self.assertNotEqual(self.template(on), self.template(), on)
-            for issue in (986, 1059):
+            for issue in (986, 1059, 1129):
                 e = self.errors(d, issue=issue)
                 self.assertEqual(len(e), 1, (on, issue, e))
                 self.assertIn("on.pull_request", e[0])
                 self.assertIn(self.CHECK, e[0])
-                self.assertIn("議決 D-0048", e[0])
+                self.assertIn("議決 D-0048" if issue != 1129 else "議決 D-0072", e[0])
 
     def test_check_py_を呼ばないジョブや検査では落ちる(self):
         d = self.repo(self.template())
