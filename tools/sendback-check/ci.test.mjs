@@ -13,6 +13,7 @@
 // 通ったときも engine_head_passed として記録し、その記録を head-record.mjs が数えることも見る（議決 D-0031、Issue #1047）。
 // ci/sendback-protection.yml（branch protection を読めるトークンで protection.mjs を毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0039、Issue #1087）の形と手順の振る舞い、写しとのずれも見る。
+// 同じひな形の protection-pr のジョブ（PR ごとに照らし、外れたら ::error で落とす。Issue は開かない。議決 D-0059（起票時の番号は D-0056）、Issue #1158）の形と振る舞いも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -539,6 +540,9 @@ const protSteps = jobSteps(protTemplate, "protection");
 const protReadStep = protSteps.find((s) => /branch protection を読む/.test(s[0]));
 const protCheckStep = protSteps.find((s) => /必須のチェックを照らす/.test(s[0]));
 const protIssueStep = protSteps.find((s) => /外れたら Issue を開くか更新する/.test(s[0]));
+const protPrSteps = jobSteps(protTemplate, "protection-pr");
+const protPrReadStep = protPrSteps.find((s) => /branch protection を読む/.test(s[0]));
+const protPrCheckStep = protPrSteps.find((s) => /必須のチェックを照らす/.test(s[0]));
 const ISSUE_TITLE = protTemplate.match(/^ {2}ISSUE_TITLE: "(.+)"$/m)?.[1];
 
 /** 古い形の branch protection の JSON（protection.test.mjs と同じ形） */
@@ -564,34 +568,44 @@ function fakeProtGh({ classic = { out: classicJson(Object.values(CHECK_NAMES)) }
   ].join("\n");
 }
 
-/** sandbox に protection.mjs と（あれば）sendback-engine.yml の写しを置き、読む・照らす・Issue の 3 つの手順を順に動かす */
-function runProtection({ gh = {}, copy = template, token = "t" } = {}) {
+/**
+ * sandbox に protection.mjs と（あれば）sendback-engine.yml の写しとほかのワークフロー（others: { ファイル名: 中身 }）を置き、
+ * 読む・照らす・Issue の 3 つの手順を順に動かす。pr が true なら protection-pr のジョブの読む・照らす手順を動かす（Issue の手順はない）。
+ */
+function runProtection({ gh = {}, copy = template, others = {}, token = "t", pr = false } = {}) {
   const box = sandbox({ gh: fakeProtGh(gh) });
   for (const f of ["protection.mjs", "order.mjs"]) writeFileSync(join(box.dir, f), readFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url))));
-  if (copy != null) {
-    mkdirSync(join(box.root, ".github", "workflows"), { recursive: true });
-    writeFileSync(join(box.root, ".github", "workflows", "sendback-engine.yml"), copy);
-  }
+  mkdirSync(join(box.root, ".github", "workflows"), { recursive: true });
+  if (copy != null) writeFileSync(join(box.root, ".github", "workflows", "sendback-engine.yml"), copy);
+  for (const [name, text] of Object.entries(others)) writeFileSync(join(box.root, ".github", "workflows", name), text);
   const env = { BRANCH: "main", ISSUE_TITLE, GITHUB_STEP_SUMMARY: join(box.root, "summary"), GITHUB_ACTIONS: "true" };
-  const read = runStep(protReadStep, { ...box, dir: box.root }, { ...env, GH_TOKEN: token });
-  const check = read.status === 0 ? runStep(protCheckStep, box, env) : null;
+  const read = runStep(pr ? protPrReadStep : protReadStep, { ...box, dir: box.root }, { ...env, GH_TOKEN: token });
+  const check = read.status === 0 ? runStep(pr ? protPrCheckStep : protCheckStep, box, env) : null;
   const outcome = check === null ? "skipped" : check.status === 0 ? "success" : "failure";
-  const issue = runStep(protIssueStep, box, { ...env, GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
+  const issue = pr ? null : runStep(protIssueStep, box, { ...env, GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
   const commentPath = join(box.dir, "protection-comment.md");
   return { read, check, issue, calls: box.calls(), body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
 }
 
-test("sendback-protection は定期（schedule）と手動でだけ走り、PR では走らない。トークンは branch protection を読む手順だけに渡す", () => {
+/** 注釈の行を除いたひな形の行と、on: の中身（字下げを外したもの） */
+function protOn() {
   const lines = protTemplate.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
   const on = lines.findIndex((l) => /^on:\s*$/.test(l));
   const onBody = lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l))).map((l) => l.trim()).filter((l) => l !== "");
-  assert.deepEqual(onBody.filter((l) => /^[\w-]+:$/.test(l)), ["schedule:", "workflow_dispatch:"], "schedule と workflow_dispatch のほかで走らせない");
+  return { lines, onBody };
+}
+
+test("sendback-protection の protection は定期（schedule）と手動でだけ走り、Issue を開く。トークンは branch protection を読む手順だけに渡す", () => {
+  const { lines, onBody } = protOn();
   assert.ok(onBody.some((l) => /^- cron: "[^"]+"$/.test(l)), "schedule の cron がない");
   assert.ok(!lines.some((l) => /^\s*(- )?continue-on-error:/.test(l)), "continue-on-error があると外れても気づかない");
-  assert.match(protTemplate, /^ {2}contents: read$/m);
-  assert.match(protTemplate, /^ {2}issues: write$/m, "Issue を開くので issues: write が要る");
+  assert.ok(!lines.some((l) => /pull_request_target/.test(l)), "pull_request_target ではシークレットのある実行でほかのブランチの中身を照らすことになる");
+  assert.match(protTemplate, /^permissions:\n {2}contents: read\n\n/m, "ワークフローの既定は contents: read だけ");
+  const job = jobBody(protTemplate, "protection");
+  assert.ok(job.some((l) => /^ {4}if: github\.event_name == 'schedule' \|\| github\.event_name == 'workflow_dispatch'$/.test(l)), "protection は定期と手動でだけ走らせる");
+  assert.ok(job.some((l) => /^ {6}issues: write$/.test(l)), "Issue を開くので protection のジョブに issues: write が要る");
   const secretLines = lines.filter((l) => /secrets\./.test(l));
-  assert.deepEqual(secretLines.map((l) => l.trim()), ["GH_TOKEN: ${{ secrets.SENDBACK_PROTECTION_TOKEN }}"]);
+  assert.deepEqual(secretLines.map((l) => l.trim()), Array(2).fill("GH_TOKEN: ${{ secrets.SENDBACK_PROTECTION_TOKEN }}"), "トークンは 2 つのジョブの読む手順だけ");
   assert.ok(protReadStep.some((l) => /secrets\.SENDBACK_PROTECTION_TOKEN/.test(l)), "トークンを渡すのは branch protection を読む手順だけ");
   assert.ok(!protReadStep.some((l) => /^\s*if:/.test(l)) && !protCheckStep.some((l) => /^\s*if:/.test(l)), "読む・照らす手順を飛ばさない");
   assert.ok(protCheckStep.some((l) => /^\s*id: check$/.test(l)));
@@ -600,6 +614,60 @@ test("sendback-protection は定期（schedule）と手動でだけ走り、PR �
   assert.ok(protIssueStep.some((l) => /^\s*CHECK_OUTCOME: \$\{\{ steps\.check\.outcome \}\}$/.test(l)));
   assert.ok(protSteps.indexOf(protReadStep) < protSteps.indexOf(protCheckStep) && protSteps.indexOf(protCheckStep) < protSteps.indexOf(protIssueStep));
   assert.ok(ISSUE_TITLE, "ISSUE_TITLE がない");
+});
+
+// PR ごとにも照らす（議決 D-0059（起票時の番号は D-0056）、Issue #1158）。定期だけでは、必須のチェックを外したあとの PR や、ジョブの名前を変える・同じチェックの名前を
+// 報告するジョブを足す PR が、次の定期の実行まで通ってしまう。protection-pr がその PR の .github/workflows/ と本物の branch protection を照らして落とす。
+test("sendback-protection の protection-pr は絞り込みのない pull_request で走り、読む・照らす手順は protection と同じで、Issue は開かない", () => {
+  const { lines, onBody } = protOn();
+  assert.deepEqual(onBody.filter((l) => /^[\w-]+:$/.test(l)), ["schedule:", "workflow_dispatch:", "pull_request:"],
+    "schedule・workflow_dispatch・pull_request のほかで走らせない（pull_request は paths・branches・types で絞らない）");
+  const job = jobBody(protTemplate, "protection-pr");
+  assert.ok(job.some((l) => /^ {4}if: github\.event_name == 'pull_request'$/.test(l)), "protection-pr は PR でだけ走らせる");
+  assert.ok(job.some((l) => /^ {6}contents: read$/.test(l)));
+  assert.ok(!job.some((l) => /issues: write|pull-requests: write/.test(l)), "PR のジョブに書く権限を持たせない");
+  assert.ok(!job.some((l) => /\bgh issue\b/.test(l)), "PR のジョブでは Issue を開かない");
+  assert.ok(!lines.some((l) => /^\s*(- )?continue-on-error:/.test(l)));
+  assert.deepEqual(protPrSteps.map((s) => s.join("\n").trimEnd()), protSteps.slice(0, protSteps.indexOf(protIssueStep)).map((s) => s.join("\n").trimEnd()),
+    "protection-pr の手順は protection の読む・照らす手順と同じにする");
+  assert.ok(!protPrSteps.some((s) => s.some((l) => /^\s*if:/.test(l))), "読む・照らす手順を飛ばさない");
+});
+
+test("PR ごとの照合: 必須のチェックがそろっていれば通る", () => {
+  const r = runProtection({ pr: true });
+  assert.equal(r.read.status, 0, r.read.stdout + r.read.stderr);
+  assert.equal(r.check.status, 0, r.check.stdout + r.check.stderr);
+  assert.doesNotMatch(r.check.stdout, /::error/);
+  assert.doesNotMatch(r.calls, /^gh issue/m);
+});
+
+test("PR ごとの照合: required_check_missing・check_name_changed・check_name_shared・workflow_not_copied は ::error で落ち、Issue は開かない", () => {
+  const renamed = template.replace(`name: ${CHECK_NAMES["wiring-order"]}`, "name: wiring-order");
+  assert.notEqual(renamed, template);
+  const shared = `name: other\non:\n  pull_request:\njobs:\n  build:\n    name: ${CHECK_NAMES["engine-test"]}\n    runs-on: ubuntu-latest\n    steps:\n      - run: "true"\n`;
+  for (const [rule, opts] of [
+    ["required_check_missing", { gh: { classic: { out: classicJson([CHECK_NAMES["engine-test"]]) } } }],
+    ["required_check_missing", { gh: { classic: { out: '{"message":"Branch not protected","status":"404"}', rc: 1 } } }],
+    ["check_name_changed", { copy: renamed, gh: { classic: { out: classicJson([...Object.values(CHECK_NAMES), "wiring-order"]) } } }],
+    ["check_name_shared", { others: { "other.yml": shared } }],
+    ["workflow_not_copied", { copy: null }],
+  ]) {
+    const r = runProtection({ ...opts, pr: true });
+    assert.equal(r.read.status, 0, rule + r.read.stdout + r.read.stderr);
+    assert.equal(r.check.status, 1, `${rule}: ${r.check.stdout}${r.check.stderr}`);
+    assert.match(r.check.stdout, new RegExp(`^::error title=sendback-check ${rule}::`, "m"), rule);
+    assert.equal(r.issue, null);
+    assert.doesNotMatch(r.calls, /^gh issue/m, rule);
+  }
+});
+
+test("PR ごとの照合: トークンがない（フォークからの PR など）・読めないときは protection_unreadable で落ちる", () => {
+  for (const opts of [{ token: "" }, { gh: { rules: { out: '{"message":"Not Found"}', rc: 1 } } }]) {
+    const r = runProtection({ ...opts, pr: true });
+    assert.equal(r.read.status, 1);
+    assert.match(r.read.stdout, /^::error title=sendback-protection protection_unreadable::/m);
+    assert.equal(r.check, null);
+  }
 });
 
 test("必須のチェックがそろっていれば通り、Issue は開かない", () => {
