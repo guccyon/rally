@@ -18,7 +18,7 @@ status: active
 verified_at: 2026-11-05
 review_by: 2026-12-05
 confidentiality: product
-related: [K-0002, K-0001, K-0008]
+related: [K-0002, K-0001, K-0008, K-0013, K-0014]
 invalidate_when:
   - "conflict の続きのジョブに回数の上限か、セッションの引き継ぎの打ち切りが入った"
   - "CHANGELOG だけのような機械的な衝突が tier-small か機械的な解消に回るようになった"
