@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0066
+pr: https://github.com/guccyon/rally/pull/1175
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0010 の enforcement.solutions に 1 項目を足すだけで、statement・scope・evidence・confidence・invalidate_when・review_by
+    は変えていないので、K-0001・K-0002・K-0008・K-0013・K-0014 の扱いは「そのまま」でよく、INDEX.md の作り直しもいりません。
+  - '足した test の中身は D-0043 の enforcement の 2 つ目の案（todo で飛ばした件数を CI の出力に出し、review_by
+    を過ぎても todo なら落とす）とそろっていて、D-0065 で consistency・evidence が求めたとおり issue 1103 の項目とは別の項目として
+    decided_by: committee:D-0043 で記録されているので、議決との対応は食い違っていません。'
+  - D-0064 で consistency が求めた「ENGINE_REF の版でも todo になるかを確かめた旨」は、今回も 2490db6 が手元になく走らせていないと正直に書いているだけで満たされていないので、ENGINE_REF
+    の版で走らせたら次の変更セットで書き添えてください。
+  - 落ちる期限を K-0010 の review_by から読むので、再確認で review_by を延ばすと Engine が今の形のままでも期限が黙って先に延びるため、review_by
+    を延ばす変更セットでは EngineFinishedTest の todo の扱いも合わせて見直すと what か README に書き添えることを勧めます。
+  - 'どの解決策も wired: false・verified: false で、what も CI の出力では確かめていないと書いているので、confidence
+    は hypothesis のままが妥当で、上げないでください。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0010 に足した test の項目は issue 1104 と committee:D-0043 を指しており、D-0043 の enforcement
+    の 2 つ目の案（todo で飛ばした件数を CI の出力に出し、review_by の 2026-12-05 を過ぎても今の形の Engine なら落とす検査を
+    test_events.py か check.py に足す）と中身が一致するので、一次記録に辿れます。
+  - what は確かめた Engine が ENGINE_REF の 2490db6 ではなく手元の main の 476573e であることと、CI の出力では確かめていないことを明記しており、言い過ぎていません。
+  - '配線も本物のイベント列での確認もなく wired: false・verified: false と書いているので verified_by は要らず、confidence
+    は hypothesis のままが妥当で上げないでください。'
+  - statement・scope・evidence は変わっておらず、足したのは担保の記録だけなので、C-0005・PR 659・case.analyzed:274379
+    の根拠のままで足ります。
+  - 建設者が ENGINE_REF を上げたら、2490db6 の版で 5 件の todo の数え方と期限の翌日に落ちることを確かめ直し、その記録を what
+    か verified_by に残してください。
+  - 差分にあるのは Issue と PR の番号、議決の id、コミットの短い hash、日付、ツールのパスとイベントの欄の名前だけで、利用者や人を特定できる情報は入っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0043 の 2 つ目の案（EngineFinishedTest の todo の件数を出し、K-0010 の review_by を過ぎても今の形の
+    Engine なら落とす test）を K-0010 に記録するもので、issue 1104 と committee:D-0043 に辿れ、D-0065 で担保が求めた残りを埋めるので採ってよいです。
+  - 線は「review_by の翌日から落ちる・review_by を読めないときも落ちる」と日付で機械的に引かれ、CONFLICT_CHECK_TODAY=2026-12-06
+    で落ちることを確かめているので、黙って todo が残り続ける痛さを決定論で抑える形はできています。
+  - ただし期限を K-0010 の review_by から読むので、再確認や confirmed への引き上げで review_by を延ばすだけで Engine
+    が今の形のまま期限も延び、検査が黙って先送りされる抜け道が残ります。
+  - 確かめたのは手元の main の 476573e だけで、CI のひな形が使う ENGINE_REF（2490db6）では走らせておらず、ci/conflict-check.yml
+    も .github/workflows/ に写されていないので、今は ::warning の注記も期限切れの失敗も本物の CI には出ません。
+  - 'どの解決策も wired: false・verified: false で what も効き目を確かめていないと書いているので、confidence は
+    hypothesis のままにしてください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0043 の test の案（todo の件数を出し、K-0010 の review_by を過ぎても今の形の Engine なら落とす）を
+    K-0010 の enforcement.solutions に 1 項目足すだけで、statement・scope・evidence は変えていないので、範囲が広すぎるとは判断しません。
+  - 'what に、ENGINE_REF（2490db6）ではなく main の 476573e で走らせたこと、CI の出力では確かめていないこと、効き目はまだ確かめていないことが書いてあり、wired:
+    false・verified: false と合っているので、言い過ぎはありません。'
+  - 反例として、期限を K-0010 自身の review_by から読むので、再確認で review_by を延ばすたびに落ちる日も黙って後ろにずれ、Engine
+    が今の形のまま todo が残り続けるおそれがあり、延ばすときは EngineFinishedTest の todo が残っていないことを確かめる手順を建設者か次の変更セットで決めてください。
+  - 反例として、日付で落ちる検査を必須のチェックにすると、2026-12-06 以降は K-0010 と関係のない PR まで一斉に落ちるので、配線するときは落ちたときに誰が何を直すか（ENGINE_REF
+    を上げるか K-0010 を廃止するか）を決めておいてください。
+  - D-0043 の反対の票が挙げた、engine_harness.py が job.finished の欄を見つけられないと今の形とみなして todo にする反例と、changelog.d/
+    だけの衝突を機械的とみなしてよいかの反例は、この PR でもまだ解かれていません。
+  - 配線も本物のイベント列での確認もないので、confidence は hypothesis のままが妥当で、上げないでください。
+  personal_data: false
+enforcement:
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/knowledge-enforcement-check/check.py に、K-0010 の review_by を前の版より後ろへ動かす
+    PR では、ENGINE_REF の Engine で test_events.py の EngineFinishedTest が todo のまま（job.finished
+    に agent_resumed と agent_tier が出ていない）なら落とす照合を足し、review_by を延ばすだけで期限切れの失敗を先送りできないようにする。
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が tools/conflict-check/ci/conflict-check.yml を .github/workflows/conflict-check.yml
+    に写して必須チェックにし、ENGINE_REF（2490db6）の Engine で test_events.py と test_engine.py を CI=true
+    で走らせて、todo の件数の ::warning と review_by 翌日の失敗が本物の CI の出力に出ることを確かめてから issue 1104
+    の項目を wired: true にする。'
