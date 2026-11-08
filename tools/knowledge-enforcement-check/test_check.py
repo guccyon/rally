@@ -359,6 +359,139 @@ class ScheduleTest(unittest.TestCase):
         self.assertIn("issue 1018）: wired にするには", errors[0])
 
 
+class PullRequestTest(unittest.TestCase):
+    """K-0010 の issue 1035・1103 の解決策は pull_request のジョブから test_events.py を呼ばないと wired にできない（議決 D-0043、Issue #1103）"""
+
+    EVENTS = "tools/conflict-check/test_events.py"
+    TEMPLATE = REPO / "tools/conflict-check/ci/conflict-check.yml"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.EVENTS: "", "tools/conflict-check/test_ci.py": "", ".github/workflows/c.yml": workflow}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def wf(self, on: str, job_if: str = "", step_if: str = "", run: str = f"python3 -m unittest {EVENTS}") -> str:
+        return (f"on:\n{on}jobs:\n  conflict-check:\n    runs-on: ubuntu-latest\n{job_if}    steps:\n      - uses: actions/checkout@v4\n"
+                f"      - {step_if}run: {run}\n")
+
+    def errors(self, d: Path, kid="K-0010", issue=1035, wired=True, runs=None, job="conflict-check") -> list[str]:
+        wb = [{"workflow": ".github/workflows/c.yml", "job": job, "runs": runs or self.EVENTS}]
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
+        return check.check_pull_request(item, d)
+
+    PR = "  pull_request:\n"
+
+    def test_pull_request_のジョブから呼べば通る(self):
+        for on in (self.PR, "  pull_request:\n    branches: [main]\n  workflow_dispatch:\n", "  [pull_request, push]\n"):
+            self.assertEqual(self.errors(self.repo(self.wf(on))), [], on)
+        self.assertEqual(self.errors(self.repo(self.wf(self.PR, "    if: github.event_name == 'pull_request'\n"))), [])
+        self.assertEqual(self.errors(self.repo(self.wf(self.PR)), issue=1103), [])
+
+    def test_ひな形をそのまま写せば通る(self):
+        """ci/conflict-check.yml の unittest discover で test_events.py を呼ぶ形を、呼んでいる側に数える"""
+        d = self.repo(self.TEMPLATE.read_text(encoding="utf-8"))
+        self.assertEqual(self.errors(d), [])
+        self.assertEqual(check.check_wiring({"id": "K-0010", "_file": "K-0010.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "test", "issue": 1035, "wired": True, "wired_by": [{"workflow": ".github/workflows/c.yml", "job": "conflict-check", "runs": self.EVENTS}]}]}}, d), [])
+
+    def test_定期や手動だけのワークフローでは落ちる(self):
+        for on in ("  workflow_dispatch:\n", "  schedule:\n    - cron: '0 0 * * *'\n", "  push:\n"):
+            e = self.errors(self.repo(self.wf(on)))
+            self.assertEqual(len(e), 1, on)
+            self.assertIn("on.pull_request", e[0])
+            self.assertIn("議決 D-0043", e[0])
+
+    def test_pull_request_では走らないジョブと手順は数えない(self):
+        for job_if, step_if in (("    if: github.event_name == 'workflow_dispatch'\n", ""), ("", "if: github.event_name != 'pull_request'\n        "),
+                                ("    if: false\n", ""), ("", "if: ${{ false }}\n        ")):
+            self.assertEqual(len(self.errors(self.repo(self.wf(self.PR, job_if, step_if)))), 1, (job_if, step_if))
+
+    def test_test_events_py_を呼ばないジョブでは落ちる(self):
+        d = self.repo(self.wf(self.PR, run="python3 -m unittest tools/conflict-check/test_ci.py"))
+        self.assertEqual(len(self.errors(d)), 1)
+        self.assertEqual(len(self.errors(d, runs="tools/conflict-check/test_ci.py")), 1)
+        self.assertEqual(len(self.errors(self.repo(self.wf(self.PR)), job="other")), 1)
+
+    def test_対象でない解決策と配線していない解決策は見ない(self):
+        d = self.repo(self.wf("  workflow_dispatch:\n"))
+        self.assertEqual(self.errors(d, issue=972), [])
+        self.assertEqual(self.errors(d, kid="K-0004"), [])
+        self.assertEqual(self.errors(d, wired=False), [])
+
+    def test_main_で落とす(self):
+        d = self.repo(self.wf("  workflow_dispatch:\n"))
+        MainTest.write(None, d, "K-0010.yaml", "id: K-0010\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: test, what: x, issue: 1035, wired: true, wired_by: [{{workflow: .github/workflows/c.yml, job: conflict-check, runs: {self.EVENTS}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1035）: wired にするには", errors[0])
+
+
+class DecisionTest(unittest.TestCase):
+    """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
+
+    def repo(self, **decisions: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        (d / check.ROOT / "committee").mkdir(parents=True)
+        for did, text in decisions.items():
+            (d / check.ROOT / "committee" / f"{did.replace('_', '-')}.yaml").write_text(text, encoding="utf-8")
+        return d
+
+    PLAN = "id: D-0001\nenforcement:\n- {knowledge: K-9999, level: deterministic, solution_kind: test, proposal: x}\n"
+
+    def test_議決の案に当たれば通る(self):
+        d = self.repo(D_0001=self.PLAN)
+        self.assertEqual(check.check_decision(k("deterministic", sol(decided_by="committee:D-0001")), d), [])
+
+    def test_decided_by_を書いていない解決策は見ない(self):
+        self.assertEqual(check.check_decision(k("deterministic", sol(), "x"), self.repo()), [])
+
+    def test_議決がなければ落ちる(self):
+        e = check.check_decision(k("deterministic", sol(decided_by="committee:D-0002")), self.repo(D_0001=self.PLAN))
+        self.assertEqual(len(e), 1)
+        self.assertIn("decision_mismatch: 議決 D-0002 が .factory-config/knowledge/committee/ にない", e[0])
+
+    def test_知見の_id_か種類が違えば落ちる(self):
+        d = self.repo(D_0001=self.PLAN.replace("K-9999", "K-0001"), D_0002=self.PLAN.replace("solution_kind: test", "solution_kind: lint"),
+                      D_0003="id: D-0003\noutcome: adopt\nknowledge: [K-9999]\n", D_0004="id: D-0004\nenforcement: {knowledge: K-9999, solution_kind: test}\n")
+        for did in ("D-0001", "D-0002", "D-0003", "D-0004"):
+            e = check.check_decision(k("deterministic", sol(decided_by=f"committee:{did}")), d)
+            self.assertEqual(len(e), 1, did)
+            self.assertIn(f"decision_mismatch: 議決 {did} の enforcement に K-9999 の test の案がない", e[0])
+
+    def test_形の崩れた_decided_by_は落ちる(self):
+        d = self.repo(D_0001=self.PLAN)
+        for v in ("D-0001", "committee:D-1", "committee:D-0001 ", None, 1):
+            e = check.check_decision(k("deterministic", sol(decided_by=v)), d)
+            self.assertEqual(len(e), 1, v)
+            self.assertIn("decision_mismatch: decided_by は committee:D-NNNN", e[0])
+
+    def test_読めない議決は落ちる(self):
+        e = check.check_decision(k("deterministic", sol(decided_by="committee:D-0001")), self.repo(D_0001="id: [D-0001\n"))
+        self.assertEqual(len(e), 1)
+        self.assertIn("decision_mismatch: 議決 D-0001 が読めない", e[0])
+
+    def test_main_で落とす(self):
+        d = self.repo(D_0001=self.PLAN.replace("K-9999", "K-0001"))
+        MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: test, what: x, issue: 1, wired: false, verified: false, decided_by: 'committee:D-0001'}\n"
+                       "    - {kind: lint, what: x, issue: 2, wired: false, verified: false, decided_by: 'committee:D-0001'}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 2）: decision_mismatch: 議決 D-0001 の enforcement に K-0001 の lint の案がない", errors[0])
+
+
 class RequiredRunsTest(unittest.TestCase):
     """K-0010 の issue 1034・1100 の解決策は 1 つのジョブから test_watch.py・test_engine.py を呼ばないと wired にできない（議決 D-0042、Issue #1100）"""
 
@@ -436,64 +569,6 @@ class RequiredRunsTest(unittest.TestCase):
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 1100）: wired にするには", errors[0])
-
-
-class DecisionTest(unittest.TestCase):
-    """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
-
-    def repo(self, **decisions: str) -> Path:
-        t = tempfile.TemporaryDirectory()
-        self.addCleanup(t.cleanup)
-        d = Path(t.name)
-        (d / check.ROOT / "committee").mkdir(parents=True)
-        for did, text in decisions.items():
-            (d / check.ROOT / "committee" / f"{did.replace('_', '-')}.yaml").write_text(text, encoding="utf-8")
-        return d
-
-    PLAN = "id: D-0001\nenforcement:\n- {knowledge: K-9999, level: deterministic, solution_kind: test, proposal: x}\n"
-
-    def test_議決の案に当たれば通る(self):
-        d = self.repo(D_0001=self.PLAN)
-        self.assertEqual(check.check_decision(k("deterministic", sol(decided_by="committee:D-0001")), d), [])
-
-    def test_decided_by_を書いていない解決策は見ない(self):
-        self.assertEqual(check.check_decision(k("deterministic", sol(), "x"), self.repo()), [])
-
-    def test_議決がなければ落ちる(self):
-        e = check.check_decision(k("deterministic", sol(decided_by="committee:D-0002")), self.repo(D_0001=self.PLAN))
-        self.assertEqual(len(e), 1)
-        self.assertIn("decision_mismatch: 議決 D-0002 が .factory-config/knowledge/committee/ にない", e[0])
-
-    def test_知見の_id_か種類が違えば落ちる(self):
-        d = self.repo(D_0001=self.PLAN.replace("K-9999", "K-0001"), D_0002=self.PLAN.replace("solution_kind: test", "solution_kind: lint"),
-                      D_0003="id: D-0003\noutcome: adopt\nknowledge: [K-9999]\n", D_0004="id: D-0004\nenforcement: {knowledge: K-9999, solution_kind: test}\n")
-        for did in ("D-0001", "D-0002", "D-0003", "D-0004"):
-            e = check.check_decision(k("deterministic", sol(decided_by=f"committee:{did}")), d)
-            self.assertEqual(len(e), 1, did)
-            self.assertIn(f"decision_mismatch: 議決 {did} の enforcement に K-9999 の test の案がない", e[0])
-
-    def test_形の崩れた_decided_by_は落ちる(self):
-        d = self.repo(D_0001=self.PLAN)
-        for v in ("D-0001", "committee:D-1", "committee:D-0001 ", None, 1):
-            e = check.check_decision(k("deterministic", sol(decided_by=v)), d)
-            self.assertEqual(len(e), 1, v)
-            self.assertIn("decision_mismatch: decided_by は committee:D-NNNN", e[0])
-
-    def test_読めない議決は落ちる(self):
-        e = check.check_decision(k("deterministic", sol(decided_by="committee:D-0001")), self.repo(D_0001="id: [D-0001\n"))
-        self.assertEqual(len(e), 1)
-        self.assertIn("decision_mismatch: 議決 D-0001 が読めない", e[0])
-
-    def test_main_で落とす(self):
-        d = self.repo(D_0001=self.PLAN.replace("K-9999", "K-0001"))
-        MainTest.write(None, d, "K-0001.yaml", "id: K-0001\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       "    - {kind: test, what: x, issue: 1, wired: false, verified: false, decided_by: 'committee:D-0001'}\n"
-                       "    - {kind: lint, what: x, issue: 2, wired: false, verified: false, decided_by: 'committee:D-0001'}\n")
-        out = d / "out.json"
-        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
-        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
-        self.assertEqual(len(errors), 1, errors)
-        self.assertIn("issue 2）: decision_mismatch: 議決 D-0001 の enforcement に K-0001 の lint の案がない", errors[0])
 
 
 class RepoTest(unittest.TestCase):

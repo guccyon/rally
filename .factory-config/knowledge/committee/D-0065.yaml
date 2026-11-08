@@ -1,6 +1,6 @@
 # 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
 id: D-0065
-pr: https://github.com/guccyon/rally/pull/1169
+pr: https://github.com/guccyon/rally/pull/1172
 decided_at: '2026-11-08'
 outcome: enforce
 requires_human: false
@@ -9,76 +9,80 @@ votes:
 - role: consistency
   vote: adopt
   reasons:
-  - '足した ci_check の項目（issue 1100）は D-0042 の ci_check の案のうちワーカーが入れられる check.py の検査だけを入れたもので、decided_by:
-    committee:D-0042 で議決に辿れ、案の中身とも食い違いません。'
-  - issue 1034 の解決策はウォッチャーと CI のひな形、issue 1100 の解決策はその配線を check.py で照らす検査で、既存の config・test・ci_check
-    と役が分かれているので重複ではありません。
-  - D-0043 の案（test_events.py を呼ぶかを照らす）は issue 1035 の test の項目向けで、今回の REQUIRED_RUNS（issue
-    1034・1100 と test_watch.py・test_engine.py の組）とは対象が分かれており、ぶつかりません。
-  - D-0013 から D-0042 まで consistency が求めてきた 2 点（statement の末尾を K-0001 への参照にすること、related
-    に K-0008 を足すこと）は、head の K-0010 でどちらも入っています。
-  - issue 1100 の解決策の検査の本体は check.py なのに、REQUIRED_RUNS で wired_by に test_watch.py・test_engine.py
-    を書くよう求めていて、README の wired_by（その解決策が呼ぶ検査の道）と少しずれるので、配線するときは check.py を呼ぶ job も
-    wired_by に書けるかを確かめてください。
-  - 'wired: false・verified: false で効き目は確かめていないと書いてあり README と D-0021・D-0034 の決まりに合っているので、confidence
-    は hypothesis のままが妥当です。'
+  - この PR は K-0010 の enforcement.solutions に 1 項目を足すだけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、K-0001・K-0002・K-0008・K-0013・K-0014 の扱いは「そのまま」でよく、INDEX.md の作り直しもいりません。
+  - '足した ci_check の中身は D-0043 の enforcement の 1 つ目の案（ひな形を写して ENGINE_REF を上げたら issue
+    1035 の項目を wired: true にし、check.py が wired_by のジョブが test_events.py を呼んでいるかを照らす）とそろっていて、decided_by:
+    committee:D-0043 で議決に辿れます。'
+  - pull_request でも走るジョブを求める REQUIRED_PR の形は、K-0004 の issue の項目で schedule について入れた同じ形の照合と並ぶもので、README
+    の「配線先の照合」（D-0021）と同じやり方で照らすと書いているので、既存の決まりと矛盾も重複もしません。
+  - 'D-0038 で議論した「if: を中身を問わず未配線に数える」扱いは sendback-check の order.mjs の決まりで、この REQUIRED_PR
+    が if: の中身（== ''pull_request''）を見ることとは別の道具の別の線なので食い違いではありませんが、知見をまたいで if: の扱いが違うことは建設者が配線するときに意識してください。'
+  - 'D-0043 の 2 つ目の案（todo で飛ばした件数を出し、review_by を過ぎても todo なら落とす test）はこの PR に入っておらず
+    what にも触れていないので、そのチケットで入れたら別の項目として decided_by: committee:D-0043 で記録してください。'
+  - 'wired: false・verified: false のままで効き目は確かめていないと書いているので、confidence は hypothesis
+    のままが妥当で、上げないでください。'
   personal_data: false
 - role: evidence
   vote: adopt
   reasons:
-  - 足した ci_check の項目は issue 1100 と committee:D-0042 を指しており、D-0042 の enforcement の
-    1 つ目の案（check.py がその job が test_watch.py・test_engine.py を呼んでいるかを照らす）のうちワーカーが入れられる部分と中身が一致するので、一次記録に辿れます。
-  - 'what に issue 1034 の解決策が wired: false のままで検査はまだ何も落とさず、check.py も .github/workflows/
-    から走っていないと書き、wired: false・verified: false にしているので、担保の強さを実態より強く書いていません。'
-  - 'test_check.py で確かめた組み合わせは書かれているが、走らせた結果の記録（CI の実行や出力）と D-0042 の PR #1099 が what
-    に指されていないので、issue 1100 か what にその記録を残すと辿りやすくなります。'
-  - 'statement・evidence（C-0005・PR #659・case.analyzed:274379）・confidence は変わっておらず、配線して本物の記録で効き目を確かめるまでは
-    confidence を hypothesis のままにしてください。'
-  - 差分に出てくるのは Issue の番号・議決の id・ツールとテストのパスだけで、利用者や人を特定できる情報はありません。
+  - '足した ci_check の項目は issue 1103 と committee:D-0043 を指しており、D-0043 の enforcement の
+    ci_check の案（wired: true にするとき check.py がその job が test_events.py を呼んでいるかを照らす）と中身が合うので、一次記録に辿れます。'
+  - D-0043 の案のうちワーカーが入れられる check.py の REQUIRED_PR の部分だけを入れ、.github/workflows/ への写しと
+    ENGINE_REF の引き上げは建設者に残したと what に書かれているので、どこまで満たしたかの辿りが崩れていません。
+  - 'what は test_check.py の PullRequestTest で確かめたことだけを書き、配線も本物のイベント列での確認もないと明記していて
+    wired: false・verified: false と合うので、confidence は hypothesis のままが妥当で上げないでください。'
+  - 'D-0043 のもう 1 つの test の案（EngineFinishedTest の todo の件数を出し、review_by を過ぎても todo
+    なら落とす）はこの項目では満たしていないので、入れるときは別の項目として decided_by: committee:D-0043 で記録してください。'
+  - 差分にあるのは Issue と PR の番号、議決の id、コミットの短い hash、ツールのパスとワークフローの書き方だけで、利用者や人を特定できる情報は入っていません。
   personal_data: false
 - role: enforcement
   vote: enforce
   reasons:
-  - この PR は D-0042 の ci_check の案のうちワーカーが入れられる部分（check.py の REQUIRED_RUNS と check_required_runs()）を
-    K-0010 の enforcement.solutions に 1 項目足すだけで、issue 1100 と committee:D-0042 に辿れるので、担保の記録として採ってよいです。
-  - 'REQUIRED_RUNS は「wired: true なら 1 つのジョブから test_watch.py と test_engine.py の両方を呼ぶ
-    wired_by が要る」という機械で引ける線で、通る形と落ちる形の両方を test_check.py で確かめてあり、決定論の形はできています。'
-  - 'ただし issue 1034 の解決策は wired: false のままで check.py 自体も .github/workflows/ から走っていないので、この検査は今は何も落とさず、wired:
-    false・verified: false の記録はその実態と合っています。'
-  - C-0005 では 1 回の cost_usd が 1.95 から 10.36 に増えており外したときの痛さが大きく、どの解決策も配線されていないままなので、check.py
-    を必須のチェックとして走らせる配線を決定論で仕上げる値打ちがあります。
-  - D-0042 の test の案（test_watch.py に照らせない件数が 1 以上なら落とす検査）はまだ入っておらず、issue 1035 の項目に書かれた理由（EngineFinishedTest
-    が先に落ちる）は筋が通りますが、watch.py が events.py と別の扱いに変わったときには気づけません。
-  - 配線も本物の記録での確認もないので、confidence は hypothesis のままにしてください。
+  - 'この PR は D-0043 の ci_check の案のうち、check.py の REQUIRED_PR で「pull_request で走るジョブから
+    test_events.py を呼ばないと wired: true にできない」線を入れたことを K-0010 に記録するもので、issue 1103 と
+    committee:D-0043 に辿れるので担保の記録として採ってよいです。'
+  - '線は on.pull_request の有無と if: の github.event_name の条件という機械的に判定できる形で引かれ、ひな形の unittest
+    discover の形を呼んでいる側に数えることを PullRequestTest で確かめているので、決定論の形はできています。'
+  - 'ただし REQUIRED_PR の線そのものも check.py が pull_request で走らなければ効かず、ci/knowledge-enforcement.yml
+    はまだ .github/workflows/ に写されていないので、今は誤って wired: true にした PR も黙って通ります。'
+  - D-0043 の 2 つ目の案（EngineFinishedTest の todo の件数を出し、review_by の 2026-12-05 を過ぎても
+    todo なら落とす）はこの PR でも入っておらず、C-0005 と同じ積み直しが本物のイベント列で起きても気づけない状態が続くので、次の変更セットで入れてください。
+  - 'どの解決策も wired: false・verified: false で、what も効き目を確かめていないと書いているので、confidence は
+    hypothesis のままにしてください。'
   personal_data: false
 - role: dissent
   vote: adopt
   reasons:
-  - この PR は K-0010 の enforcement.solutions に D-0042 の ci_check の案の一部を 1 項目足すだけで、statement・scope・evidence・confidence
-    を広げていないので、範囲が広すぎるとは判断しません。
-  - 'what に .github/workflows/ への写しと merge_step からの配線は建設者が入れること、issue 1034 の解決策が wired:
-    false なので今は何も落とさないことが書かれ、wired: false・verified: false とも合っていて、効き目を言い過ぎていません。'
-  - '反例として、check_required_runs() は wired_by の job が test_watch.py・test_engine.py を呼ぶかしか見ないので、ひな形だけを写して
-    supervisor の merge_step から watch.py を呼ばないまま wired: true にしても通り、衝突の積み直しは止まらないため、建設者は
-    merge_step の配線も照らす手立てを足してください。'
-  - REQUIRED_RUNS に issue 1100 の解決策自身を入れているが、この解決策の中身は check.py の検査なので、配線先の job が
-    check.py だけを走らせる正しい配線でも落ちる反例があり、issue 1100 の項目に求める呼び先が test_watch.py・test_engine.py
-    でよいかを次に直すときに確かめてください。
-  - 'D-0042 の 2 つ目の案（照らせない件数が 1 以上なら落とすテストを test_watch.py に足す）と、D-0030 の反対の票が挙げた ci:
-    の停止の key が ci_failure_step で閉じられる反例はまだ解かれていないので、配線までは担保が緑に見えるだけであることに気をつけてください。'
-  - 配線も本物の記録での確認もないので、confidence は hypothesis のままが妥当で、上げないでください。
+  - この PR は K-0010 の enforcement.solutions に D-0043 の ci_check の案を 1 項目足すだけで、statement・scope・confidence
+    を変えていないので、範囲が広すぎるとは判断しません。
+  - 'what に、ひな形を .github/workflows/ に写していないこと、ENGINE_REF（2490db6）では EngineFinishedTest
+    が todo で飛ぶこと、効き目は確かめていないことが書かれていて、wired: false・verified: false と合っているので言い過ぎていません。'
+  - '反例として、unittest discover -s tools/conflict-check の形を呼んでいる側に数えると、-p で test_policy.py
+    などに絞ったジョブや on.pull_request に paths: の絞りがあるワークフローでも test_events.py を呼んでいるとみなされるおそれがあるので、-p
+    と paths: を見て外す照らし方を次のチケットで足してください。'
+  - '反例として、check.py はジョブの if: だけを見ているので、ステップの if: で pull_request のときだけ飛ばす形や、ワークフローは走っても必須のチェックになっていない形を通してしまうため、wired:
+    true の判定にそれらが抜けていることを what か README に書き添えてください。'
+  - D-0043 の 2 つ目の案（review_by の 2026-12-05 を過ぎても todo のままなら落とす test）はこの項目に入っておらず、what
+    にも触れていないので、入れていないことと回す先のチケットを次の変更セットで明記してください。
+  - 配線も本物のイベント列での確認もないので、confidence は hypothesis のままが妥当で、上げないでください。
   personal_data: false
 enforcement:
 - knowledge: K-0010
   level: deterministic
   solution_kind: ci_check
-  proposal: 'tools/knowledge-enforcement-check/check.py を .github/workflows/ の必須のチェック（知見の置き場を変える
-    PR ごと）から走らせ、REQUIRED_RUNS を含む照合が本当に効くようにする。あわせて ci/conflict-check.yml を .github/workflows/conflict-check.yml
-    に写して必須にし、issue 1034 と issue 1100 の項目を wired: true にして wired_by に同じ workflow・job
-    の test_watch.py と test_engine.py を書く（建設者）。'
+  proposal: '建設者が tools/conflict-check/ci/conflict-check.yml を .github/workflows/conflict-check.yml
+    に、ci/knowledge-enforcement.yml を .github/workflows/ に写して両方を branch protection
+    の必須チェックにし、ENGINE_REF を job.finished に agent_resumed と agent_tier を出す Engine に上げてから、issue
+    1035・1103 の項目を wired: true（wired_by に workflow・job・検査の道）にする。'
 - knowledge: K-0010
   level: deterministic
   solution_kind: test
-  proposal: test_watch.py に、job.finished に agent_resumed と agent_tier を出さない Engine
-    の欄で組んだイベント列を watch.py に通したとき、照らせない件数が 1 以上なら落とす検査を足し（今の ENGINE_REF のときだけ todo、CI=true
-    と ENGINE_DIR では飛ばさない）、watch.py が events.py と別の扱いに変わっても黙って通らないようにする。
+  proposal: D-0043 の 2 つ目の案のとおり、test_events.py か check.py で EngineFinishedTest を todo
+    で飛ばした件数を CI の出力に出し、K-0010 の review_by を過ぎても ENGINE_REF の Engine で todo のままなら落とす。
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'check.py の REQUIRED_PR の照合に、K-0001 の protection.mjs と同じやり方で wired_by
+    のジョブ名が branch protection の必須チェックに入っているかを gh api の結果で照らす項目を足し、必須でないジョブを指す wired:
+    true を落とす。'
