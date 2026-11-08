@@ -86,4 +86,28 @@ enforcement:
       decided_by: committee:D-0050
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0100（Issue #1196 の起票時の番号は D-0071。PR #1192）の ci_check の案（建設者が tools/pr-body-check/ci/pr-body-check.yml を
+        .github/workflows/pr-body-check.yml に写して pr-body-check を必須チェックにし、tools/pr-body-check/engine/pr-body-recheck.patch を Engine の
+        supervisor に取り込み、wired_by にワークフローの job と Engine の merge_step の道を書いて wired: true にし、同じ check.mjs を使う K-0006 の
+        ci_check も揃える）のうち、ワーカーの権限で入れられる分を入れた。tools/knowledge-enforcement-check/check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW に、
+        この知見の issue 1122・1196 の解決策と K-0006 の issue 906 の解決策を挙げ、.github/workflows/pr-body-check.yml の pull_request でも走るジョブから
+        tools/pr-body-check/check.mjs を呼ぶ項目がないと wired: true にできないようにした（3 つとも同じ写しの同じジョブで揃う）。この知見の 2 つは、
+        新しく足した REQUIRED_PR_ALSO で .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs
+        （(12) が merge_step の待ちを確かめる）を呼ぶ項目も求め、REQUIRED_ENGINE_WAIT で、その写しの ENGINE_REF の版の Engine の
+        orchestrator/dispatcher/supervisor.py で merge_step が body_recheck_pending を呼んでいることを構文木で照らし、呼んでいなければ engine_unwired、
+        Engine のチェックアウト・写し・版がなく照らせなければ engine_unverifiable で落とす（ワークフローの写しだけで wired にし、Engine が待たないままの
+        状態を止める）。Engine の merge_step は wired_by の形（workflow・job・runs）では書けないので、wired_by には 2 つのジョブを書き、Engine の道は
+        この照合で確かめる。test_check.py の PrBodyRecheckWiringTest が、2 つのひな形をそのまま写したジョブと待つ Engine で通り、pr-body-check の項目がない・
+        別の名前のワークフロー・pull_request を外した写し・check.mjs を呼ばない写し・engine-test の項目がない・merge_step が待たない Engine
+        （関数がない・呼ばない・別の関数でだけ呼ぶ）・照らせない Engine で落ちることと、手元の Engine（9f8f6b4）の supervisor.py が差分を当てる前は待たず、
+        当てると待つと読めることを確かめた。差分はその Engine の先頭に当たる。写すこと・必須のチェックに登録すること・差分を Engine に入れて ENGINE_REF を
+        上げること・wired を true にして wired_by を書くことは建設者が行うので（tools/pr-body-check/README.md の「マージ前の必須チェック（建設者）」）、
+        まだ配線されておらず効き目は確かめていない
+      issue: 1196
+      at: 2026-11-08
+      decided_by: committee:D-0100
+      wired: false
+      verified: false
 decided_by: committee:D-0033

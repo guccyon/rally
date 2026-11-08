@@ -32,7 +32,8 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `verified` が `true` なのに、`verified_by` がない・空・列でない、項目が 1 つの参照でない・種類が `case`・`pr`・`event` でない、`case` が `C-NNNN` でないか `.factory-config/knowledge/cases/` にない、`pr` が正の整数でない、`event` が `<種類>:<id>` でない、`case` が 1 件もない（`pr`・`event` は手元で本物か照らせないので、事例記録に辿れることを求める）
 - `wired` が `true` なのに、`wired_by` がない・空・項目が欠けている、`workflow` が `.github/workflows/` の直下でない（ひな形の `ci/*.yml` は配線ではない）、`workflow`・`job`・`runs` のどれかが実在しない、その job が `runs` の検査を呼んでいない（下の「配線先の照合」）
 - `REQUIRED_SCHEDULE` の解決策（`K-0004` の issue 1018・1087・1158・1162、`K-0001` の issue 1106・1182）が `wired: true` なのに、`wired_by` に schedule のジョブからその検査（`tools/sendback-check/protection.mjs`、`tools/sendback-check/heartbeat.mjs`、`tools/pr-body-check/protection.mjs`）を呼ぶ項目がない（`K-0004` の issue 1018・1087 は `.github/workflows/sendback-protection.yml`、`K-0001` の issue 1182 は `.github/workflows/pr-body-protection.yml` のジョブに限る。下の「定期の配線の必須」）
-- `REQUIRED_PR` の解決策（`K-0010` の issue 1035・1103、`K-0004` の issue 986・1059、`K-0001` の issue 1182）が `wired: true` なのに、`wired_by` に pull_request のジョブからその検査（`tools/conflict-check/test_events.py`、`tools/knowledge-enforcement-check/check.py`、`tools/pr-body-check/engine.test.mjs`）を呼ぶ項目がない（`K-0001` の issue 1182 は `.github/workflows/pr-body-engine.yml` のジョブから `tools/pr-body-check/engine.test.mjs` を呼ぶものに限る。下の「PR ごとの配線の必須」）
+- `REQUIRED_PR` の解決策（`K-0010` の issue 1035・1103、`K-0004` の issue 986・1059、`K-0001` の issue 1182、`K-0012` の issue 1122・1196、`K-0006` の issue 906）が `wired: true` なのに、`wired_by` に pull_request のジョブからその検査（`tools/conflict-check/test_events.py`、`tools/knowledge-enforcement-check/check.py`、`tools/pr-body-check/engine.test.mjs`、`tools/pr-body-check/check.mjs`）を呼ぶ項目がない（`K-0001` の issue 1182 は `.github/workflows/pr-body-engine.yml` のジョブから `tools/pr-body-check/engine.test.mjs` を、`K-0012` の issue 1122・1196 と `K-0006` の issue 906 は `.github/workflows/pr-body-check.yml` のジョブから `tools/pr-body-check/check.mjs` を呼ぶものに限る。`K-0012` の 2 つは `.github/workflows/pr-body-engine.yml` のジョブから `tools/pr-body-check/engine.test.mjs` を呼ぶ項目も要る。下の「PR ごとの配線の必須」）
+- `REQUIRED_ENGINE_WAIT` の解決策（`K-0012` の issue 1122・1196）が `wired: true` なのに、`.github/workflows/pr-body-engine.yml` の `ENGINE_REF` の Engine の `merge_step` が `body_recheck_pending` を呼んでいない（`engine_unwired`）か、それを照らせない（`engine_unverifiable`。下の「Engine の merge_step の照合」）
 - `REQUIRED_RUNS` の解決策（`K-0010` の issue 1034・1100）が `wired: true` なのに、`wired_by` に 1 つのジョブから `tools/conflict-check/test_watch.py`・`test_engine.py` をすべて呼ぶ項目がない（下の「呼ぶ検査の必須」）
 - `decided_by` を書いた解決策で、`committee:D-NNNN` の形でない、`.factory-config/knowledge/committee/D-NNNN.yaml` がないか読めない、その議決の `enforcement` に同じ知見の id（`knowledge`）と同じ種類（`solution_kind` が解決策の `kind`）の案がない（`decision_mismatch`。下の「議決との照合」）
 - `HEAD_RECORD_SOLUTIONS` の解決策（`K-0004` の issue 977・1046・1047）が `verified: true` なのに、Issue #948 に engine-head の記録がない（`head_record_missing`）か、照らせない（`head_record_unchecked`。下の「engine-head の記録の照合」）
@@ -49,7 +50,18 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `npm`・`pnpm` の `run`・`run-script`・`test` は、そのディレクトリ（`--prefix` も）の `package.json` の scripts の中身を辿る。シェルのラッパー（`.sh`・`.bash`）は中身を読んで辿る（どちらも 3 段まで）
 - `runs` がテストのファイル（`test_*.py`・`*.test.mjs` など）のときは、そのディレクトリで `python3 -m unittest discover -s <ディレクトリ>` や、ファイルを名指ししない `node --test` を走らせる形も呼び出しに数える
 - `order.mjs` は取りこぼすと見張れないので迷う形を呼ぶ側に数えるが、ここで見逃すと配線していない担保を配線済みと読ませるので、逆に迷う形は呼んでいない側に数える（scripts にない名前・読めないラッパー・別の job の手順・`uses:` の手順・別のワークフローを呼ぶ job は数えない）。字面で偽の `if:`（`false`・`${{ false }}`）の job と手順も走らないので数えない
-- Engine の呼び出しだけで走る解決策は今の `wired_by` では書けない。書けるようになるまで `wired: false` のまま置く
+- Engine の呼び出しだけで走る解決策は今の `wired_by` では書けない。書けるようになるまで `wired: false` のまま置く（Engine の呼び出しとワークフローの両方で効く `K-0012` の pr-body-check は、`wired_by` にワークフローのジョブを書き、Engine の側は下の「Engine の merge_step の照合」で確かめる）
+
+## Engine の merge_step の照合
+
+知見 `K-0012` の担保の pr-body-check（`tools/pr-body-check/ci/pr-body-check.yml`）は、必須のチェックにしただけでは、本文の直しのジョブが終わってから `edited` のチェックが始まるまでの間に前の本文で通ったチェックのままマージできる。待つのは Engine の supervisor の `merge_step`（`tools/pr-body-check/engine/pr-body-recheck.patch` で足す `body_recheck_pending`）で、Engine の呼び出しは上の「配線先の照合」の `wired_by` では書けない。ワークフローを写しただけで `wired: true` にすると、Engine が待たないままでも配線済みと読ませてしまう（議決 `D-0100`（起票時の番号は `D-0071`）、Issue #1196）。
+
+`check.py` の `REQUIRED_ENGINE_WAIT` に挙げた解決策（今は `K-0012` の issue 1122・1196）は、`wired: true` にするとき、`.github/workflows/pr-body-engine.yml` の `ENGINE_REF` の版の Engine の `orchestrator/dispatcher/supervisor.py` で、`merge_step` が `body_recheck_pending` を呼び、その関数がモジュールの直下に定義されていることを構文木で照らす（取り込まない）。Engine は `--engine` か `ENGINE_DIR` の全履歴のチェックアウトから版のファイルを取り出す。
+
+- 呼んでいなければ `engine_unwired` で落とす（関数がない・`merge_step` から呼ばない・別の関数でだけ呼ぶ）
+- Engine のチェックアウトがない・`.github/workflows/pr-body-engine.yml` がないか `ENGINE_REF` が 40 桁の SHA の 1 行でない・その版や `supervisor.py` がない・構文として読めないときは、照らせないとして `engine_unverifiable（<種類>）` で落とす
+
+`wired` が `true` でない間は見ない。手元の Engine を `ENGINE_DIR` に渡すと、`test_check.py` の `PrBodyRecheckWiringTest` が、その `supervisor.py` が差分を当てる前は待たず、当てると待つと読めることも確かめる（渡さなければ飛ばす）。
 
 ## 定期の配線の必須
 
@@ -69,7 +81,8 @@ branch protection の必須のチェックは PR の `GITHUB_TOKEN` では読め
 - `runs` がその検査で、上の「配線先の照合」でジョブがそれを呼んでいる（ひな形の `unittest discover -s tools/conflict-check` の形も `test_events.py` を呼んでいる側に数える）
 - `workflow` の `on` に `pull_request` がある（`schedule`・`workflow_dispatch`・`push` だけでは足りない。必須のチェックは PR ごとに走るものにする）
 - ジョブと呼ぶ手順の `if:` が pull_request で走らないと読めない形でない。字面で偽か、`github.event_name` を見るのに `== 'pull_request'` がない・`!= 'pull_request'` がある形は走らない側に数える
-- `check.py` の `REQUIRED_PR_WORKFLOW` に挙げた解決策（今は `K-0001` の issue 1182）は、`workflow` がそこに挙げたファイル（`.github/workflows/pr-body-engine.yml`）である
+- `check.py` の `REQUIRED_PR_WORKFLOW` に挙げた解決策（今は `K-0001` の issue 1182 と、`K-0012` の issue 1122・1196、`K-0006` の issue 906）は、`workflow` がそこに挙げたファイル（`K-0001` は `.github/workflows/pr-body-engine.yml`、ほかは `.github/workflows/pr-body-check.yml`）である
+- `check.py` の `REQUIRED_PR_ALSO` に挙げた解決策（今は `K-0012` の issue 1122・1196）は、そこに挙げた検査とワークフローの組（`tools/pr-body-check/engine.test.mjs` と `.github/workflows/pr-body-engine.yml`）についても、上の 3 つを満たす項目が別に要る
 
 `wired` が `true` でない間は見ない。ひな形を `.github/workflows/conflict-check.yml` に写して必須のチェックにし、`ENGINE_REF` を `job.finished` に 2 つの欄を足した Engine に上げたら、`K-0010` の issue 1035 の項目を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/conflict-check.yml, job: conflict-check, runs: tools/conflict-check/test_events.py}` を書く。
 
