@@ -16,7 +16,10 @@
 # wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: engine-test, runs: tools/knowledge-enforcement-check/test_engine_patch.py} を書く
 # （pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと check.py が落とす。写したあとは、CI か記録が写しを wired_by に書いていれば
 # 写しがないことを test_ci.py が飛ばさずに落とす。議決 D-0053、Issue #1144）。
-# enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければ落とす。ほかの PR では結果を Job Summary に残すだけ
+# enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときと、配線先（.github/workflows/）か
+# check.py が呼ぶことを求める検査の置き場（tools/conflict-check/・tools/sendback-check/・tools/pr-body-check/）を変えたときに、通らなければ落とす
+# （wired: true の解決策の配線先のジョブから REQUIRED_RUNS などの検査を外した PR を止める。議決 D-0066（起票時の番号は D-0062）、Issue #1173）。
+# ほかの PR では結果を Job Summary に残すだけ。落とす範囲が check.py の挙げた検査と wired_by を覆うことと、手順の振る舞いは test_ci.py の EnforcementScopeTest が見る
 # check.py には PR の base（--base）と Engine の全履歴のチェックアウト（--engine）を渡し、K-0010 の review_by を延ばす PR では
 # conflict-check の ENGINE_REF の Engine で EngineFinishedTest が todo のままなら落とす（議決 D-0067、Issue #1178）
 # 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
@@ -92,12 +95,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: 担保の記録を変えた PR か
+      - name: 担保の記録か配線先を変えた PR か
         id: scope
         env:
           PR_BASE: ${{ github.base_ref }}
         run: |
-          if git diff --name-only "origin/$PR_BASE...HEAD" | grep -qE '^(\.factory-config/knowledge/|tools/knowledge-enforcement-check/)'; then
+          if git diff --name-only "origin/$PR_BASE...HEAD" | grep -qE '^(\.factory-config/knowledge/|tools/knowledge-enforcement-check/|\.github/workflows/|tools/conflict-check/|tools/sendback-check/|tools/pr-body-check/)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
