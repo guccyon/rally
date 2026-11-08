@@ -1,28 +1,31 @@
 diff --git a/core-gates/knowledge_check.py b/core-gates/knowledge_check.py
-index a4765dc..f70e1f1 100644
+index 424f84c..6f70d25 100644
 --- a/core-gates/knowledge_check.py
 +++ b/core-gates/knowledge_check.py
-@@ -6,7 +6,9 @@
+@@ -7,7 +7,10 @@
    - 期限: review_by が確かさの既定の日数（仮説 30 日・確認済み 90 日）を超えていない。settled は期限なしでよいが、担保（enforcement.solutions）か規範（evidence の spec）が要る
    - 参照: supersedes と superseded_by が両側にある、置き換えられた知見が active のまま残っていない、evidence の case が cases/ にある
    - 個人情報: 知見・事例記録・議決の全文に、メール・電話番号・利用者 ID の形（UUID）・カード番号・IP アドレス・秘密情報の形がない
 -  - 一覧: INDEX.md が中身から作った一覧と一致する（--index で作り直す）
-+  - 担保: enforcement.solutions の wired・verified は真偽で、wired でないのに verified にしない
++  - 担保: enforcement.solutions の wired・verified は真偽で、wired でないのに verified にしない。wired が true なら wired_by（配線先の
++    workflow・job・runs の列。workflow は .github/workflows/ の直下のファイル）が要る（形だけを見る。実在と呼び出しは製品の検査が照らす）
 +  - 一覧: INDEX.md が中身から作った一覧と一致する（--index で作り直す）。担保の列は deterministic でも、配線済み（wired）の解決策がなければ
 +    「未配線」、配線済みで効き目を確かめた（verified）解決策がなければ「deterministic（未確認）」と出す
  
  製品の CI は Engine の固定した版のこのファイルだけを取って動かすので、値はここに持つ（正本は definitions/knowledge.yaml）。
  
-@@ -37,6 +39,8 @@ STATUSES = ["draft", "active", "stale", "superseded", "retired"]
+@@ -38,6 +41,10 @@ STATUSES = ["draft", "active", "stale", "superseded", "retired"]
  EVIDENCE_KINDS = ["case", "pr", "issue", "session", "event", "spec", "restricted"]
  LEVELS = ["context", "checklist", "deterministic"]
  SOLUTION_KINDS = ["lint", "test", "type", "schema", "ci_check", "config", "overlay_rule"]
 +SOLUTION_FLAGS = ["wired", "verified"]   # 書いていなければ false として数える
 +UNWIRED, UNVERIFIED = "未配線", "deterministic（未確認）"
++WIRED_BY_KEYS = ["workflow", "job", "runs"]   # wired が true の解決策に要る配線先の項目（議決 D-0021・D-0034）
++WIRED_BY_WORKFLOW_RE = re.compile(r"^\.github/workflows/[^/]+\.ya?ml$")   # ひな形（ci/*.yml など）は配線ではない
  CONFIDENTIALITY = ["product", "client", "public"]
  ID_RE = re.compile(r"^K-\d{4,}$")
  CASE_RE = re.compile(r"^C-\d{4,}$")
-@@ -153,6 +157,12 @@ def check_item(k: dict, cases: set[str], decisions: set[str]) -> list[str]:
+@@ -181,6 +188,14 @@ def check_item(k: dict, cases: set[str], decisions: set[str]) -> list[str]:
          for s in enf.get("solutions") or []:
              if not isinstance(s, dict) or s.get("kind") not in SOLUTION_KINDS or not s.get("what"):
                  e.append(f"{f}: enforcement.solutions の各項目は kind（{SOLUTION_KINDS}）と what が要る")
@@ -32,10 +35,32 @@ index a4765dc..f70e1f1 100644
 +                    e.append(f"{f}: enforcement.solutions の {flag} は true か false（{s[flag]!r}）")
 +            if s.get("verified") is True and s.get("wired") is not True:
 +                e.append(f"{f}: enforcement.solutions で wired でないのに verified が true（配線してから本物の記録で確かめる）")
++            if s.get("wired") is True:
++                e += check_wired_by(f, s.get("wired_by"))
      if conf == "settled":
          has_solution = enf.get("level") == "deterministic" and enf.get("solutions")
          has_norm = any(isinstance(ev, dict) and "spec" in ev for ev in k.get("evidence") or [])
-@@ -207,6 +217,20 @@ def check_pii(repo: Path) -> list[str]:
+@@ -189,6 +204,19 @@ def check_item(k: dict, cases: set[str], decisions: set[str]) -> list[str]:
+     return e
+ 
+ 
++def check_wired_by(f: str, wb) -> list[str]:
++    """wired が true の解決策の wired_by の形（議決 D-0034）。ファイル・job の実在と、job が runs を呼ぶかは製品の検査が照らす"""
++    if not isinstance(wb, list) or not wb:
++        return [f"{f}: enforcement.solutions で wired が true なのに wired_by（配線先の workflow・job・runs の列）がない"]
++    e = []
++    for j, w in enumerate(wb):
++        if not isinstance(w, dict) or not all(isinstance(w.get(key), str) and w.get(key) for key in WIRED_BY_KEYS):
++            e.append(f"{f}: enforcement.solutions の wired_by[{j}] は workflow・job・runs を文字列で書く（{w!r}）")
++        elif not WIRED_BY_WORKFLOW_RE.fullmatch(w["workflow"]):
++            e.append(f"{f}: enforcement.solutions の wired_by[{j}] の workflow は .github/workflows/ の直下のファイル（{w['workflow']}。ひな形は配線ではない）")
++    return e
++
++
+ def check_scope(f: str, k: dict) -> list[str]:
+     """作用先の軸（ADR 0040）。閉じた語彙の軸は値を見る。業務か成果物のどちらかが要る（roles・contexts・paths だけの今の知見は移し替えまで除く）"""
+     e = []
+@@ -265,6 +293,20 @@ def check_pii(repo: Path) -> list[str]:
      return e
  
  
@@ -56,7 +81,7 @@ index a4765dc..f70e1f1 100644
  def index_md(items: list[dict], today: date) -> str:
      rows = sorted(items, key=lambda k: (k.get("theme") or 0, str(k.get("id"))))
      out = ["# 知見の一覧（自動生成。手で編集しない）", "", "core-gates/knowledge_check.py --index で作り直す。期限は review_by。", "",
-@@ -216,7 +240,7 @@ def index_md(items: list[dict], today: date) -> str:
+@@ -274,7 +316,7 @@ def index_md(items: list[dict], today: date) -> str:
          due = f"{review}{'（過ぎた）' if review and review < today and k.get('status') == 'active' else ''}" if review else "—"
          stmt = " ".join(str(k.get("statement") or "").split())[:80]
          out.append(f"| {k.get('id')} | {k.get('theme')} | {k.get('kind')} | {k.get('confidence')} | {k.get('status')} | "
@@ -66,16 +91,17 @@ index a4765dc..f70e1f1 100644
          out.append("| — | | | | | | | | まだない |")
      return "\n".join(out) + "\n"
 diff --git a/core-gates/tests/test_knowledge_check.py b/core-gates/tests/test_knowledge_check.py
-index 9905c73..8b034c7 100644
+index 41be680..8bd2466 100644
 --- a/core-gates/tests/test_knowledge_check.py
 +++ b/core-gates/tests/test_knowledge_check.py
-@@ -109,3 +109,25 @@ def test_index_must_be_regenerated_and_inventory_lists_stale(tmp_path, capsys):
-     capsys.readouterr()
-     kc.main(["--repo", str(r), "--inventory", "--today", "2027-02-01"])
-     assert '"K-0001"' in capsys.readouterr().out
+@@ -139,3 +139,50 @@ def test_axes_reject_unknown_keys_and_requester(tmp_path):
+     bad = GOOD.replace(OLD_SCOPE, "scope: {work: [dev.build], audience: [coach], requester: [someone]}")
+     rc, out = run(tmp_path, {"K-0001.yaml": bad})
+     assert rc == 1 and "['audience']" in out and "制御プレーンの DB" in out
 +
 +
 +DET = GOOD + "enforcement:\n  level: deterministic\n  solutions:\n    - {kind: lint, what: UI 文言の禁止語, issue: 318%s}\n"
++WIRED_BY = ", wired_by: [{workflow: .github/workflows/lint.yml, job: lint, runs: tools/lint/check.py}]"
 +
 +
 +def test_solution_flags_must_be_bool_and_verified_needs_wired(tmp_path):
@@ -88,18 +114,42 @@ index 9905c73..8b034c7 100644
 +
 +def test_index_label_does_not_show_unwired_as_deterministic(tmp_path):
 +    for flags, want in [("", "未配線"), (", wired: false, verified: false", "未配線"),
-+                        (", wired: true, verified: false", "deterministic（未確認）"), (", wired: true, verified: true", "| deterministic |")]:
++                        (", wired: true, verified: false" + WIRED_BY, "deterministic（未確認）"),
++                        (", wired: true, verified: true" + WIRED_BY, "| deterministic |")]:
 +        d = tmp_path / str(abs(hash(flags)))
 +        d.mkdir()
 +        rc, out = run(d, {"K-0001.yaml": DET % flags})
 +        assert rc == 0, out
 +        assert want in (d / kc.ROOT / "INDEX.md").read_text(encoding="utf-8")
 +    assert kc.enforcement_label({"enforcement": {"level": "checklist"}}) == "checklist" and kc.enforcement_label({}) == "context"
++
++
++def test_wired_needs_wired_by_with_workflow_job_runs(tmp_path):
++    # 議決 D-0034。wired が true の解決策は配線先（.github/workflows/ の直下のファイル・job・runs）が要る。wired でなければ見ない
++    for i, (flags, want) in enumerate([
++        (", wired: true", "wired_by（配線先の workflow・job・runs の列）がない"),
++        (", wired: true, wired_by: []", "wired_by（配線先の workflow・job・runs の列）がない"),
++        (", wired: true, wired_by: {workflow: .github/workflows/lint.yml, job: lint, runs: tools/lint/check.py}", "wired_by（配線先"),
++        (", wired: true, wired_by: [{workflow: .github/workflows/lint.yml, job: lint}]", "wired_by[0] は workflow・job・runs を文字列で書く"),
++        (", wired: true, wired_by: [{workflow: .github/workflows/lint.yml, job: 1, runs: tools/lint/check.py}]", "wired_by[0] は workflow・job・runs"),
++        (", wired: true, wired_by: [.github/workflows/lint.yml]", "wired_by[0] は workflow・job・runs"),
++        (", wired: true, wired_by: [{workflow: ci/lint.yml, job: lint, runs: tools/lint/check.py}]", "wired_by[0] の workflow は .github/workflows/ の直下"),
++        (", wired: true, wired_by: [{workflow: .github/workflows/sub/lint.yml, job: lint, runs: tools/lint/check.py}]", "wired_by[0] の workflow は"),
++    ]):
++        d = tmp_path / f"bad{i}"
++        d.mkdir()
++        rc, out = run(d, {"K-0001.yaml": DET % flags})
++        assert rc == 1 and want in out, (flags, out)
++    for i, flags in enumerate([WIRED_BY.replace(", ", ", wired: true, ", 1), ", wired: false", ", wired: false, wired_by: oops", ""]):
++        d = tmp_path / f"ok{i}"
++        d.mkdir()
++        rc, out = run(d, {"K-0001.yaml": DET % flags})
++        assert rc == 0, (flags, out)
 diff --git a/definitions/knowledge.yaml b/definitions/knowledge.yaml
-index 3af45dc..873810c 100644
+index 429d535..9d31b21 100644
 --- a/definitions/knowledge.yaml
 +++ b/definitions/knowledge.yaml
-@@ -37,6 +37,15 @@ knowledge:
+@@ -42,6 +42,23 @@ knowledge:
      levels: [context, checklist, deterministic]
      solution_kinds: [lint, test, type, schema, ci_check, config, overlay_rule]
      note: "決定論で担保しても知見は消さず、どの解決策で担保したかを solutions に残す（Issue・PR・時期・議決）"
@@ -112,6 +162,14 @@ index 3af45dc..873810c 100644
 +      unwired: "未配線"                    # deterministic で、wired: true の解決策が 1 件もない（解決策がない場合も）
 +      unverified: "deterministic（未確認）"  # wired: true はあるが、wired かつ verified の解決策が 1 件もない
 +      deterministic: "deterministic"       # wired かつ verified の解決策が 1 件以上
++    # 解決策の配線先（議決 D-0021・D-0034）。wired が true のときに必須（core-gates/knowledge_check.py の check_wired_by が形を落とす）。
++    # ファイル・job の実在と、job が runs を呼んでいるかは製品の検査（rally の tools/knowledge-enforcement-check/check.py）が照らす
++    solution_wired_by:
++      required_when: { wired: true }
++      items:                               # 1 件以上の列。各項目は 3 つとも空でない文字列
++        workflow: "^\\.github/workflows/[^/]+\\.ya?ml$"   # .github/workflows/ の直下のファイル。ひな形（ci/*.yml など）は配線ではない
++        job: "そのワークフローの jobs の id"
++        runs: "job が呼ぶ検査の道（リポジトリの根から。例: tools/sendback-check/order.mjs）"
    confidentiality: [product, client, public]
  
  # エージェントに渡す知見（2026-10-31 オーナー）
