@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.6.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.7.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -61,6 +61,9 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
   - id: select-only
     target: admin-web の src/（src/components/ui/Select.tsx を除く）
     detect: select 要素を直に書いている要素（0.6.0）
+  - id: media-no-record
+    target: 入室前チェックの画面と camera_preview・level_meter の実装
+    detect: MediaRecorder・captureStream・canvas の toBlob と toDataURL、getUserMedia の stream を fetch・WebSocket・RTCPeerConnection に渡すコード（0.7.0。must なので最初からマージを止める）
   - id: state-color-map
     detect: status_tag の色が booking_state・slot_state の対応と違う
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
@@ -74,44 +77,13 @@ requests:   # 画面のタスクから来た部品の求めのうち、まだ足
 changelog:
   file: specs/design/CHANGELOG.md
   format: 版・日付・変えたもの・理由・効く画面（screens.ts と capture_test.dart の画面の id）・承認（工場か人）
-  entries:
-    # 0.1.0〜0.4.0 は要点だけ（0.5.0 で縮めた）。全文は specs/design/CHANGELOG.md
-    - {version: 0.1.0, date: "2026-11-01", change: デザインシステムの最初の正本（コンセプト rally-court）, affects: 両アプリの全画面, approved_by: 人（コンセプトの選択）、工場（基準）}
-    - {version: 0.1.1, date: "2026-11-02", change: typography.families に bundling_status を書き足し、admin-web の @theme に字間を写した, affects: admin-web の全画面, approved_by: 工場}
-    - {version: 0.2.0, date: "2026-11-02", change: 青の値の彩度を下げ、copy と calm_primary、empty_state の variants、全部の部品の preview を足した, affects: 両アプリの全画面, approved_by: 人（色の値・concept_tone）、工場（部品と見本）}
-    - {version: 0.3.0, date: "2026-11-05", change: admin-web の幅（content_width_px の reading と wide）と data_table を足し、lint に table-no-page-scroll を足した, affects: admin-web の本部の一覧の画面, approved_by: 工場}
-    - {version: 0.4.0, date: "2026-11-05", change: date_field と color.slot_state・state_rules を足し、lint に date-field-only・state-color-map、requests に checkbox（保留）を足した, affects: admin-web の期間の欄のある画面・coach-slots*・design-catalog, approved_by: 工場}
-    - version: 0.5.0
-      date: "2026-11-06"
+  entries:   # 直近の版だけ（0.7.0 で縮めた）。0.1.0 からの全文は specs/design/CHANGELOG.md
+    - version: 0.7.0
+      date: "2026-11-08"
       change: >-
-        「スコアボード」の方向に見直した。色の役割の値（青→インク #0E1013、青みの灰→中立の灰、focus_ring→#667F00）と contrast_checked、数字の書体 numeric（Barlow Condensed）と書体の段（display・headline・title の値、figure・figure_sm を足した）、
-        ボタンの角丸（pill→md）、カードと欄（surface の面→background と border の線）、部品 button・card・status_tag・notice・list_row・data_table、concept_tone の calm_primary、principles の one-hot-spot、patterns の Section、lint。
-        値の前後と全文は specs/design/CHANGELOG.md の 0.5.0
+        入室前チェックの部品 media_toggle・camera_preview・level_meter・join_bar を足した。content に datetime.countdown・動詞・errors.prejoin・prejoin_check、lint に media-no-record を足した。
+        見本を select 7→5・date_field 4→3 に絞り、entries を直近の版だけにした（spec の字数の上限。全文は CHANGELOG.md）
       reason: >-
-        人がカタログ 0.3.0 を見て「往年の Bootstrap 感があって垢抜けない」と指摘し、3 つの方向を比べて案 A「スコアボード」を選んだ（2026-11-05）。
-        名前は消さず値だけを変えた（scale.blue は残して 1.0.0 で消す）。新しい値も WCAG 2.2 AA を満たす（primary は background で 19.05、text_muted は surface で 5.78、focus_ring は白で 4.56・インクの上で 4.17）。
-        0.x の間は 0.2.0 と同じく、名前を保った値の変更と追加を minor とする
-      affects: student-app と admin-web の全画面（screens.ts と capture_test.dart のすべての id）。予約のカード・状態のタグ・知らせ・admin-web の Section は形も変わる
-      approved_by: 人（色の役割の値・concept_tone と principles の変更・書体の追加、2026-11-05）、工場（部品の基準・lint・見本）
-      migration:
-        - student-app の rally_tokens.dart と admin-web の globals.css の @theme・tests/designTokens.test.ts を新しい値にする（名前は同じ。primary_container_pressed・numeric・figure を足す）
-        - Barlow Condensed（700・800）と OFL.txt を両アプリに同梱する（student-app は pubspec の fonts と LicenseRegistry、admin-web は public/fonts/ と @font-face）
-        - 基本の部品（ボタン・カード・状態のタグ・知らせ・一覧の行・Section・表）を components.yaml の形にし、カタログを組み立て直す。PR に前後のキャプチャを付ける
-    - version: 0.6.0
-      date: "2026-11-07"
-      change: >-
-        components.yaml に select（選択欄。状態は通常・押下・フォーカス・無効・読み込み中・失敗・誤り、文言の型は load_failed と not_selected）と preview_css を足し、
-        text_field の not_for に版を書き足した。patterns.yaml の search_filter に admin_web_filter_row と should の基準を足し、structure を直した。lint に select-only を足した
-      reason: >-
-        #992 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025）。text_field と date_field の not_for が select を指すのに定義がなく、
-        admin-web の 18 の部品（本部 16・コーチ 2）の 46 の素の select が高さ・余白を画面ごとに変えていた。field は text_field と同じ形にし、トークンは足していない（色の組み合わせはどれも contrast_checked にある）。
-        既存の名前と値は消していない。must の追加はない
-      affects: >-
-        正本の上では admin-web の select のある画面（hq-bookings*・hq-cancelled-bookings*・hq-lesson-menus*・hq-slot-supply*・hq-live-sessions*・hq-overdue-live-sessions*・
-        hq-pending-video-reviews*・hq-returned-video-reviews*・hq-unanswered-messages*・hq-students*・hq-coaches*・hq-incomplete-coach-profiles*・hq-coach-reviews*・hq-low-reviews*・
-        hq-announcements*・hq-announcement-*・coach-slots*・coach-lesson-menus）と design-catalog。
-        この版で画面が変わるのは admin-web の design-catalog（Select の見本を足す）。素の select の Select への置き換えは別のタスク。student-app は変わらない
-      approved_by: 工場（新しい部品・should の基準・lint の追加）
-      migration:
-        - admin-web に Select（src/components/ui/Select.tsx）を足す。TextField の FIELD と FieldFrame の形を使い、右の余白 pr-10 と expand_more の Icon（20px・aria-hidden）を置く
-        - admin-web の DesignCatalog（/design）に preview の 7 つの状態の見本を足す。student-app のカタログには置かない（not_for）
+        #1040 の画面の設計で部品が足りなかった（ADR 0025）。トークンは足していない（camera_preview の icon は段にない 40px をやめ 24px）。既存の名前と値は消していない
+      affects: 入室前チェックの画面（student-app・admin-web のコーチの画面。id は #1040 で足す）と両アプリの design-catalog
+      approved_by: 人（camera_preview の must の追加。マージの前に要る）、工場（部品・should・lint・文言）
