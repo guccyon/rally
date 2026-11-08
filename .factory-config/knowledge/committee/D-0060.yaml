@@ -1,0 +1,84 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0060
+pr: https://github.com/guccyon/rally/pull/1156
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず enforcement.solutions
+    に 1 件足しただけなので、D-0004 から D-0055 までの議決や README の決まり、specs/ の規範と矛盾しません。
+  - '足した ci_check は D-0039 の enforcement の 1 つめの案（branch protection を読めるトークンで protection.mjs
+    を schedule と workflow_dispatch で走らせ、外れたら Issue を開く）にそのまま応えており、decided_by: committee:D-0039
+    は正しいです。'
+  - 既存の issue 1018 の ci_check は protection.mjs で必須のチェックを照らす道具を置いたもので、今回の issue 1087
+    はそれを定期に走らせて見張る仕組みなので、範囲が分かれていて重複ではありません。
+  - K-0001 の tools/pr-body-check/protection.mjs とは見張る対象のワークフローが別なので矛盾しませんが、同じ定期の見張りの形を
+    pr-body 側にも使うなら次の変更セットで共通の形にそろえることを勧めます。
+  - 'wired: false・verified: false と書き、写しもシークレットもまだで一度も走っていないと正直に書いているので、confidence
+    は hypothesis のままが妥当です。'
+  - 'D-0039 の 2 つめの案（check.py で issue 1018 の solution を wired: true にするときに schedule
+    のジョブを wired_by に求める lint）はまだ手つかずなので、次に K-0004 を直す変更セットで片づけてください。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した solution の decided_by の committee:D-0039 は、knowledge/committee/D-0039.yaml
+    の 1 つめの enforcement（ci_check、protection.mjs を schedule と workflow_dispatch で走らせ、落ちたら
+    Issue を開くか更新する案）と中身が合っていて、一次記録に辿れます。
+  - 'what は ci.test.mjs で偽の gh を使って確かめたことと、写し・シークレットがまだで一度も走っていないことを分けて書き、wired: false・verified:
+    false にしているので、効き目を言い過ぎていません。'
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の配線で落ちる・通る記録もまだないので、確かさは
+    hypothesis のままが妥当です。
+  - 差分にあるのは議決の id、issue 番号、ツールのパス、シークレットの名前（値ではない）、検査の名前だけで、利用者や人を特定できる情報はありません。
+  - 差分の外ですが、issue 935 の solution に at・decided_by・wired の鍵が重なって書かれていて辿り先が D-0009 か
+    D-0034 か読めないので、次に K-0004 を直す変更セットで分けて直してください。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に、議決 D-0039 の ci_check の案を入れた記録を issue
+    1087 として 1 件足しただけで、statement・scope・evidence・confidence は変えていないので、担保の観点では採ってよいです。
+  - 必須のチェックが後で外されたことを毎日の schedule で照らして Issue を開く形は、手で走らせるだけだった穴を決定論で塞いでおり、D-0039
+    の案に合っています。
+  - ただし protection_unreadable のときはジョブが落ちるだけで Issue を開かないので、fine-grained PAT の期限切れのように必ず繰り返し起きる理由で見張りが黙って止まっても誰も気づかないという、外したときに痛い穴が残っています。
+  - schedule のワークフローはリポジトリに動きがないと GitHub が止めることがあり、見張りそのものが止まったことも同じく気づかれないので、最後に通った日を照らす仕組みが要ります。
+  - 'D-0039 のもう 1 つの案（issue 1018 の solution を wired: true にするには wired_by に protection.mjs
+    を呼ぶ schedule のジョブを要る、という check.py の lint）はまだ入っていないので、次の変更セットで入れてください。'
+  - '写しもシークレットもまだ置かれておらず一度も走っていないと正直に書き、wired: false・verified: false にしているので、確かさは
+    hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0039 の ci_check の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - 古い形の branch protection と rulesets のどちらかで必須なら必須に数えるので、ruleset が evaluate のままで効いていない、迂回できる人がいる、という場合でも通ってしまう反例があり、D-0039
+    で挙げたこの穴は OR で 2 つを合わせたことでかえって広がっています。
+  - トークンが切れたり権限が外されたりすると protection_unreadable で落ちるだけで Issue は開かないので、見張りそのものが黙って止まるという反例が残り、読めないときも別の題の
+    Issue を開くことを勧めます。
+  - GitHub の schedule のワークフローはリポジトリに動きがない日が続くと止められることがあるので、毎日走る前提が崩れる場合を what か次の変更セットで扱ってください。
+  - '写しもシークレットもまだ置かれておらず一度も走っていないと本文自身が書き、wired: false・verified: false としているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/sendback-check/ci/sendback-protection.yml で protection_unreadable
+    のときも、外れたときとは別の題（例: 見張りがトークンを読めない）で Issue を開くか更新するようにし、ci.test.mjs にトークンがない・期限切れで読めないときに
+    Issue を開く場合を足す。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '毎日の sendback-protection の最後の成功から一定の日数（例: 3 日）が過ぎていれば落ちる検査を、別に走っている CI（ci/knowledge-enforcement.yml
+    など）に足し、schedule が止まった・ワークフローが消えたことを検出する。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: 'tools/knowledge-enforcement-check/check.py で、issue 1087 と 1018 の solution
+    を wired: true にするときは wired_by に protection.mjs を呼ぶ schedule を持つ .github/workflows/sendback-protection.yml
+    のジョブを必須にする（D-0039 の lint の案）。'
