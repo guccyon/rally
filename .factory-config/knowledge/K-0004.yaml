@@ -968,4 +968,20 @@ enforcement:
       decided_by: committee:D-0072
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0072（Issue #1201 の起票時の番号は D-0071。PR #1198）の test の案（REQUIRED_PR を知見と issue の名前の列挙に頼らず、wired: true の解決策はどれも
+        pull_request で走り check.py を呼ぶジョブを wired_by に要する形に広げ、K-0004 以外の知見の解決策でも同じ線で落ちることを確かめる）を入れた。
+        tools/knowledge-enforcement-check/check.py に check_knowledge_gate を足し、wired: true の解決策は知見と issue を問わずどれも、KNOWLEDGE_GATE の
+        .github/workflows/knowledge-enforcement.yml の pull_request でも走るジョブから check.py を呼ぶ項目が wired_by になければ knowledge_gate_unwired で落とす。
+        issue 986・1059・1129 の解決策は REQUIRED_PR・REQUIRED_PR_WORKFLOW から外し、この線で見る（組を足し忘れたほかの知見の解決策が黙って通っていた）。
+        test_check.py の KnowledgeGateTest で、K-0004 の 3 つに加え K-0004 の issue 1018、K-0001・K-0005・K-0010・K-0012 と架空の知見の解決策でも、ひな形をそのまま写した
+        enforcement のジョブなら通り、check.py を呼ぶ項目がない・別の名前のワークフロー・on を workflow_dispatch・schedule・push に替えた写し・engine-test のジョブ・
+        test_check.py を指す項目・pull_request で走らないジョブで同じく落ちることを確かめ、線を K-0004 の 3 つに限る改変でこのテストが落ちることも手元で確かめた。
+        test_check.py は .github/workflows/ からはまだ走っておらず（ci/knowledge-enforcement.yml の写しは建設者）、この解決策も未配線・未確認
+      issue: 1201
+      at: 2026-11-08
+      decided_by: committee:D-0072
+      wired: false
+      verified: false
 decided_by: committee:D-0004

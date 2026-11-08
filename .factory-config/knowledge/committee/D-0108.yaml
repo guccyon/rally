@@ -1,0 +1,70 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0108
+pr: https://github.com/guccyon/rally/pull/1288
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に D-0072 の 2 つ目の案（solution_kind: test、REQUIRED_PR を名前の列挙に頼らず広げる）を入れた記録を 1 件足しただけなので、D-0004
+    から D-0107 までの議決と矛盾しません。'
+  - '足した項目の kind: test・decided_by: committee:D-0072・PR #1198 は D-0072 の enforcement
+    にある knowledge: K-0004・solution_kind: test の案とそのまま一致し、D-0107 が手つかずと指摘した案に当たるので、issue
+    1200 の ci_check の項目とも重複しません。'
+  - issue 1200 の項目に書いた REQUIRED_PR・REQUIRED_PR_WORKFLOW で issue 986・1059・1129 を見る線は、今回
+    check_knowledge_gate に置き換わって外れたので、次にその項目に触れる変更セットで今の線を指す一文を足すと読み違えを防げます。
+  - '新しい線では wired: true の解決策はどれも wired_by に knowledge-enforcement.yml から check.py
+    を呼ぶ項目が要りますが、K-0012 の issue の項目などは配線後の wired_by を pr-body-engine.yml の項目だけで書く予定と読めるので、配線するときはこの項目も足す必要があることを
+    README の wired_by の決まりにも書き足すよう勧めます。'
+  - 'wired: false・verified: false で、what にも test_check.py が .github/workflows/ から走っておらず未配線・未確認と書かれているので、confidence
+    は hypothesis のままが妥当です。'
+  - 知見の置き場の CI の担保を差し戻しの判定についての K-0004 に積み続けている点は D-0072・D-0081・D-0084・D-0107 で指摘済みで、今回の採否には響きませんが、別の知見に分ける変更セットを出すかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の解決策は decided_by: committee:D-0072 と issue 1201 を指していて、D-0072 の enforcement
+    にある 2 つ目の案（solution_kind: test、REQUIRED_PR を名前の列挙に頼らず広げ、K-0004 以外の知見でも同じ線で落ちることを確かめる）に一致するので、一次記録に辿れます。'
+  - 'D-0072 の pr が PR #1198 であることも what の記述と合っていて、起票時の番号が D-0071 だったという注記も直前の issue
+    1200 の解決策と同じ書き方です。'
+  - 'wired: false・verified: false と書き、what にも test_check.py が .github/workflows/ からまだ走っておらず未配線・未確認だと明記しているので、記録より強く言っていません。'
+  - '手元でテストが落ちることを確かめたという記述は事例記録や CI の記録で裏づけられていないので、verified: true にするときは verified_by
+    で cases/ の事例記録を指してください。'
+  - K-0004 の statement・evidence・confidence は変わっておらず、どの解決策も未配線・未確認なので confidence は
+    hypothesis のままが妥当です。
+  - 差分に出てくるのはツールのパス・関数名・issue の番号・議決の id・知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'この PR は議決 D-0072 の 2 つ目の test の案を入れた記録で、REQUIRED_PR の名前の列挙を check_knowledge_gate
+    に替えました。これで、どの知見のどの解決策でも wired: true なら pull_request で走るジョブから check.py を呼ぶことを要する線になり、D-0072
+    で担保の観点から指摘した「組を足し忘れると黙って通る穴」が塞がります。'
+  - KnowledgeGateTest は K-0004 以外の知見と架空の知見でも、ひな形どおりなら通り、別名のワークフロー・workflow_dispatch・schedule・push・engine-test・test_check.py
+    を指す項目では落ちることを確かめています。線を K-0004 に戻す改変でテストが落ちることも見ているので、線は安全側に引かれています。
+  - 残る穴は、test_check.py と check.py がまだ .github/workflows/ から走らず、必須チェックにも入っていないことで、今は何も止まりません。ただ、この配線は
+    D-0072 の 1 つ目の ci_check の案（と D-0021・D-0034・D-0048）ですでに決まっているので、新しい enforcement
+    の案は足しません。
+  - '足した解決策は wired: false・verified: false と書かれ、K-0004 のどの解決策もまだ未配線・未確認なので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0072 の 2 つ目の test
+    の案を入れた記録を enforcement.solutions に 1 件足しただけで、wired: false・verified: false と未配線・未確認を正直に書いているので、範囲も言い方も広すぎません。'
+  - '今の head には実際に wired: true の解決策がないので、check_knowledge_gate の線が既存の知見を今すぐ落とす反例は見つかりません。'
+  - 反例として、K-0012 の what は wired_by に pr-body-engine.yml の engine-test と recheck.test.mjs
+    だけを書く手順を示し、K-0010 の issue 1035 も conflict-check.yml だけを書く手順なので、新しい線ではその通りに書くと
+    knowledge_gate_unwired で落ちるため、次にそれらの知見を直す変更セットで knowledge-enforcement.yml の check.py
+    の項目も wired_by に足す手順を書き添えてください。
+  - README では wired_by をその解決策の配線先の欄としているのに、どの解決策にも検査そのもの（check.py）の項目を求めるのは欄の意味を広げているので、README
+    の説明に書き足すか別の欄に分けるかを次の変更で検討してください。
+  - 知見の置き場の CI の担保を差し戻しの判定についての K-0004 に積み続けている点は D-0072・D-0084・D-0107 でも指摘済みで、今回の採否には響きませんが、別の知見に分ける変更セットを出してください。
+  - どの解決策も未配線・未確認なので、K-0004 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
