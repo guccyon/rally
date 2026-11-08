@@ -426,4 +426,22 @@ enforcement:
       decided_by: committee:D-0034
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0035 の ci_check の案（ci/knowledge-enforcement.yml を .github/workflows/ に写すとき、test_engine.py を ENGINE_REF の版の Engine で
+        走らせる手順を必須チェックに入れ、knowledge-enforcement.patch が ENGINE_REF に当たらないか足したテストが落ちれば PR を止める）のうち、
+        ワーカーの権限で入れられる分を入れた。ci/knowledge-enforcement.yml に engine-test のジョブを分け、ENGINE_REF の版の Engine を取って
+        test_engine_patch.py と test_engine.py を CI=true・ENGINE_DIR を渡し、pytest を入れて走らせる（if:・continue-on-error・needs・絞り込みなし）。
+        ひな形の ENGINE_REF が knowledge-check.yml とずれていた（f44a372 と 9d3713a）ので knowledge-check.yml の版にそろえた。
+        test_engine.py は、チェックアウトに knowledge-check.yml の ENGINE_REF の版があればその版から Engine のファイルを取り、CI でその版がないときと
+        pytest がないときは飛ばさずに落とす（これまでは pytest がないと差分で足したテストを飛ばして通っていた）。新しい test_ci.py が、ひな形と
+        （写してあれば）写しの engine-test の形を見て外れたら落とし、ひな形を 15 とおりに書き換えた写しで外れることを確かめた。作った Engine の版で、
+        チェックアウトの今の中身ではなく ENGINE_REF の版から読むこと、CI で版がない・pytest がないときに落ちることを手元で確かめた。
+        手元の Engine には ENGINE_REF（9d3713a）の版がなく、その版に差分が当たるかは確かめていない。.github/workflows/ への写しと
+        branch protection の必須チェックに入れることは建設者が行うので、まだ PR ごとには走っておらず、この解決策も未配線・未確認
+      issue: 1063
+      at: 2026-11-08
+      decided_by: committee:D-0035
+      wired: false
+      verified: false
 decided_by: committee:D-0004
