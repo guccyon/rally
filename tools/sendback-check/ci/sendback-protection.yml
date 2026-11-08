@@ -12,6 +12,10 @@
 # PR（protection-pr のジョブ）では Issue を開かない（issues: write を持たせない。PR のコードを issues: write で動かさない）。落ちた PR の上で直す。
 # トークンがない・読めなかったときは protection_unreadable の ::error で落ちる（Issue は開かない。必須のチェックの有無が分からないため）。
 # フォークからの PR にはシークレットが渡らないので、protection-pr は protection_unreadable で落ちる。
+# 定期（schedule）の protection のジョブがすべての手順で通ったら、最後の 2 つの手順で通った時刻を書いた成果物 sendback-protection-passed を上げる
+# （議決 D-0061（起票時の番号は D-0058）、Issue #1162）。別のワークフロー（ci/sendback-protection-heartbeat.yml）が heartbeat.mjs でその成果物の一覧を読み、
+# 最後に通ってから 2 日より長くたっていれば落ちて Issue を開く。schedule が止まったり落ち続けたりしても気づけるようにするため。
+# 手動（workflow_dispatch）の実行では上げない（手で走らせても schedule が止まっていることは隠さない）。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/sendback-protection.yml にそのまま写す。
 # 写したら、PR で protection-pr が落ちる実行と schedule で protection が走った実行を Issue #948 と事例記録（.factory-config/knowledge/cases/）に残してから、
 # K-0004 の Issue #1158 の解決策の wired・verified を true にする（wired_by に protection と protection-pr の 2 つ。
@@ -120,6 +124,19 @@ jobs:
             exit 0
           fi
           gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file protection-comment.md
+      - name: 通った時刻を書く（K-0004）
+        if: github.event_name == 'schedule'
+        run: |
+          printf '{"passed_at":"%s","run":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" > sendback-protection-passed.json
+      - name: 通った記録を成果物に上げる（K-0004）
+        if: github.event_name == 'schedule'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sendback-protection-passed
+          path: sendback-protection-passed.json
+          retention-days: 7
+          if-no-files-found: error
 
   protection-pr:
     if: github.event_name == 'pull_request'
