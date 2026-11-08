@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0049
+pr: https://github.com/guccyon/rally/pull/1134
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 足した解決策は議決 D-0035 の enforcement にある K-0004 の test の案（README の 2 つの一覧が check.py
+    の数えた結果と合わなければ落とす）と中身が合い、decided_by に committee:D-0035 を書いているので、機械で議決に辿れます。
+  - D-0036 から D-0048 までの議決と K-0004 の既存の解決策には、issue 1062 や README の一覧を照らすテストはないので、重複はありません。
+  - '新しい解決策にも wired: false と verified: false を書いているので、K-0004 は「すべての解決策に書いた知見」のままで、README
+    の一覧（K-0001・K-0004・K-0010 と K-0002・K-0006・K-0009）とも、head の各 K-*.yaml の中身とも合っています。'
+  - テストが読むのは tools/knowledge-enforcement-check/README.md ですが、同じ一覧は knowledge/README.md
+    の手書きの文にも「2026-11-07 の時点」としてあり、こちらは照らされずに古くなりうるので、次にこのテストを直すときは両方を照らすか、片方の一覧を消して相手を指すだけにしてください。
+  - K-0004 の statement・scope・evidence・confidence は変えておらず、テストはまだ .github/workflows/
+    から走らず効き目を確かめていないと書いているので、confidence は hypothesis のままが妥当です。
+  - 差分にあるのはツールの道・Issue の番号・議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した解決策（issue 1062、decided_by: committee:D-0035）は、議決 D-0035 の enforcement
+    の test の案（README の 2 つの id の一覧を check.py の数えた結果と照らすテスト）と中身が同じで、議決の記録に機械で辿れます。'
+  - 「今の記録（K-0001・K-0004・K-0010 と K-0002・K-0006・K-0009）では通る」という文は、head の各 K-*.yaml
+    の解決策の数と wired・verified の項目の数を照らすと合っています。
+  - 'test_check.py が .github/workflows/ にまだ写されておらず PR ごとに走っていないと断り、wired: false・verified:
+    false のままにしているので、記録より強く言っていません。'
+  - 'K-0004 の statement・scope・evidence（C-0002・PR #395・case.analyzed:40376）は変えておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に出てくるのはツールのパス・Issue の番号・議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・evidence・confidence を変えず、議決 D-0035 の test の案を入れたことを
+    enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - '足した解決策は wired: false・verified: false のままで、test_check.py が .github/workflows/
+    からまだ走らず効き目を確かめていないと書いているので、担保の状態を実態より強く見せていません。'
+  - D-0035 で古くなると指摘された一覧は .factory-config/knowledge/README.md の「2026-11-07 の時点ですべての解決策に書いたのは
+    K-0001・K-0004・K-0010」の文にもありますが、足したテストが読むのは tools/knowledge-enforcement-check/README.md
+    だけと書かれており、知見の置き場の README の同じ一覧は手で書いたまま照らされずに残ります。
+  - この一覧は check.py が数える未記入の件数から機械で出せて線がはっきりしており、外すと委員会の審査で毎回手で直す手間が繰り返されるので、knowledge/README.md
+    の一覧も同じテストで照らすか、一覧を README から外して check.py の出力に任せるのがよいです。
+  - D-0035 の ci_check の案（ci/knowledge-enforcement.yml を .github/workflows/ に写して必須チェックにする）が建設者の作業として残っており、それが入るまでこのテストも外れても何も止まらないものとして扱ってください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0035 の test の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - 'wired: false・verified: false のままで、ひな形を .github/workflows/ に写していないので PR ごとには走っていないと書いており、記録より強く言っていません。'
+  - 反例として、D-0021・D-0035 が古くなると指摘した一覧は .factory-config/knowledge/README.md の「2026-11-07
+    の時点ですべての解決策に書いたのは K-0001・K-0004・K-0010」の文ですが、足したテストが読むのは tools/knowledge-enforcement-check/README.md
+    なので、知見の置き場の README の一覧は今もずれうるので、テストがこちらも読むか、こちらの一覧を外して tools の README を指すようにしてください。
+  - K-0004 の statement は supervisor の差し戻しの線なのに、知見の置き場の道具（check.py・README の一覧）を担保する解決策がここに積み増されていて、知見と解決策の結び付きが広がりすぎているので、次に道具まわりの解決策を足すときは道具の知見を別に立てるか委員会で置き場を決めてください。
+  - どの解決策も未配線・未確認のままなので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/knowledge-enforcement-check/test_check.py の README の一覧を照らすテストを、tools/knowledge-enforcement-check/README.md
+    だけでなく .factory-config/knowledge/README.md の「すべての解決策に書いたのは …」「… には未記入の解決策が残っていて」の
+    id の一覧にも当て、check.py が K-*.yaml から数えた結果と順まで一致しなければ落とす（あるいは knowledge/README.md
+    から日付付きの一覧を外し、check.py の出力を見るよう書き換える）。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して branch protection
+    の必須チェックに入れ、README の一覧と K-*.yaml がずれた PR で test_check.py が落ちる実行を記録してから、issue 1062
+    の解決策の wired・verified を true にする。
