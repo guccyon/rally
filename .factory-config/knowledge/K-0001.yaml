@@ -186,4 +186,21 @@ enforcement:
       decided_by: committee:D-0068
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0069（PR #1184 の議決。その記録は PR #1184 のブランチに committee/D-0070.yaml としてあり、まだ既定ブランチに入っていない。
+        既定ブランチの D-0069.yaml・D-0070.yaml は別の PR の議決で K-0001 のこの案を持たないので、decided_by は書かずにここに書く）の test の案を入れた。
+        tools/pr-body-check/ci.test.mjs が、ENGINE_DIR の Engine で engine.test.mjs を node --test --test-reporter=tap で (10)・(11) だけ走らせ、
+        (10) と (11) のちょうど一方だけが通る側の 3 通りの形すべてで走って通ることを確かめる。(11) は PR #1184 で、(10) を ENGINE_DIR の Engine そのもので走らせ、
+        差分を当てた写しでの確かめを移す先（Engine が関所を呼ばない間だけ走る）。既定ブランチにはまだ (11) がないので、その形では (10) が走って通ればよい。
+        関所を呼ぶかの判定が誤って (10) が飛ぶ・両方が飛ぶ・両方が走って通る・形ごとに一部だけ飛ぶ形は外れにし、関所を呼ばない Engine で (10) が落ちて (11) が通る形は通す。
+        結果の判定を TAP の結果を組んだ 3 通りの通る形と 9 通りの外れる形で確かめ、engine.test.mjs を書き換えた写しで (10) を飛ばす・両方飛ばす・両方走らせるの 3 通りが
+        実際の Engine で外れになることも同じテストで確かめる。手元の Engine（dcc3b1e。関所を呼ばない）と、それに engine/pr-body-gate.patch を当てた全体の写しの両方で通り、
+        PR #1184 の engine.test.mjs に差し替えても、前者で (10) が落ちて (11) が通り、後者で (10) が通って (11) が飛び、どちらも通ることを確かめた。
+        ci/pr-body-engine.yml が固定する ENGINE_REF（9fee9c2）の版は手元になく走らせていない。このテストは engine-test の node --test の中で走るが、
+        ひな形はまだ .github/workflows/ に写されておらず（手順は tools/pr-body-check/README.md の「配線の手順（建設者）」）、配線されておらず効き目は確かめていない
+      issue: 1186
+      at: 2026-11-08
+      wired: false
+      verified: false
 decided_by: committee:D-0001

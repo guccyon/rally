@@ -8,9 +8,10 @@
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
 // PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable で飛ばさず落ちることも見る（議決 D-0068 の test の案、Issue #1180）。
+// ENGINE_DIR の Engine で engine.test.mjs を実際に走らせ、(10) と (11) のちょうど一方だけが走って通ることも見る（議決 D-0069 の test の案、Issue #1186）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -251,6 +252,116 @@ test("gate.test.mjs と engine.test.mjs の (10) を外す・飛ばす直しは�
       assert.notEqual(text, original, `${file} ${name}: 置き換えが効いていない`);
       assert.notDeepEqual(exclusionProblems(file, text), [], `${file} ${name} が通った`);
     }
+  }
+});
+
+// engine.test.mjs の通る側は、ENGINE_DIR の Engine について (10) と (11) のちょうど一方だけが走って通る（議決 D-0069 の test の案、Issue #1186）。
+// (10) は関所を配線した Engine で通る側を確かめ、(11) は議決 D-0045 の test の案で (10) を ENGINE_DIR の Engine そのもので走らせる形にしたときの、
+// 差分を当てた写しでの確かめの移し先（Engine が関所を呼ばない間だけ走る）。上の見張りはファイルの形しか見ないので、関所を呼ぶか（isLegacyEntrypoint）の
+// 判定が誤って (10) が飛ぶか両方が飛ぶ形は、engine.test.mjs を ENGINE_DIR を渡して実際に走らせた結果（TAP）で見る。(11) がまだない形では (10) が走って通ればよい
+const engineDir = process.env.ENGINE_DIR || fileURLToPath(new URL("../../../engine", import.meta.url));
+const engineRequired = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true";
+const engineSkip = engineRequired || existsSync(join(engineDir, "orchestrator/worker/entrypoint.sh")) ? false : `Engine のチェックアウトがない（ENGINE_DIR=${engineDir}）`;
+const PASSING_SIDES = ["(10)", "(11)"];
+
+/** node --test の TAP の出力から、一番上の階層のテストの名前・通ったか・飛ばしの指定（SKIP・TODO、なければ null）を取り出す。 */
+export function tapResults(tap) {
+  return tap.split(/\r?\n/).flatMap((l) => {
+    const m = l.match(/^(not ok|ok) \d+ - (.*?)(?: # (SKIP|TODO)\b.*)?$/i);
+    return m ? [{ name: m[2].replace(/\\#/g, "#"), ok: m[1] === "ok", directive: m[3]?.toUpperCase() ?? null }] : [];
+  });
+}
+
+/** (10) と (11) の結果から、ちょうど一方だけが走って通っているかの外れ（空なら通る）。走って落ちた側は、通った側があればよい（関所を呼ばない Engine での (10)）。 */
+export function passingSideProblems(results) {
+  const problems = [];
+  const sides = PASSING_SIDES.map((id) => ({ id, tests: results.filter((r) => r.name.startsWith(`${id} `)) }));
+  const ran = (s) => s.tests.filter((r) => !r.directive);
+  const passed = (s) => s.tests.length >= PASSING_REPORTS.length && s.tests.every((r) => r.ok && !r.directive);
+  if (sides[0].tests.length === 0) problems.push("(10) のテストが 1 件も走っていない（名前を変えたか、ループを外した）");
+  if (sides[0].tests.some((r) => r.directive)) problems.push("(10) が飛んだ（関所を呼ぶかの判定で (10) を飛ばしている）");
+  for (const s of sides) {
+    if (ran(s).length > 0 && ran(s).length < s.tests.length) problems.push(`${s.id} の一部だけが飛んだ（関所を呼ぶかの判定が形ごとにずれている）`);
+  }
+  if (sides.every((s) => ran(s).length === 0)) problems.push("(10) と (11) の両方が飛んだ");
+  const passing = sides.filter(passed);
+  if (passing.length === 0) problems.push(`(10) と (11) のどちらも、通る側の ${PASSING_REPORTS.length} 通りの形で走って通っていない`);
+  if (passing.length > 1) problems.push("(10) と (11) の両方が走って通った（関所を呼ぶかの判定が効いていない）");
+  return problems;
+}
+
+/** dir の engine.test.mjs の (10)・(11) だけを、ENGINE_DIR を渡して node --test で走らせ、TAP の結果を返す。 */
+function runPassingSides(dir) {
+  const env = { ...process.env, ENGINE_DIR: engineDir };
+  // 外の node --test の子として報告させない。NODE_OPTIONS での絞り込みも持ち込まない
+  delete env.NODE_TEST_CONTEXT;
+  delete env.NODE_OPTIONS;
+  const r = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "--test-name-pattern=^\\((10|11)\\) ", ENGINE_TEST], { cwd: dir, env, encoding: "utf8" });
+  return tapResults(r.stdout ?? "");
+}
+
+const pass = (name) => ({ name, ok: true, directive: null });
+const fail = (name) => ({ name, ok: false, directive: null });
+const skipped = (name) => ({ name, ok: true, directive: "SKIP" });
+const side = (id, make) => PASSING_REPORTS.map(([label]) => make(`${id} 関所を配線した Engine は、${label}なら本文を書く`));
+
+test("TAP の結果の読み取りは、飛ばし（# SKIP・# TODO）と名前の中の \\# を分ける", () => {
+  const tap = ["# Subtest: (10) a", "ok 1 - (10) 報告の見出しを \\#\\#\\# に下げた", "not ok 2 - (11) b", "ok 3 - (11) c # SKIP 関所を呼ぶ Engine", "ok 4 - (11) d # TODO まだ",
+    "    ok 1 - 中の階層は見ない"].join("\n");
+  assert.deepEqual(tapResults(tap), [
+    { name: "(10) 報告の見出しを ### に下げた", ok: true, directive: null },
+    { name: "(11) b", ok: false, directive: null },
+    { name: "(11) c", ok: true, directive: "SKIP" },
+    { name: "(11) d", ok: true, directive: "TODO" },
+  ]);
+});
+
+test("(10) と (11) のちょうど一方だけが走って通る形は通り、(10) が飛ぶ・両方が飛ぶ・両方が通る形は外れになる", () => {
+  const ok = {
+    "(11) がまだなく、(10) が写しで通る（今の形）": side("(10)", pass),
+    "関所を呼ばない Engine で、(10) が本物で落ち (11) が写しで通る": [...side("(10)", fail), ...side("(11)", pass)],
+    "関所を呼ぶ Engine で、(10) が本物で通り (11) が飛ぶ": [...side("(10)", pass), ...side("(11)", skipped)],
+  };
+  for (const [name, results] of Object.entries(ok)) assert.deepEqual(passingSideProblems(results), [], name);
+  const ng = {
+    "(10) が飛び (11) が通る": [...side("(10)", skipped), ...side("(11)", pass)],
+    "(10) と (11) の両方が飛ぶ": [...side("(10)", skipped), ...side("(11)", skipped)],
+    "(11) がなく (10) が飛ぶ": side("(10)", skipped),
+    "(10) と (11) の両方が通る": [...side("(10)", pass), ...side("(11)", pass)],
+    "(10) が落ち (11) が飛ぶ": [...side("(10)", fail), ...side("(11)", skipped)],
+    "(10) が todo": side("(10)", (n) => ({ name: n, ok: true, directive: "TODO" })),
+    "(10) が 1 件もない": side("(11)", pass),
+    "(10) が形の数より少ない": side("(10)", pass).slice(1),
+    "(11) の一部だけが飛ぶ": [...side("(10)", fail), ...side("(11)", pass).slice(1), skipped("(11) 残りの形")],
+  };
+  for (const [name, results] of Object.entries(ng)) assert.notDeepEqual(passingSideProblems(results), [], `${name} が通った`);
+});
+
+test("ENGINE_DIR の Engine で engine.test.mjs を走らせると、(10) と (11) のちょうど一方だけが走って通る", { skip: engineSkip }, () => {
+  const results = runPassingSides(fileURLToPath(new URL(".", import.meta.url)));
+  assert.deepEqual(passingSideProblems(results), [], `ENGINE_DIR=${engineDir} の結果: ${JSON.stringify(results.map((r) => [r.name.slice(0, 4), r.ok, r.directive]))}`);
+});
+
+test("関所を呼ぶかの判定を誤って (10) を飛ばす・両方を飛ばす・両方を走らせる engine.test.mjs は、ENGINE_DIR の Engine で外れになる", { skip: engineSkip }, () => {
+  const engineText = readTest(ENGINE_TEST);
+  const start = engineText.indexOf(PASSING_LOOP);
+  assert.ok(start >= 0, "engine.test.mjs に (10) のループがない");
+  const loop = engineText.slice(start, engineText.indexOf("\n}\n", start) + 3);
+  const skipTen = (t) => t.replace(/(誤って止めない）`), \{ skip \}, \(\) =>/, '$1, { skip: "関所を呼ぶかの判定を誤った" }, () =>');
+  const asEleven = (t) => t.replace("test(`(10) ", "test(`(11) ");
+  const mutants = {
+    "(10) を飛ばす": skipTen(engineText),
+    "(10) を飛ばし、(11) も飛ばす": `${skipTen(engineText)}\n${asEleven(skipTen(loop))}`,
+    "(10) と (11) の両方を走らせる": `${engineText}\n${asEleven(loop)}`,
+  };
+  const src = fileURLToPath(new URL(".", import.meta.url));
+  for (const [name, text] of Object.entries(mutants)) {
+    assert.notEqual(text, engineText, `${name}: 置き換えが効いていない`);
+    // engine.test.mjs は本文の更新の節を ../../ を根にして動かす（node tools/pr-body-check/gate.mjs）ので、同じ並びの写しで走らせる
+    const dir = join(mkdtempSync(join(tmpdir(), "pr-body-passing-sides-")), "tools", "pr-body-check");
+    cpSync(src, dir, { recursive: true });
+    writeFileSync(join(dir, ENGINE_TEST), text);
+    assert.notDeepEqual(passingSideProblems(runPassingSides(dir)), [], `${name} が通った`);
   }
 });
 
