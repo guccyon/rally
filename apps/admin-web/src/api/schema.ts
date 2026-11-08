@@ -225,7 +225,9 @@ export interface paths {
          *     - `cancelled_by` は `BookingCanceller`（生徒・コーチ・本部）。キャンセルした人の記録がなければ null。今キャンセルできるのは
          *       予約した生徒（student-app の `cancelBooking`。`student`）と、コーチのお休みで本部（`startCoachLeave`。`headquarters`）。
          *       キャンセルした人を残し始める前の生徒のキャンセルも `student`
-         *     - キャンセルの理由・返金や決済の情報は返さない。照会だけで、何も保存しない
+         *     - `cancel_reason` はキャンセルの理由（`BookingCancelReason`。今は `coach_leave` だけ）で、理由の記録がなければ null。
+         *       値と扱いは `getBooking` の `status_changes` のキャンセルの記録の `cancel_reason` と同じ。理由では絞らない
+         *     - 返金や決済の情報は返さない。照会だけで、何も保存しない
          *
          *     行動イベントは発火しない。
          */
@@ -257,10 +259,27 @@ export interface paths {
          *     - `status_changes`: 状態が変わった記録（確定 `confirmed`・キャンセル `cancelled`）を時刻の古い順に。予約が持つ確定・
          *       キャンセルの時刻（`booking.confirmed_at` / `booking.cancelled_at`）から組み立て、時刻の記録がない変化は載せない
          *       （確定せずにキャンセルした予約はキャンセルだけ、作ったばかりの予約は空の配列）。作った時刻は `booking.created_at`
+         *     - キャンセルの記録には、キャンセルの経緯を載せる（どれも任意。確定の記録には載せない）:
+         *       - `cancelled_by`: キャンセルした人（`BookingCanceller`）。`listCancelledBookings` の `cancelled_by` と同じ値で、記録が
+         *         なければ null
+         *       - `consumes_quota`: このキャンセルでビデオ通話の暦月の枠を使ったことになったか（境界間イベント `BookingCancelled` の
+         *         `consumes_quota` と同じ判定）。コーチのお休みのキャンセルはいつも false。判定の記録がなければ null
+         *       - `hours_before_start`: 枠の開始（`booking.starts_at`）の何時間前にキャンセルしたか（1 時間に満たない端数は切り捨て。
+         *         開始より後は負）
+         *       - `cancel_reason`: キャンセルの理由（`BookingCancelReason`）。コーチのお休み（`startCoachLeave`）でキャンセルした予約は
+         *         `coach_leave`。生徒が自分でしたキャンセルは理由を残さないので null（student-app の `cancelBooking` の本文の
+         *         `reason` は保存しない）
+         *       - `coach_leave`: `cancel_reason` が `coach_leave` のとき、そのお休みの記録（`CoachLeave`。期間 `from`・`to`・生徒への
+         *         一言 `note`・操作した本部のアカウント `created_by`・時刻 `created_at`）。それ以外は null
+         *     - 理由が残る前のキャンセル: 理由・判定の記録がないキャンセル（この欄を足す前のキャンセルを含む）は、`cancel_reason`・
+         *       `coach_leave`・`consumes_quota` が null になる（欄は省かず null）。コーチのお休みでキャンセルした予約は、お休みの記録と
+         *       予約の結びつき（#455 の `startCoachLeave` から残している）から出すので、この欄を足す前にキャンセルしたものも
+         *       `coach_leave` とそのお休みの記録を載せる。`cancelled_by` が `headquarters` で `cancel_reason` が null の記録は、理由の
+         *       分からない本部のキャンセルとして扱う
          *     - コーチの表示名 `coach_display_name`・予約した生徒の表示名 `student_display_name` を載せる。アカウントが引けないときは
          *       その表示名を載せない
          *     - `booking_id` がない予約・UUID でないときは 404 `not_found`
-         *     - 決済の情報は返さない。照会だけで、何も保存しない
+         *     - 決済の情報（返金・支払いの失敗を含む）は返さない。照会だけで、何も保存しない
          *
          *     行動イベントは発火しない。
          */
@@ -838,7 +857,8 @@ export interface paths {
          *     - 同じコーチの期間の重なるお休みがもうあれば 409 `coach_leave_overlaps`（同じ期間の 2 回目もこれで断る）
          *     - 予約のキャンセル: キャンセルした人は本部（`listCancelledBookings` の `cancelled_by` が `headquarters`）。生徒の都合で
          *       ないので、キャンセル規定によらず回数を消費しない（境界間イベント `BookingCancelled` の `consumes_quota` は false。
-         *       判定は scheduling の 1 か所）。確定で使ったビデオ通話の暦月の枠は戻る
+         *       判定は scheduling の 1 か所）。確定で使ったビデオ通話の暦月の枠は戻る。キャンセルの理由は `coach_leave` で、予約の詳細
+         *       （`getBooking` の `status_changes` のキャンセルの記録）から、このお休みの記録（`CoachLeave`）をたどれる
          *     - お知らせ: 予約した生徒に予約ごとに 1 件（student-app の `listMyNotifications` に、種類 `booking_cancelled_by_headquarters`
          *       で題「コーチのお休みで予約をキャンセルしました」と、コーチの表示名・予約の日時・枠を使わないこと・ほかの枠やコーチを
          *       探せることの本文、`note` があれば改行して後ろに付けたもの）。プッシュ通知は生徒の受け取り設定の
@@ -2502,6 +2522,11 @@ export interface components {
             cancelled_at: string;
             /** @description キャンセルした人。記録がなければ null */
             cancelled_by: components["schemas"]["BookingCanceller"] | null;
+            /**
+             * @description キャンセルの理由。`getBooking` の `status_changes` のキャンセルの記録の `cancel_reason` と同じ値で、理由の記録が
+             *     なければ null
+             */
+            cancel_reason?: components["schemas"]["BookingCancelReason"] | null;
         };
         /** @description 本部が見るキャンセルされた予約の一覧（期間と並べ方は `listCancelledBookings` の説明） */
         CancelledBookingList: {
@@ -2544,12 +2569,50 @@ export interface components {
             /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
             student_display_name?: string;
         };
-        /** @description 予約の状態が変わった記録 1 件。`status` は変えた後の状態（確定 `confirmed` かキャンセル `cancelled`）で、`changed_at` は変わった時刻 */
+        /**
+         * @description 予約の状態が変わった記録 1 件。`status` は変えた後の状態（確定 `confirmed` かキャンセル `cancelled`）で、`changed_at` は変わった時刻。
+         *     キャンセルの記録（`status` が `cancelled`）だけが、キャンセルの経緯（`cancelled_by`・`consumes_quota`・`hours_before_start`・
+         *     `cancel_reason`・`coach_leave`）を載せる。確定の記録には載せない（欄ごと省く）。扱いは `getBooking` の説明
+         */
         BookingStatusChange: {
             status: components["schemas"]["BookingStatus"];
             /** Format: date-time */
             changed_at: string;
+            /**
+             * @description キャンセルした人（キャンセルの記録だけ）。`listCancelledBookings` の `cancelled_by` と同じ値で、キャンセルした人の記録が
+             *     なければ null（キャンセルした人を残し始める前の生徒のキャンセルも `student`）
+             */
+            cancelled_by?: components["schemas"]["BookingCanceller"] | null;
+            /**
+             * @description このキャンセルでビデオ通話の暦月の枠を使ったことになったか（キャンセルの記録だけ）。キャンセル規定（glossary の
+             *     cancellation_policy）による scheduling の判定で、境界間イベント `BookingCancelled` の `consumes_quota` と同じ値。
+             *     コーチのお休みのキャンセルはいつも false。判定の記録がなければ null
+             */
+            consumes_quota?: boolean | null;
+            /**
+             * @description キャンセルが枠の開始の何時間前か（キャンセルの記録だけ）。予約された枠の開始時刻（`booking.starts_at`）から
+             *     キャンセルした時刻（`changed_at`）までの時間を時間で数え、1 時間に満たない端数は切り捨てる（0 に向けて。
+             *     開始より後のキャンセルは負）。キャンセル規定の境目（24 時間前）と比べるときは `consumes_quota` を正とする
+             */
+            hours_before_start?: number;
+            /**
+             * @description キャンセルの理由（キャンセルの記録だけ）。`coach_leave` はコーチのお休み（`startCoachLeave`）でのキャンセル。
+             *     理由の記録がないキャンセル（生徒が自分でしたキャンセルと、理由を残し始める前のキャンセル）は null
+             */
+            cancel_reason?: components["schemas"]["BookingCancelReason"] | null;
+            /**
+             * @description このキャンセルのもとになったコーチのお休みの記録（`startCoachLeave` の応答の `coach_leave` と同じ。期間 `from`・`to`・
+             *     操作した本部のアカウント `created_by`・時刻 `created_at` を含む）。`cancel_reason` が `coach_leave` のときだけ載り、
+             *     それ以外は null
+             */
+            coach_leave?: components["schemas"]["CoachLeave"] | null;
         };
+        /**
+         * @description 予約をキャンセルした理由。coach_leave: コーチのお休み（glossary の coach_leave。本部の `startCoachLeave`）。
+         *     値は追加しうる（クライアントは未知の値を「理由の記録なし」と同じに扱う）
+         * @enum {string}
+         */
+        BookingCancelReason: "coach_leave";
         /** @description コーチの自分の枠の一覧の 1 件。コーチが公開した枠（glossary の slot）と、その枠に予約（glossary の booking）が入っているか */
         CoachSlot: {
             slot: components["schemas"]["Slot"];
