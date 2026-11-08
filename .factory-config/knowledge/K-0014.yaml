@@ -108,4 +108,31 @@ enforcement:
       decided_by: committee:D-0101
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0076（Issue #1214 の起票時の番号は D-0074。PR #1203）の ci_check の案（Engine が積む時点で conflict.files を出すようになったら、
+        tools/conflict-check/events.py の record_check（missing_conflict_files）を本物のイベント列に対して走らせる CI のジョブを .github/workflows/ に置き、
+        wired_by にそのジョブを書いて wired: true にする。そのあと C-0007 と同じ形の衝突で落ちないことを事例記録で確かめて verified: true にする）のうち、
+        ワーカーの権限で入れられる分を入れた。issue 1207 の解決策の定期のワークフローのひな形 tools/conflict-check/ci/conflict-schema.yml に
+        ジョブ conflict-record を足し、制御プレーンの events から直近の窓（差分を当てた時刻 CONFLICT_FILES_SINCE と直近 8 日の始まりの遅いほうから後）に
+        積まれた continue.enqueued(reason=conflict) と、同じ job_id の job.started・job.finished・conflict.files を引く tools/conflict-check/record-events.sql を
+        読んで、events.py --record-only --since で照らすようにした。events.py に、record_check だけを出して K-0010 の線（check）を照らさない --record-only と、
+        schema.py と同じ線で occurred_at が差分を当てた時刻より前のイベントを組まない --since（occurred_at がない・読めなければ終了コード 2）を足した。
+        CONFLICT_FILES_SINCE とシークレット CONFLICT_EVENTS_DATABASE_URL は conflict-schema と分け合い、時刻が空か形が違う・シークレットがない・
+        events を読めないときは照らさずに落ちる。test_events.py の RecordOnlySinceTest で、C-0007 の流れ（fixtures/c0007-pr290-pr295-events.json）が
+        --record-only で missing_conflict_files の 4 件だけで落ち、同じ形の衝突でも continue.enqueued に conflict_files を載せた列は通ること、--since の絞り方を、
+        test_schema_ci.py の RecordTemplateTest でジョブの形と手順の振る舞いを、RecordSqlTest で SQL を Postgres の使い捨ての schema で走らせて
+        差分の前・窓の外・衝突でない続きを出さず、出した列を events.py が組めることを確かめた。あわせて tools/knowledge-enforcement-check/check.py の
+        REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW にこの解決策を挙げ、.github/workflows/conflict-schema.yml の schedule でも走るジョブから
+        events.py を呼ぶ wired_by の項目がないと wired: true にできないようにした（test_check.py の ConflictRecordScheduleTest）。ワーカーは
+        .github/workflows/ を変えられず、Engine は別のリポジトリなので、Engine に engine/conflict-files.patch を当てて積むときに衝突したファイルを
+        載せるようにすること、ひな形を写して CONFLICT_FILES_SINCE を書きシークレットを置くこと、wired: true にして wired_by
+        （job conflict-record・runs tools/conflict-check/events.py）を書くこと、C-0007 と同じ形の衝突で落ちないことを事例記録で確かめて
+        verified: true にすることは建設者が行う（tools/conflict-check/README.md の「直近の窓に積まれた衝突の続きのジョブの定期の照合」）。
+        まだ配線されておらず、本物のイベント列では確かめていない
+      issue: 1214
+      at: 2026-11-08
+      decided_by: committee:D-0076
+      wired: false
+      verified: false
 decided_by: committee:D-0049

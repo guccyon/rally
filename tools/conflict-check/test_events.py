@@ -8,7 +8,9 @@ todo は照らせない件数を理由に添えて test_engine.py の todo で�
 今の形なら飛ばさずに落とす（議決 D-0043・Issue #1104。照らせない件数が見えない形で緑にならないように）
 
 MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る。
-continue.enqueued の payload の conflict_files（schema.py の定義の欄）をその場の記録として読むことも見る（議決 D-0101・Issue #1208）
+continue.enqueued の payload の conflict_files（schema.py の定義の欄）をその場の記録として読むことも見る（議決 D-0101・Issue #1208）。
+RecordOnlySinceTest は、直近の窓の本物のイベント列を定期に照らすジョブ（ci/conflict-schema.yml の conflict-record）が使う --record-only と
+--since を見る（議決 D-0076（Issue #1214 の起票時の番号は D-0074）・Issue #1214）
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 from unittest import mock
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -406,6 +408,64 @@ class EngineFinishedTest(unittest.TestCase):
         self.assertEqual(finished_unknown(fields), {"agent_resumed": 0, "tier": 0},
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列に照らせない回がある。"
                          f"{' と '.join(FINISHED_FIELDS)} の両方を出す")
+
+
+def timed(evs: list[dict], start: str = "2026-11-10T00:00:00+00:00") -> list[dict]:
+    """イベント列の各件に、start から 1 分ずつ進む occurred_at を付ける"""
+    t0 = datetime.fromisoformat(start)
+    return [{**e, "occurred_at": (t0 + timedelta(minutes=i)).isoformat()} for i, e in enumerate(evs)]
+
+
+class RecordOnlySinceTest(unittest.TestCase):
+    """--record-only は record_check（missing_conflict_files）だけを出し、--since は差分を当てた時刻より前のイベントを組まない
+    （知見 K-0014 の担保。議決 D-0076（Issue #1214 の起票時の番号は D-0074）・Issue #1214）"""
+
+    def write(self, evs: list[dict]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        path = Path(t.name) / "events.json"
+        path.write_text(json.dumps(evs), encoding="utf-8")
+        return path
+
+    def test_C0007のイベント列はrecord_onlyでもmissing_conflict_filesだけで落ちる(self):
+        d = json.loads(run(C0007, "--record-only", "--json").stdout)
+        self.assertFalse(d["ok"])
+        self.assertEqual(Counter(e["rule"] for r in d["prs"] for e in r["errors"]), Counter({"missing_conflict_files": 4}))   # agent_for_mechanical は出さない
+        self.assertEqual(run(C0007, "--record-only").returncode, 1)
+
+    def test_C0007と同じ形の衝突でもcontinue_enqueuedにconflict_filesを載せればrecord_onlyで通る(self):
+        # 差分を当てた Engine の形。PR #290 の CHANGELOG.md だけを tier-large で解いた回（K-0010 の agent_for_mechanical）も、record_only では照らさない
+        evs = [e for e in events.parse_events(C0007.read_text(encoding="utf-8")) if e["name"] != "conflict.files"]
+        for e in evs:
+            if e["name"] == "continue.enqueued":
+                e["payload"]["conflict_files"] = ["CHANGELOG.md"]
+        p = run(self.write(evs), "--record-only")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(run(self.write(evs)).returncode, 1)   # --record-only がなければ K-0010 の線でも照らす
+
+    def test_sinceより前のイベントは組まない(self):
+        old = stream([{}], url="https://github.com/guccyon/rally/pull/2")                     # 差分の前の Engine の回（記録なし）
+        new = stream([{"inline": ["CHANGELOG.md"]}])
+        evs = timed(old) + timed(new, "2026-11-10T01:00:00+00:00")
+        evs = [{**e, "id": i} for i, e in enumerate(evs, 1)]
+        path = self.write(evs)
+        self.assertEqual(run(path, "--record-only").returncode, 1)
+        p = run(path, "--record-only", "--since", "2026-11-10T09:30:00+09:00")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn(f"より前の {len(old)} 件は照らさない", p.stdout)
+        late = timed(stream([{}], url="https://github.com/guccyon/rally/pull/3"), "2026-11-10T02:00:00+00:00")
+        p = run(self.write(evs + [{**e, "id": len(evs) + i} for i, e in enumerate(late, 1)]), "--record-only", "--since", "2026-11-10T00:30:00Z")
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn("pull/3 attempt=1 job=101 missing_conflict_files", p.stdout)
+
+    def test_sinceで絞れないか時刻が読めなければ終了コード2(self):
+        evs = timed(stream([{}]))
+        del evs[1]["occurred_at"]
+        self.assertEqual(run(self.write(evs), "--since", "2026-11-10T00:00:00Z").returncode, 2)
+        good = self.write(timed(stream([{"inline": ["a.ts"]}])))
+        for since in ("2026-11-10", "2026-11-10T00:00:00", "main"):
+            self.assertEqual(run(good, "--since", since).returncode, 2, since)
+        self.assertEqual(run(good, "--since", "2026-11-10T00:00:00Z").returncode, 0)
 
 
 class InputTest(unittest.TestCase):

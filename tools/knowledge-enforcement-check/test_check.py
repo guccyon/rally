@@ -1018,6 +1018,65 @@ class ConflictSchemaScheduleTest(unittest.TestCase):
         self.assertEqual(self.errors(self.repo({}), wired=False), [])
 
 
+class ConflictRecordScheduleTest(unittest.TestCase):
+    """K-0014 の issue 1214 の解決策は .github/workflows/conflict-schema.yml の schedule でも走るジョブから events.py を呼ばないと
+    wired にできない（議決 D-0076（起票時の番号は D-0074）、Issue #1214）"""
+
+    EVENTS = "tools/conflict-check/events.py"
+    TEMPLATE = REPO / "tools/conflict-check/ci/conflict-schema.yml"
+    WF = ".github/workflows/conflict-schema.yml"
+
+    def repo(self, files: dict[str, str]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.EVENTS: "", "tools/conflict-check/schema.py": "", **files}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, wf=None, job="conflict-record", runs=None, wired=True) -> list[str]:
+        item = {"id": "K-0014", "_file": "K-0014.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": 1214, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": runs or self.EVENTS}]}]}}
+        return check.check_schedule(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0014", 1214)], self.EVENTS)
+        self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0014", 1214)], (self.WF, "D-0076"))
+        self.assertNotIn(("K-0014", 1214), check.REQUIRED_PR)
+
+    def test_ひな形をそのまま写した_conflict_record_なら通る(self):
+        self.assertEqual(self.errors(self.repo({self.WF: self.template()})), [])
+
+    def test_別の名前のワークフローでは落ちる(self):
+        other = ".github/workflows/record.yml"
+        e = self.errors(self.repo({other: self.template()}), wf=other)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.WF, e[0])
+
+    def test_schedule_を外した写しでは落ちる(self):
+        text = self.template().replace('  schedule:\n    - cron: "40 20 * * *"\n', "", 1)
+        self.assertNotEqual(text, self.template())
+        e = self.errors(self.repo({self.WF: text}))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_events_py_を呼ばない写しや_conflict_schema_のジョブでは落ちる(self):
+        text = self.template().replace("python3 -B tools/conflict-check/events.py", "true", 1)
+        self.assertNotEqual(text, self.template())
+        e = self.errors(self.repo({self.WF: text}))
+        self.assertTrue(any("wired にするには" in x for x in e), e)
+        e = self.errors(self.repo({self.WF: self.template()}), job="conflict-schema")   # schema.py だけを呼ぶジョブ
+        self.assertTrue(any("wired にするには" in x for x in e), e)
+
+    def test_配線していなければ見ない(self):
+        self.assertEqual(self.errors(self.repo({}), wired=False), [])
+
+
 class PrBodyEngineWiringTest(unittest.TestCase):
     """K-0001 の issue 1182 の解決策は、.github/workflows/pr-body-engine.yml の pull_request のジョブから engine.test.mjs を呼び、
     .github/workflows/pr-body-protection.yml の schedule のジョブから protection.mjs を呼ばないと wired にできない（議決 D-0070（起票時の番号は D-0067）、Issue #1182）"""
