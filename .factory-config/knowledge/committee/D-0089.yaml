@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0089
+pr: https://github.com/guccyon/rally/pull/1257
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。
+  - '足した項目の decided_by: committee:D-0068 と issue 1179・PR #1176 は、D-0068 の enforcement
+    の ci_check の案（K-0004 の test_engine_patch.py と同じ形で patch_stale・patch_partially_applied
+    を分けて落とし、main への push・毎日・手動で走らせる）とそのまま対応していて、食い違いはありません。'
+  - 起票時の番号（D-0066）と議決の番号（D-0068）が違うことを what に書き添える書き方は、D-0032 や D-0044 の項目と同じ扱いに揃っています。
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致し、ENGINE_REF の
+    9fee9c2 では走らせていないことも書いているので、confidence は hypothesis のまま、status は active のままが妥当です。'
+  - D-0068 の整合と反対の票が求めた D-0019・D-0032 の項目への「手元の Engine では差分が当たらなかった」旨の書き添えはこの変更セットにもまだないので、次に
+    K-0001 を直す変更セットで足してください。
+  - D-0068 のもう 1 つの案（ci.test.mjs で pr-body-protection.yml の定期の照合が黙って止まらないことを確かめる test）はこの項目の範囲外なので、別の
+    Issue で記録されるべきで、この項目と重複はしていません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した解決策の decided_by: committee:D-0068 は PR #1176 の議決で、その enforcement の ci_check
+    の案（engine/pr-body-gate.patch を git apply --check と --reverse --check で照らし patch_stale・patch_partially_applied
+    で落として Issue を開く）とそのまま対応しているので、一次記録に辿れます。'
+  - 'what に書いた「Issue #1179 の起票時の番号は D-0066」は、D-0066 が PR #1169 の別の議決であることと合っていて、番号のずれを正直に書き添えた記録として辿れます。'
+  - statement・scope・evidence・confidence は変えておらず、担保の記録を 1 件足すだけなので、主張の根拠を言い過ぎていません。
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致し、ENGINE_REF の
+    9fee9c2 では走らせず手元の dcc3b1e で見立てたことも書いているので、確かさの書き方は妥当です。'
+  - 本物の続きのジョブで再発が止まった一次記録はまだないので、confidence は hypothesis のままが妥当です。
+  - 差分には Engine の版・ファイルの道・Issue と PR の番号しかなく、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0068 の ci_check の案を入れた記録を 1 件足すだけで、担保の観点では採ってよいです。
+  - pr-body-gate.patch が当たらなくなったことを patch_stale・patch_partially_applied で機械が見つけて Issue
+    を開く形は、D-0068 の担保の票が求めた見張りにそのまま応えています。
+  - 'ただし D-0044 の解決策（issue 1106）とちがい、この解決策を check.py の REQUIRED_SCHEDULE に足したと書かれていないので、schedule
+    のジョブから patch.mjs を呼ばなくても wired: true にできる穴が残ります。'
+  - patch_check_failed は落ちても Issue を開かないので、ENGINE_REF の版が取れない状態が続くと毎日の照合が黙って役に立たなくなる恐れがあり、テストで見張るべきです。
+  - 'ENGINE_REF の 9fee9c2 では走らせておらず配線もまだなので、wired: false・verified: false と confidence:
+    hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0068 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - 足した what は D-0068 の enforcement の提案（git apply --check と --reverse --check で 4
+    つに分け、patch_stale と patch_partially_applied で落ちて Issue を開くジョブを main への push・毎日・手動で走らせる）と対応しており、案より広いことも狭いことも書いていません。
+  - 反例として、ENGINE_REF の版が取れないときの patch_check_failed は落ちても Issue を開かないので、定期のジョブが毎日赤のまま気づかれず見張りが黙って止まる外れ方が残り、次の変更セットでこの場合も
+    Issue を開くか通知する形にするかを決めてください。
+  - これまでの D-0044 や D-0068 の項目は REQUIRED_SCHEDULE に足して schedule の wired_by がないと wired
+    にできないようにしていますが、この項目は足したかを書いていないので、次に K-0001 を直すときに足すかどうかを what に書き添えてください。
+  - '手元の Engine は dcc3b1e で ENGINE_REF の 9fee9c2 では走らせていないと明記し、wired: false・verified:
+    false としているので言い過ぎはなく、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE に issue
+    1179 の解決策と patch.mjs の組を足し（必要なら REQUIRED_SCHEDULE_WORKFLOW に pr-body-patch.yml
+    を足し）、schedule のジョブから tools/pr-body-check/patch.mjs を呼ぶ wired_by がないと wired: true
+    にできないようにして、test_check.py で確かめる。'
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: ci.test.mjs に、pr-body-patch.yml の手順で patch_check_failed が続いたとき（ENGINE_REF
+    の版が取れない）にも、黙って止まらないよう Issue を開くか連続の失敗を数えて知らせることを、偽の Engine と偽の gh で確かめるテストを足す。
