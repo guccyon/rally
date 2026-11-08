@@ -19,4 +19,4 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0010 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 既定ブランチとの衝突のたびに、上限なしで、セッションを引き継ぐ（agent_resumed）tier-large の続きのジョブを積み直すと、 衝突が機械的（C |
 | K-0012 | 6 | causal | hypothesis | active | deterministic | 2026-11-07 | 2026-12-07 | 採用した PR 本文の指摘を直す body_fix（本文だけの直し）が終わる前に supervisor が承認（inspector_approved）を出し、  |
 | K-0013 | 6 | causal | hypothesis | active | context | 2026-11-08 | 2026-12-08 | 並行で開いている多くの PR が CHANGELOG.md を変えるとき、pr.conflicted を見るたびに、その PR のマージの順番を待たずに 衝突を |
-| K-0015 | 6 | causal | hypothesis | active | context | 2026-11-08 | 2026-12-08 | 衝突の元が PR の中に残っている（PR が CHANGELOG.md を直接書き換えている）とき、エージェントを使わない機械的な衝突の解消が 同じ PR・同じ |
+| K-0015 | 6 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 衝突の元が PR の中に残っている（PR が CHANGELOG.md を直接書き換えている）とき、エージェントを使わない機械的な衝突の解消が 同じ PR・同じ |

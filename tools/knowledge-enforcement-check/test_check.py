@@ -715,7 +715,8 @@ class RequiresCheckTest(unittest.TestCase):
     def test_前の組はどれも同じ中身で_requires_check_に移してある(self):
         found = {(k["id"], s.get("issue")): requires(k["id"], s.get("issue"))
                  for k in check.load(REPO) for s in check.solutions(k) if isinstance(s, dict) and check.REQUIRES_CHECK in s}
-        self.assertEqual({key: v for key, v in found.items() if key not in self.MOVED}, {("K-0004", 1216): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})
+        self.assertEqual({key: v for key, v in found.items() if key not in self.MOVED}, {("K-0004", 1216): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0015", 1220): [("tools/conflict-check/test_events.py", None)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):

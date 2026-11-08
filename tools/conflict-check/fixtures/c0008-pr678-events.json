@@ -1,0 +1,646 @@
+{
+ "source": "事例 C-0008（PR #678）の記録（.factory-config/knowledge/cases/C-0008.md の「出来事」と process・inspection の観点）から組み直したイベント列。制御プレーンの events はワーカーから読めないので、形は Engine の continuation.enqueue・dispatcher の job.started・job.finished・process_learn.record_conflict_files に合わせ、事例記録にある事実（PR が CHANGELOG.md を直接書き換えていて、既定ブランチが進むたびに CHANGELOG.md が衝突し、エージェントを使わない機械的な解消が 13 回（ジョブ 3414〜3822）走った。直接の書き換えは 13 回のあとの review_fix 3873（DOC-002）まで残った）だけを入れた。最初と最後のほかの job_id、id・head_sha は組み直しの仮の値。機械的に解いた回は今の Engine と同じく cost_usd を 0 にし、衝突したファイルはジョブの終わりにワーカーのログから記録した形（source: worker_log）にした。agent_resumed は事例記録にないので置かない。verify は、13 回の head がどれも直接の書き換えを含むので tools/changelog-check/check.mjs が落ちる（終了コード 1）という事例記録からの読み（Engine は検査を呼んでおらず、本物の検査の結果ではない）",
+ "events": [
+  {
+   "id": 1,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-01"
+   }
+  },
+  {
+   "id": 2,
+   "name": "continue.enqueued",
+   "job_id": 3414,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-01",
+    "reason": "conflict",
+    "attempt": 1
+   }
+  },
+  {
+   "id": 3,
+   "name": "job.started",
+   "job_id": 3414,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 4,
+   "name": "job.finished",
+   "job_id": 3414,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 5,
+   "name": "conflict.files",
+   "job_id": 3414,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 6,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-02"
+   }
+  },
+  {
+   "id": 7,
+   "name": "continue.enqueued",
+   "job_id": 3448,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-02",
+    "reason": "conflict",
+    "attempt": 2
+   }
+  },
+  {
+   "id": 8,
+   "name": "job.started",
+   "job_id": 3448,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 9,
+   "name": "job.finished",
+   "job_id": 3448,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 10,
+   "name": "conflict.files",
+   "job_id": 3448,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 11,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-03"
+   }
+  },
+  {
+   "id": 12,
+   "name": "continue.enqueued",
+   "job_id": 3482,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-03",
+    "reason": "conflict",
+    "attempt": 3
+   }
+  },
+  {
+   "id": 13,
+   "name": "job.started",
+   "job_id": 3482,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 14,
+   "name": "job.finished",
+   "job_id": 3482,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 15,
+   "name": "conflict.files",
+   "job_id": 3482,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 16,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-04"
+   }
+  },
+  {
+   "id": 17,
+   "name": "continue.enqueued",
+   "job_id": 3516,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-04",
+    "reason": "conflict",
+    "attempt": 4
+   }
+  },
+  {
+   "id": 18,
+   "name": "job.started",
+   "job_id": 3516,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 19,
+   "name": "job.finished",
+   "job_id": 3516,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 20,
+   "name": "conflict.files",
+   "job_id": 3516,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 21,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-05"
+   }
+  },
+  {
+   "id": 22,
+   "name": "continue.enqueued",
+   "job_id": 3550,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-05",
+    "reason": "conflict",
+    "attempt": 5
+   }
+  },
+  {
+   "id": 23,
+   "name": "job.started",
+   "job_id": 3550,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 24,
+   "name": "job.finished",
+   "job_id": 3550,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 25,
+   "name": "conflict.files",
+   "job_id": 3550,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 26,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-06"
+   }
+  },
+  {
+   "id": 27,
+   "name": "continue.enqueued",
+   "job_id": 3584,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-06",
+    "reason": "conflict",
+    "attempt": 6
+   }
+  },
+  {
+   "id": 28,
+   "name": "job.started",
+   "job_id": 3584,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 29,
+   "name": "job.finished",
+   "job_id": 3584,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 30,
+   "name": "conflict.files",
+   "job_id": 3584,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 31,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-07"
+   }
+  },
+  {
+   "id": 32,
+   "name": "continue.enqueued",
+   "job_id": 3618,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-07",
+    "reason": "conflict",
+    "attempt": 7
+   }
+  },
+  {
+   "id": 33,
+   "name": "job.started",
+   "job_id": 3618,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 34,
+   "name": "job.finished",
+   "job_id": 3618,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 35,
+   "name": "conflict.files",
+   "job_id": 3618,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 36,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-08"
+   }
+  },
+  {
+   "id": 37,
+   "name": "continue.enqueued",
+   "job_id": 3652,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-08",
+    "reason": "conflict",
+    "attempt": 8
+   }
+  },
+  {
+   "id": 38,
+   "name": "job.started",
+   "job_id": 3652,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 39,
+   "name": "job.finished",
+   "job_id": 3652,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 40,
+   "name": "conflict.files",
+   "job_id": 3652,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 41,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-09"
+   }
+  },
+  {
+   "id": 42,
+   "name": "continue.enqueued",
+   "job_id": 3686,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-09",
+    "reason": "conflict",
+    "attempt": 9
+   }
+  },
+  {
+   "id": 43,
+   "name": "job.started",
+   "job_id": 3686,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 44,
+   "name": "job.finished",
+   "job_id": 3686,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 45,
+   "name": "conflict.files",
+   "job_id": 3686,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 46,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-10"
+   }
+  },
+  {
+   "id": 47,
+   "name": "continue.enqueued",
+   "job_id": 3720,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-10",
+    "reason": "conflict",
+    "attempt": 10
+   }
+  },
+  {
+   "id": 48,
+   "name": "job.started",
+   "job_id": 3720,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 49,
+   "name": "job.finished",
+   "job_id": 3720,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 50,
+   "name": "conflict.files",
+   "job_id": 3720,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 51,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-11"
+   }
+  },
+  {
+   "id": 52,
+   "name": "continue.enqueued",
+   "job_id": 3754,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-11",
+    "reason": "conflict",
+    "attempt": 11
+   }
+  },
+  {
+   "id": 53,
+   "name": "job.started",
+   "job_id": 3754,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 54,
+   "name": "job.finished",
+   "job_id": 3754,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 55,
+   "name": "conflict.files",
+   "job_id": 3754,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 56,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-12"
+   }
+  },
+  {
+   "id": 57,
+   "name": "continue.enqueued",
+   "job_id": 3788,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-12",
+    "reason": "conflict",
+    "attempt": 12
+   }
+  },
+  {
+   "id": 58,
+   "name": "job.started",
+   "job_id": 3788,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 59,
+   "name": "job.finished",
+   "job_id": 3788,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 60,
+   "name": "conflict.files",
+   "job_id": 3788,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  },
+  {
+   "id": 61,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-13"
+   }
+  },
+  {
+   "id": 62,
+   "name": "continue.enqueued",
+   "job_id": 3822,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/678",
+    "head_sha": "c0008-head-13",
+    "reason": "conflict",
+    "attempt": 13
+   }
+  },
+  {
+   "id": 63,
+   "name": "job.started",
+   "job_id": 3822,
+   "payload": {
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 64,
+   "name": "job.finished",
+   "job_id": 3822,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 0
+   }
+  },
+  {
+   "id": 65,
+   "name": "conflict.files",
+   "job_id": 3822,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "worker_log"
+   }
+  }
+ ],
+ "verify": {
+  "https://github.com/guccyon/rally/pull/678": {
+   "c0008-head-01": 1,
+   "c0008-head-02": 1,
+   "c0008-head-03": 1,
+   "c0008-head-04": 1,
+   "c0008-head-05": 1,
+   "c0008-head-06": 1,
+   "c0008-head-07": 1,
+   "c0008-head-08": 1,
+   "c0008-head-09": 1,
+   "c0008-head-10": 1,
+   "c0008-head-11": 1,
+   "c0008-head-12": 1,
+   "c0008-head-13": 1
+  }
+ }
+}

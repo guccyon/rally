@@ -1,22 +1,32 @@
 """制御プレーンのイベント列から、PR ごとに conflict の続きのジョブを組み、policy.py の線に照らして落とす（知見 K-0010 の担保。議決 D-0023・Issue #972）。
 衝突したファイルがその場で記録されなかった回も落とす（知見 K-0014 の担保。議決 D-0049・Issue #1135、議決 D-0101・Issue #1208）。
+mechanical.verify の検査（K-0002 の check.mjs）に落ちる head を機械的に解いた回も落とす（知見 K-0015 の担保。議決 D-0078（Issue #1220 の
+起票時の番号は D-0077）・Issue #1220）。
 
 組むもの（PR ごと、continue.enqueued（reason=conflict）の順に 1 件ずつ）: 何回目か・agent_resumed・tier・衝突したファイル。
 落とすもの（rule）:
   over_limit            同じ PR で max_attempts_per_pr を超えて積まれた（今の線では 4 回目以降）
   resumed_after_limit   resume_session_until_attempt より後の回（今の線では 2 回目以降）で agent_resumed=true
-  agent_for_mechanical  衝突したファイルが mechanical.paths（CHANGELOG.md と changelog.d/）だけなのに、エージェントの tier（tier-large など）で解いた
+  agent_for_mechanical  衝突したファイルが mechanical.paths（CHANGELOG.md と changelog.d/）だけなのに、エージェントの tier（tier-large など）で解いた。
+                        その head が mechanical.verify の検査に落ちる（--verify）なら、エージェントで解くのが線どおりなので外れにしない
+  mechanical_without_verify  PR の head が mechanical.verify の検査（tools/changelog-check/check.mjs。CHANGELOG.md を直接書き換えていると落ちる）に
+                        落ちる（--verify の終了コードが 0 でない）のに、mechanical.agent_tier（none。機械的）で衝突を解いた（知見 K-0015 の担保）
   missing_conflict_files  continue.enqueued の時点で、同じ job_id の conflict.files がその場で載っていない。ないか、backfill で後から足されたもの
                           （payload.source が backfill）か、ジョブが動き出したあと（同じ job_id の job.started か job.finished より後）に記録されたもの
                           しかない回。continue.enqueued の payload の conflict_files（conflict-files.yaml の形。空でない文字列の列で 1 件以上）は
                           積んだその場の記録として通す（議決 D-0101・Issue #1208）。終わらずに止まった回も照らす（知見 K-0014 の担保。
                           議決 D-0049・Issue #1135）。continuation.yaml の線ではないので check ではなく record_check が出し、watch.py の停止には使わない
 
-記録がない項目（agent_resumed・tier・衝突したファイル）は照らさずに件数を出す。これは Engine が今の形（job.finished に agent_resumed と
+あわせて、同じ PR・同じファイルの機械的な解消が max_attempts_per_pr（3 回）を超えたら、ファイルごとの回数を出す（外れにはしない。K-0015）。
+
+記録がない項目（agent_resumed・tier・衝突したファイル）は照らさずに件数を出す。機械的に解いた回の検査の結果（--verify にない head）も同じく件数を出す。これは Engine が今の形（job.finished に agent_resumed と
 解き方の tier（agent_tier）を出さない版）のときだけの扱いで、それらを出す版の Engine で agent_resumed か tier の照らせない件数が 1 以上なら
 test_events.py の EngineFinishedTest が落とす（議決 D-0030・Issue #1035）
 
-  python3 events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--since <ISO 8601 の時刻>] [--record-only] [--json]
+  python3 events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--since <ISO 8601 の時刻>] [--verify <JSON>] [--record-only] [--json]
+  --verify: PR の head ごとの mechanical.verify の検査の終了コード（node tools/changelog-check/check.mjs --base <既定ブランチ> --head <head_sha>）。
+            { "<PR の URL>": { "<head_sha>": <終了コード> } } か、それを "verify" に持つオブジェクト（fixture は events と同じファイルに置く）。
+            制御プレーンの events には検査の結果が載らない（Engine が mechanical.verify を呼んでいない）ので、検査を走らせた側が渡す（K-0015）
   --since: Engine に engine/conflict-files.patch を当てた時刻。occurred_at がそれより前のイベントは組まない（照らさない）。
            occurred_at がない・読めないイベントがあれば絞れないので終了コード 2（schema.py の --since と同じ。議決 D-0076・Issue #1214）
   --record-only: record_check（missing_conflict_files）だけを出し、continuation.yaml の線（check）は照らさない。直近の窓の本物のイベント列を
@@ -28,6 +38,7 @@ from __future__ import annotations
 import functools
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -41,6 +52,22 @@ INLINE = "conflict_files"   # continue.enqueued の payload に載せる衝突�
 
 class EventsError(ValueError):
     """イベント列の形が正しくない"""
+
+
+def parse_verify(text: str) -> dict[str, dict[str, int]]:
+    """--verify の JSON（{ pr_url: { head_sha: 終了コード } } か、それを "verify" に持つオブジェクト）を読む。形が違えば EventsError"""
+    try:
+        whole = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise EventsError(f"検査の結果が JSON として読めない: {e}") from e
+    if isinstance(whole, dict) and "verify" in whole:
+        whole = whole["verify"]
+    if not isinstance(whole, dict):
+        raise EventsError("検査の結果が { PR の URL: { head_sha: 終了コード } } でない")
+    for url, heads in whole.items():
+        if not isinstance(heads, dict) or not all(isinstance(c, int) and not isinstance(c, bool) for c in heads.values()):
+            raise EventsError(f"{url} の検査の結果が {{ head_sha: 終了コード }} でない")
+    return whole
 
 
 def parse_events(text: str) -> list[dict]:
@@ -107,12 +134,14 @@ def _inline_files(payload: dict) -> list[str] | None:
     return v if field_error(spec, v) is None else None
 
 
-def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[str, dict]:
+def records_from_events(events: list[dict], pr_url: str | None = None, verify: dict[str, dict[str, int]] | None = None) -> dict[str, dict]:
     """PR ごとに { pr_url, conflicted_heads, attempts: [{ attempt, job_id, head_sha, agent_resumed, tier, files, files_source, files_before_start,
     files_inline }] } を組む。job.started・job.finished・conflict.files は job_id で continue.enqueued に結ぶ。files_source は conflict.files の payload.source
     （Engine の dispatcher がワーカーのログから記録したら worker_log、factoryctl learn backfill-conflicts で後から足したら backfill）。
     files_before_start は conflict.files がジョブの動き出す前（同じ job_id の job.started・job.finished より前。並びはイベント列の順）に記録されたか。
-    files_inline は continue.enqueued の payload に conflict_files が形どおりに載っていたか。載っていれば files はその列（conflict.files より先に見る）"""
+    files_inline は continue.enqueued の payload に conflict_files が形どおりに載っていたか。載っていれば files はその列（conflict.files より先に見る）。
+    verified は、その回の head（continue.enqueued の head_sha）が verify（parse_verify の形）で mechanical.verify の検査に通ったか（終了コード 0）。
+    verify にその head がなければ None"""
     by_job: dict[int, dict[str, dict]] = {}
     at: dict[int, dict[str, int]] = {}   # job_id ごとの、各イベントが最初に出たイベント列の位置
     for i, e in enumerate(events):
@@ -142,6 +171,7 @@ def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[s
             inline = _inline_files(p)
             pos = at.get(e.get("job_id"), {})
             before_start = "conflict.files" in pos and all(pos["conflict.files"] < pos[k] for k in ("job.started", "job.finished") if k in pos)
+            code = (verify or {}).get(url, {}).get(p.get("head_sha"))
             n = len(r["attempts"]) + 1
             if isinstance(p.get("attempt"), int) and not isinstance(p.get("attempt"), bool):
                 n = max(n, p["attempt"])   # イベント列が途中から始まっていても、Engine の数えた回を下回らない
@@ -149,7 +179,7 @@ def records_from_events(events: list[dict], pr_url: str | None = None) -> dict[s
                                   "tier": _tier(p, started, finished),
                                   "files": inline if inline is not None else files if isinstance(files, list) else None,
                                   "files_source": source if isinstance(source, str) else None, "files_before_start": before_start,
-                                  "files_inline": inline is not None})
+                                  "files_inline": inline is not None, "verified": None if code is None else code == 0})
     return prs
 
 
@@ -167,10 +197,30 @@ def check(policy_: dict, record: dict) -> list[dict]:
             err("resumed_after_limit", f"{a['attempt']} 回目でセッションを引き継いだ（agent_resumed=true。引き継いでよいのは "
                                        f"{policy_['resume_session_until_attempt']} 回目まで）")
         if a["files"] is not None and a["tier"] is not None:
-            want = policy.resolution(policy_, a["files"])
+            want = policy.resolution(policy_, a["files"], a["verified"])
             if want["mode"] == "mechanical" and a["tier"] != want["tier"]:
                 err("agent_for_mechanical", f"衝突したのが {', '.join(a['files'])} だけなのに {a['tier']} で解いた（機械的に解く。tier は {want['tier']}）")
+        if _mechanical(policy_, a) and a["verified"] is False:
+            err("mechanical_without_verify", f"head {a['head_sha']} は {policy_['mechanical']['verify']} の検査に落ちる（CHANGELOG.md を直接書き換えている）のに、"
+                                             f"{a['tier']}（機械的）で衝突を解いた（検査に落ちたらエージェントで解き、上限に数える。K-0015）")
     return errors
+
+
+def _mechanical(policy_: dict, a: dict) -> bool:
+    """その回を機械的に（mechanical.agent_tier で）解いたか。衝突がなかった回（files が空の列）は解いていない"""
+    return a["tier"] == policy_["mechanical"]["agent_tier"] and a["files"] != []
+
+
+def mechanical_repeats(policy_: dict, record: dict) -> dict[str, int]:
+    """同じ PR で、同じファイルの機械的な解消が max_attempts_per_pr を超えたファイルと回数（K-0015。外れにはせず件数を出す）。
+    衝突したファイルの記録がない回は数えない"""
+    n = Counter(f for a in record["attempts"] if _mechanical(policy_, a) and a["files"] for f in a["files"])
+    return {f: c for f, c in sorted(n.items()) if c > policy_["max_attempts_per_pr"]}
+
+
+def unverified(policy_: dict, record: dict) -> int:
+    """機械的に解いた回のうち、検査の結果（--verify）がなく mechanical_without_verify を照らせなかった回の数"""
+    return sum(1 for a in record["attempts"] if _mechanical(policy_, a) and a["verified"] is None)
 
 
 BACKFILL = "backfill"   # Engine の process_learn.record_conflict_files の source のうち、事後に埋めたもの（factoryctl learn backfill-conflicts）
@@ -232,13 +282,15 @@ def main(argv: list[str]) -> int:
     try:
         events = parse_events(Path(path).read_text(encoding="utf-8"))
         skip = schema.before(events, since)
+        verify = parse_verify(Path(arg("--verify")).read_text(encoding="utf-8")) if arg("--verify") else None
     except (OSError, EventsError, schema.ev.EventsError) as e:   # コマンドで動かすと schema.py が取り込む events はこの __main__ と別のモジュール
-        print(f"conflict-check: {path} を読めない: {e}", file=sys.stderr)
+        print(f"conflict-check: {path} か --verify を読めない: {e}", file=sys.stderr)
         return 2
-    prs = records_from_events([e for i, e in enumerate(events) if i not in skip], arg("--pr"))
+    prs = records_from_events([e for i, e in enumerate(events) if i not in skip], arg("--pr"), verify)
     rules = record_check if "--record-only" in argv else (lambda r: check(policy_, r) + record_check(r))
     results = [{"pr_url": url, "attempts": len(r["attempts"]), "conflicted_heads": len(r["conflicted_heads"]),
-                "unknown": unknown(r), "errors": rules(r)} for url, r in prs.items()]
+                "unknown": unknown(r), "errors": rules(r),
+                "mechanical": {"repeats": mechanical_repeats(policy_, r), "unverified": unverified(policy_, r)}} for url, r in prs.items()]
     errors = [e for r in results for e in r["errors"]]
     if "--json" in argv:
         json.dump({"ok": not errors, "prs": results}, sys.stdout, ensure_ascii=False)
@@ -247,7 +299,11 @@ def main(argv: list[str]) -> int:
         for r in results:
             for e in r["errors"]:
                 print(f"{r['pr_url']} attempt={e['attempt']} job={e['job_id']} {e['rule']}: {e['message']}")
-            u = ", ".join(f"{k} {n} 件" for k, n in r["unknown"].items() if n)
+            u = ", ".join([f"{k} {n} 件" for k, n in r["unknown"].items() if n]
+                          + ([f"機械的に解いた回の検査の結果 {r['mechanical']['unverified']} 件"] if r["mechanical"]["unverified"] else []))
+            if r["mechanical"]["repeats"]:
+                print(f"{r['pr_url']}: 同じファイルの機械的な解消が {policy_['max_attempts_per_pr']} 回を超えた: "
+                      + ", ".join(f"{f} {n} 回" for f, n in r["mechanical"]["repeats"].items()) + "（衝突の元が PR に残っていないかを見る。K-0015）")
             print(f"{r['pr_url']}: conflict の続きのジョブ {r['attempts']} 回・衝突した head {r['conflicted_heads']} 個・外れ {len(r['errors'])} 件"
                   + (f"（記録がなく照らせなかった: {u}）" if u else ""))
         tail = f"（{since.isoformat()} より前の {len(skip)} 件は照らさない）" if since else ""
