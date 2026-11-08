@@ -4,6 +4,7 @@
 knowledge-check.yml と同じ ENGINE_REF の版の Engine を取り、test_engine.py と test_engine_patch.py を CI=true と ENGINE_DIR を渡し、
 pytest を入れて飛ばさずに走らせる形かを見る（差分が ENGINE_REF に当たらないか、差分で足したテストが落ちればジョブが落ちる）。
 テストは unittest discover でまとめて走らせて出力を残し、次の手順がその出力の skipped が 1 件以上なら落とす（議決 D-0037、Issue #1080）。
+その次の手順が、出力に ENGINE_REF の版の差分の状態の記録（engine_patch_state: ENGINE_REF <版> applies か merged）がなければ落とす（議決 D-0053、Issue #1150）。
 .github/workflows/knowledge-enforcement.yml に写してあれば、その写しも同じ形かと、ENGINE_REF の行のほかがひな形と同じかも見る。
 形の検査（problems）が外れを見逃さないことは、ひな形を書き換えた写しで確かめる。
 
@@ -29,6 +30,7 @@ TESTS = ("tools/knowledge-enforcement-check/test_engine.py", "tools/knowledge-en
 REF_LINE = re.compile(r"^\s*ENGINE_REF:\s*\S+\s*$", re.M)
 DIR = "tools/knowledge-enforcement-check"
 LOG = "knowledge-enforcement-unittest.log"
+RECORD = "engine_patch_state"
 
 spec = importlib.util.spec_from_file_location("knowledge_enforcement_check_c", HERE / "check.py")
 check = importlib.util.module_from_spec(spec)
@@ -94,6 +96,10 @@ def problems(text: str, ref: str) -> list[str]:
     guard_skip = [x for x in after if LOG in (x.get("run") or "") and "skipped=" in (x.get("run") or "")]
     if len(guard_skip) != 1 or guard_skip[0] is not (after[0] if after else None) or guard_skip[0].get("shell") != "bash":
         e.append(f"テストの手順のすぐ後に、{LOG} の skipped が 1 件以上なら落とす手順を bash で 1 つ置く")
+    guard_ref = [x for x in after if LOG in (x.get("run") or "") and RECORD in (x.get("run") or "")]
+    if (len(guard_ref) != 1 or len(after) < 2 or guard_ref[0] is not after[1] or guard_ref[0].get("shell") != "bash"
+            or f"^{RECORD}: ENGINE_REF ${{ENGINE_REF}} " not in guard_ref[0]["run"]):
+        e.append(f"飛ばした件数の手順のすぐ後に、{LOG} に ENGINE_REF の版の {RECORD} の記録（applies か merged）がなければ落とす手順を bash で 1 つ置く")
     env = s.get("env") or {}
     if env.get("CI") != "true":
         e.append("テストの手順に CI: \"true\" を渡す（Engine・ENGINE_REF の版・pytest がなければ飛ばさずに落とす）")
@@ -144,12 +150,40 @@ class TemplateTest(unittest.TestCase):
                 if rc and log and "skipped=" in log:
                     self.assertIn("tests_skipped", p.stdout)
 
+    def test_差分の状態の手順はENGINE_REFの版がappliesかmergedの記録のときだけ通る(self):
+        steps = load(self.text)["jobs"][JOB]["steps"]
+        guard = [s for s in steps if LOG in (s.get("run") or "") and RECORD in s["run"]][0]
+        ref, other = self.ref, "0" * 40
+        test = "test_x (m.T.test_x) ... "
+        cases = [
+            (None, 1), ("", 1), ("Ran 12 tests in 0.345s\n\nOK\n", 1),
+            (f"{test}\n{RECORD}: ENGINE_REF {ref} merged\nok\n", 0), (f"{test}\n{RECORD}: ENGINE_REF {ref} applies\nok\n", 0),
+            (f"{test}\n{RECORD}: ENGINE_REF {ref} engine_ref_unavailable\nFAIL\n", 1),
+            (f"{test}\n{RECORD}: ENGINE_REF {ref} patch_stale\nFAIL\n", 1),
+            (f"{test}\n{RECORD}: ENGINE_REF {ref} patch_partially_applied\nFAIL\n", 1),
+            (f"{test}\n{RECORD}: ENGINE_REF {other} merged\nok\n", 1),
+            (f"{test}\n{RECORD}: ENGINE_PATCH_REF {ref} merged\nok\n", 1),
+            (f"{test}{RECORD}: ENGINE_REF {ref} merged\nok\n", 1),   # 行頭でない
+            (f"{test}\n{RECORD}: ENGINE_REF {ref} merged_x\nok\n", 1),
+        ]
+        for log, rc in cases:
+            with self.subTest(log), tempfile.TemporaryDirectory() as d:
+                if log is not None:
+                    (Path(d) / LOG).write_text(log, encoding="utf-8")
+                p = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", guard["run"]], cwd=d,
+                                   env={"PATH": "/usr/bin:/bin", "ENGINE_REF": ref}, capture_output=True, text=True)
+                self.assertEqual(p.returncode, rc, p.stdout + p.stderr)
+                if rc:
+                    self.assertIn("engine_ref_unavailable", p.stdout)
+
     def test_外れた写しは落ちる(self):
         t = self.text
         engine_step = f"          python3 -B -m unittest discover -s {DIR} -v 2>&1 | tee {LOG}\n"
         self.assertIn(engine_step, t)
         skip_step = "      - name: 飛ばしたテストがないか（K-0004）\n"
         self.assertIn(skip_step, t)
+        ref_step = "      - name: ENGINE_REF の版の差分の状態を記録したか（K-0004）\n"
+        self.assertIn(ref_step, t)
         cases = {
             "paths の絞り込み": t.replace("  pull_request:\n", "  pull_request:\n    paths: ['.factory-config/**']\n", 1),
             "ENGINE_REF のずれ": t.replace(self.ref, "0" * 40),
@@ -171,6 +205,10 @@ class TemplateTest(unittest.TestCase):
             "pipefail なし": t.replace("          set -o pipefail\n", "", 1),
             "飛ばした件数を見ない": t[:t.index(skip_step)] + t[t.index("  enforcement:\n"):],
             "飛ばした件数の手順がすぐ後でない": t.replace(skip_step, "      - name: x\n        run: echo ok\n" + skip_step, 1),
+            "差分の状態の記録を見ない": t[:t.index(ref_step)] + t[t.index("  enforcement:\n"):],
+            "差分の状態の手順がすぐ後でない": t.replace(ref_step, "      - name: x\n        run: echo ok\n" + ref_step, 1),
+            "差分の状態の手順が ENGINE_REF の版を見ない": t.replace('ENGINE_REF ${ENGINE_REF} " "$log"', 'ENGINE_REF " "$log"', 1),
+            "差分の状態の手順の continue-on-error:": t.replace(ref_step + "        shell: bash\n", ref_step + "        continue-on-error: true\n        shell: bash\n", 1),
             "飛ばした件数の手順の continue-on-error:": t.replace(skip_step + "        shell: bash\n", skip_step + "        continue-on-error: true\n        shell: bash\n", 1),
             "最初の手順がない": t.replace("      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）\n", "      - name: x\n", 1).replace(
                 "        shell: bash\n        run: |\n          if [[", "        run: |\n          if [[", 1),

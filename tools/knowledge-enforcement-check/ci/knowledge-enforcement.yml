@@ -3,7 +3,11 @@
 # engine-test のジョブは、ENGINE_REF の版の Engine で test_engine.py と test_engine_patch.py を CI=true・ENGINE_DIR を渡して走らせ、
 # engine/knowledge-enforcement.patch が ENGINE_REF に当たらないか、差分で足したテストが落ちれば、どの PR でも落とす（議決 D-0035、Issue #1063）。
 # テストは unittest discover でまとめて走らせ、その出力で skipped が 1 件以上あっても落とす（飛ばして緑にしない。議決 D-0037、Issue #1080）。
+# その次の手順は、test_engine_patch.py が出す「engine_patch_state: ENGINE_REF <版> <状態>」の行で、ENGINE_REF の版の Engine を取れて差分が
+# applies（当たる）か merged（もう入っている）になったことを確かめ、その行がないか別の版・別の状態なら落とす（ENGINE_REF の版を取れないときに飛ばさない。議決 D-0053、Issue #1150）。
 # 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
+# 写したあと最初の PR の実行で、ENGINE_REF の版が merged・applies・patch_partially_applied・patch_stale のどれになったか（engine-test の Job Summary）を
+# K-0004 の issue 1150 の解決策に記録してから、その解決策を wired: true にする（議決 D-0053、Issue #1150）。
 # enforcement のジョブも必須チェックに入れ、そのあとで K-0004 の issue 986・1059 の解決策を wired: true にし、wired_by に
 # {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py} を書く
 # （pull_request のジョブから check.py を呼ぶ項目がないと check.py が落とす。議決 D-0048、Issue #1129）。
@@ -74,6 +78,17 @@ jobs:
             exit 1
           fi
           echo "skipped=0"
+      - name: ENGINE_REF の版の差分の状態を記録したか（K-0004）
+        shell: bash
+        run: |
+          log=knowledge-enforcement-unittest.log
+          line=$(grep -E "^engine_patch_state: ENGINE_REF ${ENGINE_REF} " "$log" 2>/dev/null | tail -n 1 || true)
+          state="${line##* }"
+          if [ "$state" != applies ] && [ "$state" != merged ]; then
+            echo "::error title=knowledge-enforcement engine_ref_unavailable::test_engine_patch.py が ENGINE_REF ${ENGINE_REF} の版の Engine で差分を確かめた記録（applies か merged）が ${log} にない（${line:-記録なし}）。Engine を取れないときは飛ばさずに落とす"
+            exit 1
+          fi
+          echo "$line"
   enforcement:
     runs-on: ubuntu-latest
     steps:

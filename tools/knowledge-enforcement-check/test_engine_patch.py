@@ -8,6 +8,10 @@ engine/knowledge-enforcement.patch を、.github/workflows/knowledge-check.yml �
 名指しで取り出して当てるので、チェックアウトが別の版でも製品の CI が使う版で確かめられる。
 Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なければリポジトリの隣の ../engine）。チェックアウトがないか、ENGINE_REF の版を
 含まないときは飛ばす。ただし ENGINE_DIR を渡したときと CI（CI=true）では飛ばさずに落とす（test_engine.py と同じ）。
+判定した状態（applies・merged・patch_partially_applied・patch_stale。版を取れなかったときは engine_ref_unavailable）は、
+「engine_patch_state: <ENGINE_REF か ENGINE_PATCH_REF> <版> <状態>」の 1 行で標準エラーに出し、GitHub Actions では Job Summary にも残す。
+ci/knowledge-enforcement.yml の engine-test のジョブは、この行で ENGINE_REF の版が applies か merged になったことを確かめ、なければ落とす
+（版を取れないときに飛ばして緑にしない。建設者が写したあと最初の PR の実行でどの状態だったかを記録してから wired にする。議決 D-0053、Issue #1150）。
 環境変数 ENGINE_PATCH_REF に版を渡すと、ENGINE_REF の代わりにその版に当てる（ci/knowledge-enforcement-head.yml が Engine の既定のブランチの
 先頭の版を渡し、ENGINE_REF が古いまま先頭だけが進んで差分が当たらなくなったことを定期に見る。議決 D-0036、Issue #1076）。
 
@@ -19,6 +23,7 @@ import io
 import os
 import re
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -37,6 +42,8 @@ REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
 PATCH_REF = os.environ.get("ENGINE_PATCH_REF", "")
 
 APPLIES, MERGED, STALE, PARTIAL = "applies", "merged", "patch_stale", "patch_partially_applied"
+UNAVAILABLE = "engine_ref_unavailable"   # ENGINE_DIR のチェックアウトに版がない（Issue #1150）
+RECORD = "engine_patch_state"
 
 
 def engine_ref(workflow: Path = WORKFLOW) -> str:
@@ -76,6 +83,19 @@ def patch_state(engine: Path, ref: str, patch: Path = PATCH,
         if found:
             return PARTIAL, f"{', '.join(found)} はあるが git apply --reverse --check が通らない"
         return STALE, fwd.stderr.strip()
+
+
+def record(ref_from: str, ref: str, state: str, out=None, summary: str | None = None) -> str:
+    """差分の状態の記録の行（Issue #1150）。行頭から 1 行で out（既定は標準エラー）に出し、summary（GitHub Actions の Job Summary）があれば足す。"""
+    line = f"{RECORD}: {ref_from} {ref} {state}"
+    out = out or sys.stderr
+    out.write(f"\n{line}\n")
+    out.flush()
+    summary = os.environ.get("GITHUB_STEP_SUMMARY") if summary is None else summary
+    if summary:
+        with open(summary, "a", encoding="utf-8") as f:
+            f.write(f"- `{PATCH.relative_to(REPO)}` の {ref_from} `{ref}` の Engine での状態: `{state}`\n")
+    return line
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -156,6 +176,15 @@ class PatchStateTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             engine_ref(w)
 
+    def test_状態を行頭の_1_行と_Job_Summary_に記録する(self):
+        out, summary = io.StringIO(), Path(self.tmp.name) / "summary.md"
+        line = record("ENGINE_REF", self.base, MERGED, out, str(summary))
+        self.assertEqual(line, f"engine_patch_state: ENGINE_REF {self.base} merged")
+        self.assertIn(f"\n{line}\n", out.getvalue())
+        self.assertIn(f"`{self.base}`", summary.read_text(encoding="utf-8"))
+        self.assertIn("`merged`", summary.read_text(encoding="utf-8"))
+        record("ENGINE_REF", self.base, UNAVAILABLE, io.StringIO(), "")   # Job Summary がなければ書かない
+
 
 REF, REF_FROM = target_ref()
 HAS_ENGINE = (ENGINE / ".git").exists() and has_commit(ENGINE, REF)
@@ -172,11 +201,13 @@ class EngineRefPatchTest(unittest.TestCase):
     def test_差分が_ENGINE_REF_の版に当たるかもう入っている(self):
         ref = REF
         if not HAS_ENGINE:
+            record(REF_FROM, ref, UNAVAILABLE)
             if REF_FROM == "ENGINE_PATCH_REF":
                 raise AssertionError(f"Engine のチェックアウト（ENGINE_DIR={ENGINE}）に ENGINE_PATCH_REF {ref} の版がない")
             raise AssertionError(f"Engine のチェックアウト（ENGINE_DIR={ENGINE}）に knowledge-check.yml の ENGINE_REF {ref} の版がない。"
                                  "ci/knowledge-enforcement.yml の ENGINE_REF を knowledge-check.yml と同じ版にそろえる")
         state, err = patch_state(ENGINE, ref)
+        record(REF_FROM, ref, state)
         if state == STALE:
             msg = (f"patch_stale: {PATCH.relative_to(REPO)} が {REF_FROM} {ref} の Engine に当たらず、Engine 側にもまだ入っていない。"
                    f"今の Engine に合わせて作り直す: {err}")

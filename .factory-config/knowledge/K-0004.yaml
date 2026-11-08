@@ -708,4 +708,22 @@ enforcement:
       decided_by: committee:D-0052
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0053 の ci_check の案（ci/knowledge-enforcement.yml の test_engine_patch.py の手順で ENGINE_REF の版の Engine を取れないときは
+        飛ばさずに落とし、建設者が .github/workflows/ に写したあと最初の PR の実行で ENGINE_REF の版が merged・当たる・patch_partially_applied・
+        patch_stale のどれになったかを記録してから wired を true にする）のうち、ワーカーの権限で入れられる分を入れた。
+        tools/knowledge-enforcement-check/test_engine_patch.py が、判定した状態（applies・merged・patch_partially_applied・patch_stale、
+        版を取れなければ engine_ref_unavailable）を「engine_patch_state: ENGINE_REF <版> <状態>」の 1 行で行頭に出し、GitHub Actions では Job Summary にも残す。
+        ひな形の engine-test のジョブに、飛ばした件数の手順のすぐ後で、unittest の出力にワークフローの ENGINE_REF の版の applies か merged の記録がなければ
+        engine_ref_unavailable で落とす手順を足した（test_engine_patch.py が走らなかった・別の版で確かめた・版を取れなかったときに緑にしない）。
+        test_ci.py で、その手順がひな形にあって飛ばした件数の手順のすぐ後にあること、作った出力のうち ENGINE_REF の版の applies・merged だけで通り、
+        engine_ref_unavailable・patch_stale・patch_partially_applied・別の版・ENGINE_PATCH_REF・行頭でない記録・記録なしで落ちること、手順を消すかずらした写しで
+        外れることを確かめ、手元で CI=true にして ENGINE_REF の版のない Engine のチェックアウトで engine_ref_unavailable の記録を出して落ちることを確かめた。
+        .github/workflows/ への写しと最初の PR の実行での状態の記録は建設者が行うので、この解決策は未配線・未確認
+      issue: 1150
+      at: 2026-11-08
+      decided_by: committee:D-0053
+      wired: false
+      verified: false
 decided_by: committee:D-0004
