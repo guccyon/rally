@@ -1,0 +1,70 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0097
+pr: https://github.com/guccyon/rally/pull/1165
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に D-0040 の ci_check の案を入れた記録を 1 件足しただけなので、D-0004 から D-0059 までの議決や README の決まり、specs/
+    の規範と矛盾しません。
+  - 'D-0040 の案は id の engine-test・wiring-order を必須にするとしていましたが、D-0038（Issue #1083）で付けた
+    name: の sendback-engine-test・sendback-wiring-order を照らすと what に書いており、D-0059 が認めた名前の替え方と揃っています。'
+  - D-0039 の解決策（issue 1087、ci/sendback-protection.yml）は管理者の権限のトークンで毎日照らすもの、今回の解決策は
+    GITHUB_TOKEN で PR ごとに照らすものと what で分けており、D-0059 の案のうちどちらがどの分を受け持つかも書いているので、重複ではありません。
+  - '新しい項目にも wired: false・verified: false を書いているので、K-0004 は README の「すべての解決策に書いた知見」のままで食い違いません。'
+  - D-0036・D-0054 が求めた patch_stale の解決策への D-0025 の添え書きなど、前の議決で次の変更セットに回された直しが今回も手つかずなので、次に
+    K-0004 を直す変更セットで片づけてください。
+  - 配線も本物の PR での確認もまだないので confidence は hypothesis のままが妥当で、K-0004 に置き場の担保の解決策が積み重なっている点は、委員会で分けて整理することを改めて勧めます。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の solution は issue 1091 と committee:D-0040 を指していて、D-0040.yaml（PR
+    #1090）の enforcement の案（gh api で main の required_status_checks に engine-test と
+    wiring-order が入っているか確かめるジョブを足し、外れていれば落とす）にそのまま当たるので、一次記録に辿れます。'
+  - '照らすチェックの名前 sendback-engine-test・sendback-wiring-order は D-0038（PR #1082）と Issue
+    #1083 の solution に、定期の分は D-0039（Issue #1087）の solution に、PR ごとの分は D-0059（PR #1155）の
+    ci_check の案に辿れ、引いている記録が既存の solutions や議決と合っています。'
+  - 「protection.mjs がブランチの JSON を読まない改変で足したテストが落ちることを手元で確かめた」は手元での確認だけで、走らせた出力がどこにも残っていないので、issue
+    1091 にその出力を残してください。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を足しただけなので根拠の段は崩れていません。'
+  - 'wired: false・verified: false で、.github/workflows/ への写しと必須チェックへの登録が建設者待ちだと明記しているので、confidence
+    は hypothesis のままが妥当で、ENGINE_REF を上げる本物の PR で required-checks と engine-test が走った記録が事例記録に残るまで
+    confirmed に上げないでください。'
+  - 差分に出てくるのはファイルのパス・ジョブとチェックの名前・API の道・issue と PR の番号・議決の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0040 の ci_check の案のうちワーカーの権限で入れられる分を
+    enforcement.solutions に 1 件足しただけなので、採ってよいです。
+  - 必須チェックにしたかどうかを人の手順に任せず、PR ごとに branches/main と rules/branches/main の JSON を protection.mjs
+    で照らして required_check_missing などで落とす形は、繰り返し抜けやすく外すと痛い所を機械で塞ぐ向きで、D-0040 と D-0059
+    の PR ごとの分の案に合っています。
+  - '照らす名前を id の engine-test・wiring-order ではなく name: の sendback-engine-test・sendback-wiring-order
+    にし、id だけを必須にした形を落とすのは、線を正しく引けています。'
+  - 'ただし required-checks のジョブ自身も必須のチェックに入れないと、そのジョブを外したり失敗を無視したりしても止まらないので、建設者が写すときに
+    sendback-engine-test・sendback-wiring-order と並べて required-checks も必須にすることを Issue
+    #1091 に書き添えてください。'
+  - 'wired: false・verified: false で、写しと必須への登録と ENGINE_REF を上げる PR での実行の記録がまだないので、新しい決定論の案は足さず、配線を待つのが妥当です。'
+  - K-0004 の担保はまだどれも本物の PR で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0040 の ci_check の案に当たる記録を 1 件足しただけで、statement・scope・evidence・confidence
+    を変えないので、知見の範囲が広がる心配はありません。
+  - '足した項目は wired: false・verified: false のままで、写しと必須チェックへの登録、ENGINE_REF を上げる PR での実行記録がまだないことを
+    what で明かしているので、効き目を言い過ぎてはいません。'
+  - D-0059 の PR ごとの分を「この解決策で満たした」と書いていますが、ci/sendback-engine.yml が .github/workflows/
+    に写されるまでは PR ごとに走らないので、次に直すときは「満たす形を用意した」と書き分けるのが正確です。
+  - '反例として、GITHUB_TOKEN の contents: read で branches/main の protection の要約や組織の rulesets
+    が実際に読めるかは本物の実行で確かめておらず、読めないときに protection_unreadable で落ちる形にしてあるので、誤って通る向きの外れはありません。'
+  - 確かさは hypothesis のままでよく、上げる理由も下げる理由もこの差分にはありません。
+  personal_data: false
+enforcement: []

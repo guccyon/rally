@@ -49,6 +49,23 @@ enforcement:
       verified: false
     - kind: ci_check
       what: >-
+        議決 D-0050（Issue #1131 の起票時の番号は D-0048。PR #1128）の 1 つ目の ci_check の案を入れた。recheck.test.mjs に事例 C-0003（PR #396）の列を足した。
+        2 回目の検査（job 570、14:21:30）のあと最後の本文の直し（job 572）を積んで終わり、head_sha が変わらないまま検査をもう一度通さずに
+        14:23:30 にマージした列が merged_without_body_recheck で落ち、job 572 の直しがなければ（1 回目の直しの job 563 は job 570 で再検査済み）通り、
+        job 572 のあとに再検査すれば通ることを確かめた。job 572 の積みと終わり・承認の時刻は記録にないので、記録の順を崩さない範囲で置いた。
+        recheck.test.mjs は、CI のひな形 tools/pr-body-check/ci/pr-body-engine.yml の engine-test（tools/pr-body-check で道を渡さずに走らせる node --test）で
+        走るテストに入っていて、ひな形の側の絞り込み（道・名前・NODE_OPTIONS）は既存の ci.test.mjs が見張る。ファイルの側で外す直し（skip・todo・only、
+        C-0003・C-0005・C-0006 の列のテストを消す）も ci.test.mjs で落とすようにした。ワーカーは .github/workflows/ を変えられないので、ひな形はまだ
+        .github/workflows/pr-body-engine.yml に写されておらず、PR ごとには走っていない。建設者が写して engine-test を必須のチェックにしたら、
+        wired: true にして wired_by に {workflow: .github/workflows/pr-body-engine.yml, job: engine-test, runs: tools/pr-body-check/recheck.test.mjs} を書く。
+        テストの列は事例の記録から組み直したもので、本物のイベント列では確かめていない
+      issue: 1131
+      at: 2026-11-08
+      decided_by: committee:D-0050
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
         議決 D-0050 の ci_check の案（D-0033 の ci_check の案と同じ線）を入れた。別の検査は作らず、K-0006 の #906 と同じ tools/pr-body-check/check.mjs を
         1 つのマージ前の必須チェックにまとめた。ひな形 tools/pr-body-check/ci/pr-body-check.yml（ジョブとチェックの名前 pr-body-check）は pull_request の
         opened・synchronize・reopened に加えて edited でも走り、head_sha の変わらない本文だけの直し（pr.body_amended）のあとの本文も照らす。
@@ -57,10 +74,10 @@ enforcement:
         merge_step がマージの前に body_fix_pending と body_recheck_pending を待ち、body_recheck_pending は最後の body_fix のジョブが成功で終わっていれば、
         そのジョブが走り始めたより後に始まった pr-body-check が success で終わるまで待って supervisor.body_rechecked を残し、失敗か取り消しで終わっていれば
         停止（body_recheck:<PR の URL>、human）を開いて待つ。直しの終わりは pr.body_amended ではなくジョブの状態で見る。recheck.mjs は supervisor.body_rechecked も再検査に数える。
-        engine.test.mjs の (11) で、Engine（/work/engine の 57069a8）の写しに差分を当て、C-0006（PR #821）の記録の順（body_fix の job 4299 を 14:24:41 に積み、
+        engine.test.mjs の (12) で、Engine（/work/engine の 57069a8）の写しに差分を当て、C-0006（PR #821）の記録の順（body_fix の job 4299 を 14:24:41 に積み、
         マージ 14:25:06）を入力に、直しが走っている間・直しのあとに pr-body-check が走っていない・実行中・落ちた間は待ち、通ったら supervisor.body_rechecked を残して
         その列が recheck.mjs に通ること、直しの失敗では人に回すこと、直しのない PR とワークフローを持たない製品では待たないことを確かめた。
-        merge_step の待ちを外す・直しのあとに始まったかを見ない・失敗を通す書き換えで (11) が落ちることも確かめた。ci.test.mjs でひな形の形
+        merge_step の待ちを外す・直しのあとに始まったかを見ない・失敗を通す書き換えで (12) が落ちることも確かめた。ci.test.mjs でひな形の形
         （edited を含む types、絞り込み・if:・continue-on-error がない、本文を env で渡す、名前が Engine の待つものと合う）を見張る。
         GitHub の実行は時刻と結果を真似たもので、本物のイベント列や本物の PR では走らせていない。ワークフローの写し（.github/workflows/pr-body-check.yml）と
         必須のチェック、Engine への差分の取り込みは建設者の権限なのでまだ入っておらず、配線されておらず効き目は確かめていない

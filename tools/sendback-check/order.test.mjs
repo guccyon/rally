@@ -1,13 +1,13 @@
-// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。check.mjs の実行時の守りは議決 D-0038、Issue #1084）。
+// check.mjs の ci_check を配線する順序の見張り（order.mjs）のテスト（知見 K-0004 の担保。議決 D-0012、Issue #953。包んだ呼び方は議決 D-0017、Issue #967。飛ばせる・待たない配線は議決 D-0025、Issue #1017。TAP のないまま通さないのは議決 D-0029、Issue #1026。check.mjs の実行時の守りは議決 D-0038、Issue #1084。必須のチェックが外れたときの守りは議決 D-0059、Issue #1159。実行の結果の SKIP の照らしは議決 D-0062、Issue #1168）。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { BASIS_TESTS, callsEventsCheck, checkOrder, DEFAULT_SCRIPTS, isMainModule, loadRepo, parseTapReport, REPO_ROOT, runningFrom, runsEngineTest, skipLines, todoLines } from "./order.mjs";
+import { BASIS_TESTS, callsEventsCheck, checkOrder, checkoutSkipLines, DEFAULT_SCRIPTS, isMainModule, LEGACY_BASIS_NOT_FOUND, loadRepo, NO_ENGINE_CHECKOUT, parseTapReport, REPO_ROOT, runningFrom, runsEngineTest, runsOrderWithReport, skipLines, skipReportProblems, tapSkips, todoLines } from "./order.mjs";
 
 const orderScript = fileURLToPath(new URL("./order.mjs", import.meta.url));
 const checkScript = fileURLToPath(new URL("./check.mjs", import.meta.url));
@@ -55,6 +55,81 @@ test("skipLines は todoLines と同じ数え方で skip を数え、Engine の�
   assert.deepEqual(skipLines("// t.skip('x') は注釈\ntest('x', { skip }, () => {});\nconst skip = false;"), []);
   assert.deepEqual(skipLines("test('x', { skip: 'legacy_basis_not_found' }, () => {});"), [1]);
   assert.deepEqual(skipLines("\ntest.skip('x');\nt.skip ('y');"), [2, 3]);
+});
+
+/** node --test でテストのファイルを走らせた TAP。親の node --test の NODE_TEST_CONTEXT を渡すと TAP で出さないので外す。終了コードは見ない */
+function runTap(file, env = process.env) {
+  const { NODE_TEST_CONTEXT, ...rest } = env;
+  const r = spawnSync("node", ["--test", "--test-reporter=tap", file], { cwd: dirname(file), env: rest, encoding: "utf8" });
+  assert.equal(r.error, undefined, String(r.error));
+  return r.stdout;
+}
+
+test("tapSkips は下の段も含めて SKIP の名前と理由を読み、skipReportProblems は許した理由とソースの件数で照らす（議決 D-0062、Issue #1168）", () => {
+  const tap = [
+    "ok 1 - 通った",
+    "ok 2 - 名前の \\# も読む # SKIP Engine のチェックアウトがない（ENGINE_DIR=/x）",
+    "    ok 1 - 下の段 # SKIP legacy_basis_not_found: 写しを作れない \\# 理由の中",
+    "ok 3 - 理由なし # SKIP",
+    "ok 4 - 別の理由 # skip たまたま",
+    "ok 5 - todo # TODO まだ",
+  ].join("\n");
+  assert.deepEqual(tapSkips(tap), [
+    { name: "名前の # も読む", reason: "Engine のチェックアウトがない（ENGINE_DIR=/x）" },
+    { name: "下の段", reason: "legacy_basis_not_found: 写しを作れない # 理由の中" },
+    { name: "理由なし", reason: "" },
+    { name: "別の理由", reason: "たまたま" },
+  ]);
+  const source = "test('a', { skip }, () => {});\ntest('b', (t) => t.skip('legacy_basis_not_found: x'));";
+  assert.deepEqual(skipReportProblems(tap, source).map((p) => [p.rule, p.name ?? p.reason]), [
+    ["skip_reason_not_allowed", "理由なし"],
+    ["skip_reason_not_allowed", "別の理由"],
+  ]);
+  // ソースの件数を超えて飛ばしたら落とす（字面で数え漏らした skip がある）。飛ばさなかった skip は数が少なくてよい
+  const twice = `${tap}\nok 6 - 2 つ目 # SKIP ${LEGACY_BASIS_NOT_FOUND}: y\nok 7 - 3 つ目 # SKIP ${NO_ENGINE_CHECKOUT}`;
+  assert.deepEqual(skipReportProblems(twice, source).filter((p) => p.rule === "skip_count_mismatch"), [
+    { rule: "skip_count_mismatch", reason: LEGACY_BASIS_NOT_FOUND, ran: 2, lines: 1 },
+    { rule: "skip_count_mismatch", reason: NO_ENGINE_CHECKOUT, ran: 2, lines: 1 },
+  ]);
+  assert.deepEqual(skipReportProblems("ok 1 - 通った\n", source), []);
+  assert.deepEqual(checkoutSkipLines("// { skip } は注釈\ntest('a', { skip }, () => {});\ntest('b', {skip}, f);"), [2, 3]);
+});
+
+test("別名や動的な skip は字面では数え漏れるが、走らせた TAP の SKIP で落とす（議決 D-0062、Issue #1168）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sendback-skip-alias-"));
+  const file = join(dir, "alias.test.mjs");
+  const source = [
+    'import { test } from "node:test";',
+    "test(\"別名で飛ばす\", (t) => { const s = t.skip.bind(t); s(\"" + LEGACY_BASIS_NOT_FOUND + ": 別名\"); });",
+    "const opts = {}; opts.skip = \"動的に飛ばす\";",
+    "test(\"動的に飛ばす\", opts, () => {});",
+    "",
+  ].join("\n");
+  writeFileSync(file, source);
+  // 字面ではどちらも数えない
+  assert.deepEqual(skipLines(source), []);
+  assert.deepEqual(checkoutSkipLines(source), []);
+  const problems = skipReportProblems(runTap(file), source);
+  assert.deepEqual(problems.map((p) => p.rule).sort(), ["skip_count_mismatch", "skip_reason_not_allowed"]);
+  assert.ok(problems.some((p) => p.rule === "skip_reason_not_allowed" && p.reason === "動的に飛ばす"));
+  assert.ok(problems.some((p) => p.rule === "skip_count_mismatch" && p.reason === LEGACY_BASIS_NOT_FOUND && p.ran === 1 && p.lines === 0));
+});
+
+test("engine.test.mjs を走らせた TAP の SKIP は、許した理由だけで、ソースから数えた件数を超えない（今の環境で。議決 D-0062、Issue #1168）", () => {
+  const engineTest = fileURLToPath(new URL("./engine.test.mjs", import.meta.url));
+  assert.deepEqual(skipReportProblems(runTap(engineTest), engineTestNow), []);
+});
+
+test("Engine のチェックアウトがないときの engine.test.mjs の SKIP は、{ skip } の件数だけ「チェックアウトがない」で出る（議決 D-0062、Issue #1168）", () => {
+  // tools/sendback-check を、隣に Engine のない一時ディレクトリの写しに置いて走らせる（ENGINE_DIR と CI を渡すと飛ばさずに落とすので外す）
+  const tool = join(mkdtempSync(join(tmpdir(), "sendback-no-engine-")), "repo/tools/sendback-check");
+  cpSync(dirname(fileURLToPath(import.meta.url)), tool, { recursive: true, filter: (p) => !p.includes("__pycache__") });
+  const { ENGINE_DIR, CI, ...env } = process.env;
+  const tap = runTap(join(tool, "engine.test.mjs"), env);
+  assert.deepEqual(skipReportProblems(tap, engineTestNow), []);
+  const skips = tapSkips(tap);
+  assert.equal(skips.length, checkoutSkipLines(engineTestNow).length, tap);
+  assert.ok(skips.every((s) => s.reason.startsWith(NO_ENGINE_CHECKOUT)), tap);
 });
 
 test("check.mjs --events を呼ぶ手順を見つける（道・working-directory・行の継ぎ）", () => {
@@ -188,7 +263,7 @@ test("CLI: order.mjs --repo は外れたら終了コード 1 で ::error と要�
   assert.match(readFileSync(summary, "utf8"), /外れた `engine_test_todo`/);
 
   const good = fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
-  assert.equal(spawnSync("node", [orderScript, "--repo", good], { encoding: "utf8" }).status, 0);
+  assert.equal(spawnSync("node", [orderScript, "--repo", good, "--engine-report-elsewhere"], { encoding: "utf8" }).status, 0);
   assert.equal(spawnSync("node", [orderScript], { encoding: "utf8" }).status, 0);   // 今のリポジトリはまだ配線していない
 });
 
@@ -201,7 +276,7 @@ test("CLI: order.mjs --repo は npm scripts とラッパーのスクリプトを
     assert.match(r.stdout, /^engine_test_todo: /m, name);
     assert.match(r.stdout, /^engine_test_not_wired: /m, name);
     const good = fixture({ "sendback-engine.yml": template, "sendback-check.yml": WRAPPED_WORKFLOWS[name] }, ENGINE_TEST_FIXED, files);
-    assert.equal(spawnSync("node", [orderScript, "--repo", good], { encoding: "utf8" }).status, 0, name);
+    assert.equal(spawnSync("node", [orderScript, "--repo", good, "--engine-report-elsewhere"], { encoding: "utf8" }).status, 0, name);
   }
   // ラッパーがなければ（読めなければ）、--events を中に入れた npm scripts は名前からは --events を呼ぶと分からない
   const noScripts = fixture({ "sendback-check.yml": WRAPPED_WORKFLOWS["--events を中に入れた npm scripts"] }, engineTestNow);
@@ -232,6 +307,13 @@ test("CLI: check.mjs --events を GitHub Actions で動かすと、通る記録�
   assert.match(bad.stdout, /^::error title=sendback-check engine_test_todo::/m);
   const good = run(fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED));
   assert.equal(good.status, 0, good.stdout);
+  // engine-test が order.mjs に TAP を渡さない（Engine の結果を見る手順がない）と engine_report_missing で落ちる（議決 D-0029、Issue #1026）
+  const withoutReport = template.replace(/node order\.mjs --engine-report engine-test\.tap /, "node order.mjs ");
+  assert.notEqual(withoutReport, template);
+  const noReport = run(fixture({ "sendback-engine.yml": withoutReport, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED));
+  assert.equal(noReport.status, 1);
+  assert.match(noReport.stdout, /^::error title=sendback-check engine_report_missing::.*order\.mjs --engine-report を呼ぶ手順がない/m);
+  assert.doesNotMatch(noReport.stdout, /engine_test_not_wired/);
 });
 
 // ENGINE_REF の Engine で走らせた engine.test.mjs の結果を見る（議決 D-0016、Issue #964）。
@@ -302,7 +384,7 @@ test("(3) と (c) が通った結果なら落ちず、check.mjs --events を配�
   assert.deepEqual(checkOrder({ ...loadRepo(REPO_ROOT), engineReport: "" }), { wired: [], errors: [] });
 });
 
-test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) が todo なら終了コード 1、ファイルがなければ結果にないとして見る", () => {
+test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) が todo なら終了コード 1、ファイルがなければ engine_report_missing", () => {
   const root = fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
   const runOrder = (report) => spawnSync("node", [orderScript, "--repo", root, "--engine-report", report],
     { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
@@ -314,7 +396,8 @@ test("CLI: order.mjs --engine-report は結果の TAP を読み、(3) か (c) �
   assert.equal(runOrder(join(root, "fixed.tap")).status, 0);
   const none = runOrder(join(root, "none.tap"));
   assert.equal(none.status, 1);
-  assert.match(none.stdout, /結果にない/);
+  assert.match(none.stdout, /^::error title=sendback-check engine_report_missing::.*TAP のファイル（.*none\.tap）が存在しない/m);
+  assert.doesNotMatch(none.stdout, /engine_basis_not_passed/);
   // 今のリポジトリ（まだ配線していない）では、結果のファイルがなくても通る
   assert.equal(spawnSync("node", [orderScript, "--engine-report", join(root, "none.tap")], { encoding: "utf8" }).status, 0);
 });
@@ -387,7 +470,8 @@ test("同じワークフローで check.mjs --events のジョブが engine.test
 });
 
 test("CLI: order.mjs --repo は engine.test.mjs を待たない配線と、continue-on-error を付けた engine.test.mjs で終了コード 1 を返す", () => {
-  const run = (root) => spawnSync("node", [orderScript, "--repo", root], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+  const run = (root) => spawnSync("node", [orderScript, "--repo", root, "--engine-report-elsewhere"], { env: { ...process.env, GITHUB_ACTIONS: "true" },
+    encoding: "utf8" });
   const unwaited = run(fixture({ "sendback-engine.yml": sameWorkflow(null) }, ENGINE_TEST_FIXED));
   assert.equal(unwaited.status, 1);
   assert.match(unwaited.stdout, /^::error title=sendback-check engine_test_not_required::/m);
@@ -396,6 +480,69 @@ test("CLI: order.mjs --repo は engine.test.mjs を待たない配線と、conti
   assert.equal(ungated.status, 1);
   assert.match(ungated.stdout, /^::error title=sendback-check engine_test_not_wired::/m);
   assert.equal(run(fixture({ "sendback-engine.yml": sameWorkflow() }, ENGINE_TEST_FIXED)).status, 0);
+});
+
+// --engine-report が渡されていないか TAP のファイルが空・存在しないまま通さない（議決 D-0029、Issue #1026）
+
+test("check.mjs --events を配線したのに TAP がない（渡されていない・存在しない・空）と engine_report_missing で落ちる", () => {
+  const order = (opts) => checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED, requireEngineReport: "here", ...opts });
+  const notPassed = order({});
+  assert.deepEqual(rules(notPassed), ["engine_report_missing"]);
+  assert.match(notPassed.errors[0].message, /--engine-report が渡されていない/);
+  const absent = order({ engineReport: null, engineReportPath: "engine-test.tap" });
+  assert.deepEqual(rules(absent), ["engine_report_missing"]);
+  assert.match(absent.errors[0].message, /TAP のファイル（engine-test\.tap）が存在しない/);
+  for (const empty of ["", "\n  \n"]) {
+    const r = order({ engineReport: empty, engineReportPath: "engine-test.tap" });
+    assert.deepEqual(rules(r), ["engine_report_missing"], JSON.stringify(empty));
+    assert.match(r.errors[0].message, /TAP のファイル（engine-test\.tap）が空/);
+  }
+  // TAP があれば中身で見る（通れば通り、todo なら engine_basis_not_passed）
+  assert.deepEqual(rules(order({ engineReport: tap() })), []);
+  assert.deepEqual(rules(order({ engineReport: tap({ basis: LEGACY_TODO }) })), ["engine_basis_not_passed", "engine_basis_not_passed"]);
+  // 配線していなければ TAP がなくても通る（今のリポジトリ）
+  assert.deepEqual(checkOrder({ ...loadRepo(REPO_ROOT), requireEngineReport: "here" }), { wired: [], errors: [] });
+  // 求めないとき（requireEngineReport を渡さない）は今までどおり
+  assert.deepEqual(rules(checkOrder({ workflows: WIRED, engineTest: ENGINE_TEST_FIXED })), []);
+});
+
+test("--engine-report-elsewhere では、order.mjs --engine-report を飛ばさずに呼ぶ手順が .github/workflows/ にないと engine_report_missing で落ちる", () => {
+  const order = (workflows) => rules(checkOrder({ workflows, engineTest: ENGINE_TEST_FIXED, requireEngineReport: "elsewhere" }));
+  assert.ok(runsOrderWithReport(template));
+  assert.deepEqual(order(WIRED), []);
+  // engine-test の手順から --engine-report を外す・TAP の道を渡さない・手順かジョブを飛ばせるようにすると、Engine の結果を見る手順がない
+  const withoutReport = template.replace(/node order\.mjs --engine-report engine-test\.tap /, "node order.mjs ");
+  const noPath = template.replace(/node order\.mjs --engine-report engine-test\.tap /, "node order.mjs --engine-report --summary x ");
+  assert.notEqual(withoutReport, template);
+  for (const [name, text] of Object.entries({ "--engine-report を外す": withoutReport, "TAP の道を渡さない": noPath,
+    "手順に if:": stepWith("if: false"), "ジョブに continue-on-error: true": jobWith("continue-on-error: true") })) {
+    assert.ok(!runsOrderWithReport(text), name);
+    assert.ok(order([wf("sendback-engine.yml", text), wf("sendback-check.yml", EVENTS_WORKFLOW)]).includes("engine_report_missing"), name);
+  }
+  // check.mjs --events だけを配線して engine-test を写していないときも落ちる
+  assert.deepEqual(order([wf("sendback-check.yml", EVENTS_WORKFLOW)]), ["engine_report_missing", "engine_test_not_wired"]);
+});
+
+test("CLI: order.mjs は --engine-report なしで、配線していれば engine_report_missing で終了コード 1、--engine-report-elsewhere ならほかの手順を見る", () => {
+  const root = fixture({ "sendback-engine.yml": template, "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
+  const run = (...args) => spawnSync("node", [orderScript, "--repo", root, ...args], { env: { ...process.env, GITHUB_ACTIONS: "true" }, encoding: "utf8" });
+  const bare = run();
+  assert.equal(bare.status, 1);
+  assert.match(bare.stdout, /^::error title=sendback-check engine_report_missing::.*--engine-report が渡されていない/m);
+  writeFileSync(join(root, "empty.tap"), "");
+  const empty = run("--engine-report", join(root, "empty.tap"));
+  assert.equal(empty.status, 1);
+  assert.match(empty.stdout, /^::error title=sendback-check engine_report_missing::.*が空/m);
+  assert.equal(run("--engine-report-elsewhere").status, 0);
+  // 2 つを一緒に渡すのは読めなかったとして終了コード 2
+  writeFileSync(join(root, "fixed.tap"), tap());
+  assert.equal(run("--engine-report", join(root, "fixed.tap"), "--engine-report-elsewhere").status, 2);
+  const elsewhere = fixture({ "sendback-check.yml": EVENTS_WORKFLOW }, ENGINE_TEST_FIXED);
+  const r = spawnSync("node", [orderScript, "--repo", elsewhere, "--engine-report-elsewhere"], { encoding: "utf8" });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^engine_report_missing: .*order\.mjs --engine-report を呼ぶ手順がない/m);
+  // 今のリポジトリ（まだ配線していない）では、--engine-report なしでも通る
+  assert.equal(spawnSync("node", [orderScript], { encoding: "utf8" }).status, 0);
 });
 
 // check.mjs --events の実行時の守り（議決 D-0026 の 2 つ目の案・D-0038、Issue #1084）。GitHub Actions（GITHUB_ACTIONS=true）では、どの呼び方で
@@ -510,7 +657,8 @@ test("実行時の守り: 見張りは記録を読む前に走り、記録が外
     { name: "sendback.filed", payload: { origin_pr: pr } }], env);
   assert.equal(r.status, 1);
   const lines = r.stdout.split("\n").filter((l) => l.startsWith("::error"));
-  assert.deepEqual(lines.map((l) => l.match(/sendback-check (\w+)::/)[1]), ["engine_test_todo", "engine_test_not_wired", "followup_without_defect"]);
+  assert.deepEqual(lines.map((l) => l.match(/sendback-check (\w+)::/)[1]), ["engine_test_todo", "engine_report_missing", "engine_test_not_wired",
+    "followup_without_defect"]);   // engine_report_missing は Engine の結果を見る手順もないため（議決 D-0029、Issue #1026）
   assert.match(lines[0], /check\.mjs --events（\.github\/workflows\/hidden\.yml の hidden）/);
   // 記録を読めなくても（終了コード 2）、配線の順序の外れは出す
   const unreadable = launch(node, root, "{ 壊れた", env);
@@ -535,4 +683,56 @@ test("実行時の守り: 起動の判定は実の道で比べ、シンボリッ
   assert.ok(!isMainModule(url, orderScript));
   assert.ok(!isMainModule(url, undefined));
   assert.ok(!isMainModule(url, join(box, "ない.mjs")));
+});
+
+// 必須のチェックの設定が外れても実行時に止まること（議決 D-0059（起票時の番号は D-0056）、Issue #1159）。engine-test・wiring-order を branch protection の必須のチェックから
+// 外す（protection.mjs が required_check_missing か workflow_not_copied で外れる）と、設定では何も止まらない。そのときも check.mjs --events は
+// GitHub Actions で自分で配線の順序を見張り、engine.test.mjs が未配線・todo・continue-on-error・if: 付きなら ::error で落ちる
+
+/** 必須のチェックが外れた branch protection（engine-test・wiring-order を外した古い形・id だけを必須にした形・rulesets に入れない形・保護がない） */
+const PROTECTIONS_WITHOUT_REQUIRED = {
+  "ほかのチェックだけが必須": { required_status_checks: { strict: true, contexts: ["backend"], checks: [{ context: "backend", app_id: 15368 }] } },
+  "id の engine-test・wiring-order だけが必須": { required_status_checks: { strict: true, contexts: ["engine-test", "wiring-order"] } },
+  "rulesets に必須のチェックがない": [{ type: "pull_request", parameters: { required_approving_review_count: 1 } }],
+  "保護がない": { message: "Branch not protected", status: "404" },
+};
+
+/** 外れた配線の写し（RUNTIME_STATES の外れに、continue-on-error・if: の残りの形を足す）と、順序を守った写し */
+const UNPROTECTED_STATES = [
+  ...RUNTIME_STATES,
+  ...Object.entries(UNGATED_TEMPLATES).filter(([name]) => !RUNTIME_STATES.some(([n]) => n === name))
+    .map(([name, text]) => [name, { "sendback-engine.yml": text, "hidden.yml": HIDDEN_WORKFLOW }, ENGINE_TEST_FIXED, "engine_test_not_wired"]),
+];
+
+test("実行時の守り: 必須のチェックの設定が外れても、check.mjs --events は未配線・todo・continue-on-error・if: の engine.test.mjs で ::error と終了コード 1 で落ちる（議決 D-0059（起票時の番号は D-0056）、Issue #1159）", () => {
+  const box = mkdtempSync(join(tmpdir(), "sendback-unprotected-"));
+  const protections = Object.entries(PROTECTIONS_WITHOUT_REQUIRED).map(([name, p], i) => {
+    const path = join(box, `protection-${i}.json`);
+    writeFileSync(path, JSON.stringify(p));
+    return [name, path];
+  });
+  const env = { GITHUB_WORKFLOW_REF: "guccyon/rally/.github/workflows/hidden.yml@refs/pull/1/merge", GITHUB_JOB: "hidden" };
+  assert.equal(UNPROTECTED_STATES.filter(([, , , rule]) => rule !== null).length, 11);
+  for (const [name, workflows, engineTest, rule] of UNPROTECTED_STATES) {
+    const root = fixture(workflows, engineTest);
+    // 設定は外れている（protection.mjs が外れを返す）ので、止めるのは実行時の守りだけ
+    for (const [pname, path] of protections) {
+      const p = spawnSync("node", [fileURLToPath(new URL("./protection.mjs", import.meta.url)), "--protection", path, "--repo", root],
+        { encoding: "utf8", env: { ...process.env, GITHUB_ACTIONS: "true" } });
+      assert.equal(p.status, 1, `${name}・${pname}: ${p.stdout}${p.stderr}`);
+      assert.match(p.stdout, /^::error title=sendback-check (required_check_missing|workflow_not_copied)::/m, `${name}・${pname}`);
+    }
+    const r = launch(LAUNCHERS["node で絶対の道"], root, undefined, env);
+    const label = `${name}: ${r.stdout}${r.stderr}`;
+    assert.match(r.stdout, /^sendback-check: head 1 個・/m, label);
+    // check.mjs は branch protection を読まない（設定の外れで通りも落ちもしない）
+    assert.doesNotMatch(r.stdout, /required_check_missing|workflow_not_copied/, label);
+    if (rule === null) {
+      assert.equal(r.status, 0, label);
+      assert.doesNotMatch(r.stdout, /::error/, label);
+    } else {
+      assert.equal(r.status, 1, label);
+      assert.match(r.stdout, new RegExp(`^::error title=sendback-check ${rule}::GitHub Actions で動いている check\\.mjs --events（\\.github/workflows/hidden\\.yml の hidden）`, "m"), label);
+    }
+  }
 });

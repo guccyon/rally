@@ -13,6 +13,7 @@
 //   - 起こすものがあるのに差し戻しも続きのジョブも起きていない（missing_followup）
 //   - 検査役の承認（supervisor.inspector_approved）の basis に、欠陥の採用数と仮決めの承認数が分けて書かれている（basis_not_split・basis_mismatch）
 //   - --events を GitHub Actions で動かすときは、配線の順序も（engine_test_todo・engine_test_not_wired。order.mjs、議決 D-0012）。
+//     Engine の結果を見る手順（order.mjs --engine-report）が .github/workflows/ になければ engine_report_missing（議決 D-0029、Issue #1026）。
 //     どの呼び方（npm scripts・ラッパー・eval・シンボリックリンク・引数の順序）で起動されても、記録を読む前に自分で見張りを走らせ、
 //     .github/workflows/ に呼ぶ手順を見つけられなくても動いていること自体を配線と数える（議決 D-0026・D-0038、Issue #1084）
 
@@ -217,7 +218,8 @@ function main() {
   let order = { wired: [], errors: [] };
   if (values.events !== undefined && annotate) {
     try {
-      order = checkOrder({ ...loadRepo(process.env.GITHUB_WORKSPACE || REPO_ROOT), running: runningFrom(process.env) });
+      // TAP はこのジョブにないので、order.mjs --engine-report を飛ばさずに呼ぶ手順が .github/workflows/ にあるかを見る（議決 D-0029、Issue #1026）
+      order = checkOrder({ ...loadRepo(process.env.GITHUB_WORKSPACE || REPO_ROOT), running: runningFrom(process.env), requireEngineReport: "elsewhere" });
     } catch (e) {
       console.error(`sendback-check: 配線の順序を読めなかった: ${e.message}`);
       process.exit(2);

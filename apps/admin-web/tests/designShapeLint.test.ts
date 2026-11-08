@@ -43,3 +43,12 @@ test("状態の container の面（bg-success-container など）は data_table 
     .map(({ name }) => name);
   expect(offenders).toEqual([]);
 });
+
+// media-no-record（0.7.0。camera_preview の must なので最初から止める）。カメラとマイクを録画・静止画・録音にせず、外へ送らない。
+// 通話そのもの（RTCPeerConnection）を足すときは、入室前チェックの画面と部品だけに絞ってこの検査を直す。
+test("カメラとマイクを録画・静止画・録音にせず、外へ送る口に渡さない（media-no-record）", () => {
+  const offenders = files
+    .filter(({ source }) => /\b(MediaRecorder|captureStream|toBlob|toDataURL|RTCPeerConnection)\b/.test(source))
+    .map(({ name }) => name);
+  expect(offenders).toEqual([]);
+});

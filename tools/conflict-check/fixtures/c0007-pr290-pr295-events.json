@@ -1,0 +1,156 @@
+{
+ "source": "事例 C-0007（PR #290・#295）の記録（.factory-config/knowledge/cases/C-0007.md の「出来事」と communication の観点）から組み直したイベント列。制御プレーンの events はワーカーから読めないので、形は Engine の continuation.enqueue・dispatcher の job.started・job.finished・process_learn.record_conflict_files に合わせ、事例記録にある事実だけを入れた。PR #290 の衝突解消ジョブ 309 は tier-large で 3.10 ドル、衝突したのは CHANGELOG.md だけで、その conflict.files は 2026-11-03 の backfill（source は backfill）。PR #295 はジョブ 318・325・338 の 3 回で、samples の detail はすべて null なので conflict.files を置かない。318・325・338 の tier・費用・agent_resumed は事例記録にないので置かず、job.finished は終わったことだけを示す空の payload にした。id・head_sha・ブランチ名は組み直しの仮の値",
+ "events": [
+  {
+   "id": 1,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/290",
+    "head_sha": "c0007-pr290-head-01"
+   }
+  },
+  {
+   "id": 2,
+   "name": "continue.enqueued",
+   "job_id": 309,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/290",
+    "head_sha": "c0007-pr290-head-01",
+    "reason": "conflict",
+    "attempt": 1,
+    "continue": {
+     "branch": "factory/issue-288-job-305",
+     "pr_number": 290,
+     "reason": "conflict"
+    },
+    "by": "supervisor"
+   }
+  },
+  {
+   "id": 3,
+   "name": "job.started",
+   "job_id": 309,
+   "payload": {
+    "attempt": 1,
+    "model_tier": "tier-large"
+   }
+  },
+  {
+   "id": 4,
+   "name": "job.finished",
+   "job_id": 309,
+   "payload": {
+    "state": "succeeded",
+    "cost_usd": 3.1
+   }
+  },
+  {
+   "id": 5,
+   "name": "conflict.files",
+   "job_id": 309,
+   "payload": {
+    "files": [
+     "CHANGELOG.md"
+    ],
+    "source": "backfill"
+   }
+  },
+  {
+   "id": 6,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/295",
+    "head_sha": "c0007-pr295-head-01"
+   }
+  },
+  {
+   "id": 7,
+   "name": "continue.enqueued",
+   "job_id": 318,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/295",
+    "head_sha": "c0007-pr295-head-01",
+    "reason": "conflict",
+    "attempt": 1,
+    "continue": {
+     "branch": "factory/issue-289-job-1",
+     "pr_number": 295,
+     "reason": "conflict"
+    },
+    "by": "supervisor"
+   }
+  },
+  {
+   "id": 8,
+   "name": "job.finished",
+   "job_id": 318,
+   "payload": {}
+  },
+  {
+   "id": 9,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/295",
+    "head_sha": "c0007-pr295-head-02"
+   }
+  },
+  {
+   "id": 10,
+   "name": "continue.enqueued",
+   "job_id": 325,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/295",
+    "head_sha": "c0007-pr295-head-02",
+    "reason": "conflict",
+    "attempt": 2,
+    "continue": {
+     "branch": "factory/issue-289-job-1",
+     "pr_number": 295,
+     "reason": "conflict"
+    },
+    "by": "supervisor"
+   }
+  },
+  {
+   "id": 11,
+   "name": "job.finished",
+   "job_id": 325,
+   "payload": {}
+  },
+  {
+   "id": 12,
+   "name": "pr.conflicted",
+   "job_id": null,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/295",
+    "head_sha": "c0007-pr295-head-03"
+   }
+  },
+  {
+   "id": 13,
+   "name": "continue.enqueued",
+   "job_id": 338,
+   "payload": {
+    "pr_url": "https://github.com/guccyon/rally/pull/295",
+    "head_sha": "c0007-pr295-head-03",
+    "reason": "conflict",
+    "attempt": 3,
+    "continue": {
+     "branch": "factory/issue-289-job-1",
+     "pr_number": 295,
+     "reason": "conflict"
+    },
+    "by": "supervisor"
+   }
+  },
+  {
+   "id": 14,
+   "name": "job.finished",
+   "job_id": 338,
+   "payload": {}
+  }
+ ]
+}
