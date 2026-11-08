@@ -747,6 +747,54 @@ class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
             {"kind": "ci_check", "issue": 1018, "wired": True, "wired_by": [{"workflow": self.WF, "job": "protection", "runs": self.PROT}]}]}}, d), [])
 
 
+
+class SendbackHeartbeatScheduleTest(unittest.TestCase):
+    """K-0004 の issue 1162 の解決策は schedule でも走るジョブから heartbeat.mjs を呼ばないと wired にできない
+    （議決 D-0061（起票時の番号は D-0058）、Issue #1162）"""
+
+    HB = "tools/sendback-check/heartbeat.mjs"
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-protection-heartbeat.yml"
+    WF = ".github/workflows/sendback-protection-heartbeat.yml"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.HB: "", self.WF: workflow}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, runs=None, wired=True) -> list[str]:
+        item = {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": 1162, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": self.WF, "job": "heartbeat", "runs": runs or self.HB}]}]}}
+        return check.check_schedule(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1162)], self.HB)
+        self.assertNotIn(("K-0004", 1162), check.REQUIRED_PR)
+
+    def test_ひな形をそのまま写した_heartbeat_なら通る(self):
+        self.assertEqual(self.errors(self.repo(self.template())), [])
+
+    def test_schedule_を外した写しでは落ちる(self):
+        text = self.template().replace('  schedule:\n    - cron: "0 8 * * *"\n', "", 1)
+        self.assertNotEqual(text, self.template())
+        e = self.errors(self.repo(text))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_heartbeat_mjs_を呼ばない項目では落ちる(self):
+        e = self.errors(self.repo(self.template()), runs=ScheduleTest.PROT)
+        self.assertEqual(len([x for x in e if "wired にするには" in x]), 1, e)
+
+    def test_配線していなければ見ない(self):
+        self.assertEqual(self.errors(self.repo("on:\n  workflow_dispatch:\njobs: {}\n"), wired=False), [])
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 
