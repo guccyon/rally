@@ -1,0 +1,77 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0056
+pr: https://github.com/guccyon/rally/pull/1157
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に 1 件足しただけなので、README の決まりや specs/ の規範と矛盾しません。
+  - '足した test は D-0038 の enforcement の test の案（D-0026 の 2 つ目の案。check.mjs --events
+    が GITHUB_ACTIONS=true のとき自分で order.mjs の見張りを先に走らせ、呼び方を変えた複数の起動で確かめる）にそのまま対応しているので、decided_by:
+    committee:D-0038 は正しいです。'
+  - 既存の D-0012・D-0017・D-0026 の order.mjs の solutions は .github/workflows/ を静的に辿る見張りで、今回の実行時に
+    running で自分を配線と数える守りとは範囲が分かれており、重複ではありません。
+  - D-0038 の config の案（engine-test と wiring-order を branch protection の必須チェックにする）と、D-0038
+    の整合の担当が求めた D-0036・D-0031・D-0037・D-0026 の残りの直しはまだ手つかずなので、次に K-0004 を直す変更セットでまとめて片づけてください。
+  - 'wired: false・verified: false で .github/workflows/ からまだ走っていないので、confidence は hypothesis
+    のままが妥当です。'
+  - solutions が 22 件まで積み重なっているので、配線が入ったら主張に沿う担保と置き場の担保を担う検査を分けて整理することを改めて勧めます。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した test の solution は issue 1084 と committee:D-0038 を指していて、D-0038 の 2 つ目の enforcement
+    の案（D-0026 の 2 つ目の案）と文言どおり対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - 「改変のどちらでもこのテストが落ちることを手元で確かめた」は記録に残らない確認なので、次に直すときは確かめた PR やコミットを添えて辿れるようにしてください。
+  - 'check.mjs --events も order.test.mjs も .github/workflows/ からまだ走っておらず wired: false・verified:
+    false と書いているとおりなので、confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、環境変数や rule の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0038 の test の案（D-0026
+    の 2 つ目の案）を入れた記録を enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 静的な辿りでは見つからない呼び方を、動いていること自体を配線と数える実行時の見張りで塞ぎ、9 とおりの起動と 2 つの改変で落ちることを確かめているので、繰り返し起きる抜け道を決定論で担保する線として妥当です。
+  - 記録を読めないとき（終了コード 2）も配線の ::error を先に出すのは、外したときの痛さが大きい側を止める fail-closed の線で、線の引き方に合っています。
+  - ただし engine_test_not_required（needs の順序）は静的な辿りで見つけたジョブだけで見るので、別の言語で組み立てた呼び方のジョブが
+    engine-test を needs で待たない形は今も実行時には落ちず、ここは追加の担保が要ります。
+  - 'check.mjs --events も order.test.mjs も .github/workflows/ からまだ走っておらず、wired: false・verified:
+    false と正直に書かれているので、confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのは issue・議決の id・ツールの道・rule の名前・環境変数の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0038 の test の案（D-0026
+    の 2 つ目の案）を入れた記録を enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 反例として、再利用のワークフロー（workflow_call）から呼ばれると GITHUB_WORKFLOW_REF は呼んだ側のワークフローを指すので、running
+    で組む在りかが実際に check.mjs を動かすジョブとずれないかを建設者が確かめてください。
+  - 手順の env で GITHUB_ACTIONS を false に上書きしたり GitHub Actions 以外の CI で走らせたりすれば実行時の見張りは働かないので、この守りは
+    GitHub Actions の既定の環境の中だけで効くと what に書き添えると誤読を防げます。
+  - engine_test_not_required（needs の順序）は静的な辿りで見つけたジョブだけで見ると正直に書いているとおり、動的な呼び方では順序の抜け道が残るので、D-0038
+    の config の案（engine-test を必須のチェックにする）が入るまでは塞がっていません。
+  - 'check.mjs --events も order.test.mjs も .github/workflows/ からまだ走っておらず wired: false・verified:
+    false と合っているので、confidence は hypothesis のままにしてください。'
+  - K-0004 の solutions が 20 件を超えて主張（差し戻しを adopt の件数で起こさない）から遠い配線の見張りが積み重なっているので、次の変更セットで主張に沿う担保と置き場の担保を分けて整理することを勧めます。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: tools/sendback-check/ci/sendback-engine.yml を .github/workflows/ に写すとき、order.test.mjs・check.test.mjs・engine.test.mjs
+    を node --test で走らせるジョブを必須のチェックに入れ、本物の配線の PR で落ちる・通ることを cases/ に記録してから wired と
+    verified を true にする。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: 'check.mjs --events の実行時の見張りで、running のジョブが engine-test を needs で待っているか（と待つ側のジョブに
+    if: always() などが付いていないか）も GitHub の実行の情報から見て engine_test_not_required を出すようにし、静的な辿りで見つからない呼び方のジョブが
+    needs で待たない写しで ::error と終了コード 1 になることを order.test.mjs で確かめる。'
