@@ -252,10 +252,16 @@ String? _deviceNotice(PrejoinCheckState check) {
       'この端末にマイクが見つかりません。カメラとスピーカーは確かめられます。',
   ];
   if (lines.isEmpty) return null;
+  // 届かないものは断ったものに合わせて言う（片方だけ断った人に、事実と違う案内を出さない）
+  final notReached = denied(check.camera) && denied(check.mic)
+      ? '映像と声'
+      : denied(check.camera)
+      ? '映像'
+      : '声';
   return [
     ...lines,
     if (_denied(check))
-      '許可しなくても、開始時刻から入室できます。そのときコーチには、あなたの映像と声が届きません。'
+      '許可しなくても、開始時刻から入室できます。そのときコーチには、あなたの$notReachedが届きません。'
     else
       'なくても、開始時刻から入室できます。',
   ].join('\n');

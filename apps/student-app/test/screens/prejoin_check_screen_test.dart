@@ -168,7 +168,10 @@ void main() {
     await open(tester, media: media);
 
     expect(
-      find.textContaining('マイクが使えません。端末の設定で許可すると確かめられます。'),
+      find.text(
+        'マイクが使えません。端末の設定で許可すると確かめられます。\n'
+        '許可しなくても、開始時刻から入室できます。そのときコーチには、あなたの声が届きません。',
+      ),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('fake-camera')), findsOneWidget);
@@ -177,6 +180,19 @@ void main() {
 
     await tapText(tester, '端末の設定を開く');
     expect(media.calls.last, 'openSettings');
+  });
+
+  testWidgets('カメラだけ断られたら、コーチに届かないのは映像だけと案内する', (tester) async {
+    await open(tester, media: FakeLocalMedia(camera: MediaDeviceStatus.denied));
+
+    expect(
+      find.text(
+        'カメラが使えません。端末の設定で許可すると確かめられます。\n'
+        '許可しなくても、開始時刻から入室できます。そのときコーチには、あなたの映像が届きません。',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('マイクを切る'), findsOneWidget);
   });
 
   testWidgets('カメラやマイクがないときは知らせて、「もう一度確かめる」で見つかれば使い始めて知らせを消す', (tester) async {
