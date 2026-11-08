@@ -1,0 +1,108 @@
+diff --git a/definitions/events.yaml b/definitions/events.yaml
+index 701d283..eaaa1d4 100644
+--- a/definitions/events.yaml
++++ b/definitions/events.yaml
+@@ -115,6 +115,10 @@ events:
+     source: control_plane
+     required: [pr_url, head_sha]
+     note: "ADR 0014 以降は inspector_approved の後にだけ出る"
++  supervisor.body_rechecked:
++    source: control_plane
++    required: [pr_url, head_sha, gate, job_id]
++    note: "本文だけの直し（body_fix の job_id）のあと、直した本文が製品の本文のチェック（gate。rally は pr-body-check）に通った。これがあるまで inspector_approved を出さない（rally の知見 K-0012、Issue #1122）。dedupe は PR と直しのジョブごと"
+   supervisor.inspect_enqueued:
+     source: control_plane
+     required: [pr_url, head_sha]
+diff --git a/orchestrator/dispatcher/supervisor.py b/orchestrator/dispatcher/supervisor.py
+index 456ad40..36ac4ba 100644
+--- a/orchestrator/dispatcher/supervisor.py
++++ b/orchestrator/dispatcher/supervisor.py
+@@ -75,6 +75,8 @@ APPROVAL_LABEL = "factory:needs-approval"
+ DRY_RUN = bool(ENV.get("SUPERVISOR_DRY_RUN"))   # GitHub に書かない（読むだけ）
+ INSPECT_ENABLED = ENV.get("SUPERVISOR_INSPECT", "1") == "1"   # 工場の PR ごとに検査ジョブ（L4 の shadow 判定）を積む
+ JUDGE_ENABLED = ENV.get("SUPERVISOR_JUDGE", "1") == "1"       # 検査が終わったら、仮決めと指摘を裁く judge のジョブを積む（ADR 0006 後半）
++BODY_CHECK = "pr-body-check"   # 本文だけの直し（body_fix）のあと、直した本文で通るのを待つチェックの名前（rally の知見 K-0012。tools/pr-body-check/ci/pr-body-check.yml）
++BODY_CHECK_WORKFLOW = ".github/workflows/pr-body-check.yml"   # このワークフローがある製品だけ待つ（ないと走らないチェックを待ち続ける）
+ MODE_DEFAULT, MODE_SCHEDULE = ENV.get("FACTORY_MODE") or "attended", ENV.get("MODE_SCHEDULE", "")
+ DAILY_REPORT = ENV.get("DAILY_REPORT_SCRIPT", "/health/daily/status_report.py")   # 空にすると日次レポートを出さない
+ RELEASE_TRAIN_HOUR = int(ENV.get("RELEASE_TRAIN_HOUR", "17"))   # JST。空の RELEASE_TRAIN で止める。夕方に検証へ出し、夜に承認を押せるように
+@@ -366,7 +368,7 @@ def merge_step(cur, rules: dict, manifests: dict) -> set:
+         if pr["state"] == "closed":
+             cur.execute("select payload from events where name='supervisor.merge_decided' and payload->>'pr_url'=%s order by id desc limit 1", (p["url"],))
+             d = cur.fetchone()
+-            for key in (f"judge:{p['url']}", f"sendback:{p['url']}", f"ci:{p['url']}"):   # judge が人に回した停止・流さなかった差し戻し・CI の失敗は、PR が閉じた（人が判断した）時点で閉じる
++            for key in (f"judge:{p['url']}", f"sendback:{p['url']}", f"ci:{p['url']}", f"body_recheck:{p['url']}"):   # judge が人に回した停止・流さなかった差し戻し・CI の失敗・本文の直しの失敗は、PR が閉じた（人が判断した）時点で閉じる
+                 stoppage.close_stoppage(cur, key, remedy="PR が閉じた（人が判断した）", closed_by="supervisor")
+             if pr.get("merged_at"):
+                 cur.execute("update tickets set state='closed', updated_at=now() where source='github' and source_ref=%s and state<>'closed'",
+@@ -425,6 +427,12 @@ def merge_step(cur, rules: dict, manifests: dict) -> set:
+             continue
+         if "knowledge" in d["change_types"] and not committee.approved(cur, p["url"]):
+             continue   # 知見の変更セットは委員会の採用を待つ（ADR 0024）
++        # 本文だけの直し（body_fix）は head を変えないので、検査役の承認とは別に、直しが終わり、直した本文が BODY_CHECK に通るまで待つ（rally の知見 K-0012）。
++        # 検査役の承認が直しを見ずに返る経路（検査なし・裁くものがない）でも待つ
++        if body_fix_pending(cur, p["url"]):
++            continue
++        if body_recheck_pending(cur, p["url"], sha):
++            continue
+         record(cur, "supervisor.inspector_approved", p["corr"], {"pr_url": p["url"], "head_sha": sha, "basis": basis}, f"inspector.approved:{p['url']}@{sha}")
+         gh("PUT", f"repos/{p['repo']}/pulls/{p['number']}/merge", {"merge_method": "squash", "sha": sha})
+         record(cur, "supervisor.merged", p["corr"], {"pr_url": p["url"], "head_sha": sha, "basis": basis}, f"supervisor.merged:{p['url']}")
+@@ -482,6 +490,57 @@ def body_fix_pending(cur, pr_url: str) -> bool:
+     return cur.fetchone() is not None
+ 
+ 
++def body_recheck_pending(cur, pr_url: str, sha: str) -> str | None:
++    """本文だけの直し（body_fix）が終わったあと、直した本文が BODY_CHECK に通るまでマージを待つ。待つ理由を返す（待たなければ None）。
++    本文だけの直しは head を変えないので、検査役の承認（head ごと）は直した本文を見ていない。直しのジョブが終わってから pr.body_amended を
++    記録するまでの間にもマージできた（2026-11-06 rally #821: 直しの記録の 2 秒後にマージ。rally の知見 K-0012、Issue #1122）。
++    そこで直しの終わりはジョブの状態で見て、直しのジョブが走り始めたより後に始まった BODY_CHECK（本文の編集 pull_request edited で走る）が
++    通ったのを確かめ、supervisor.body_rechecked に残す。直しが成功で終わっていなければ、直していない本文のままマージしないよう人に回す"""
++    m = re.match(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)$", pr_url)
++    if not m:
++        return None
++    repo = m[1]
++    cur.execute("select id, state, enqueued_at, started_at from jobs where repo=%s and issue_number=%s and kind='body_fix' order by id desc limit 1",
++                (repo, int(m[2])))
++    job = cur.fetchone()
++    if not job or job["state"] in ("queued", "running"):
++        return None   # 直しがない。直している間は body_fix_pending が待つ
++    if job["state"] != "succeeded":
++        stoppage.open_stoppage(cur, f"body_recheck:{pr_url}", "human", f"{pr_url} の本文の直し（body_fix の job {job['id']}）が {job['state']} で終わった",
++                               waiting_for="本文を直して人がマージするか、PR を閉じる（直していない本文のままでは工場はマージしない）",
++                               cause="採用した PR 本文の指摘を直せていない", detected_by="supervisor")
++        return f"本文の直し（body_fix の job {job['id']}）が {job['state']} で終わった"
++    key = f"supervisor.body_rechecked:{pr_url}@{job['id']}"
++    cur.execute("select 1 from events where dedupe_key=%s", (key,))
++    if cur.fetchone():
++        return None   # この直しのあとの本文はもう通った
++    try:
++        gh("GET", f"repos/{repo}/contents/{BODY_CHECK_WORKFLOW}?ref={sha}")
++    except urllib.error.HTTPError as e:
++        if e.code == 404:
++            return None   # 本文のチェックを持たない製品
++        return f"{BODY_CHECK_WORKFLOW} を読めない（{e.code}）"
++    except Exception as e:  # noqa: BLE001  読めなければ待つ（次の周回で読み直す）
++        return f"{BODY_CHECK_WORKFLOW} を読めない（{e!r}）"
++    try:
++        runs = (gh("GET", f"repos/{repo}/commits/{sha}/check-runs?check_name={BODY_CHECK}&filter=all&per_page=100") or {}).get("check_runs") or []
++    except Exception as e:  # noqa: BLE001
++        return f"{BODY_CHECK} の結果を読めない（{e!r}）"
++    def started(r: dict):
++        return datetime.fromisoformat(r["started_at"].replace("Z", "+00:00"))
++    run = max((r for r in runs if r.get("started_at")), key=started, default=None)
++    since = job["started_at"] or job["enqueued_at"]
++    if not run or started(run) < since:
++        return f"直した本文の {BODY_CHECK} 待ち（直しのあとに走っていない）"
++    if run.get("status") != "completed":
++        return f"直した本文の {BODY_CHECK} 待ち（{run.get('status')}）"
++    if run.get("conclusion") != "success":
++        return f"直した本文が {BODY_CHECK} に通らない（{run.get('conclusion')}）"
++    record(cur, "supervisor.body_rechecked", None, {"pr_url": pr_url, "head_sha": sha, "gate": BODY_CHECK, "job_id": job["id"],
++                                                    "check_run": run.get("html_url"), "started_at": run.get("started_at")}, key)
++    return None
++
++
+ def enqueue_inspect(cur, p: dict, sha: str):
+     """検証の起動: CI を通った工場の PR の head ごとに 1 回、検査ジョブを積む。実行は dispatcher（worker の inspect.sh）"""
+     if not INSPECT_ENABLED:

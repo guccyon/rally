@@ -1,6 +1,6 @@
 # PR 本文の見出しの検査
 
-PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。議決 `D-0044` の案と Issue #1106 で、`protection.mjs` を既定のブランチへの push と毎日走らせ、必須のチェックが外れたら落ちて Issue を開くか更新するひな形（`ci/pr-body-protection.yml`）を足した。議決 `D-0045` の ci_check の案と Issue #1109 で、通る側のテスト（`gate.test.mjs`・`engine.test.mjs` の (10)）が CI の `node --test` の対象から外れていないかの見張りを `ci.test.mjs` に足した。議決 `D-0068`（Issue #1180 の起票時の番号は `D-0066`。PR #1176）の test の案と Issue #1180 で、`ci/pr-body-protection.yml` の写しが schedule と `workflow_dispatch` で走り、トークンを読めないときに `protection_unreadable` で飛ばさず落ちることを `ci.test.mjs` で見るようにした。議決 `D-0070`（Issue #1182 の起票時の番号は `D-0067`。PR #1181）の ci_check の案と Issue #1182 で、写しと定期の照合のどちらかを欠いたまま `K-0001` の解決策を `wired: true` にできないよう、`tools/knowledge-enforcement-check/check.py` の配線の必須に足した（下の「配線の手順（建設者）」の 5）。議決 `D-0070`（Issue #1183 の起票時の番号は `D-0067`。PR #1181）の test の案と Issue #1183 で、その見張りを字面の照合だけに頼らず、`gate.test.mjs` と `engine.test.mjs` を `node --test --test-reporter=tap` で走らせた結果で、通る側のテストが pass と数えられ skip・todo が 0 かを見るようにした。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。知見 `K-0012` の担保として、議決 `D-0033`（Issue #1053 の起票時の番号は `D-0032`。PR #1051）の test の案と Issue #1053 で、本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る検査（`recheck.mjs`）を足した。議決 `D-0050`（Issue #1131 の起票時の番号は `D-0048`。PR #1128）の ci_check の案と Issue #1131 で、`recheck.test.mjs` に事例 `C-0003` の列を足し、ひな形 `ci/pr-body-engine.yml` の `engine-test` で走るテストに数えて、`ci.test.mjs` でファイルの側で外していないかを見張るようにした。知見 `K-0005` の担保として、Issue #1121（解決策の種類は config）で、見出しの正本（`template.json`）と、それに合わせる CLAUDE.md と Engine の rubric の `PR-002` を `followers.json` に書き、食い違ったら落とす照合（`followers.mjs`）を足した。議決 `D-0068`（Issue #1179 の起票時の番号は `D-0066`。PR #1176）の ci_check の案と Issue #1179 で、関所の配線の差分（`engine/pr-body-gate.patch`）が `ENGINE_REF` の版と Engine の既定のブランチの先頭に当たるかを照らす検査（`patch.mjs`）と、それを既定のブランチへの push・毎日・手動で走らせて当たらなければ Issue を開くひな形（`ci/pr-body-patch.yml`）を足した。
+PR 本文の見出しの構造を決定論で（LLM を使わずに）見る。知見 `K-0001`（`.factory-config/knowledge/K-0001.yaml`）の担保で、委員会の議決 `D-0001` と Issue #826 で作り、議決 `D-0013` の案と Issue #956 で本文の更新の前の関所（`gate.mjs`）を足し、議決 `D-0019` の案と Issue #975 で関所を Engine に配線する差分（`engine/pr-body-gate.patch`）を足した。議決 `D-0032`（Issue #1037 の起票時の番号は `D-0030`。PR #1036）の案と Issue #1037 で、CI のひな形の見張り（`ci.test.mjs`）と必須のチェックの照合（`protection.mjs`）を足した。議決 `D-0044` の案と Issue #1106 で、`protection.mjs` を既定のブランチへの push と毎日走らせ、必須のチェックが外れたら落ちて Issue を開くか更新するひな形（`ci/pr-body-protection.yml`）を足した。議決 `D-0045` の ci_check の案と Issue #1109 で、通る側のテスト（`gate.test.mjs`・`engine.test.mjs` の (10)）が CI の `node --test` の対象から外れていないかの見張りを `ci.test.mjs` に足した。議決 `D-0068`（Issue #1180 の起票時の番号は `D-0066`。PR #1176）の test の案と Issue #1180 で、`ci/pr-body-protection.yml` の写しが schedule と `workflow_dispatch` で走り、トークンを読めないときに `protection_unreadable` で飛ばさず落ちることを `ci.test.mjs` で見るようにした。議決 `D-0070`（Issue #1182 の起票時の番号は `D-0067`。PR #1181）の ci_check の案と Issue #1182 で、写しと定期の照合のどちらかを欠いたまま `K-0001` の解決策を `wired: true` にできないよう、`tools/knowledge-enforcement-check/check.py` の配線の必須に足した（下の「配線の手順（建設者）」の 5）。議決 `D-0070`（Issue #1183 の起票時の番号は `D-0067`。PR #1181）の test の案と Issue #1183 で、その見張りを字面の照合だけに頼らず、`gate.test.mjs` と `engine.test.mjs` を `node --test --test-reporter=tap` で走らせた結果で、通る側のテストが pass と数えられ skip・todo が 0 かを見るようにした。知見 `K-0006` の担保として、議決 `D-0006` と Issue #906 で見出しの定義（`template.json`）との照合を足した。知見 `K-0012` の担保として、議決 `D-0033`（Issue #1053 の起票時の番号は `D-0032`。PR #1051）の test の案と Issue #1053 で、本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る検査（`recheck.mjs`）を足した。議決 `D-0050`（Issue #1131 の起票時の番号は `D-0048`。PR #1128）の ci_check の案と Issue #1131 で、`recheck.test.mjs` に事例 `C-0003` の列を足し、ひな形 `ci/pr-body-engine.yml` の `engine-test` で走るテストに数えて、`ci.test.mjs` でファイルの側で外していないかを見張るようにした。議決 `D-0050` の ci_check の案と Issue #1122 で、K-0006 と同じ見出しの検査を本文だけの直し（`pull_request` の `edited`）でも走らせるマージ前の必須チェックのひな形（`ci/pr-body-check.yml`）と、本文の直しが終わって直した本文がそのチェックに通るまで Engine の supervisor がマージを待つ差分（`engine/pr-body-recheck.patch`）を足した（別の検査は作らず、K-0006 の #906 と同じ 1 つのチェックにまとめた）。知見 `K-0005` の担保として、Issue #1121（解決策の種類は config）で、見出しの正本（`template.json`）と、それに合わせる CLAUDE.md と Engine の rubric の `PR-002` を `followers.json` に書き、食い違ったら落とす照合（`followers.mjs`）を足した。議決 `D-0068`（Issue #1179 の起票時の番号は `D-0066`。PR #1176）の ci_check の案と Issue #1179 で、関所の配線の差分（`engine/pr-body-gate.patch`）が `ENGINE_REF` の版と Engine の既定のブランチの先頭に当たるかを照らす検査（`patch.mjs`）と、それを既定のブランチへの push・毎日・手動で走らせて当たらなければ Issue を開くひな形（`ci/pr-body-patch.yml`）を足した。
 
 続きのジョブ（衝突の解消・CI 落ちの直しなど）の報告が、新しい PR と同じ見出しの組（`## 概要`・`## 対応内容` など）のまま本文の末尾に足されると、同じ見出しが 2 回出る。これを検査役（LLM）と判定役まで流さず、本文を更新した直後に止めるためのもの。差し戻しの直しで本文の末尾に追記するだけだと、見出しの順が崩れたり必須の見出しが欠けたりする（K-0006）ので、それも見る。
 
@@ -91,9 +91,9 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
 | `merged_before_body_fix_finished` | `job.enqueued`（`kind: body_fix`）のあと、その終わり（`pr.body_amended` か `pr.body_amend_failed`）より前に `supervisor.merged` が来た（事例 `C-0005`、PR #659: マージ 20:08:43、直し 20:08:50） |
 | `merged_after_body_fix_failed` | 本文の直しが失敗で終わり（`pr.body_amend_failed`）、そのあと直しが成功（`pr.body_amended`）しないまま `supervisor.merged` が来た |
 
-- 本文の検査は `gate.evaluated` で数え、`gate` は問わない（検査役の `rubric` も、`check.mjs` の結果を `gate: "pr-body-check"` で記録したものも数える）。直す前の検査とほかの PR の検査は数えない
+- 本文の検査は `gate.evaluated` で数え、`gate` は問わない（検査役の `rubric` も、`check.mjs` の結果を `gate: "pr-body-check"` で記録したものも数える）。Engine の supervisor が直した本文の `pr-body-check` が通ったのを確かめて残す `supervisor.body_rechecked`（下の「本文の直しのあとの再検査を待つ supervisor（建設者）」）も数える。直す前の検査とほかの PR の検査は数えない
 - 終了コード: 0 = 通る、1 = 外れた、2 = イベント列を読めなかった。標準出力に外れごとに「PR の URL rule: 理由」と、最後に件数の 1 行。`--json` は `{ ok, errors: [{ rule, pr_url, message }] }`
-- `recheck.mjs` はまだどこからも呼んでいない（Engine の supervisor に配線していない）。テスト（`recheck.test.mjs`）は `npm test` と、ひな形 `ci/pr-body-engine.yml` の `engine-test`（道を渡さない `node --test`）で走る。建設者がひな形を `.github/workflows/pr-body-engine.yml` に写すと PR ごとに走る（議決 `D-0050`、Issue #1131）
+- `recheck.mjs` はまだどこからも呼んでいない（CI にも Engine にも配線していない）。テスト（`recheck.test.mjs`）は `npm test` と、ひな形 `ci/pr-body-engine.yml` の `engine-test`（道を渡さない `node --test`）で走る。建設者がひな形を `.github/workflows/pr-body-engine.yml` に写すと PR ごとに走る（議決 `D-0050`、Issue #1131）。マージを止めるのは `recheck.mjs` ではなく、Engine の supervisor の待ち（`engine/pr-body-recheck.patch`）とマージ前の必須チェック（`ci/pr-body-check.yml`）で、`recheck.mjs` はあとから記録を見て外れを数える側
 
 ## テスト
 
@@ -114,11 +114,12 @@ node recheck.mjs --events <制御プレーンのイベントの JSON か JSONL> 
   - (9) 同じ回で報告を足さない本文も関所で外れたら、仕上げも書かず `finished.applied` を false で残し、dispatcher が停止（`body_gate_finish:<PR の URL>`、human）を開いて人に回す
   - (10) `ENGINE_DIR`（CI では `ENGINE_REF` の版）の Engine の `entrypoint.sh` そのものの本文の更新の節で（差分を当てた写しではなく）、C-0005 の 21 回の続きのジョブの報告の見出しを `###`・`####` に下げたか `## ` 見出しを持たない形なら、毎回関所を 1 回呼んで 0 が返り（`node` を包んで終了コードを残す）、`body_gate.json` を残さずに本文を書き、書いた本文が関所に通る（正しい更新まで止める誤検知がないこと。議決 `D-0032` の test の案、Issue #1038。議決 `D-0045` の test の案、Issue #1110 で写しから本物に替えた）。必須のテストで、関所を呼ばない Engine では (3) と同じく落ちる。議決 `D-0044` の test の案（Issue #1107）で、この通る側を必須のテストとして担保に記録した
   - (11) Engine がまだ関所を呼ばない間だけ、(10) と同じことを `engine/pr-body-gate.patch` を当てた写しで確かめる（差分そのものの誤検知がないこと）。Engine が関所を呼ぶようになったら (10) が本物で確かめるので飛ばす。Engine の行が変わって `engine/pr-body-gate.patch` が当たらなくなると (4)〜(9) と (11) がそろって落ち、差分を確かめられなくなるので、そのときは同じ PR で差分を今の Engine に合わせて作り直す
-- `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`gate.test.mjs`・`engine.test.mjs` の (10)・`recheck.test.mjs`（skip・todo・only がなく、`C-0003`・`C-0005`・`C-0006` の列のテストがある）が実行の対象から外れていないこと、`gate.test.mjs`・`engine.test.mjs` を TAP で走らせた結果で通る側のテストと (10) が pass と数えられたこと（`engine.test.mjs` で飛ばしてよいのは、共通の skip と、Engine が関所を呼ぶようになったときの (11) だけ）（下の「配線の手順（建設者）」）、`ci/pr-body-protection.yml` と `ci/pr-body-patch.yml` の形と手順の振る舞い、`ci/pr-body-protection.yml` の写しがあれば写しそのものが定期・手動で走りトークンを読めないときに落ちること（下の「配線の手順（建設者）」「定期の照合」「差分の当たりの照合」）
+  - (12) `ENGINE_DIR` の Engine の写しに `engine/pr-body-recheck.patch` を当て（もう `body_recheck_pending` があれば当てない）、`engine_harness.py --body-recheck` で `supervisor.py` の `body_fix_pending`・`body_recheck_pending` を `merge_step` と同じ順に動かす。入力は事例 `C-0006`（PR #821）の記録の順（本文の直し job 4299 を 14:24:41 に積み、マージ 14:25:06）で、GitHub の `pr-body-check` の実行は時刻と結果だけを真似る。`merge_step` が両方を待つ（`if …: continue`）のがマージより前にあること、直しが走っている間は待つこと、直しが終わっても直しのあとに始まった `pr-body-check` が通るまでは待つこと（走っていない・直す前の実行だけ・実行中・落ちた・取り消された・ワークフローを読めない）、通ったら `supervisor.body_rechecked` を 1 回だけ残し、それを挟んだ C-0006 の列が `recheck.mjs` に通ること、直しが失敗・取り消しで終わったら停止（`body_recheck:<PR の URL>`、human）を開いて待つこと、直しのない PR と `pr-body-check` のワークフローを持たない製品では待たないことを確かめる
+- `ci.test.mjs`: CI のひな形 `ci/pr-body-engine.yml` の形と、`gate.test.mjs`・`engine.test.mjs` の (10)・`recheck.test.mjs`（skip・todo・only がなく、`C-0003`・`C-0005`・`C-0006` の列のテストがある）が実行の対象から外れていないこと、`gate.test.mjs`・`engine.test.mjs` を TAP で走らせた結果で通る側のテストと (10) が pass と数えられたこと（`engine.test.mjs` で飛ばしてよいのは、共通の skip と、Engine が関所を呼ぶようになったときの (11) だけ）（下の「配線の手順（建設者）」）、`ci/pr-body-protection.yml` と `ci/pr-body-patch.yml` の形と手順の振る舞い、`ci/pr-body-protection.yml` の写しがあれば写しそのものが定期・手動で走りトークンを読めないときに落ちること（下の「配線の手順（建設者）」「定期の照合」「差分の当たりの照合」）、`ci/pr-body-check.yml` の形（下の「マージ前の必須チェック（建設者）」）
 - `patch.test.mjs`: 差分の当たりの照合（`patch.mjs`）。作った Engine の写し（git の版）で、当たる・もう入っている・入れたあと変わった・一部だけ入った・どれでもないの判定と、チェックアウトの今の中身ではなく名指しした版で照らすこと、CLI の終了コードを確かめる。本物の Engine では、差分が `ENGINE_REF` の版に当たるかもう入っていることを確かめる（`engine.test.mjs` と同じ飛ばし方。`ENGINE_DIR` を渡したときと `CI=true` では落とす）
 - `protection.test.mjs`: 必須のチェックの照合（`protection.mjs`）
 - `followers.test.mjs`: 正本に合わせる側の照合（`followers.mjs`）。今の CLAUDE.md が通り、順・名前・数・必須を変えると落ち、`template.json` だけを変えると両方の合わせる側が落ち、Issue #1121 の時点の Engine の `PR-002` の形が `headings_mismatch` で落ち、一覧を取り出せない形は照らさずに読めなかったことにする。本物の Engine の rubric の照合は `engine.test.mjs` と同じ飛ばし方（`ENGINE_DIR` を渡したときと `CI=true` では落とす）。Engine の `PR-002` が Issue #1121 の時点の形のときだけ `todo`（その判定も、ほかの形や読めない rubric では `todo` にしないことを確かめる）
-- `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、事例 `C-0003`（PR #396。最後の本文の直しの job 572 のあと、検査を通さずに 14:23:30 にマージ）の列も `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる
+- `recheck.test.mjs`: 本文の直しのあとの再検査（`recheck.mjs`）。事例 `C-0005`（PR #659）と `C-0006`（PR #821）の記録に書かれた時刻・job・順をイベントの形に組み直した列が、それぞれ `merged_before_body_fix_finished` と `merged_without_body_recheck` で落ち、事例 `C-0003`（PR #396。最後の本文の直しの job 572 のあと、検査を通さずに 14:23:30 にマージ）の列も `merged_without_body_recheck` で落ち、直しの終わりと再検査を待ってからマージした列は通ることを確かめる。Engine の supervisor が残す `supervisor.body_rechecked` も再検査に数え、直す前とほかの PR のものは数えないことも確かめる
 - 節の取り出し方（`snippets`）は `entrypoint.sh` の今の行の形に合わせている。Engine で形が変わって取り出せなくなったら (0) が落ちるので、同じ PR で合わせる
 
 ```sh
@@ -126,11 +127,12 @@ npm test
 ENGINE_DIR=/path/to/factory-engine node --test engine.test.mjs
 python3 engine_harness.py --check /path/to/factory-engine   # 関数を取り出せるかだけを見る
 python3 engine_harness.py --body-gate /path/to/factory-engine < gate.json   # act_on_body_gate を動かす（差分を当てた Engine）
+python3 engine_harness.py --body-recheck /path/to/factory-engine < recheck.json   # body_fix_pending・body_recheck_pending を動かす（engine/pr-body-recheck.patch を当てた Engine）
 ```
 
 ## マージ前の必須チェック（建設者）
 
-head_sha の変わらない本文だけの直しも通すため、CI では `pull_request` の `opened`・`synchronize`・`reopened` に加えて `edited` でも起動させ、マージ前の必須チェックにする（議決 D-0006）。本文は `github.event.pull_request.body` を環境変数で受けて標準入力に渡す（`${{ }}` で run に直接埋めない）。
+head_sha の変わらない本文だけの直しも通すため、CI では `pull_request` の `opened`・`synchronize`・`reopened` に加えて `edited` でも起動させ、マージ前の必須チェックにする（知見 `K-0006` の議決 D-0006、Issue #906）。知見 `K-0012` の担保（議決 `D-0050` の ci_check の案、Issue #1122）も同じ 1 つのチェックにまとめ、別の検査は作らない。本文は `github.event.pull_request.body` を環境変数で受けて標準入力に渡す（`${{ }}` で run に直接埋めない）。ひな形は `ci/pr-body-check.yml`（ジョブ `pr-body-check`、チェックの名前 `pr-body-check`）。
 
 ```yaml
 on:
@@ -138,6 +140,7 @@ on:
     types: [opened, synchronize, reopened, edited]
 jobs:
   pr-body-check:
+    name: pr-body-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -146,9 +149,20 @@ jobs:
         run: printf '%s' "$BODY" | node tools/pr-body-check/check.mjs
 ```
 
+`ci.test.mjs` が、ひな形の形（`on` が `pull_request` の 4 つの `types` だけで、`paths`・`branches` で絞らない、`if:`・`continue-on-error`・`needs` がない、`name:` が `pr-body-check`、本文を `env` の `BODY` で受けて `printf '%s' "$BODY" | node tools/pr-body-check/check.mjs` の 1 行で照らす）と、Engine の supervisor（`engine/pr-body-recheck.patch`）が待つチェックの名前とワークフローの道がこのひな形に合うこと、写しがあればひな形と同じことを見る。外す直し（`edited` を外す・`paths` で絞る・`|| true`・本文を run に埋めるなど）が外れになることも確かめる。
+
 なお、Engine の `orchestrator/worker/entrypoint.sh` は今、続きのジョブの報告を `## 工場の記録` の後ろに `## 続きのジョブの記録` として足すので、そのままでは `outside_factory_record`・`continuation_outside_record` で外れる。必須チェックにする前に、Engine 側でその見出しを `### ` に下げる（K-0001 の線。Engine への作用なので人の承認が要る）。下げる直しは `engine/pr-body-gate.patch` に入れてある。
 
-このワークフローとブランチ保護の必須チェックは、ワーカーの権限の外なので建設者が入れる。
+このワークフローとブランチ保護の必須チェックは、ワーカーの権限の外なので建設者が入れる。`ci/pr-body-check.yml` を `.github/workflows/pr-body-check.yml` にそのまま写し（道と `name:` を変えると Engine の supervisor が待たない・待ち続ける）、`pr-body-check` を必須のチェックにする。
+
+### 本文の直しのあとの再検査を待つ supervisor（建設者）
+
+知見 `K-0012` の担保（議決 `D-0050` の ci_check の案、Issue #1122）。必須のチェックだけでは、本文の直しのジョブが終わってから `edited` のチェックが始まるまでの数秒の間に、前の本文で通ったチェックのままマージできる（事例 `C-0006`、PR #821: 直しの記録の 2 秒後にマージ）。また Engine の今の `body_fix_pending` は検査役の承認（`inspector_approved`）の中で直しの順番待ちと作業中しか見ず、直しが終わったあとと、検査役の承認が直しを見ずに返る経路（検査なし・裁くものがない）は待たない。そこで Engine の supervisor に入れる差分を `engine/pr-body-recheck.patch` に置いた（`orchestrator/dispatcher/supervisor.py`・`definitions/events.yaml`。Engine のチェックアウトの根で `git apply` する。`engine/pr-body-gate.patch` と一緒に当てられる）。
+
+- `merge_step` で、検査役の承認と委員会の採用のあと、マージの前に `body_fix_pending`（直しの順番待ちか作業中）と `body_recheck_pending` を呼び、どちらかが待つなら次の周回まで待つ
+- `body_recheck_pending` は、その PR の最後の本文の直し（`jobs` の `kind` が `body_fix`）を見る。直しがなければ待たない。成功で終わっていなければ（`failed`・`cancelled`）停止（`body_recheck:<PR の URL>`、human）を開いて待つ（直していない本文のままマージしない。PR が閉じたら閉じる）。成功で終わっていれば、製品に `.github/workflows/pr-body-check.yml` があるとき（なければ待たない）、head の `pr-body-check` のチェックの実行のうち最後に始まったものが、直しのジョブが走り始めた（なければ積んだ）時刻より後に始まって `success` で終わるまで待つ。通ったら `supervisor.body_rechecked`（`pr_url`・`head_sha`・`gate`・`job_id`・`check_run`・`started_at`。PR と直しのジョブごとに 1 回）を残し、以後は GitHub を引かない
+- 直しの終わりは `pr.body_amended` ではなくジョブの状態で見る（ジョブの状態を書いてから `pr.body_amended` を記録するまでの間もマージさせないため）
+- 入れて `ENGINE_REF` を上げるまで、`engine.test.mjs` の (12) は写しに差分を当てて確かめる。入れたら、本物の本文の直しで `supervisor.body_rechecked` のあとに `supervisor.merged` が来たこと（と `recheck.mjs` が過去の PR #659・#821 の本物のイベント列で落ちること）を記録してから、知見 `K-0012` のこの解決策の `wired`・`verified` を `true` にする
 
 ## Engine に入れること（建設者）
 

@@ -852,3 +852,82 @@ test("写し（.github/workflows/pr-body-patch.yml）があれば、ひな形と
 }, () => {
   assert.equal(readFileSync(patchCopyPath, "utf8").trimEnd(), patchTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
 });
+
+// ci/pr-body-check.yml（知見 K-0006 と K-0012 で共有するマージ前の必須チェック。議決 D-0006・D-0050、Issue #906・#1122）の形を見る。
+// 本文だけの直し（head_sha の変わらない pull_request edited）でも走り、本文を環境変数で check.mjs に渡し、Engine の supervisor
+// （engine/pr-body-recheck.patch）が待つチェックの名前とワークフローの道に合っていること。写しがあればひな形と同じであること
+const bodyTemplate = readFileSync(fileURLToPath(new URL("./ci/pr-body-check.yml", import.meta.url)), "utf8");
+const BODY_COPY = ".github/workflows/pr-body-check.yml";
+const bodyCopyPath = fileURLToPath(new URL(`../../${BODY_COPY}`, import.meta.url));
+const recheckPatch = readFileSync(fileURLToPath(new URL("./engine/pr-body-recheck.patch", import.meta.url)), "utf8");
+const BODY_JOB = "pr-body-check";
+const BODY_TYPES = ["opened", "synchronize", "reopened", "edited"];
+
+/** 本文だけの直しでも走るマージ前の必須チェックの形かの外れ（空なら通る）。注釈の行は見ない。 */
+function bodyCheckProblems(text) {
+  const problems = [];
+  const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = on < 0 ? [] : lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l))).map((l) => l.trim()).filter((l) => l !== "");
+  const types = onBody.length === 2 && onBody[0] === "pull_request:" ? onBody[1].match(/^types:\s*\[([^\]]*)\]$/)?.[1].split(",").map((t) => t.trim()) : null;
+  if (!types || BODY_TYPES.some((t) => !types.includes(t))) {
+    problems.push(`on は pull_request の types（${BODY_TYPES.join("・")}）だけにする（edited がないと本文だけの直しを照らさない。paths・branches で絞ると報告されない PR が出る）`);
+  }
+  if (lines.some((l) => /^\s*(- )?continue-on-error:/.test(l))) problems.push("continue-on-error があると落ちても止めない");
+  if (lines.some((l) => /^\s*(- )?if:/.test(l))) problems.push("if: があるとジョブや手順が飛ばされて照らさない");
+  const job = jobBody(lines, BODY_JOB);
+  if (job === null) return [...problems, `${BODY_JOB} のジョブがない`];
+  if (jobCheckNames(lines.join("\n")).get(BODY_JOB) !== BODY_JOB) {
+    problems.push(`${BODY_JOB} の name: を ${BODY_JOB} にする（Engine の supervisor と必須のチェックがこの名前で待つ）`);
+  }
+  if (job.some((l) => /^ {4}needs:/.test(l))) problems.push(`${BODY_JOB} に needs があると、待つジョブが落ちたときに飛ばされて走らない`);
+  const steps = jobSteps(job);
+  const check = steps.find((s) => s.some((l) => /node tools\/pr-body-check\/check\.mjs/.test(l)));
+  if (!check) {
+    problems.push("tools/pr-body-check/check.mjs を呼ぶ手順がない");
+  } else {
+    if (!check.some((l) => /^\s*BODY: \$\{\{ github\.event\.pull_request\.body \}\}\s*$/.test(l))) {
+      problems.push("本文を env の BODY に github.event.pull_request.body で受けていない");
+    }
+    const run = check.map((l) => l.trim()).filter((l) => l.startsWith("run:") || !/^[\w-]+:/.test(l));
+    if (!check.some((l) => /^\s*run: printf '%s' "\$BODY" \| node tools\/pr-body-check\/check\.mjs\s*$/.test(l)) || run.some((l) => l.includes("${{"))) {
+      problems.push(`run は printf '%s' "$BODY" | node tools/pr-body-check/check.mjs の 1 行にする（本文を \${{ }} で run に埋めない。引数で外れを握りつぶさない）`);
+    }
+  }
+  return problems;
+}
+
+test("pr-body-check のひな形は、本文だけの直し（edited）でも走り、本文を環境変数で check.mjs に渡す必須のチェックの形", () => {
+  assert.deepEqual(bodyCheckProblems(bodyTemplate), []);
+});
+
+test("pr-body-check の見張りを外す直しは外れになる", () => {
+  const mutations = [
+    ["edited を外す", (t) => t.replace("types: [opened, synchronize, reopened, edited]", "types: [opened, synchronize, reopened]")],
+    ["types を外す", (t) => t.replace("    types: [opened, synchronize, reopened, edited]\n", "")],
+    ["paths で絞る", (t) => t.replace("    types: [opened, synchronize, reopened, edited]\n", "    types: [opened, synchronize, reopened, edited]\n    paths: [apps/**]\n")],
+    ["continue-on-error", (t) => t.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    continue-on-error: true\n")],
+    ["if:", (t) => t.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    if: github.event.action != 'edited'\n")],
+    ["チェックの名前を変える", (t) => t.replace("    name: pr-body-check\n", "    name: body\n")],
+    ["本文を run に埋める", (t) => t.replace(`run: printf '%s' "$BODY" | node`, "run: printf '%s' '${{ github.event.pull_request.body }}' | node")],
+    ["外れを握りつぶす", (t) => t.replace("node tools/pr-body-check/check.mjs\n", "node tools/pr-body-check/check.mjs || true\n")],
+    ["本文を渡さない", (t) => t.replace("          BODY: ${{ github.event.pull_request.body }}\n", "          BODY: ''\n")],
+    ["check.mjs を呼ばない", (t) => t.replace("node tools/pr-body-check/check.mjs", "node --version")],
+  ];
+  for (const [label, mutate] of mutations) {
+    const mutated = mutate(bodyTemplate);
+    assert.notEqual(mutated, bodyTemplate, `${label}: 書き換えが当たっていない`);
+    assert.ok(bodyCheckProblems(mutated).length > 0, `${label} の直しが外れにならない`);
+  }
+});
+
+test("Engine の supervisor（engine/pr-body-recheck.patch）が待つチェックの名前とワークフローの道は、このひな形の写しに合う", () => {
+  assert.match(recheckPatch, new RegExp(`^\\+BODY_CHECK = "${BODY_JOB}"`, "m"));
+  assert.match(recheckPatch, new RegExp(`^\\+BODY_CHECK_WORKFLOW = "${BODY_COPY.replace(/\./g, "\\.")}"`, "m"));
+});
+
+test("写し（.github/workflows/pr-body-check.yml）があれば、ひな形と同じ", {
+  skip: existsSync(bodyCopyPath) ? false : "写しがまだない（建設者が写す）",
+}, () => {
+  assert.equal(readFileSync(bodyCopyPath, "utf8"), bodyTemplate);
+});
