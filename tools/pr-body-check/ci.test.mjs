@@ -4,7 +4,7 @@
 // Engine を確かめる形のときだけなので、それを見る。写しがあれば ENGINE_REF の行のほかがひな形と同じかも見る（写すときに変えてよいのはその行だけ）。
 // このテストは engine-test の node --test の中で走るので、写しから見張りを外す変更も同じジョブで落ちる。
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
-// （議決 D-0045 の ci_check の案、Issue #1109）。
+// （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
@@ -250,6 +250,43 @@ test("gate.test.mjs と engine.test.mjs の (10) を外す・飛ばす直しは�
       assert.notEqual(text, original, `${file} ${name}: 置き換えが効いていない`);
       assert.notDeepEqual(exclusionProblems(file, text), [], `${file} ${name} が通った`);
     }
+  }
+});
+
+// recheck.test.mjs（知見 K-0012 の担保）も、ひな形の engine-test の node --test で走る（議決 D-0050 の ci_check の案、Issue #1131）。
+// ワークフローの側の絞り込みは workflowProblems で見るので、ここではテストのファイルの側で外していないか（skip・todo・only がない、
+// 事例 C-0003・C-0005・C-0006 の列が落ちるテストが残っている）を見る。注釈の行は見ない。
+const RECHECK_TEST = "recheck.test.mjs";
+const RECHECK_CASES = ["C-0003", "C-0005", "C-0006"];
+
+/** recheck.test.mjs を実行の対象から外していないかの外れ（空なら通る）。 */
+function recheckExclusionProblems(text) {
+  const problems = [];
+  const lines = codeLines(text);
+  if (lines.some((l) => /\b(skip|todo|only)\b/.test(l))) problems.push(`${RECHECK_TEST}: skip・todo・only の指定がある`);
+  for (const id of RECHECK_CASES) {
+    if (!lines.some((l) => l.startsWith(`test("${id} の列は、`))) problems.push(`${RECHECK_TEST}: ${id} の列が落ちるテスト（test("${id} の列は、…")）がない`);
+  }
+  return problems;
+}
+
+test("recheck.test.mjs は、node --test の実行の対象から外れていない（skip・todo・only がなく、事例の列のテストがある）", () => {
+  assert.deepEqual(recheckExclusionProblems(readTest(RECHECK_TEST)), []);
+});
+
+test("recheck.test.mjs を外す・飛ばす直しは外れになる", () => {
+  const text = readTest(RECHECK_TEST);
+  const cases = {
+    "C-0003 のテストを skip にする": text.replace('test("C-0003 の列は、最後の本文の直し（job 572）のあと検査を通さずにマージしたので落ちる", () =>',
+      'test("C-0003 の列は、最後の本文の直し（job 572）のあと検査を通さずにマージしたので落ちる", { skip: true }, () =>'),
+    "C-0006 のテストを test.todo にする": text.replace('test("C-0006 の列は、', 'test.todo("C-0006 の列は、'),
+    "only を付ける": text.replace('test("C-0005 の列は、本文の直しが終わる前にマージしたので落ちる", () =>', 'test("C-0005 の列は、本文の直しが終わる前にマージしたので落ちる", { only: true }, () =>'),
+    "テストの中で t.skip を呼ぶ": text.replace('test("CLI: 終了コード 0・1・2 と --json", () => {', 'test("CLI: 終了コード 0・1・2 と --json", (t) => {\n  t.skip();'),
+    "C-0003 のテストを消す": text.replace('test("C-0003 の列は、', 'void (() => ("C-0003 の列は、'),
+  };
+  for (const [name, changed] of Object.entries(cases)) {
+    assert.notEqual(changed, text, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(recheckExclusionProblems(changed), [], `${name} が通った`);
   }
 });
 

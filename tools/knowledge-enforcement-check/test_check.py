@@ -453,6 +453,81 @@ class PullRequestTest(unittest.TestCase):
         self.assertIn("issue 1035）: wired にするには", errors[0])
 
 
+class KnowledgeCheckPullRequestTest(unittest.TestCase):
+    """K-0004 の issue 986・1059 の解決策（wired_by・verified_by の照合）は pull_request のジョブから check.py を呼ばないと wired にできない（議決 D-0048、Issue #1129）"""
+
+    CHECK = "tools/knowledge-enforcement-check/check.py"
+    TEMPLATE = HERE / "ci/knowledge-enforcement.yml"
+    WF = ".github/workflows/knowledge-enforcement.yml"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.CHECK: "", "tools/knowledge-enforcement-check/test_check.py": "", self.WF: workflow}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self, on: str | None = None) -> str:
+        text = self.TEMPLATE.read_text(encoding="utf-8")
+        return text if on is None else text.replace("on:\n  pull_request:\n", f"on:\n{on}", 1)
+
+    def errors(self, d: Path, issue=986, kid="K-0004", wired=True, job="enforcement", runs=None) -> list[str]:
+        wb = [{"workflow": self.WF, "job": job, "runs": runs or self.CHECK}]
+        item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
+        return check.check_pull_request(item, d) + check.check_wiring(item, d)
+
+    def test_ひな形をそのまま写した_enforcement_のジョブなら通る(self):
+        d = self.repo(self.template())
+        for issue in (986, 1059):
+            self.assertEqual(self.errors(d, issue=issue), [], issue)
+
+    def test_定期や手動だけのワークフローでは落ちる(self):
+        for on in ("  workflow_dispatch:\n", "  schedule:\n    - cron: '0 0 * * *'\n", "  push:\n    branches: [main]\n"):
+            d = self.repo(self.template(on))
+            self.assertNotEqual(self.template(on), self.template(), on)
+            for issue in (986, 1059):
+                e = self.errors(d, issue=issue)
+                self.assertEqual(len(e), 1, (on, issue, e))
+                self.assertIn("on.pull_request", e[0])
+                self.assertIn(self.CHECK, e[0])
+                self.assertIn("議決 D-0048", e[0])
+
+    def test_check_py_を呼ばないジョブや検査では落ちる(self):
+        d = self.repo(self.template())
+        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 986, "wired": True, "wired_by": [{"workflow": self.WF, "job": "engine-test", "runs": self.CHECK}]}]}}, d)), 1)
+        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 1059, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement",
+                                                                            "runs": "tools/knowledge-enforcement-check/test_check.py"}]}]}}, d)), 1)
+
+    def test_pull_request_では走らないジョブは数えない(self):
+        text = self.template().replace("  enforcement:\n    runs-on: ubuntu-latest\n",
+                                       "  enforcement:\n    if: github.event_name != 'pull_request'\n    runs-on: ubuntu-latest\n", 1)
+        self.assertEqual(len(check.check_pull_request({"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "issue": 986, "wired": True, "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.CHECK}]}]}},
+            self.repo(text))), 1)
+
+    def test_対象でない解決策と配線していない解決策は見ない(self):
+        d = self.repo(self.template("  workflow_dispatch:\n"))
+        self.assertEqual(check.check_pull_request(k("deterministic", {"kind": "ci_check", "issue": 1014, "wired": True,
+                                                                        "wired_by": [{"workflow": self.WF, "job": "enforcement", "runs": self.CHECK}]}), d), [])
+        self.assertEqual(self.errors(d, kid="K-0010"), [])
+        self.assertEqual(self.errors(d, wired=False), [])
+
+    def test_main_で落とす(self):
+        d = self.repo(self.template("  workflow_dispatch:\n"))
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1059, wired: true, wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.CHECK}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1059）: wired にするには", errors[0])
+
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 
@@ -603,18 +678,31 @@ class RepoTest(unittest.TestCase):
         self.assertEqual(r["level"], "deterministic")
         self.assertEqual(r["label"], "未配線")
 
-    def test_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
-        """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
-        text = (HERE / "README.md").read_text(encoding="utf-8")
+    def listed(self, path, tail):
+        """README の「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の 2 つの一覧を取り出す"""
+        text = path.read_text(encoding="utf-8")
         ids = r"((?:`K-\d{4,}`・?)+)"
-        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids} の未記入の解決策は", text)
-        self.assertIsNotNone(m, "README.md に「すべての解決策に書いたのは `K-…`。`K-…` の未記入の解決策は」の一覧がない")
-        listed_done, listed_open = (re.findall(r"K-\d{4,}", g) for g in m.groups())
+        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids}{tail}", text)
+        name = path.relative_to(REPO)
+        self.assertIsNotNone(m, f"{name} に「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の一覧がない")
+        return (re.findall(r"K-\d{4,}", g) for g in m.groups())
+
+    def assert_listed(self, path, tail):
+        listed_done, listed_open = self.listed(path, tail)
         rows = [check.row(x) for x in check.load(REPO)]
         done = [r["id"] for r in rows if r["solutions"] and not r["unrecorded"]]
         still_open = [r["id"] for r in rows if r["unrecorded"]]
-        self.assertEqual(listed_done, done, "README.md の「すべての解決策に書いた」知見の一覧を K-*.yaml に合わせて直す")
-        self.assertEqual(listed_open, still_open, "README.md の「未記入の解決策が残る」知見の一覧を K-*.yaml に合わせて直す")
+        name = path.relative_to(REPO)
+        self.assertEqual(listed_done, done, f"{name} の「すべての解決策に書いた」知見の一覧を K-*.yaml に合わせて直す")
+        self.assertEqual(listed_open, still_open, f"{name} の「未記入の解決策が残る」知見の一覧を K-*.yaml に合わせて直す")
+
+    def test_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
+        """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
+        self.assert_listed(HERE / "README.md", " の未記入の解決策は")
+
+    def test_knowledge_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
+        """.factory-config/knowledge/README.md の同じ 2 つの一覧も、順まで照らす（議決 D-0052、Issue #1138）"""
+        self.assert_listed(REPO / ".factory-config" / "knowledge" / "README.md", " には未記入の解決策が残っていて")
 
 
 if __name__ == "__main__":

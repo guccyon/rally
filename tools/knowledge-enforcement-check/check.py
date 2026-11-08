@@ -28,6 +28,8 @@ PR ごとの配線の必須（議決 D-0043、Issue #1103）: REQUIRED_PR の解
 agent_tier を test_events.py の EngineFinishedTest で照らす）を wired: true にするときは、wired_by に、on.pull_request のあるワークフローで、
 pull_request でも走る（if: が github.event_name を見るなら == 'pull_request' を含み、!= 'pull_request' を含まない）ジョブから
 tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほかの検査（test_ci.py など）を呼ぶだけ、定期や手動だけでは wired にできない。
+議決 D-0048（Issue #1129）で、K-0004 の issue 986・1059 の解決策（wired_by・verified_by の照合）も、pull_request のジョブから
+この check.py を呼ぶ項目がないと wired にできないようにした（ci/knowledge-enforcement.yml を写した enforcement のジョブで満たす）。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
@@ -68,8 +70,10 @@ EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106）
 REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs",
                      ("K-0001", 1106): "tools/pr-body-check/protection.mjs"}
-# (知見の id, 解決策の issue) → pull_request のジョブから呼ぶことを求める検査（議決 D-0043、Issue #1103）
-REQUIRED_PR = {("K-0010", 1035): "tools/conflict-check/test_events.py", ("K-0010", 1103): "tools/conflict-check/test_events.py"}
+# (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。K-0004 は議決 D-0048、Issue #1129）
+KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
+REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043"), ("K-0010", 1103): ("tools/conflict-check/test_events.py", "D-0043"),
+               ("K-0004", 986): (KNOWLEDGE_CHECK, "D-0048"), ("K-0004", 1059): (KNOWLEDGE_CHECK, "D-0048")}
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
@@ -356,9 +360,10 @@ def check_pull_request(k: dict, repo: Path) -> list[str]:
     for i, s in enumerate(solutions(k)):
         if not isinstance(s, dict) or s.get("wired") is not True:
             continue
-        target = REQUIRED_PR.get((k.get("id"), s.get("issue")))
-        if target is None:
+        required = REQUIRED_PR.get((k.get("id"), s.get("issue")))
+        if required is None:
             continue
+        target, decision = required
         ok = False
         for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
             if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
@@ -373,7 +378,7 @@ def check_pull_request(k: dict, repo: Path) -> list[str]:
         if not ok:
             where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
             e.append(f"{where}: wired にするには wired_by に、on.pull_request のある {WORKFLOWS}/ のワークフローで pull_request でも走るジョブから"
-                     f" {target} を呼ぶ項目が要る（ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。議決 D-0043）")
+                     f" {target} を呼ぶ項目が要る（ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。議決 {decision}）")
     return e
 
 

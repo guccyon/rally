@@ -4,6 +4,9 @@
 # engine/knowledge-enforcement.patch が ENGINE_REF に当たらないか、差分で足したテストが落ちれば、どの PR でも落とす（議決 D-0035、Issue #1063）。
 # テストは unittest discover でまとめて走らせ、その出力で skipped が 1 件以上あっても落とす（飛ばして緑にしない。議決 D-0037、Issue #1080）。
 # 写したら engine-test を branch protection の必須チェックに入れて PR を止める（建設者）。
+# enforcement のジョブも必須チェックに入れ、そのあとで K-0004 の issue 986・1059 の解決策を wired: true にし、wired_by に
+# {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py} を書く
+# （pull_request のジョブから check.py を呼ぶ項目がないと check.py が落とす。議決 D-0048、Issue #1129）。
 # enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければ落とす。ほかの PR では結果を Job Summary に残すだけ
 # 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
 name: knowledge-enforcement
