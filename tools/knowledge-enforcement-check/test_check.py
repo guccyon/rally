@@ -339,6 +339,38 @@ class ScheduleTest(unittest.TestCase):
                                 ("", "if: ${{ github.event_name == 'workflow_dispatch' }}\n        "), ("    if: false\n", "")):
             self.assertEqual(len(self.errors(self.repo(self.wf(self.SCHEDULE, job_if, step_if)))), 1, (job_if, step_if))
 
+    def test_if_は決まった形だけを許す(self):
+        """議決 D-0061（起票時の番号は D-0058）、Issue #1163。if: は無いか、github.event_name == '…' を || でつないで 'schedule' を含む形だけ"""
+        for job_if, step_if in (("    if: github.event_name == 'schedule'\n", ""), ("    if: ${{ github.event_name == 'schedule' }}\n", ""),
+                                ("    if: github.event_name=='workflow_dispatch'||github.event_name=='schedule'\n", ""),
+                                ("", "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'\n        "),
+                                ("    if: github.event_name == 'schedule'\n", "if: ${{ github.event_name == 'schedule' }}\n        ")):
+            self.assertEqual(self.errors(self.repo(self.wf(self.SCHEDULE, job_if, step_if))), [], (job_if, step_if))
+
+    def test_決まった形でない_if_は_schedule_を含んでも数えない(self):
+        """|| や && でほかの条件をつなぐ・needs や always() を見る・真偽の値の if: は、schedule で飛ばしうるので走らない側に数える（議決 D-0061、Issue #1163）"""
+        for cond in ("github.event_name == 'schedule' && needs.gate.outputs.skip != 'true'",
+                     "github.event_name == 'schedule' && false",
+                     "github.event_name == 'push' || (github.event_name == 'schedule' && false)",
+                     "github.event_name == 'schedule' || needs.gate.result == 'success'",
+                     "needs.gate.result == 'success' && github.event_name == 'schedule'",
+                     "always() && github.event_name == 'schedule'",
+                     "github.event_name == 'schedule' || always()",
+                     "github.event_name == \"schedule\"",
+                     "github.event_name != 'push' || github.event_name == 'schedule'",
+                     "contains(github.event_name, 'schedule')",
+                     "always()", "success()", "true", "${{ true }}",
+                     "${{ github.event_name == 'schedule' }} && false"):
+            for job_if, step_if in ((f"    if: {cond}\n", ""), ("", f"if: {json.dumps(cond)}\n        ")):
+                e = self.errors(self.repo(self.wf(self.SCHEDULE, job_if, step_if)))
+                self.assertEqual(len(e), 1, (job_if, step_if))
+                self.assertIn("議決 D-0061", e[0])
+
+    def test_許可リストの読み方(self):
+        self.assertFalse(check.off_schedule(None))
+        for cond in (True, False, 1, "", "${{ }}", "github.event_name == 'schedule' ||", "|| github.event_name == 'schedule'"):
+            self.assertTrue(check.off_schedule(cond), cond)
+
     def test_ほかの検査を呼ぶ項目だけでは落ちる(self):
         d = self.repo(self.wf(self.SCHEDULE))
         (d / "tools/sendback-check/order.mjs").write_text("", encoding="utf-8")
