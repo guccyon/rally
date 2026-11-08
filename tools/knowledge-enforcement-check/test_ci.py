@@ -16,6 +16,8 @@ Engine のチェックアウトや ENGINE_REF の版がなくても飛ばさず�
 このディレクトリで unittest.TestCase を定義する .py がすべて unittest discover の既定の形（test*.py、下のディレクトリは __init__.py のあるパッケージ）に
 合うかを照らし、ひな形の engine-test は飛ばした件数の手順のすぐ後で test_ci.py --log knowledge-enforcement-unittest.log を走らせ、
 拾われないファイルか、その出力にテストが 1 件も（飛ばさずに）走った跡のないファイルがあれば落とす（議決 D-0057（起票時の番号は D-0055）、Issue #1154）。
+ひな形の enforcement のジョブが check.py の結果で落とす範囲が、check.py が呼ぶことを求める検査とワークフロー・K-*.yaml の wired_by を覆うことと、
+配線先のジョブから REQUIRED_RUNS の検査を外した PR でその手順が落ちることを、手順を bash で動かして確かめる（議決 D-0066（起票時の番号は D-0062）、Issue #1173）。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
   python3 tools/knowledge-enforcement-check/test_ci.py --log knowledge-enforcement-unittest.log   # 出力に走った跡があるか
@@ -469,6 +471,87 @@ class TemplateTest(unittest.TestCase):
         text = COPY.read_text(encoding="utf-8")
         self.assertEqual(problems(text, self.ref), [])
         self.assertEqual(REF_LINE.sub("ENGINE_REF:", text), REF_LINE.sub("ENGINE_REF:", self.text))
+
+
+SCOPE_JOB = "enforcement"
+CONFLICT_TEMPLATE = REPO / "tools/conflict-check/ci/conflict-check.yml"
+
+
+def scope_targets(items: list[dict]) -> list[str]:
+    """enforcement のジョブが落とす範囲に入れる道。check.py が呼ぶことを求める検査とそのワークフロー、K-*.yaml の wired_by の workflow・runs"""
+    out = [f"{check.ROOT}/K-0010.yaml", check.KNOWLEDGE_CHECK, ".github/workflows/conflict-check.yml", COPY_REL]
+    out += list(check.REQUIRED_SCHEDULE.values()) + [wf for wf, _ in check.REQUIRED_SCHEDULE_WORKFLOW.values()]
+    out += [t for t, _ in check.REQUIRED_PR.values()] + [t for ts in check.REQUIRED_RUNS.values() for t in ts]
+    for k in items:
+        for s in check.solutions(k):
+            for w in (s.get("wired_by") if isinstance(s, dict) and isinstance(s.get("wired_by"), list) else []):
+                out += [check.norm("", w[key]) or w[key] for key in ("workflow", "runs") if isinstance(w, dict) and isinstance(w.get(key), str)]
+    return list(dict.fromkeys(out))
+
+
+class EnforcementScopeTest(unittest.TestCase):
+    """ひな形の enforcement のジョブが、配線先や check.py が呼ぶことを求める検査を変えた PR でも check.py の結果で落ちるか
+    （議決 D-0066（起票時の番号は D-0062）、Issue #1173）。範囲の手順と落とす手順をひな形から取り出して bash で動かす"""
+
+    @classmethod
+    def setUpClass(cls):
+        steps = load(TEMPLATE.read_text(encoding="utf-8"))["jobs"][SCOPE_JOB]["steps"]
+        cls.scope = next(s for s in steps if s.get("id") == "scope")
+        cls.gate = next(s for s in steps if check.KNOWLEDGE_CHECK in (s.get("run") or "") and "CHANGED" in (s.get("env") or {}))
+
+    def changed(self, files: list[str]) -> str:
+        with tempfile.TemporaryDirectory() as d:
+            bin_ = Path(d) / "bin"
+            bin_.mkdir()
+            (Path(d) / "diff.txt").write_text("".join(f"{f}\n" for f in files), encoding="utf-8")
+            git = bin_ / "git"
+            git.write_text(f"#!/bin/sh\ncat '{d}/diff.txt'\n", encoding="utf-8")
+            git.chmod(0o755)
+            out = Path(d) / "out"
+            p = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", self.scope["run"]], cwd=d, capture_output=True, text=True,
+                               env={"PATH": f"{bin_}:/usr/bin:/bin", "PR_BASE": "main", "GITHUB_OUTPUT": str(out)})
+            self.assertEqual(p.returncode, 0, p.stderr)
+            return out.read_text(encoding="utf-8").strip()
+
+    def test_check_pyが呼ぶことを求める検査とwired_byの道を変えたPRは落とす範囲に入る(self):
+        for f in scope_targets(check.load(REPO)):
+            with self.subTest(f):
+                self.assertEqual(self.changed([f]), "changed=true")
+
+    def test_ほかの道だけを変えたPRは落とす範囲に入らない(self):
+        for f in ("apps/backend/src/main.rs", "CHANGELOG.md", "specs/glossary.yaml", "tools/conflict-check-x/a.py", "docs/.github/workflows/a.yml"):
+            with self.subTest(f):
+                self.assertEqual(self.changed([f]), "changed=false")
+        self.assertEqual(self.changed(["CHANGELOG.md", "tools/conflict-check/test_watch.py"]), "changed=true")
+
+    def gate_rc(self, workflow: str, changed: str) -> int:
+        """K-0010 の issue 1034 を wired: true にした一時のリポジトリで、落とす手順を動かした終了コード"""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for rel, body in {
+                check.KNOWLEDGE_CHECK: (HERE / "check.py").read_text(encoding="utf-8"),
+                ".github/workflows/conflict-check.yml": workflow,
+                "tools/conflict-check/test_watch.py": "", "tools/conflict-check/test_engine.py": "",
+                f"{check.ROOT}/K-0010.yaml": yaml.safe_dump({"id": "K-0010", "enforcement": {"level": "deterministic", "solutions": [{
+                    "kind": "ci_check", "issue": 1034, "wired": True, "verified": False,
+                    "wired_by": [{"workflow": ".github/workflows/conflict-check.yml", "job": "conflict-check", "runs": r} for r in check.CONFLICT_TESTS]}]}},
+                    allow_unicode=True),
+            }.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(body, encoding="utf-8")
+            p = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", self.gate["run"]], cwd=d, capture_output=True, text=True,
+                               env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "CHANGED": changed, "GITHUB_STEP_SUMMARY": str(root / "summary.md")})
+            return p.returncode
+
+    def test_配線先のジョブからREQUIRED_RUNSの検査を外したPRは落ちる(self):
+        t = CONFLICT_TEMPLATE.read_text(encoding="utf-8")
+        line = "python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v"
+        self.assertIn(line, t)
+        dropped = t.replace(line, "python3 -B tools/conflict-check/test_policy.py -v")
+        self.assertEqual(self.gate_rc(t, "true"), 0)
+        self.assertNotEqual(self.gate_rc(dropped, "true"), 0)
+        self.assertEqual(self.gate_rc(dropped, "false"), 0)   # 範囲の外の PR では結果を残すだけ（対照）
+        self.assertEqual(self.changed([".github/workflows/conflict-check.yml"]), "changed=true")
 
 
 class NoSkipTest(unittest.TestCase):
