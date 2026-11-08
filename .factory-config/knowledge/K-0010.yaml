@@ -6,7 +6,9 @@ statement: >-
   衝突が機械的（CHANGELOG だけなど）で作業が数ターンで終わっても、引き継いだ文脈の分だけ 1 回ごとのコストが増え続ける
   （回数とともに PR 本文の追記が重なることは K-0001 の主張）。
 scope:
+  work: [dev.build]
   roles: [supervisor, implement]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0005

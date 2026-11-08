@@ -6,7 +6,10 @@ statement: >-
   3 つで 1 つに揃っていないと、決まりに沿って書いた本文が、rubric にだけある見出し（背景・問題）の欠けで差し戻されたり、判定役が同じ指摘を
   決まりの外として退けたりして、PR ごとに判断が割れる。実装役の報告の型だけを rubric に合わせても解けない（どれを正にするかを先に決める）。
 scope:
+  work: [dev.describe, dev.review.inspect, dev.review.judge]
+  artifacts: [PR.body]
   roles: [implement, inspect, judge]
+acts_on: process
 confidence: hypothesis
 evidence:
   - case: C-0003

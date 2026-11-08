@@ -3,7 +3,10 @@ theme: 6
 kind: causal
 statement: supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」ではなく adopt の件数で起こすと、直すもののない差し戻しが記録される。
 scope:
+  work: [dev.review.judge]
+  artifacts: [Judgment]
   roles: [supervisor]
+acts_on: engine
 confidence: hypothesis
 evidence:
   - case: C-0002
@@ -407,6 +410,20 @@ enforcement:
       issue: 1047
       at: 2026-11-07
       decided_by: committee:D-0031
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0034 の ci_check の案（wired_by で wired は照らせるようになったが、verified はまだ書き手の申告だけで、効き目を確かめていないのに
+        verified: true と書かれても見抜けない）を入れた。tools/knowledge-enforcement-check/check.py が、verified: true の解決策には
+        verified_by（確かめた本物の記録を指す case・pr・event の列。evidence と同じく 1 項目に 1 つの参照）を必須にし、case を 1 件以上含めて
+        その事例記録が .factory-config/knowledge/cases/ にあることと、その解決策が wired: true であることを照らし、なければ落とす（pr・event は手元で本物か
+        照らせないので、事例記録に辿れることを求める）。test_check.py で、verified_by がない・空・形が崩れている・事例記録がない・pr と event だけ・
+        wired でないときに落ち、cases/ にある事例記録を指せば通ることを確かめた。今のリポジトリには verified: true の解決策がなく、check.py も
+        .github/workflows/ にはまだ写していない（建設者）ので、PR ごとには走っておらず効き目は確かめていない
+      issue: 1059
+      at: 2026-11-08
+      decided_by: committee:D-0034
       wired: false
       verified: false
 decided_by: committee:D-0004
