@@ -1,0 +1,71 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0054
+pr: https://github.com/guccyon/rally/pull/1148
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に 1 件足しただけなので、D-0004 から D-0053 までの議決や README の決まりと矛盾しません。
+  - 足した test は D-0037 の enforcement の 1 つめの案（2 つの改変を変異体として test_engine.py に置き、総当たりで食い違いが出なければ落とす）とそのまま対応していて、decided_by
+    を committee:D-0037 にしたのも合っています。
+  - issue 1015 の解決策は総当たりのテストそのもので、今回の issue 1079 はその総当たりの効き目を変異体で毎回確かめるものなので、担う範囲が分かれていて重複ではありません。
+  - '形はほかの solutions と同じで、.github/workflows/ への写しが建設者待ちだという記述と wired: false・verified:
+    false も README の決まりに合っており、本物の CI で確かめていないので confidence は hypothesis のままが妥当です。'
+  - D-0037 の 2 つめの案（CI で test_engine.py を skip せずに落とす ci_check）は D-0053 が挙げたとおり issue
+    1063 の解決策と重なるので、次に直すときに D-0037 との対応を what か decided_by に書いてください。
+  - K-0004 の solutions は supervisor の差し戻しという主張ではなく知見の置き場の担保の表示を担うものが増え続けているので、建設者の配線が入ったときに別の知見へ移すか整理するかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 足した solution は issue 1079 と committee:D-0037 を指していて、D-0037 の test の案（確かめた 2 つの改変を変異体として
+    test_engine.py に置き、総当たりが食い違いを出さなければ落とす）とそのまま対応しているので、一次記録に辿れます。
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '.github/workflows/ への写しがまだで PR ごとには走っておらず効き目は確かめていないと自分で書き、wired: false・verified:
+    false としているので、記録の書き方は正直です。'
+  - 総当たりをゆるめたときに落ちると確かめたのは wired の "true" の変異体だけなので、verified を値の有無で見る変異体がどのゆるめ方で落ちるかも次に直すときに書き添えてください。
+  - Engine の写しは手元で差分を当てたもので本物の CI で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  - 差分に出てくるのは issue の番号、議決の id、ツールのパス、関数や値の名前などの識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0037 の test の案を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、担保の観点では採ってよいです。
+  - 2 つの改変を MUTANTS として test_engine.py に置き、変異体ごとに exhaustive_mismatches で食い違いが出なければ落とし、置き換える字面がなくなっても落とす形は、一度だけの手元の確認を毎回の決定論の確認に変えていて、確かさと線の引きやすさは十分です。
+  - ただし MUTANTS が空にされたり 1 件に減らされたりしてもループが回らずに通ってしまうので、変異体の数と名前を固定して確かめるテストを足すべきです。
+  - D-0037 の ci_check の案（CI=true か ENGINE_DIR のときは test_engine.py を skip せずに落とす）はまだ入っておらず、Engine
+    の写しがないと変異体のテストごと黙って飛ばされるので、外したときの痛さが大きく、先に入れるべきです（D-0053 の案と重なるのでまとめてよいです）。
+  - 'what に .github/workflows/ への写しがまだで PR ごとに走っていないと書き、wired: false・verified: false
+    としているのは事実と合っているので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0037 の test の案を入れた記録を
+    enforcement.solutions に 1 件足しただけで、wired: false・verified: false とも合っているので、範囲は広すぎず言い過ぎてもいません。'
+  - 反例として、変異体は wired の "true" と verified の値の有無の 2 つだけなので、ほかの方向（たとえば "false" の文字列や
+    0 を配線済みに数える）に総当たりがゆるめられても気づけないことを建設者が確かめてください。
+  - 総当たりをゆるめると落ちることを確かめたのは wired の "true" の変異体だけで、verified の変異体がゆるめを捕まえられるかは書かれていないので、次に直すときに確かめた範囲を書き分けてください。
+  - 議決 D-0037 の 2 つめの案（CI で test_engine.py を飛ばさずに落とす ci_check）はこの PR では扱っておらず、issue
+    1063 の解決策で入った分で足りているかを建設者の配線のときに確かめてください。
+  - K-0004 の solutions は 31 件になり、supervisor の差し戻しという主張とは別の、知見の置き場の担保の仕組みの記録がたまり続けているので、別の知見に分けるかを委員会か人で決めてください。
+  - 比べている Engine は手元で差分を当てた写しで本物の CI で走っていないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: test
+  proposal: tools/knowledge-enforcement-check/test_engine.py に、MUTANTS の名前の集合が wired
+    の "true" を配線済みに数える改変と verified を値の有無で見る改変の 2 件ちょうどであることを確かめるテストを足し、変異体が消されたり減らされたりしたら落とす。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 議決 D-0037 の ci_check の案として、CI=true か ENGINE_DIR を渡したときは Engine の写しがなくても
+    test_engine.py を skip せずに落とし、ci/knowledge-enforcement.yml の unittest discover
+    の出力で skipped が 1 件以上なら落とす手順を足す（D-0053 の案とまとめて decided_by に D-0037 を併記する）。
