@@ -1,0 +1,77 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0086
+pr: https://github.com/guccyon/rally/pull/1244
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、過去の議決や README の決まり、specs/ の規範と矛盾しません。
+  - '足した lint は D-0061 の 2 つめの enforcement の案（check_schedule() の if: を許可リスト方式にして test_check.py
+    に場合を足す）と中身が合っていて、decided_by: committee:D-0061 は正しいです。'
+  - issue 1088 の解決策（D-0039）が書く字面の当てはめを置き換える中身ですが、新しい項目の what が前の off_event("schedule")
+    から変えたと書いているので辿れ、README の「消さずに残す」決まりにも合っています。
+  - 'REQUIRED_SCHEDULE には issue 1158（D-0059）の protection.mjs の組も入っており、ひな形 sendback-protection.yml
+    の protection のジョブの if: は許す形だと書いているので、既存の解決策と衝突しません。'
+  - D-0061 の 1 つめの案（schedule が最後に通った時刻を照らす ci_check）はまだ K-0004 に入っていないので、次の変更セットで扱いを決めると揃います。
+  - 'wired: false・verified: false で check.py の写しもまだなので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した solution の decided_by の committee:D-0061 は、knowledge/committee/D-0061.yaml
+    の 2 つめの enforcement（lint、check_schedule() の if: を許可リスト方式にして test_check.py に場合を足す案）と中身が合っていて、一次記録（PR
+    #1161）に辿れます。'
+  - 'what に書いた「Issue #1163 の起票時の番号は D-0058」は、既存の D-0059 の項目と同じ書き方で、起票時と議決時の番号のずれを正直に残しているので辿り方に問題はありません。'
+  - 'test_check.py での確認と off_schedule を戻した写しで落ちることの確認は手元の試験であり事例記録ではないので、wired: false・verified:
+    false にしたのは効き目を言い過ぎておらず妥当です。'
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の記録での確認もまだないので、確かさは hypothesis
+    のままが妥当です。
+  - 差分にあるのは議決と Issue と PR の番号、ツールのパス、関数の名前、式の形だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0061 の 2 つめの案（check_schedule() の許可リスト方式）を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence は変えていないので、担保の観点では採ってよいです。
+  - 'if: の許す形を「無い」か「github.event_name == ''<event>'' を || でつないで schedule を含む形」に絞り、15
+    とおりの決まっていない式をジョブと手順で落とすテストと、前の実装に戻すと落ちることの確認まであるので、線がはっきりしていて決定論の担保として確かです。'
+  - 'ただし許可リストは if: だけを見るので、ジョブや手順に continue-on-error: true があると schedule で走っても落ちたことが伝わらず、D-0061
+    の反対の票が挙げたすり抜けがまだ残っています。'
+  - D-0061 の 1 つめの案（schedule が最後に通った時刻を記録し、2 日より古ければ落として Issue を開く ci_check）はまだ K-0004
+    に入っておらず、GitHub が schedule を止めたときの外したときの痛さが残っているので、次の変更セットで入れてください。
+  - 'check.py が .github/workflows/ に写されておらず wired: false・verified: false と正直に書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0061 の 2 つめの lint の案の記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - '許可リストは check_schedule() が見る REQUIRED_SCHEDULE の組のジョブと検査を呼ぶ手順の if: だけに効き、ひな形 sendback-protection.yml
+    の protection のジョブはそのまま通ると書いているので、ほかの知見や既存のひな形を巻き込む反例は見当たりません。'
+  - '反例として、if: を持たないジョブでも needs: で前のジョブに頼っていれば、前のジョブが落ちたり飛ばされたりすると schedule でも走らないので、needs:
+    の有無も照らすテストを次の変更セットで test_check.py に足すことを勧めます。'
+  - 'D-0061 の反対の票が挙げた continue-on-error: true や、GitHub が schedule を止めた場合はこの lint では捕まらないので、what
+    にこの lint が捕まえない外れ方を一言書いておくと取り違えを防げます。'
+  - '「Issue #1163 の起票時の番号は D-0058」という注記は、knowledge/committee/D-0058.yaml が別の議決として実在するので読み手が取り違えやすく、decided_by
+    の committee:D-0061 だけを正として読むよう気をつけてください。'
+  - 'wired: false・verified: false で check.py もまだ .github/workflows/ に写されていないと本文自身が書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: tools/knowledge-enforcement-check/check.py の check_schedule() で、REQUIRED_SCHEDULE
+    の検査を呼ぶジョブと手順に continue-on-error が真（true や式）で書かれていれば落とし、test_check.py の ScheduleTest
+    にジョブと手順それぞれで continue-on-error を置くと落ちるテストを足す。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: D-0061 の 1 つめの案のとおり、sendback-protection.yml の schedule が通るたびに最後に通った時刻を成果物か
+    Issue のコメントに残し、別の検査が 2 日より古ければ落ちて Issue を開くようにして、schedule の停止や落ち続けに気づけるようにする。
