@@ -1194,6 +1194,77 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
         self.assertIn(f"issue 1196）: {check.ENGINE_UNWIRED}", errors[0])
 
 
+class PrBodyEngineTestsWiringTest(unittest.TestCase):
+    """K-0012 の issue 1197（test）の解決策は、.github/workflows/pr-body-engine.yml の pull_request のジョブから recheck.test.mjs・engine.test.mjs・
+    ci.test.mjs をそれぞれ呼ぶ項目がないと wired にできない（議決 D-0100（起票時の番号は D-0071）、Issue #1197）"""
+
+    TESTS = ("tools/pr-body-check/recheck.test.mjs", "tools/pr-body-check/engine.test.mjs", "tools/pr-body-check/ci.test.mjs")
+    TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-engine.yml"
+    WF = ".github/workflows/pr-body-engine.yml"
+    OTHER = ".github/workflows/pr-body.yml"
+
+    def repo(self, text: str | None = None, files: dict[str, str] | None = None) -> Path:
+        """ひな形 ci/pr-body-engine.yml を text（既定はそのまま）で写したリポジトリ"""
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        base = {**{rel: "" for rel in self.TESTS}, self.WF: self.TEMPLATE.read_text(encoding="utf-8") if text is None else text}
+        for rel, body in {**base, **(files or {})}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(body, encoding="utf-8")
+        return d
+
+    def item(self, runs=TESTS, workflow=WF, issue=1197, wired=True) -> dict:
+        return {"id": "K-0012", "_file": "K-0012.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": workflow, "job": "engine-test", "runs": r} for r in runs]}]}}
+
+    def errors(self, d: Path, **kw) -> list[str]:
+        item = self.item(**kw)
+        return check.check_pull_request(item, d) + check.check_wiring(item, d) + check.check_engine_wait(item, d, None)
+
+    def test_対象に挙げてある(self):
+        key = ("K-0012", 1197)
+        self.assertEqual(check.REQUIRED_PR[key], (self.TESTS[0], "D-0100"))
+        self.assertEqual(check.REQUIRED_PR_WORKFLOW[key], self.WF)
+        self.assertEqual(check.REQUIRED_PR_ALSO[key], tuple((t, self.WF, "D-0100") for t in self.TESTS[1:]))
+        self.assertNotIn(key, check.REQUIRED_ENGINE_WAIT)
+
+    def test_ひな形をそのまま写したジョブで_3_つとも呼べば通る(self):
+        self.assertEqual(self.errors(self.repo()), [])
+
+    def test_3_つのどれかの項目がなければ落ちる(self):
+        d = self.repo()
+        for missing in self.TESTS:
+            e = self.errors(d, runs=tuple(t for t in self.TESTS if t != missing))
+            self.assertEqual(len(e), 1, (missing, e))
+            for part in (f"on.pull_request のある {self.WF} で", missing, "議決 D-0100", "issue 1197"):
+                self.assertIn(part, e[0])
+
+    def test_別のワークフローの写しでは落ちる(self):
+        d = self.repo(files={self.OTHER: self.TEMPLATE.read_text(encoding="utf-8")})
+        e = self.errors(d, workflow=self.OTHER)
+        self.assertEqual(len(e), 3, e)
+        self.assertTrue(all(self.WF in x for x in e), e)
+
+    def test_pull_request_を外すか道を渡して絞った写しでは落ちる(self):
+        text = self.TEMPLATE.read_text(encoding="utf-8")
+        no_pr = text.replace("on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n", 1)
+        self.assertNotEqual(no_pr, text)
+        self.assertEqual(len(self.errors(self.repo(no_pr))), 3)
+        # 道を渡して recheck.test.mjs だけを走らせると、engine.test.mjs と ci.test.mjs は呼んでいない側に数える
+        narrowed = text.replace("node --test --test-reporter=spec >", "node --test --test-reporter=spec recheck.test.mjs >", 1)
+        self.assertNotEqual(narrowed, text)
+        e = [x for x in self.errors(self.repo(narrowed)) if "wired にするには" in x]
+        self.assertEqual(len(e), 2, e)
+        self.assertFalse(any(self.TESTS[0] + " を呼ぶ" in x for x in e), e)
+
+    def test_配線していなければ見ない(self):
+        d = self.repo()
+        (d / self.WF).unlink()
+        self.assertEqual(self.errors(d, wired=False), [])
+
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 
