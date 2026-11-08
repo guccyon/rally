@@ -34,3 +34,5 @@ routes:
     - to: gen1_reports
   request.inbox:
     - to: gen1_channel
+  done.task:                  # 窓口の依頼の提出・断り・知らせ直し（factory-engine の ADR 0039 の決定 5a）。受信トレイと同じチャンネルに 1 回だけ
+    - to: gen1_channel
