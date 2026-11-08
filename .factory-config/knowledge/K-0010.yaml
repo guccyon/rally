@@ -122,4 +122,21 @@ enforcement:
       decided_by: committee:D-0043
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0042 の ci_check の案（ひな形を .github/workflows/conflict-check.yml に写して必須のチェックにし、supervisor の merge_step から
+        watch.py を周期ごとに呼ぶ配線を入れ、配線したら ci_check の項目を wired: true にして wired_by を書き、check.py がその job が
+        test_watch.py・test_engine.py を呼んでいるかを照らす）のうち、ワーカーが入れられる検査を入れた。tools/knowledge-enforcement-check/check.py に
+        REQUIRED_RUNS（K-0010 の issue 1034 と issue 1100 の解決策と、tools/conflict-check/test_watch.py・test_engine.py の組）と check_required_runs() を足し、
+        その解決策が wired: true のとき、wired_by に .github/workflows/ の 1 つのジョブから 2 つのテストをすべて呼ぶ項目（テストごとに 1 項目、同じ workflow・job）が
+        なければ落とす（ジョブが本当に呼んでいるかは配線先の照合と同じ job_calls で見る）。test_check.py で、unittest discover か直の呼び出しで両方を呼ぶジョブと
+        ひな形 ci/conflict-check.yml をそのまま写したジョブで通ること、片方か test_policy.py だけを呼ぶジョブ・wired_by に片方しか書かない・別のジョブに分けて呼ぶ・
+        ひな形を配線先に書いたときに落ちること、ほかの知見・ほかの issue・wired でない解決策は見ないことを確かめた。ワーカーは .github/workflows/ と Engine の
+        supervisor を変えられないので、ひな形の写しと必須のチェックへの登録、merge_step から watch.py を呼ぶ配線は建設者が入れる。issue 1034 の解決策は
+        wired: false のままなのでこの検査はまだ何も落とさず、check.py も .github/workflows/ からは走っていない（建設者）ので、効き目は確かめていない
+      issue: 1100
+      at: 2026-11-08
+      decided_by: committee:D-0042
+      wired: false
+      verified: false
 decided_by: committee:D-0013
