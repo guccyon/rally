@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0048
+pr: https://github.com/guccyon/rally/pull/1126
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0034 の enforcement
+    の 1 つ目の ci_check の案（verified: true には verified_by を必須にし、事例記録の実在と wired: true を照らす）を
+    solutions に 1 件足しただけなので、D-0004 から D-0034 までの議決と矛盾しません。'
+  - 足した solution の kind・what・issue・at・decided_by・wired・verified の形は既存の solutions と同じで、decided_by
+    を提案元の committee:D-0034 にしたこともこれまでの揃え方と合っています。
+  - issue 962 の solution（wired・verified の項目）と issue 986 の solution（wired_by で wired
+    を照らす）とは役目が分かれていて、今回は申告の verified を事例記録で照らす別の段なので、重複ではありません。
+  - D-0034 の案は verified_by を case・pr・event の列とだけ書いていましたが、この PR は case を 1 件以上含むことまで求めており、案より厳しい側に寄せた点は
+    what と README に理由（pr・event は手元で本物か照らせない）が書かれていて食い違いません。
+  - README の verified_by の決まりは wired_by の決まりと同じ段落に同じ書き方で足されていて、2026-11-07 時点の記入済みの知見の一覧（K-0001・K-0004・K-0010
+    と、未記入の K-0002・K-0006・K-0009）も今の知見の置き場の実態と合っています。
+  - 'verified_by も wired_by と同じく Engine の definitions/knowledge.yaml にまだない項目で、どの解決策も
+    wired: false・verified: false のままなので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の解決策は committee:D-0034 と issue 1059 を指し、D-0034 の enforcement の 1
+    つ目の案（verified: true に verified_by を必須にし、事例記録の実在と wired: true を照らす）にそのまま対応しているので、一次記録に辿れます。'
+  - 'wired: false・verified: false と書き、what に「verified: true の解決策がまだなく、check.py も .github/workflows/
+    に写していないので効き目は確かめていない」とあり、記録より強く言っていません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、担保の記録を足しただけなので根拠の段は崩れていません。'
+  - 'どの解決策も未配線・未確認のままなので confidence は hypothesis のままが妥当で、verified_by で cases/ の事例記録を指す
+    verified: true の解決策が出るまでは上げないでください。'
+  - 'README に足した verified_by の決まりは出どころを D-0034 と Issue #1059 で示しており、pr・event だけでは足りず事例記録に辿れることを求める点は、一次記録に辿れることを担保する向きなので根拠の観点から望ましいです。'
+  - 差分に出てくるのはツールのパス・項目名・issue の番号・議決の id・知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は D-0034 の 1 つめの ci_check の案を入れたもので、verified: true という書き手の申告を verified_by
+    と cases/ の事例記録の実在、wired: true との組み合わせで機械が照らす形になるので、担保の観点では採ってよいです。'
+  - 'pr・event だけでは通さず事例記録を 1 件以上求め、wired でない解決策の verified: true を落とす線は、外れたときに確認済みと誤って出ない安全側の線で、線の引き方として妥当です。'
+  - ただし check.py はまだ .github/workflows/ に写されておらず PR ごとに走らないので、今は verified_by がなくても何も止まらず、D-0034
+    の 2 つめの案（建設者の配線と必須チェック化）が残っています。
+  - verified_by も wired_by と同じく check.py だけが見ていて、Engine の definitions/knowledge.yaml
+    と core-gates/knowledge_check.py にはまだ形がないので、D-0034 の schema の案に verified_by も含めるべきです。
+  - check.py は事例記録のファイルがあることしか照らさず、その事例がこの解決策の効き目を記録したものかは見ないので、関係のない C-NNNN を書けば通る穴が残ります。
+  - '足した解決策は wired: false・verified: false と正直に書かれていて効き目は確かめていないので、K-0004 の confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0034 で可決した ci_check
+    の案を入れた記録を solutions に 1 件足し、README に verified_by の決まりを 1 文足しただけなので、範囲は広すぎません。
+  - '足した項目は wired: false・verified: false で、check.py を .github/workflows/ に写しておらず効き目は確かめていないと正直に書いているので、記録より強く言っていません。'
+  - 反例として、cases/ に実在するが別の件を記録した事例（たとえば C-0001）を verified_by に書けば、その解決策の効き目と関係がなくても通るので、事例記録がその解決策や知見を指しているかまで照らすかを次の変更で検討してください。
+  - '反例として、wired: true は wired_by の字面の照合で通るので、wired と verified_by の事例を形だけ揃えれば verified:
+    true を偽れる余地は残りますが、申告だけのときより狭まるので採らない理由にはなりません。'
+  - 知見の置き場の検査ツールの担保を、差し戻しの判定についての K-0004 に積み続けているのは知見の主張と担保の対象がずれていますが、D-0021・D-0031
+    からの扱いと同じなので今回の採否には響かず、いずれ別の知見に分けるかを人が決めてください。
+  - どの解決策も未配線・未確認なので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'D-0021・D-0034 の案のとおり、建設者が ci/knowledge-enforcement.yml を .github/workflows/
+    に写して check.py（wired_by と verified_by の照合を含む）を pull_request で走らせ、ブランチ保護の必須チェックに入れ、そのあとで
+    issue 986・1059 の解決策を wired: true（wired_by にその workflow と job と check.py を書く）にする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: Engine の definitions/knowledge.yaml の enforcement.solutions に wired_by
+    と verified_by（evidence と同じ case・pr・event の列）を足し、verified が true のときは verified_by
+    を必須・wired が true であることを条件としてスキーマに書き、core-gates/knowledge_check.py でも同じ形を落とす。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'check.py で、verified_by が指す事例記録の本文または front matter にその知見の id（K-0004 など）と解決策の
+    issue 番号が書かれていることも照らし、関係のない事例記録を指した verified: true を落とす。'

@@ -5,8 +5,10 @@ statement: >-
   並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、
   そのたびに重い続きのジョブ（tier-large、PR 本文への追記つき）が走って、費用と本文の追記による次の欠陥を生む。
 scope:
+  work: [dev.build]
+  files: [CHANGELOG.md, changelog.d/]
   roles: [implement]
-  paths: [CHANGELOG.md, changelog.d/]
+acts_on: process
 confidence: hypothesis
 evidence:
   - case: C-0001
@@ -15,11 +17,18 @@ evidence:
   - case: C-0005
   - pr: 659
   - event: "case.analyzed:274379"
+  - case: C-0007
+  - pr: 290
+  - pr: 295
+  - event: "case.analyzed:370939"
+  - case: C-0008
+  - pr: 678
+  - event: "case.analyzed:370961"
 status: active
-verified_at: 2026-11-05
-review_by: 2026-12-05
+verified_at: 2026-11-08
+review_by: 2026-12-08
 confidentiality: product
-related: [K-0010]
+related: [K-0010, K-0013, K-0015]
 invalidate_when:
   - "利用者に見える変更の記録が CHANGELOG.md の同じ場所への直接の追記に戻った"
   - "changelog.d/ の断片方式にしたあとも、CHANGELOG だけの衝突が続いている"
@@ -31,6 +40,8 @@ enforcement:
         CHANGELOG を PR ごとの断片（changelog.d/<Issue 番号>.md）にし、取りまとめを別の工程にした
         （Engine ADR 0027、core-gates/changelog_compile.py、このリポジトリの changelog.d/README.md と CLAUDE.md）。
         この事例のあとに入ったもので、効き目（CHANGELOG の衝突が減ったか）はまだ確かめていない
+      wired: false
+      verified: false
     - kind: ci_check
       what: >-
         PR の差分（merge-base から head）が CHANGELOG.md の [Unreleased] を直接変えていたら落とす検査
@@ -40,4 +51,6 @@ enforcement:
       issue: 827
       at: 2026-11-03
       decided_by: committee:D-0001
+      wired: false
+      verified: false
 decided_by: committee:D-0001

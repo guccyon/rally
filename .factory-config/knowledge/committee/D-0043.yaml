@@ -1,0 +1,88 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0043
+pr: https://github.com/guccyon/rally/pull/1102
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - D-0013・D-0023・D-0030・D-0042 で consistency が求めてきた 2 点（statement の末尾の PR 本文の追記を
+    K-0001 の主張への参照にすること、related に K-0008 を足すこと）がこの変更セットで入り、K-0001 との主張の重なりが解けました。
+  - statement の変更は K-0001 に渡した部分を削っただけで主張を狭めており、scope・evidence・confidence・invalidate_when
+    は変わらないので、K-0001・K-0002・K-0008 の扱いは「そのまま」でよく、変更セットとして妥当です。
+  - '足した test の担保は D-0030 の enforcement の 2 つ目の案（今の Engine のときだけ todo にし、agent_resumed
+    と tier を出す版で照らせない件数が 1 以上なら落とす）と中身がそろっていて、decided_by: committee:D-0030 で議決に辿れます。'
+  - '「Issue #1035 の起票時の番号は D-0029」と書き添えたのは、今の D-0029 が K-0004 の議決で別物なので、D-0023・D-0030
+    のときと同じく取り違えを防ぐ書き方として妥当です。'
+  - D-0042 の test の案のうち test_watch.py の分は入れていないと理由とともに明記し、decided_by を D-0042 にしていないので、議決との対応は食い違っていませんが、D-0042
+    の案のチケットで残りを入れたら別の項目として記録してください。
+  - statement を直したのに verified_at と INDEX.md の K-0010 の行の再生成が差分にないので、knowledge_check.py
+    --index で INDEX.md を作り直すことを確かめてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0010 に足した test の担保は issue 1035 と committee:D-0030 を指しており、D-0030 の enforcement
+    の 2 つ目の test の案（今の形の Engine のときだけ todo にし、照らせない件数が 1 以上なら落とす）と中身が一致するので、一次記録に辿れます。
+  - 'what に「Issue #1035 の起票時の番号は D-0029」と PR #1033 が書かれており、今の committee/D-0029.yaml（PR
+    #1023）と取り違えずに D-0030 に辿れます。'
+  - statement の末尾を「PR 本文の追記が重なることは K-0001 の主張」に直したことと related に K-0008 を足したことは、D-0013
+    と D-0030 で consistency が求めた直しのとおりで、主張を狭めただけなので evidence の C-0005・PR 659・case.analyzed:274379
+    のままで足ります。
+  - 'what は ENGINE_REF（2490db6）と dispatcher.py の写しで確かめたことだけを書き、job.finished に項目が入っておらず
+    CI にも配線されていないので効き目は確かめていないと書いていて、wired: false・verified: false と合っているので、confidence
+    は hypothesis のままが妥当で上げないでください。'
+  - D-0042 の test の案が求める test_watch.py の検査を入れなかった理由と、それを D-0042 のチケットに回すことが書かれているので、どの議決のどの案を満たしたかの辿りが崩れていません。
+  - 差分にあるのは Issue と PR の番号、議決の id、コミットの短い hash、ツールのパスとイベントの欄の名前だけで、利用者や人を特定できる情報は入っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0030 の 2 つ目の案（test）を K-0010 の enforcement.solutions に記録するもので、issue 1035
+    と committee:D-0030 に辿れるので、担保の記録として採ってよいです。
+  - EngineFinishedTest は dispatcher.py の job.finished の欄を構文木から読み、agent_resumed と agent_tier
+    の照らせない件数が 1 以上なら落とすので線ははっきりしていて、片方だけを出す版でも落ちることを写しで確かめてあり、決定論の形はできています。
+  - ただし ci/conflict-check.yml はまだ .github/workflows/ に写されておらず、ENGINE_REF（2490db6）では
+    todo で飛ぶので、今は C-0005 と同じ積み直しが起きても resumed_after_limit と agent_for_mechanical は本物のイベント列で黙って通ります。
+  - 「CI=true では飛ばさずに落とす」が Engine の取り出しに失敗したときだけなのか、今の形の Engine でも落とすのかが what から読み取れないので、建設者は配線するときに
+    CI で todo が緑のまま残らない形を決めてください。
+  - test_watch.py に同じ検査を足さない理由（watch.py は events.py の records_from_events を使うので EngineFinishedTest
+    が先に落ちる）は筋が通っており、重複した検査を作る費用を省く判断として妥当です。
+  - 'statement の末尾を K-0001 への参照にし related に K-0008 を足したのは D-0013・D-0023・D-0042 で求められた直しで担保の観点と矛盾せず、どの解決策も
+    wired: false・verified: false なので confidence は hypothesis のままにしてください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は statement の末尾にあった PR 本文の追記の主張を K-0001 への参照に移して主張を狭め、related に K-0008 を足し、D-0030
+    の test の案を enforcement.solutions に 1 項目足すだけなので、範囲が広すぎるとは判断しません。
+  - 'what に、ENGINE_REF（2490db6）の Engine では todo で飛ぶこと、job.finished に欄を足すのと ci/conflict-check.yml
+    を .github/workflows/ に写すのは建設者で効き目は確かめていないことが書いてあり、wired: false・verified: false
+    と合っているので、担保が効いているように言い過ぎていません。'
+  - 反例として、engine_harness.py は dispatcher.py の構文木から cost_usd を持つ record_event を探すので、Engine
+    が job.finished を別のファイルやヘルパーで出すように変わると欄を見つけられず「今の形」とみなされて todo で飛ぶおそれがあり、CI=true
+    以外でも見つからないときは落とすか、件数を出すようにしてください。
+  - D-0042 の test の案が求める test_watch.py の検査を入れなかった理由（watch.py は events.py の records_from_events
+    と同じ扱いなので EngineFinishedTest が先に落ちる）は筋が通っていますが、watch.py が今後独自の組み方をすると抜けるので、D-0042
+    の案のチケットで必ず足してください。
+  - D-0023・D-0030・D-0042 の反対の票が挙げた changelog.d/ だけの衝突を機械的とみなしてよいかという反例はこの PR でもまだ解かれていないので、建設者が配線する前に対象を決めてください。
+  - 配線も本物のイベント列での確認もないので、confidence は hypothesis のままが妥当で、上げないでください。
+  personal_data: false
+enforcement:
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/conflict-check/ci/conflict-check.yml を .github/workflows/conflict-check.yml
+    に写して必須のチェックにし、test_events.py の EngineFinishedTest を CI=true で走らせる。job.finished
+    に agent_resumed と agent_tier を足した Engine に ENGINE_REF を上げたら、K-0010 の test の項目を
+    wired: true にして wired_by に workflow・job・検査の道を書き、check.py がその job が test_events.py
+    を呼んでいるかを照らす。'
+- knowledge: K-0010
+  level: deterministic
+  solution_kind: test
+  proposal: EngineFinishedTest の todo が黙って残らないよう、todo で飛ばした件数を CI の出力に出し、K-0010 の
+    review_by（2026-12-05）を過ぎても ENGINE_REF の Engine が todo のままなら落とす検査を test_events.py
+    か check.py に足す（照らせない件数が見えない形で緑にならないようにする）。

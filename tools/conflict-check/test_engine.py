@@ -6,9 +6,11 @@ Engine のチェックアウトは環境変数 ENGINE_DIR で渡す（なけれ�
 今の Engine が線から外れている場合は、Engine が今の形（LEGACY_*）のときだけ「todo:」の理由で飛ばす（結果には出る）。
 Engine の振る舞いが今の形から変わったら、その版からは線に合わないと落ちる。建設者が Engine を線に合わせて ENGINE_REF を上げたら、
 LEGACY_* と todo_while_legacy の呼び出しを消してよい（README の「今の Engine」）。
+todo で飛ばしたテストは todo で数え、終わりに件数と中身を標準エラーに出す（GitHub Actions では ::warning の注記も。議決 D-0043・Issue #1104）。
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import subprocess
@@ -27,6 +29,28 @@ REQUIRED = bool(os.environ.get("ENGINE_DIR")) or os.environ.get("CI") == "true"
 HAVE_ENGINE = (ENGINE_DIR / "orchestrator/dispatcher/supervisor.py").is_file()
 SKIP = None if REQUIRED or HAVE_ENGINE else f"Engine のチェックアウトがない（ENGINE_DIR={ENGINE_DIR}）"
 HEADS = 6   # 上限（3）を超えて衝突し続ける head の数
+TODOS: list[str] = []   # この実行で todo（Engine が今の形のときだけ）で飛ばしたテストと理由。test_events.py・test_watch.py の EngineFinishedTest も足す
+
+
+def todo(case: unittest.TestCase, reason: str):
+    """Engine が今の形のときだけ「todo:」の理由で飛ばし、件数に数える（終わりに todo_summary で出す。議決 D-0043・Issue #1104）"""
+    TODOS.append(f"{case.id()}: {reason}")
+    case.skipTest(f"todo: {reason}")
+
+
+def todo_summary(todos: list[str], github: bool = False) -> list[str]:
+    """todo で飛ばした件数と中身の行。GitHub Actions では 1 件ずつ ::warning の注記も出す（OK のまま黙って残らないように）"""
+    out = [f"conflict-check: todo で飛ばしたテスト {len(todos)} 件（Engine が今の形のときだけ。README の「今の Engine」）"]
+    out += [f"  - {t}" for t in todos]
+    if github:
+        out += [f"::warning title=conflict-check todo::{t}" for t in todos]
+    return out
+
+
+@atexit.register
+def _report_todos():
+    if TODOS:
+        print("\n".join(todo_summary(TODOS, os.environ.get("GITHUB_ACTIONS") == "true")), file=sys.stderr)
 
 
 def harness(*args: str) -> dict:
@@ -63,11 +87,11 @@ class EngineTest(unittest.TestCase):
 
     def todo_while_legacy(self, is_legacy: bool, what: str):
         if is_legacy:
-            self.skipTest(f"todo: 今の Engine は {what}（README の「今の Engine」。Engine を直して ENGINE_REF を上げたら消す）")
+            todo(self, f"今の Engine は {what}（README の「今の Engine」。Engine を直して ENGINE_REF を上げたら消す）")
 
     def test_0_取り出す関数と手順がすべてEngineにある(self):
         out = harness("--check", self.engine)
-        for name in ("conflict_step", "ci_failure_step", "enqueue", "attempts", "pending"):
+        for name in ("conflict_step", "ci_failure_step", "enqueue", "attempts", "pending", "open_stoppage"):
             self.assertIn(name, out["functions"])
         self.assertEqual(out["entrypoint"], ["mechanical", "state_args"])
 
@@ -137,6 +161,14 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(policy.resolution(self.c, out["before"])["mode"], "agent")
         self.assertTrue(out["agent"], f"機械的に解いてしまった: {out}")
         self.assertIn("src/app.txt", out["conflicts"])
+
+    def test_4_線から外れたイベント列の見張りはEngineの停止で衝突の停止を開いて人の判断待ちにする(self):
+        out = harness("watch", self.engine, "--events", str(HERE / "fixtures" / "c0005-pr659-events.json"))
+        key = "ci:https://github.com/guccyon/rally/pull/659"
+        self.assertEqual(out["opened"], [key], f"C-0005 のイベント列で衝突の停止を開かない: {out}")
+        self.assertEqual(out["reopened"], [], "次の周期で同じ停止を開き直した")
+        self.assertEqual([(r["key"], r["category"], r["detected_by"], r["job_id"]) for r in out["recorded"]], [(key, "ticket", "conflict-check", 9001)])
+        self.assertEqual(out["recorded"][0]["dedupe_key"], f"stoppage.opened:{key}")
 
 
 if __name__ == "__main__":

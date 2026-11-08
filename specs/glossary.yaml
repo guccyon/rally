@@ -232,6 +232,18 @@ terms:
       完了はセッションの終了の後にしか記録できないので、枠の開始より前に完了したレッスンはできない。#899）、同じ予約のセッションは 1 つ。グループレッスンの通話中のセッションには、
       結び付いた予約の生徒が同じセッションに入る。完了したレッスン（lesson_completion）は結び付いた予約の生徒ごとに 1 つで、終了したセッションにだけ記録できる。
       admin-web の本部の画面での呼び名は「ビデオ通話」（例: 「ビデオ通話の記録」「終わっていないビデオ通話」）で、「ライブレッスン」「通話」と言い換えない（specs/design/content.yaml の glossary_mapping。#898）。
+  - id: prejoin_check
+    ja: "入室前チェック"
+    definition: "同期レッスンの通話に入る前に、生徒とコーチがそれぞれ自分の端末の本物のカメラの映りと背景・マイクの音・スピーカーの試し音を確かめることで、予約したスロットの開始 5 分前から開け、通話に入れるのは開始時刻からである。"
+    context: live-lesson
+    code: [PrejoinCheck, PREJOIN_CHECK_LEAD_MINUTES, prejoinCheckLeadTime]
+    note: >-
+      通話サービス（Gen1 はモックの Twilio Video）にはつながず、room_token も取らない。カメラ・マイクの映像と音は端末（ブラウザー）の中で見せて聞かせるだけで、
+      サーバーに送らず、どこにも残さない。入室（通話セッションの開始）は live_lesson_session の決まりのとおり開始時刻ちょうどからで（#899・#921 の slot_not_started）、
+      環境ごとの例外はない。開始 5 分前より早いときは開ける時刻を知らせてチェックを開かず、開始時刻の前は入室のボタンを押せない。
+      カメラ・マイクの許可を断ったときや端末にないときも、そのことを知らせるだけで開始時刻からの入室は止めない。
+      「5 分」は 1 か所の定数で持つ（候補: 生徒アプリの prejoinCheckLeadTime、admin-web の PREJOIN_CHECK_LEAD_MINUTES。各アプリでこの 1 つだけを参照し、値はこの用語の 5 分に揃える）。
+      ユーザーストーリーは specs/stories/student-prejoin-check.yaml と coach-prejoin-check.yaml（#1039）。
   - id: video_review_request
     ja: "添削の依頼"
     definition: "非同期レッスンで生徒がコーチに動画を送り添削を求めることで、送った動画は添削待ちになり、その生徒とコーチのスレッドに添削依頼のメッセージが流れる。"

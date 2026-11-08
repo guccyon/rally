@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0045
+pr: https://github.com/guccyon/rally/pull/1108
+decided_at: '2026-11-07'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。
+  - '足した項目の kind: test と decided_by: committee:D-0032 は、D-0032 の 2 つ目の enforcement
+    の案（gate.test.mjs と engine.test.mjs に通る側の写しを足し、関所が 0 を返して本文を書くことを必須のテストにする）とそのまま対応していて、食い違いはありません。'
+  - D-0044 が求めた「通る側のテストを次の変更セットで記録する」ことと「どの README かを道で書く」こと（tools/pr-body-check/README.md
+    と明記）、D-0032 の反対の票が求めた終了コード 2・3 の意味の書き添えに、この差分で応えています。
+  - '「Issue #1038 の起票時の番号は D-0030。PR #1036」の書き添えは、今の D-0030 が PR #1033 の別の議決で D-0032
+    の pr が #1036 であることと合っており、前の項目と同じ書き方で取り違えを防いでいます。'
+  - 'wired: false・verified: false は what の「配線されておらず効き目は確かめていない」と一致し、invalidate_when
+    の 2 つ目もまだ満たされていないので、K-0001 は active・hypothesis のままで INDEX.md の行とも食い違いません。'
+  - 配線が入ったら同じ変更セットで該当する solutions の wired・verified を書き換え、invalidate_when の 2 つ目に当たるかと
+    K-0001 の status の見直しも決めてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0032 と issue 1038 を指しており、D-0032 の enforcement
+    の 2 つ目の案（gate.test.mjs と engine.test.mjs に通る側の写しを足し、誤検知がないことを必須のテストにする）にそのまま辿れます。'
+  - 「C-0005 と同じ 21 回の続きのジョブ」は C-0005 のなぜなぜの 1 つ目の記述と合っていて、根拠の数字を盛っていません。
+  - 「起票時の番号は D-0030」という注記は、D-0030 が K-0010 についての別の議決であることと食い違わず、D-0032 を正しい議決として指しているので辿り先は取り違えていません。
+  - テストの結果（5 件が落ちる誤検知の書き換え、手元の Engine 2490db6 での結果）は置き場の外の記録でこの材料では確かめられませんが、担保の記録であって主張の根拠を増やすものではないので採る妨げにはなりません。
+  - 'wired: false・verified: false と what の「配線されておらず効き目は確かめていない」が一致しているので、K-0001 の
+    confidence は hypothesis のまま上げないのが妥当です。'
+  - 差分には利用者や人を特定できる情報はなく、job 番号やファイルの道など工場の識別子だけです。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は D-0032 と D-0044 が求めた test の案（通る側の写しで関所が 0 を返し、誤検知で正しい本文を止めないこと）を K-0001
+    の enforcement.solutions に 1 件足すだけで、担保の観点で採ってよいです。
+  - check.mjs に誤検知の書き換えを入れると計 5 件が落ちることを確かめているので、このテストは誤検知という外れを実際に捕まえられる決定論の線になっています。
+  - 'wired: false・verified: false とし、gate.test.mjs を走らせる CI がまだなく ci/pr-body-engine.yml
+    も .github/workflows/ に写されていないと what に書いているので、担保が効いているように言い過ぎてはいません。'
+  - engine.test.mjs の (10) は関所を配線した Engine の写しで通しているだけなので、pr-body-gate.patch が Engine
+    に入って ENGINE_REF が上がったあとは写しではなく ENGINE_REF の Engine で (10) が通ることを必須にしないと、本物の Engine
+    の誤検知は捕まえられません。
+  - C-0005 では 21 回続けて差し戻しになっており、関所が誤検知すると正しい続きのジョブまで body_fix に回して同じくらい痛いので、通る側のテストも
+    CI の必須のチェックに載せるべきです。
+  - 配線も本物の記録での確認もまだなので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0032 の test の案を入れた記録を 1 件足すだけで、statement・scope・confidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - 足した項目は D-0032 の enforcement の 2 件目（通る側の写しで関所が 0 を返し本文を書くことを必須のテストにする）にそのまま対応し、前回の反対の票が求めた通る側のテストと終了コード
+    2・3 の意味の書き添えにも応えています。
+  - 'wired: false・verified: false とし、engine.test.mjs の CI がまだ写されておらず gate.test.mjs
+    を走らせる CI もないと what に書いているので、担保が効いているように言い過ぎてはいません。'
+  - '反例として、通る側の写しは C-0005 の 21 回から組んだ 3 通りの形だけで、コードブロックの中の ## や # の見出しを含む報告など別の形の本物の本文で誤検知がないかは確かめていないので、配線のあと本物の続きのジョブの記録で確かめてください。'
+  - 配線と本物の記録での効き目の確認がまだなので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test
+    を必須のチェックにするとき、同じジョブの node --test で gate.test.mjs・CLI のテスト・engine.test.mjs の (10)
+    が必ず走るようにし、tools/pr-body-check/ci.test.mjs で gate.test.mjs と (10) が実行の対象から外れていない（skip・todo・道の絞り込みがない）ことを見て、外したら落ちるようにする。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: pr-body-gate.patch が Engine に入って ENGINE_REF が上がったら、engine.test.mjs の (10)
+    を差分を当てた写しではなく ENGINE_REF の Engine そのもので走らせる形にし、通る側の 3 通りの形の 21 回で関所が毎回 0 を返して本文を書くことを確かめてから、この
+    test の solution の wired と verified を true にする。

@@ -1,0 +1,70 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0046
+pr: https://github.com/guccyon/rally/pull/1112
+decided_at: '2026-11-07'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えておらず、enforcement.solutions
+    に D-0031 の test の案を 1 件足しただけなので、D-0004 から D-0031 までの議決と矛盾しません。
+  - '足した solution は kind・what・issue・at・decided_by・wired・verified の形が既存の solutions
+    と同じで、decided_by を提案元の committee:D-0031 にし、wired: false・verified: false にしている点も
+    README の決まりと合っています。'
+  - what の中身（harness_unknown_query を engine_head_failed と分け、ci.test.mjs で両方の場合を見分ける）は
+    D-0031 の test の proposal とそのまま対応していて、issue 977 の ci_check（engine-head の定期実行）とは役割が分かれているので、重複ではありません。
+  - D-0028 の solution（issue 1025）は偽の cursor が judgment.pending_fixes に空を返すようにしたもので、今回の『知らない問い合わせは落とす』と食い違いません。今回はその問い合わせを外すと
+    harness_unknown_query で落ちることも確かめているので、両者は整合しています。
+  - 'D-0031 の dissent は『先頭の失敗の記録を Issue #948 とは別の Issue に分ける』よう勧めていましたが、この PR はハーネスのずれも
+    Issue #948 に積んでいます。議決の enforcement の proposal が Issue #948 を指しているので矛盾ではありませんが、記録が埋もれないよう、次に
+    K-0004 を直す変更セットで分けるかどうかを決めてください。'
+  - specs/ の用語や業務ルールに触れる新しい定義はなく、効き目もまだ確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の solution は issue 1046 と committee:D-0031 を指し、D-0031 の 1 つ目の enforcement
+    の案（harness_unknown_query という別の印で落とし、engine_head_failed と分けて ::error と Issue #948
+    に出すことを ci.test.mjs で確かめる）とそのまま対応しているので、一次記録に辿れます。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、担保の記録を
+    1 件足しただけなので、根拠の段は崩れていません。'
+  - '手元の Engine で judgment.pending_fixes の問い合わせを外して harness_unknown_query で落ちたという確認は、版と実行の記録がどこにもないので、使った
+    Engine のコミットとその出力を Issue #1046 に残してください。'
+  - '.github/workflows/ への写しがなく定期の実行も本物の記録での効き目もまだないと自分で書いており（wired: false・verified:
+    false）、confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのはパス・印の名前・問い合わせの名前・Issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0031 の enforcement
+    にある test の案（harness_unknown_query という別の印で落とし、engine_head_failed と分けて知らせる）を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、採ってよいです。
+  - 偽の cursor が知らない問い合わせで終了コード 3 で落ち、Engine が例外を握りつぶしても覚えておいて落とすので、D-0031 が挙げた「判定の変化」と「ハーネスのずれ」を見分けられない穴に決定論の線が引けています。
+  - ci.test.mjs で、知らない問い合わせを引く場合・例外を握りつぶす場合・判定だけが変わる場合の 3 つの偽の Engine を通して印が混ざらないことを確かめ、手元の
+    Engine で judgment.pending_fixes を外すと落ちることも見ているので、繰り返しと確かさの点で筋がよいです。
+  - '重ねない印を先頭の版と種類の組にしたので、ハーネスのずれの記録と判定の変化の記録が Issue #948 で互いを消さず、外したときの痛さも小さくなっています。'
+  - 'ci/sendback-engine-head.yml はまだ .github/workflows/ に写されておらず定期に走っていないので、wired:
+    false・verified: false の記録は正しく、新しい決定論の担保を足す必要はこの PR ではありません。'
+  - 効き目を本物の定期の実行で確かめた記録がないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0031 の test の案（harness_unknown_query
+    で落としてハーネスのずれと判定の変化を分ける）の記録を enforcement.solutions に 1 件足しただけなので、範囲は広すぎません。
+  - 反例として、Engine の先頭で新しい問い合わせが増えると同時に判定も変わった場合は harness_unknown_query だけが出て判定の変化が隠れるので、偽の
+    cursor を直すまで engine_head_failed の知らせが出ないことを what か tools/sendback-check/README
+    に書き添えてください。
+  - 'D-0031 の反対の票が勧めた Issue #948 と先頭の失敗の記録を分けることがまだされておらず、ハーネスのずれの記録まで #948 に積むと PR
+    #395 と同じ入力で通った効き目の記録が埋もれるので、次の変更セットで別の Issue に分けることを勧めます。'
+  - D-0031 で求めた 255〜259 行目の ci_check の what の「この判定の変化」を「ハーネスのずれ」と書き分ける直しがこの PR でも入っていないので、次に
+    K-0004 を直す変更セットで直してください。
+  - '写しが .github/workflows/ になく定期の実行で効き目を確かめていない（wired: false・verified: false）うえ solutions
+    が 17 件まで積み重なっているので、confidence は hypothesis のままにし、配線が入ったら効いたものと効いていないものを整理してください。'
+  - 差分に出てくるのはパス・印の名前・問い合わせの名前・Issue と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+enforcement: []

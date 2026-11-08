@@ -6,7 +6,11 @@ statement: >-
   見出しの順と階層が崩れて新しい差し戻しを生む。同じ本文を複数のジョブ（body_fix と続きの implement）が並列に書き換えると、
   この崩れは重くなる（並列は主な原因ではなく、悪化させる条件）。
 scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
   roles: [judge, body_fix, implement]
+acts_on: context
 confidence: hypothesis
 evidence:
   - case: C-0003
@@ -26,7 +30,8 @@ enforcement:
   solutions:
     - kind: ci_check
       what: >-
-        PR 本文の ## 見出しを 1 つの定義（tools/pr-body-check/template.json。CLAUDE.md の PR の説明の見出しに仮決めを足した順）と照らし、
+        PR 本文の ## 見出しを 1 つの定義（tools/pr-body-check/template.json。CLAUDE.md の PR の説明の見出しに仮決めを足した順として作り、のちにオーナーが Issue #936 で
+        見出しの正本に決めた。正本に CLAUDE.md と rubric の PR-002 が合っているかは K-0005 の Issue #1121 の解決策が照らす）と照らし、
         必須の見出し（概要・対応内容）の欠け、定義の順の違い、同じ ## 見出しの重複、定義の外の見出し（工場の記録・続きのジョブの報告など）が
         定義の見出しの最後より前にあることを見る決定論の検査（K-0001 向けの tools/pr-body-check/check.mjs を広げた）。
         pull_request の edited や pr.body_amended でも起動させて、head_sha の変わらない本文だけの直しもマージ前の必須チェックにする想定。
