@@ -20,6 +20,11 @@ evidence と同じく 1 項目に 1 つの参照）を必須にし、case を 1 
 branch protection の必須のチェックを protection.mjs で照らす）を wired: true にするときは、wired_by に、on.schedule（cron）のあるワークフローで、schedule でも走る
 （if: が github.event_name を見るなら == 'schedule' を含み、!= 'schedule' を含まない）ジョブから runs の検査を呼ぶ項目を必須にする。手で走らせた記録だけでは wired にできない。
 
+PR ごとの配線の必須（議決 D-0043、Issue #1103）: REQUIRED_PR の解決策（K-0010 の issue 1035 と 1103。job.finished の agent_resumed と
+agent_tier を test_events.py の EngineFinishedTest で照らす）を wired: true にするときは、wired_by に、on.pull_request のあるワークフローで、
+pull_request でも走る（if: が github.event_name を見るなら == 'pull_request' を含み、!= 'pull_request' を含まない）ジョブから
+tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほかの検査（test_ci.py など）を呼ぶだけ、定期や手動だけでは wired にできない。
+
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
 同じ種類（solution_kind が解決策の kind）の案があることを照らし、なければ decision_mismatch で落とす。
@@ -59,6 +64,8 @@ EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106）
 REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs",
                      ("K-0001", 1106): "tools/pr-body-check/protection.mjs"}
+# (知見の id, 解決策の issue) → pull_request のジョブから呼ぶことを求める検査（議決 D-0043、Issue #1103）
+REQUIRED_PR = {("K-0010", 1035): "tools/conflict-check/test_events.py", ("K-0010", 1103): "tools/conflict-check/test_events.py"}
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -273,20 +280,36 @@ def check_wiring(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def triggers(workflow: dict):
+    """on: の値（PyYAML も ruby も on: を true と読むので両方を見る）"""
+    return next((workflow[key] for key in ("on", True, "true") if key in workflow), None)
+
+
 def has_schedule(workflow: dict) -> bool:
-    """on.schedule に cron が 1 つ以上あるか（PyYAML も ruby も on: を true と読むので両方を見る）"""
-    on = next((workflow[key] for key in ("on", True, "true") if key in workflow), None)
+    """on.schedule に cron が 1 つ以上あるか"""
+    on = triggers(workflow)
     sched = on.get("schedule") if isinstance(on, dict) else None
     return isinstance(sched, list) and any(isinstance(c, dict) and isinstance(c.get("cron"), str) and c["cron"].strip() for c in sched)
 
 
-def off_schedule(cond) -> bool:
-    """schedule では走らないと数える if:（字面で偽か、github.event_name を見るのに == 'schedule' がないか != 'schedule' がある）。迷う形は走らない側に数える"""
-    if runs_off(cond):
-        return True
-    if not isinstance(cond, str) or "event_name" not in cond:
-        return False
-    return not re.search(r"event_name\s*==\s*['\"]schedule['\"]", cond) or re.search(r"!=\s*['\"]schedule['\"]", cond) is not None
+def off_event(event: str):
+    """event では走らないと数える if: を見る関数（字面で偽か、github.event_name を見るのに == '<event>' がないか != '<event>' がある）。迷う形は走らない側に数える"""
+    def off(cond) -> bool:
+        if runs_off(cond):
+            return True
+        if not isinstance(cond, str) or "event_name" not in cond:
+            return False
+        return (not re.search(rf"event_name\s*==\s*['\"]{event}['\"]", cond)) or re.search(rf"!=\s*['\"]{event}['\"]", cond) is not None
+    return off
+
+
+off_schedule = off_event("schedule")
+
+
+def has_pull_request(workflow: dict) -> bool:
+    """on に pull_request があるか（on: pull_request・on: [pull_request, ...]・on: {pull_request: ...} のどれでも）"""
+    on = triggers(workflow)
+    return on == "pull_request" or (isinstance(on, (list, dict)) and "pull_request" in on)
 
 
 def check_schedule(k: dict, repo: Path) -> list[str]:
@@ -315,6 +338,35 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
             where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
             e.append(f"{where}: wired にするには wired_by に、on.schedule（cron）のある {WORKFLOWS}/ のワークフローで schedule でも走るジョブから"
                      f" {target} を呼ぶ項目が要る（手で走らせた記録だけでは wired にできない。議決 D-0039）")
+    return e
+
+
+def check_pull_request(k: dict, repo: Path) -> list[str]:
+    """REQUIRED_PR の解決策が wired: true なら、pull_request のジョブから検査を呼ぶ wired_by を求める（議決 D-0043、Issue #1103）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    read = repo_reader(repo)
+
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True:
+            continue
+        target = REQUIRED_PR.get((k.get("id"), s.get("issue")))
+        if target is None:
+            continue
+        ok = False
+        for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
+            if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+                continue
+            try:
+                doc = load_yaml(repo / w["workflow"])
+            except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
+                continue
+            if isinstance(doc, dict) and has_pull_request(doc) and job_calls(doc, w["job"], target, read, off_event("pull_request")):
+                ok = True
+                break
+        if not ok:
+            where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+            e.append(f"{where}: wired にするには wired_by に、on.pull_request のある {WORKFLOWS}/ のワークフローで pull_request でも走るジョブから"
+                     f" {target} を呼ぶ項目が要る（ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。議決 D-0043）")
     return e
 
 
@@ -429,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
     repo, decisions = Path(a.repo), {}
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)]
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
