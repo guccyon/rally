@@ -48,4 +48,21 @@ enforcement:
       decided_by: committee:D-0049
       wired: false
       verified: false
+    - kind: schema
+      what: >-
+        議決 D-0049 の schema の案を入れた。衝突したファイルの列 conflict_files（空でない文字列の列で 1 件以上）を、pr.conflicted ではいつも、
+        continue.enqueued では reason=conflict のとき、handoff.saved では continue_reason=conflict のときに必須の欄とする定義を
+        tools/conflict-check/conflict-files.yaml（Engine の definitions/events.yaml の events と同じ形の抜き書き）に置き、
+        tools/conflict-check/schema.py がイベント列をその定義で照らして、欄がない・null（missing_field）、空の列・文字列の列でない（bad_field）イベントがあれば
+        終了コード 1 で落とす。Engine の定義に同じ欄を足す差分を tools/conflict-check/engine/conflict-files.patch に置き、test_schema.py で、
+        C-0005 の流れ（fixtures/c0005-pr659-events.json。今の Engine の形どおりイベントに衝突したファイルが載らない）が落ち、載せた列は通ること、
+        衝突でない続きのジョブには要らないこと、手元の Engine のチェックアウトの写しに差分が当たり Engine の定義が conflict-files.yaml とそろうことを確かめた。
+        差分を Engine に当てること、Engine が衝突したファイルを求めてこの欄を載せ、欄がない・空のイベントを出さないこと（pr.conflicted は GitHub の
+        mergeable_state からしか衝突を知らないので、その手順も要る）、schema.py を周期ごとか PR ごとに走らせる配線は建設者が入れるので、
+        本物のイベント列では確かめておらず、未配線・未確認
+      issue: 1136
+      at: 2026-11-08
+      decided_by: committee:D-0049
+      wired: false
+      verified: false
 decided_by: committee:D-0049

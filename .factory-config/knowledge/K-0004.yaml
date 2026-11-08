@@ -378,6 +378,24 @@ enforcement:
       decided_by: committee:D-0028
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0029（PR #1023。Issue #1026 は D-0028 と書いているが、この案は D-0029 の議決にある）の ci_check の案（.github/workflows/ に
+        check.mjs --events を呼ぶ手順があるのに --engine-report が渡されていないか TAP のファイルが空・存在しないときは engine_report_missing で落とす）を
+        tools/sendback-check/order.mjs に入れた。CLI は配線があれば TAP を必ず求め、渡されていない・ファイルがない・空（空白だけ）のどれでも
+        engine_report_missing で終了コード 1 にする（ファイルがないときに (3) と (c) が「結果にない」で外れていた形を置き換えた）。TAP のない
+        ci/sendback-engine.yml の wiring-order のジョブは --engine-report-elsewhere を付け、代わりに .github/workflows/ に order.mjs --engine-report <TAP> を
+        `if:` や continue-on-error なしに呼ぶ手順がなければ同じ rule で落とす（D-0029 の反対の票が挙げた、wiring-order だけが走って Engine の結果を見ずに通る場合）。
+        tools/sendback-check/order.test.mjs で、渡されていない・存在しない・空・空白だけ・ほかの手順から --engine-report を外す・TAP の道を渡さない・
+        手順に if:・ジョブに continue-on-error のときに落ち、TAP があれば中身で見ること、配線していない今のリポジトリでは通ることを確かめた。
+        check.mjs --events を GitHub Actions で動かしたときの見張り（check.mjs の main）も、同じジョブに TAP がないので --engine-report-elsewhere と同じ線で見て、
+        order.mjs --engine-report を飛ばさずに呼ぶ手順がなければ engine_report_missing で落とす（order.test.mjs で確かめた）。.github/workflows/ への写しは建設者が行うので、
+        まだ PR ごとには走っておらず、この解決策も未配線・未確認
+      issue: 1026
+      at: 2026-11-07
+      decided_by: committee:D-0029
+      wired: false
+      verified: false
     - kind: test
       what: >-
         議決 D-0031 の test の案（engine-head が engine_head_failed の 1 つの印でしか知らせないので、Engine の判定が変わったのか、
@@ -575,6 +593,30 @@ enforcement:
       verified: false
     - kind: ci_check
       what: >-
+        議決 D-0040（PR #1090）の ci_check の案（ci/sendback-engine.yml を .github/workflows/ に写して engine-test と wiring-order を branch protection の
+        必須チェックにしたうえで、gh api で main の required_status_checks にその 2 つが入っていることを確かめるジョブを足し、外れていれば落とす。
+        そのあと ENGINE_REF を上げる PR で engine-test が走って通った記録を残してから wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。
+        必須にしたかは人の手順のままで抜けやすく、あとで必須から外されても PR では気づけなかった。
+        ci/sendback-engine.yml に required-checks のジョブを足し、PR ごとに gh api で repos/{repo}/branches/main（protection.required_status_checks の要約）と
+        repos/{repo}/rules/branches/main（rulesets）を取って tools/sendback-check/protection.mjs に 2 つとも渡す。照らすのは engine-test・wiring-order の
+        ジョブが報告するチェックの名前（議決 D-0038、Issue #1083 で付けた name: の sendback-engine-test・sendback-wiring-order）で、id の
+        engine-test・wiring-order だけを必須にした形は required_check_missing で落ちる。写しがなければ workflow_not_copied、name: が違えば
+        check_name_changed、ほかのワークフローが同じ名前を報告すれば check_name_shared、JSON が取れなければ protection_unreadable で落とす。
+        どちらの API も PR の GITHUB_TOKEN（contents: read）で読める（branches/main/protection は管理者の権限が要るので使わない）。
+        protection.mjs はブランチの JSON の形も読む。protection.test.mjs でブランチの JSON と合わせ方を、ci.test.mjs で required-checks の手順を偽の gh で動かして
+        通る・id の名前だけが必須・必須から外れる・写しがない・gh api が読めない場合を確かめ、ジョブや手順を外す・片方の JSON だけを渡すひな形の直しを
+        必須のチェックにできる形の見張りで外れにした。protection.mjs がブランチの JSON を読まない改変で足したテストが落ちることを手元で確かめた。
+        議決 D-0059 の ci_check の案（protection.mjs を定期と PR ごとに走らせる）のうち PR ごとの分はこの解決策で満たした。定期（schedule）の分は
+        ci/sendback-protection.yml（議決 D-0039、Issue #1087）が受け持ち、その実行の記録を Issue #948 と事例記録に残すことはまだ残っている。
+        .github/workflows/ への写しと必須チェックへの登録は建設者が行い、ENGINE_REF を上げる PR で engine-test が走って通った記録もまだないので、
+        この解決策も未配線・未確認
+      issue: 1091
+      at: 2026-11-08
+      decided_by: committee:D-0040
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
         議決 D-0039 の ci_check の案（protection.mjs は建設者が手で走らせるだけなので、engine-test・wiring-order が必須のチェックから
         後で外されても誰も気づかない）を入れた。tools/sendback-check/ci/sendback-protection.yml に、branch protection を読める権限の
         トークン（シークレット SENDBACK_PROTECTION_TOKEN。GitHub App か administration:read の fine-grained PAT）で main の古い形の
@@ -638,6 +680,22 @@ enforcement:
       issue: 1094
       at: 2026-11-08
       decided_by: committee:D-0041
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0047 の ci_check の案（issue 977 の解決策の wired と verified を true にする条件の、Issue #948 に engine-head の記録が残っていることを
+        建設者が head-record.mjs を手で走らせて判断するだけで、記録のないまま true に書き換える PR を止める線がない）を入れた。
+        tools/knowledge-enforcement-check/check.py に HEAD_RECORD_SOLUTIONS（この知見の issue 977・1046・1047。engine-head に関わる解決策）と
+        check_head_record() を足し、そのどれかが verified: true なら、--head-comments に渡した Issue #948 のコメント（gh api の出力）で
+        tools/sendback-check/head-record.mjs を走らせ、記録がなければ head_record_missing、コメントを渡していない・読めない・head-record.mjs が結果を
+        書かずに抜けたときは head_record_unchecked で落とす。ci/knowledge-enforcement.yml の enforcement のジョブが issues: read で Issue #948 のコメントを取って渡す。
+        test_check.py で、記録があれば通る・記録がない・人が写した印だけ・コメントを渡していない・JSON でない・結果を出さずに抜ける写しで落ちること、
+        verified でない解決策とほかの知見・ほかの issue は見ないことを確かめた。今のリポジトリには verified: true の解決策がなく、
+        ci/knowledge-enforcement.yml の .github/workflows/ への写しは建設者が行うので、まだ PR ごとには走っておらず効き目は確かめていない
+      issue: 1114
+      at: 2026-11-08
+      decided_by: committee:D-0047
       wired: false
       verified: false
     - kind: ci_check
@@ -759,6 +817,138 @@ enforcement:
       issue: 1152
       at: 2026-11-08
       decided_by: committee:D-0055
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0055（Issue #1151 の起票時の番号は D-0054。PR #1148）の test の案を入れた。tools/knowledge-enforcement-check/test_engine.py に
+        MutantsTest を足し、MUTANTS の名前の集合が「wired の "true" を配線済みに数える」「verified を真偽でなく値の有無で見る」の 2 件ちょうどで、
+        どの変異体も置き換える前と後の字面が違うことを確かめる。変異体の総当たり（EnginePatchTest）は Engine のチェックアウトがないと飛ぶが、
+        このテストは Engine なしでも毎回走る。手元で変異体を 1 件消した写しと、置き換えた後の字面を前と同じにした写しで落ちることを確かめた。
+        test_engine.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1151
+      at: 2026-11-08
+      decided_by: committee:D-0055
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0057（Issue #1154 の起票時の番号は D-0055。PR #1153）の test の案を入れた。tools/knowledge-enforcement-check/test_ci.py に
+        discovery_problems() と log_problems() と DiscoveryTest を足し、このディレクトリ（下も含む）で unittest.TestCase を継ぐクラスを定義する .py が
+        unittest discover の既定の形（test*.py で、モジュール名に使える名前、下のディレクトリは __init__.py のあるパッケージ）に合わなければ落とす。
+        ci/knowledge-enforcement.yml の engine-test に、飛ばした件数の手順のすぐ後で python3 -B tools/knowledge-enforcement-check/test_ci.py --log
+        knowledge-enforcement-unittest.log を走らせる手順を足し、拾われないファイルか、その出力に（飛ばさずに）走ったテストが 1 件もないファイル
+        （読み込めずに _FailedTest になった・setUpClass で落ちた・すべて飛ばした）があれば ::error を出して落とす。形の検査 problems() でその手順が
+        飛ばした件数の手順のすぐ後に 1 つあることも見る。一時ディレクトリに置いた check_x.py・x_test.py・test-x.py・パッケージでないディレクトリの
+        test_x.py で落ち、作ったログで走った跡のないファイルが落ちることと、手元で test_ci_head.py を ci_head_test.py に変えた写しと、test_engine.py の
+        行を消した本物のログで落ちることを確かめた。test_ci.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは
+        建設者が置くので、この解決策も未配線・未確認
+      issue: 1154
+      at: 2026-11-08
+      decided_by: committee:D-0057
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0059（Issue #1158 の起票時の番号は D-0056。PR #1155）の ci_check の案（protection.mjs を .github/workflows/ から定期と PR ごとに走らせ、
+        branch protection の API で読んだ本物の必須のチェックに sendback-engine-test と sendback-wiring-order が入っていないとき
+        （required_check_missing・check_name_changed・check_name_shared）は ::error で落とし、その実行の記録を Issue #948 と事例記録に残してから
+        wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。定期と手動で走る形（議決 D-0039、Issue #1087）はあったので作り直さず、
+        tools/sendback-check/ci/sendback-protection.yml に絞り込みのない pull_request と protection-pr のジョブを足した。protection-pr は protection と同じ
+        branch protection を読む・照らす手順だけを持ち、その PR の .github/workflows/ と本物の必須のチェックを照らして、4 つの外れ方（workflow_not_copied も）で
+        ::error を出して落ちる。Issue は開かず、権限は contents: read だけにし、issues: write は定期と手動でだけ走らせる protection のジョブに移した。
+        tools/sendback-check/ci.test.mjs で、2 つのジョブの if: と権限、protection-pr の手順が protection の読む・照らす手順と同じこと、手順を偽の gh で動かして
+        そろっていれば通り、required_check_missing・check_name_changed・check_name_shared・workflow_not_copied で ::error を出して落ち Issue を開かないこと、
+        トークンがないときは protection_unreadable で落ちることを確かめた。tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE と REQUIRED_PR の両方に
+        この解決策と protection.mjs の組を足し、wired: true にするとき、schedule でも走るジョブと pull_request でも走るジョブの両方から protection.mjs を呼ぶ
+        wired_by がなければ落とす（test_check.py で、ひな形をそのまま写した protection と protection-pr なら通り、片方だけ・pull_request か schedule を外した写し・
+        pull_request で走らない protection-pr では落ちることを確かめた）。.github/workflows/ への写しとシークレットと branch protection は建設者が行う
+        （ワーカーは .github/workflows/ と権限設定に触れない）ので、PR で落ちた実行も Issue #948 と事例記録への記録もまだなく、この解決策は未配線・未確認
+      issue: 1158
+      at: 2026-11-08
+      decided_by: committee:D-0059
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0059（Issue #1159 の起票時の番号は D-0056。PR #1155）の test の案（D-0038 の 2 つ目の案のとおり、check.mjs --events が GITHUB_ACTIONS=true のとき
+        自分で order.mjs の見張りを先に走らせ、engine.test.mjs が未配線・todo・continue-on-error・if: 付きなら ::error で落とし、必須のチェックの設定が外れても
+        実行時に止まることをテストで確かめる）を入れた。見張りそのものは Issue #1084 で入っていたので、足したのは必須のチェックの設定が外れた場合のテスト。
+        tools/sendback-check/order.test.mjs に、必須のチェックが外れた 4 つの branch protection（ほかのチェックだけが必須・id の engine-test・wiring-order だけが必須・
+        rulesets に必須のチェックがない・保護がない）を置き、静的な辿りでは見つからない呼び方のワークフローの写しに、todo が残る・未配線・ワークフローがない・
+        手順かジョブに continue-on-error か if: を付けた 8 とおりの 11 の外れた状態と順序を守った状態を組んで、どの写しでも protection.mjs が
+        required_check_missing か workflow_not_copied で外れる（設定では止まらない）ときに、check.mjs --events が GitHub Actions として外れた状態ではその rule の
+        ::error と終了コード 1、順序を守った状態では 0 になり、branch protection の外れを出さない（設定を読まずに働く）ことを確かめた。check.mjs に running を渡さない
+        改変でこのテストが落ちることを手元で確かめた。check.mjs --events も order.test.mjs も .github/workflows/ からはまだ走っておらず（ci/sendback-engine.yml の写しと
+        check.mjs --events の配線は建設者）、この解決策も未配線・未確認
+      issue: 1159
+      at: 2026-11-08
+      decided_by: committee:D-0059
+      wired: false
+      verified: false
+    - kind: lint
+      what: >-
+        議決 D-0060（Issue #1160 の起票時の番号は D-0056。PR #1156）の lint の案（D-0039 の lint の案。issue 1087 と 1018 の解決策は、
+        sendback-protection.yml のひな形を写さずにほかのワークフローの schedule のジョブから protection.mjs を呼ぶだけでも wired と書けた）を入れた。
+        tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE に issue 1087 と protection.mjs の組を足し、REQUIRED_SCHEDULE_WORKFLOW を足して、
+        issue 1087 と 1018 の解決策を wired: true にするときは、wired_by に .github/workflows/sendback-protection.yml の、on.schedule に空でない cron があり
+        schedule でも走るジョブから tools/sendback-check/protection.mjs を呼ぶ項目がなければ落とす（ほかのワークフローを指す項目は数えない）。
+        test_check.py で、ひな形をそのまま写した protection のジョブなら通り、同じ中身でも別の名前のワークフロー・schedule を外した写し・
+        protection-pr のジョブでは落ちること、issue 1158 と K-0001 の解決策はワークフローの名前を問わないことを確かめ、ワークフローの名前を見ない改変で
+        落ちることも確かめた。issue 1087 と 1018 の解決策は今 wired: false なのでこの検査は何も落とさず、check.py も .github/workflows/ にはまだ写していない
+        （建設者）ので、PR ごとには走っておらず効き目は確かめていない
+      issue: 1160
+      at: 2026-11-08
+      decided_by: committee:D-0060
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0061（Issue #1162 の起票時の番号は D-0058。PR #1161）の ci_check の案（issue 1018 の schedule のワークフロー sendback-protection.yml が
+        通るたびに最後に通った時刻を記録し、別の検査が最後に通ってから 2 日より長くたっていれば落ちて Issue を開き、schedule が止まったり落ち続けたりしても気づけるようにする）を入れた。
+        tools/sendback-check/ci/sendback-protection.yml の protection のジョブの最後に、schedule ですべての手順が通ったときだけ通った時刻を書いて
+        成果物 sendback-protection-passed（保持 7 日）に上げる手順を足した（手動と PR では上げない）。tools/sendback-check/heartbeat.mjs が成果物の一覧を読み、
+        既定のブランチの実行で上げた最後のものの created_at から 48 時間より長ければ heartbeat_stale、1 件もなければ heartbeat_missing で落とす。
+        別のワークフローのひな形 tools/sendback-check/ci/sendback-protection-heartbeat.yml が heartbeat.mjs を定期（protection の 12 時間後）・手動・main への push で走らせ、
+        外れたら Issue を開くか更新し（最後に通った時刻ごとの印で重ねない）、通ったら閉じる。heartbeat.test.mjs で 48 時間ちょうどは通り超えたら落ちること、
+        名前の違う・PR のブランチの成果物を数えないことを、ci.test.mjs で 2 つのひな形の形と、手順を偽の gh で動かして Issue を開く・足さない・閉じる・読めなければ照らさないことを確かめた。
+        tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE にこの解決策と heartbeat.mjs の組を足し、wired: true にするとき schedule でも走るジョブから
+        heartbeat.mjs を呼ぶ wired_by がなければ落とす（test_check.py）。.github/workflows/ への 2 つの写しは建設者が行う（ワーカーは .github/workflows/ に触れない）ので、
+        通った・外れた実行の記録もまだなく、この解決策は未配線・未確認
+      issue: 1162
+      at: 2026-11-08
+      decided_by: committee:D-0061
+      wired: false
+      verified: false
+    - kind: lint
+      what: >-
+        議決 D-0061（Issue #1163 の起票時の番号は D-0058。PR #1161）の lint の案を入れた。tools/knowledge-enforcement-check/check.py の
+        check_schedule() が使う off_schedule を、github.event_name を見るかどうかの字面の当てはめから許可リストに変え、ジョブと検査を呼ぶ手順の if: は、
+        無いか、github.event_name == '<event>' を || でつないだだけで == 'schedule' を含む形（${{ }} で包んでもよい）だけを schedule でも走ると数え、
+        それ以外の式（&& でほかの条件をつなぐ・needs.* や always() を見る・ほかの条件を || でつなぐ・!= や contains() で見る・真偽の値）は
+        schedule を含んでいても走らない側に数えて落とす。test_check.py の ScheduleTest に、許す形（単独・${{ }} で包む・workflow_dispatch と || でつなぐ・
+        手順の if:）で通り、決まった形でない 15 とおりの式をジョブと手順のそれぞれに置くと落ちることを確かめるテストを足し、手元で off_schedule を
+        前の off_event("schedule") に戻した写しでそのテストが落ちることを確かめた。ひな形 tools/sendback-check/ci/sendback-protection.yml の
+        protection のジョブの if: は許す形なので、そのまま写せば通る。check.py は ci/knowledge-enforcement.yml のひな形からしか走らず、
+        .github/workflows/ への写しは建設者が置くので、この解決策は未配線・未確認
+      issue: 1163
+      at: 2026-11-08
+      decided_by: committee:D-0061
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0062（Issue #1168 の起票時の番号は D-0061。PR #1166）の test の案を入れた。tools/sendback-check/order.mjs に、node --test の TAP からすべての段の SKIP の名前と理由を読む tapSkips と、
+        それをソースから数えた skip と照らす skipReportProblems を足した。理由が legacy_basis_not_found か Engine のチェックアウトがない（{ skip } の略記）で
+        始まらなければ skip_reason_not_allowed、legacy_basis_not_found の SKIP が skipLines の件数より多いか、チェックアウトがないの SKIP が { skip } の行
+        （checkoutSkipLines）より多ければ skip_count_mismatch で落とす。理由の頭は order.mjs の LEGACY_BASIS_NOT_FOUND・NO_ENGINE_CHECKOUT に置き、
+        engine.test.mjs もそれを使う。order.test.mjs が engine.test.mjs を今の環境と、隣に Engine のない一時ディレクトリの写しで走らせて照らす。
+        engine.test.mjs の末尾に別名（t.skip.bind(t)）の legacy_basis_not_found の skip を 2 つ足す改変と、動的な skip（opts.skip = …）を足す改変で
+        このテストが落ちることを手元で確かめた。order.test.mjs は .github/workflows/ からはまだ走っておらず（ci/sendback-engine.yml の写しは建設者）、
+        この解決策も未配線・未確認
+      issue: 1168
+      at: 2026-11-08
+      decided_by: committee:D-0062
       wired: false
       verified: false
 decided_by: committee:D-0004

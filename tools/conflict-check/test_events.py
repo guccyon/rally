@@ -282,7 +282,8 @@ def todo_until_review_by(case: unittest.TestCase, detail: str):
     deadline = review_by()
     case.assertFalse(overdue(today(), deadline),
                      f"知見 K-0010 の review_by（{deadline}）を過ぎても、ENGINE_REF の Engine は {LEGACY_TODO}（{detail}）。"
-                     "Engine を直して ENGINE_REF を上げるか、委員会で K-0010 を再確認して review_by を動かす（議決 D-0043）")
+                     "Engine を直して ENGINE_REF を上げる（K-0010 の review_by を延ばすだけでは tools/knowledge-enforcement-check/check.py が落とす。"
+                     "議決 D-0043・D-0067）")
     test_engine.todo(case, f"今の Engine は {LEGACY_TODO}（{detail}。K-0010 の review_by {deadline} を過ぎたら落とす）")
 
 

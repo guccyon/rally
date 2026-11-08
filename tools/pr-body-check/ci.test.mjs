@@ -5,16 +5,21 @@
 // このテストは engine-test の node --test の中で走るので、写しから見張りを外す変更も同じジョブで落ちる。
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
+// 字面の照合だけに頼らず、gate.test.mjs と engine.test.mjs を TAP で走らせた結果で、通る側のテストと (10) が pass と数えられたかも見る（議決 D-0070 の test の案、Issue #1183）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
-// 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。
+// 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
+// PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable で飛ばさず落ちることも見る（議決 D-0068 の test の案、Issue #1180）。
+// ci/pr-body-patch.yml（engine/pr-body-gate.patch が ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で既定のブランチへの push と毎日照らし、
+// patch_stale か patch_partially_applied なら Issue を開くか更新する。議決 D-0068（起票時の番号は D-0066）、Issue #1179）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { parseTapReport } from "../sendback-check/order.mjs";
 import { jobCheckNames } from "../sendback-check/protection.mjs";
 import { PASSING_REPORTS } from "./c0005.mjs";
 import { CHECK_NAME, REQUIRED_JOB } from "./protection.mjs";
@@ -170,13 +175,17 @@ test("ずれの比べ方は ENGINE_REF の行だけを無視する", () => {
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が、ワークフローの node --test の実行の対象から外れていないことの見張り
 // （知見 K-0001 の担保。議決 D-0045 の ci_check の案、Issue #1109）。ワークフローの側の道・名前・NODE_OPTIONS による絞り込みは workflowProblems で見るので、
 // ここではテストのファイルの側で外していないかを見る。gate.test.mjs には飛ばしを置かない。engine.test.mjs の飛ばしは、ENGINE_DIR を渡すと
-// false になる共通の skip（ワークフローは ENGINE_DIR を渡す）だけにする。どちらも todo・only・test.skip・t.skip などを置かない。注釈の行は見ない。
+// false になる共通の skip（ワークフローは ENGINE_DIR を渡す）と、(10) が本物で確かめるようになったら飛ぶ (11) の差分の写しの飛ばしだけにする
+// （Issue #1110）。どちらも todo・only・test.skip・t.skip などを置かない。注釈の行は見ない。
 const GATE_TEST = "gate.test.mjs";
 const ENGINE_TEST = "engine.test.mjs";
 const readTest = (name) => readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), "utf8");
 const ENGINE_REQUIRED = 'const required = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true";';
 const ENGINE_SKIP = /^const skip = required \|\| existsSync\(entrypointPath\) \? false : `[^`]*`;$/;
 const PASSING_LOOP = "for (const [label, report] of PASSING_REPORTS) {";
+// (11) の飛ばし。Engine が関所を呼ぶようになったときだけ飛ぶ（(10) は飛ばない）
+const PATCHED_SKIP = '    { skip: skip || (engineWired ? "Engine がもう関所を呼ぶので、(10) が ENGINE_REF の Engine そのもので確かめる" : false) }, () => {';
+const PATCHED_TEST = "  test(`(11) ";
 
 /** 注釈の行を除いたコードの行。 */
 const codeLines = (text) => text.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l));
@@ -200,7 +209,9 @@ function exclusionProblems(name, text) {
       problems.push(`${name}: skip は required のときに false になる 1 つの宣言だけにする（上書きや別の skip で (10) を飛ばせる）`);
     }
     // skip を使ってよいのは宣言と、テストの { skip } だけ（{ skip: true } などで個別に飛ばさない）
-    if (lines.some((l) => /\bskip\b/.test(l) && !ENGINE_SKIP.test(l) && !/^\s*test\(.*, \{ skip \}, (\(t\)|\(\)) => \{$/.test(l))) {
+    // (11) の飛ばしは、(11) のテストの直後の行でだけ認める
+    if (lines.some((l, i) => /\bskip\b/.test(l) && !ENGINE_SKIP.test(l) && !/^\s*test\(.*, \{ skip \}, (\(t\)|\(\)) => \{$/.test(l)
+      && !(l === PATCHED_SKIP && (lines[i - 1] ?? "").startsWith(PATCHED_TEST)))) {
       problems.push(`${name}: 共通の skip のほかの飛ばしがある`);
     }
     if (!/^\s+test\(`\(10\) .*, \{ skip \}, \(\) => \{$/.test(lines[loop + 1] ?? "")) problems.push(`${name}: (10) が通る側の 3 通りの形を回すテストになっていない`);
@@ -242,6 +253,7 @@ test("gate.test.mjs と engine.test.mjs の (10) を外す・飛ばす直しは�
       "ENGINE_DIR を渡しても飛ばす": engineText.replace(ENGINE_REQUIRED, 'const required = process.env.CI === "true";'),
       "skip を常に飛ばす形にする": engineText.replace(/^const skip = required \|\| /m, "const skip = "),
       "(10) を回すループを外す": engineText.replace(PASSING_LOOP, "for (const [label, report] of []) {"),
+      "(10) に (11) の飛ばしを付ける": engineText.replace(/(\(10\) [^\n]*誤って止めない）`), \{ skip \}, \(\) => \{/, `$1,\n${PATCHED_SKIP}`),
     },
   };
   for (const [file, byName] of Object.entries(cases)) {
@@ -251,6 +263,115 @@ test("gate.test.mjs と engine.test.mjs の (10) を外す・飛ばす直しは�
       assert.notDeepEqual(exclusionProblems(file, text), [], `${file} ${name} が通った`);
     }
   }
+});
+
+// 通る側のテストが実際に走って pass と数えられたかの見張り（知見 K-0001 の担保。議決 D-0070（Issue #1183 の起票時の番号は D-0067。PR #1181）の
+// test の案、Issue #1183）。exclusionProblems はテストのファイルの字面を見るだけなので、列挙していない飛ばし方（別名で呼ぶ t.skip、describe.skip、
+// ENGINE_DIR が空の文字列で渡るなど）はすり抜けうる。gate.test.mjs と engine.test.mjs を node --test --test-reporter=tap で走らせ、その結果で、
+// 通る側のテストが名前のとおりにあって pass（SKIP・TODO の指示のない ok）と数えられ、ファイル全体の skip・todo の数が 0 かを見る。
+// engine.test.mjs は (10) のほかが落ちても（関所を呼ばない Engine の (3) など）ここでは見ない（同じ node --test で落ちる）。
+const RUN_TOOL_DIR = fileURLToPath(new URL("./", import.meta.url));
+const runEngineDir = process.env.ENGINE_DIR || fileURLToPath(new URL("../../../engine", import.meta.url));
+// engine.test.mjs と同じ飛ばし方（ENGINE_DIR を渡したときと CI=true では飛ばさない）
+const runEngineSkip = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true" || existsSync(`${runEngineDir}/orchestrator/worker/entrypoint.sh`)
+  ? false : `Engine のチェックアウトがない（ENGINE_DIR=${runEngineDir}）`;
+
+/** gate.test.mjs の通る側のテストの名前（書いてよい本文の関所、通る側の 3 通りの形、通る側の CLI）。 */
+const GATE_PASSING_NAMES = [
+  "新しい PR の本文は書いてよい",
+  "続きのジョブの記録が「## 工場の記録」の下の ### にあれば書いてよい",
+  ...PASSING_REPORTS.map(([label]) => `C-0005 の 21 回の続きのジョブでも、${label}本文は毎回書いてよい（誤検知がない）`),
+  "CLI は正しく入った続きのジョブの報告の本文で 0 を返し、body_fix の入力を出さない",
+];
+/** engine.test.mjs の (10) の名前（通る側の 3 通りの形）。 */
+const ENGINE_PASSING_NAMES = PASSING_REPORTS.map(([label]) =>
+  `(10) ENGINE_REF の Engine は、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`);
+/** engine.test.mjs の (11) の名前。Engine が関所を呼ぶようになったら飛ぶので、その skip は集計から除く。 */
+const ENGINE_PATCHED_NAMES = PASSING_REPORTS.map(([label]) =>
+  `(11) 関所の配線の差分を当てた Engine の写しは、C-0005 の 21 回の続きのジョブで${label}なら、毎回関所が 0 を返して本文を書く（誤って止めない）`);
+
+/** テストのファイルを node --test の TAP で走らせた出力。外の node --test の NODE_TEST_CONTEXT を渡すと TAP で出さないので外す。終了コードは見ない。 */
+function runTap(file, cwd = RUN_TOOL_DIR) {
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const r = spawnSync(process.execPath, ["--test", "--test-reporter=tap", file], { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return `${r.stdout ?? ""}${r.error ? `\n# spawn error: ${r.error.message}` : ""}`;
+}
+
+/** TAP の終わりの集計（# skipped N・# todo N。古い node は # skip N）。なければ null。 */
+const tapCount = (tap, ...keys) => {
+  const m = tap.match(new RegExp(`^# (?:${keys.join("|")}) (\\d+)$`, "m"));
+  return m ? Number(m[1]) : null;
+};
+
+/** 走らせた結果で、通る側のテストが pass と数えられず、skip・todo が 0 でない（maySkip の名前のテストの skip は除く）ときの外れ（空なら通る）。 */
+function runReportProblems(file, tap, names, maySkip = []) {
+  const problems = [];
+  const results = parseTapReport(tap);
+  for (const name of names) {
+    const got = results[name];
+    if (got !== "pass") problems.push(`${file}: 「${name}」が pass と数えられていない（${got ?? "実行されていない"}）`);
+  }
+  const allowedSkips = maySkip.filter((name) => results[name] === "skip").length;
+  for (const [label, keys] of [["skip", ["skipped", "skip"]], ["todo", ["todo"]]]) {
+    const counted = tapCount(tap, ...keys);
+    const n = counted === null || label !== "skip" ? counted : counted - allowedSkips;
+    if (n === null) problems.push(`${file}: TAP に ${label} の数がない（node --test が最後まで走っていない）`);
+    else if (n !== 0) problems.push(`${file}: ${label} の数が ${n}（0 でない）`);
+  }
+  return problems;
+}
+
+test("gate.test.mjs を TAP で走らせると、通る側のテストが pass と数えられ、skip・todo が 0", () => {
+  const tap = runTap(GATE_TEST);
+  assert.deepEqual(runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES), [], tap);
+});
+
+test("engine.test.mjs を TAP で走らせると、(10) が通る側の 3 通りの形で pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
+  assert.ok(PASSING_REPORTS.length >= 3, "通る側の形（c0005.mjs の PASSING_REPORTS）が 3 通りない");
+  const tap = runTap(ENGINE_TEST);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], tap);
+});
+
+test("走らせた結果の見張りは、(10) や通る側のテストの skip・todo・失敗・欠け、ほかのテストの skip・todo、途中で止まった TAP を外れにする", () => {
+  const esc = (s) => s.replace(/[#\\]/g, "\\$&");
+  const tap = (lines, { skipped = 0, todo = 0 } = {}) =>
+    ["TAP version 13", ...lines.map((l, i) => l.replace("ok -", `ok ${i + 1} -`)), `1..${lines.length}`, `# tests ${lines.length}`, `# skipped ${skipped}`, `# todo ${todo}`].join("\n");
+  const okAll = ENGINE_PASSING_NAMES.map((n) => `ok - ${esc(n)}`);
+  const [first, ...rest] = ENGINE_PASSING_NAMES;
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap([...okAll, "not ok - (3) 関所を呼ばない Engine で落ちる"]), ENGINE_PASSING_NAMES), []);
+  // Engine が関所を呼ぶようになって (11) が飛ぶのは外れにしない（Issue #1110）
+  const patchedSkipped = ENGINE_PATCHED_NAMES.map((n) => `ok - ${esc(n)} # SKIP Engine がもう関所を呼ぶ`);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap([...okAll, ...patchedSkipped], { skipped: patchedSkipped.length }),
+    ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), []);
+  assert.notDeepEqual(runReportProblems(ENGINE_TEST, tap([...okAll, ...patchedSkipped], { skipped: patchedSkipped.length + 1 }),
+    ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], "(11) のほかの skip が通った");
+  assert.notDeepEqual(runReportProblems(ENGINE_TEST, tap([`ok - ${esc(first)} # SKIP まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { skipped: 1 }),
+    ENGINE_PASSING_NAMES, ENGINE_PATCHED_NAMES), [], "(10) の skip が通った");
+  const cases = {
+    "(10) を SKIP にした": tap([`ok - ${esc(first)} # SKIP まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { skipped: 1 }),
+    "(10) を TODO にした": tap([`not ok - ${esc(first)} # TODO まだ`, ...rest.map((n) => `ok - ${esc(n)}`)], { todo: 1 }),
+    "(10) が落ちた": tap([`not ok - ${esc(first)}`, ...rest.map((n) => `ok - ${esc(n)}`)]),
+    "(10) が 1 つ走っていない": tap(rest.map((n) => `ok - ${esc(n)}`)),
+    "(10) を describe の下に入れた（上の段にない）": tap([`ok - 包み`, ...ENGINE_PASSING_NAMES.map((n) => `    ok - ${esc(n)}`)]),
+    "ほかのテストを飛ばした（集計の skip）": tap(okAll, { skipped: 1 }),
+    "ほかのテストを todo にした（集計の todo）": tap(okAll, { todo: 1 }),
+    "集計がない（途中で止まった）": okAll.map((l, i) => l.replace("ok -", `ok ${i + 1} -`)).join("\n"),
+  };
+  for (const [name, text] of Object.entries(cases)) assert.notDeepEqual(runReportProblems(ENGINE_TEST, text, ENGINE_PASSING_NAMES), [], `${name} が通った`);
+});
+
+test("字面の見張りをすり抜ける飛ばし方（別名で呼ぶ t.skip）も、走らせた結果で外れになる", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-body-run-"));
+  for (const f of ["c0005.mjs", "check.mjs", "gate.mjs", "template.json"]) copyFileSync(join(RUN_TOOL_DIR, f), join(dir, f));
+  const loopTest = /(本文は毎回書いてよい（誤検知がない）`), \(\) => \{/;
+  const changed = readTest(GATE_TEST).replace(loopTest, '$1, (t) => {\n    if (label) return t["sk" + "ip"]("まだ");');
+  assert.notEqual(changed, readTest(GATE_TEST), "置き換えが効いていない");
+  assert.deepEqual(exclusionProblems(GATE_TEST, changed), [], "字面の見張りが捕まえた（すり抜けの例になっていない）");
+  writeFileSync(join(dir, GATE_TEST), changed);
+  const tap = runTap(GATE_TEST, dir);
+  const problems = runReportProblems(GATE_TEST, tap, GATE_PASSING_NAMES);
+  assert.equal(problems.filter((p) => /pass と数えられていない（skip）/.test(p)).length, PASSING_REPORTS.length, tap);
+  assert.ok(problems.includes(`${GATE_TEST}: skip の数が ${PASSING_REPORTS.length}（0 でない）`), tap);
 });
 
 // recheck.test.mjs（知見 K-0012 の担保）も、ひな形の engine-test の node --test で走る（議決 D-0050 の ci_check の案、Issue #1131）。
@@ -337,6 +458,18 @@ function fakeProtGh({ classic = { out: classicJson([CHECK_NAME]) }, rules = { ou
  * 読む・照らす・Issue の 3 つの手順を順に動かす。copy が null なら写しを置かない。
  */
 function runProtection({ gh = {}, copy = template, others = {}, token = "t" } = {}) {
+  const { root, dir, runStep } = protSandbox({ gh, copy, others });
+  const read = runStep(protReadStep, root, { GH_TOKEN: token });
+  const check = read.status === 0 ? runStep(protCheckStep, dir, {}) : null;
+  const outcome = check === null ? "skipped" : check.status === 0 ? "success" : "failure";
+  const issue = runStep(protIssueStep, dir, { GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
+  const calls = existsSync(join(root, "calls.log")) ? readFileSync(join(root, "calls.log"), "utf8") : "";
+  const commentPath = join(dir, "protection-comment.md");
+  return { read, check, issue, calls, body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+}
+
+/** 偽の gh と protection.mjs を置いた仮のリポジトリと、そこで手順の run を動かす runStep(step, cwd, env) を返す。 */
+function protSandbox({ gh = {}, copy = template, others = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "pr-body-protection-"));
   const dir = join(root, "tools", "pr-body-check");
   const sendback = join(root, "tools", "sendback-check");
@@ -356,13 +489,7 @@ function runProtection({ gh = {}, copy = template, others = {}, token = "t" } = 
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: "guccyon/rally", GITHUB_SERVER_URL: "https://github.com",
     GITHUB_RUN_ID: "123", BRANCH: "main", ISSUE_TITLE, GITHUB_STEP_SUMMARY: join(root, "summary"), GITHUB_ACTIONS: "true" };
   const runStep = (step, cwd, extra) => spawnSync("bash", ["-e", "-o", "pipefail", "-c", runScript(step)], { cwd, env: { ...env, ...extra }, encoding: "utf8" });
-  const read = runStep(protReadStep, root, { GH_TOKEN: token });
-  const check = read.status === 0 ? runStep(protCheckStep, dir, {}) : null;
-  const outcome = check === null ? "skipped" : check.status === 0 ? "success" : "failure";
-  const issue = runStep(protIssueStep, dir, { GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
-  const calls = existsSync(join(root, "calls.log")) ? readFileSync(join(root, "calls.log"), "utf8") : "";
-  const commentPath = join(dir, "protection-comment.md");
-  return { read, check, issue, calls, body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+  return { root, dir, runStep };
 }
 
 test("pr-body-protection は既定のブランチへの push・定期（schedule）・手動でだけ走り、PR では走らない。トークンは branch protection を読む手順だけに渡す", () => {
@@ -478,4 +605,329 @@ test("写し（.github/workflows/pr-body-protection.yml）があれば、ひな�
   skip: existsSync(protCopyPath) ? false : "まだ .github/workflows/ に写していない",
 }, () => {
   assert.equal(readFileSync(protCopyPath, "utf8").trimEnd(), protTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
+});
+
+// 定期の照合そのものが黙って止まる外れ方を塞ぐ（議決 D-0068 の test の案。Issue #1180 の起票時の番号は D-0066。PR #1176）。
+// 写しがひな形と同じかは上のテストで見るが、ひな形と写しを一緒に変えれば通る。写しから schedule や workflow_dispatch を外したり、
+// トークンを読めないときに飛ばして緑にしたりすると、必須のチェックが外されても誰も気づかないので、写しそのものの形と読む手順の振る舞いを見る。
+/** 定期・手動で走り、トークンを読めないときに protection_unreadable で落ちる形かの外れ（空なら通る）。注釈の行は見ない。 */
+function protectionRunProblems(text) {
+  const problems = [];
+  const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = on < 0 ? [] : lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l)));
+  const onKeys = onBody.filter((l) => /^ {2}[\w-]+:/.test(l)).map((l) => l.trim().replace(/:.*$/, ""));
+  const schedule = onBody.findIndex((l) => /^ {2}schedule:\s*$/.test(l));
+  const scheduleBody = schedule < 0 ? [] : onBody.slice(schedule + 1, onBody.findIndex((l, i) => i > schedule && /^ {2}\S/.test(l)) >>> 0);
+  if (!scheduleBody.some((l) => /^ {4}- cron: (["'])\S+(\s+\S+){4}\1\s*$/.test(l))) {
+    problems.push("on の schedule に cron がない（定期に照らさないと、PR のない日に必須のチェックが外されても気づけない）");
+  }
+  if (!onKeys.includes("workflow_dispatch")) problems.push("on に workflow_dispatch がない（写したあとに手で走らせて確かめられない）");
+  if (lines.some((l) => /^\s*(- )?continue-on-error:/.test(l))) problems.push("continue-on-error があると、読めなくても落ちない");
+  const job = jobBody(lines, "protection");
+  if (job === null) return [...problems, "protection のジョブがない"];
+  if (job.some((l) => /^ {4}if:/.test(l))) problems.push("protection のジョブに if: があると、定期の照合が飛ばされうる");
+  const read = jobSteps(job).find((s) => s.some((l) => /secrets\.PR_BODY_PROTECTION_TOKEN/.test(l)));
+  if (!read) return [...problems, "PR_BODY_PROTECTION_TOKEN を読む手順がない"];
+  if (read.some((l) => /^\s*(- )?if:/.test(l))) problems.push("トークンを読む手順に if: があると、読めないときに飛ばされうる");
+  const tokenVar = read.map((l) => l.match(/^\s*(\w+): \$\{\{ secrets\.PR_BODY_PROTECTION_TOKEN \}\}\s*$/)?.[1]).find(Boolean);
+  if (!tokenVar) return [...problems, "PR_BODY_PROTECTION_TOKEN は読む手順の env にそのまま渡す"];
+  if (!read.some((l) => /^\s*run: \|\s*$/.test(l))) return [...problems, "トークンを読む手順が run: | でない"];
+  // 本物の gh はトークンがないと認証の誤りで終了コード 4 を返す
+  const cases = [
+    ["トークンがない", "", { classic: { out: "", rc: 4 }, rules: { out: "", rc: 4 } }],
+    ["権限がない（403）", "t", { classic: { out: '{"message":"Resource not accessible by personal access token","status":"403"}', rc: 1 } }],
+    ["rulesets を読めない", "t", { rules: { out: '{"message":"Not Found"}', rc: 1 } }],
+  ];
+  for (const [name, token, gh] of cases) {
+    const { root, runStep } = protSandbox({ gh });
+    const r = runStep(read, root, { [tokenVar]: token });
+    if (r.status === 0 || !/^::error title=pr-body-protection protection_unreadable::/m.test(r.stdout)) {
+      problems.push(`${name}ときに protection_unreadable で落ちない（終了コード ${r.status}）`);
+    }
+  }
+  return problems;
+}
+
+test("pr-body-protection のひな形は定期・手動で走り、トークンを読めないときは protection_unreadable で飛ばさず落ちる", () => {
+  assert.deepEqual(protectionRunProblems(protTemplate), []);
+});
+
+test("pr-body-protection の定期・手動の on を外す・読めないときに飛ばす直しは外れになる", () => {
+  const readStep = "      - name: branch protection を読む（K-0001）\n";
+  const mutants = {
+    "schedule を外す": (t) => t.replace(/^ {2}schedule:\n {4}- cron: "[^"]+"\n/m, ""),
+    "cron を空にする": (t) => t.replace(/^( {4}- cron: )"[^"]+"$/m, '$1""'),
+    "workflow_dispatch を外す": (t) => t.replace(/^ {2}workflow_dispatch:\n/m, ""),
+    "on を 1 行の列にする": (t) => t.replace(/^on:\n(?: {2}.*\n)+/m, "on: [push]\n"),
+    "ジョブに if: を足す": (t) => t.replace(/^( {4}runs-on: ubuntu-latest\n)/m, "$1    if: github.event_name != 'schedule'\n"),
+    "読む手順に if: を足す": (t) => t.replace(readStep, `${readStep}        if: env.HAS_TOKEN == 'true'\n`),
+    "読む手順に continue-on-error を足す": (t) => t.replace(readStep, `${readStep}        continue-on-error: true\n`),
+    "トークンがないときは警告にして飛ばす": (t) => t.replace(/(protection_unreadable::シークレット PR_BODY_PROTECTION_TOKEN がない[^\n]*\n\s*)exit 1/, "$1exit 0")
+      .replace("::error title=pr-body-protection protection_unreadable::シークレット", "::warning title=pr-body-protection::シークレット"),
+    "権限がないときに飛ばす": (t) => t.replace(/(の branch protection を読めなかった[^\n]*\n\s*)exit 1/, "$1exit 0"),
+    "rulesets を読めないときに飛ばす": (t) => t.replace(/(の rulesets を読めなかった[^\n]*\n\s*)exit 1/, "$1exit 0"),
+    "ジョブの id を変える": (t) => t.replace(/^ {2}protection:\n/m, "  protect:\n"),
+  };
+  for (const [name, mutate] of Object.entries(mutants)) {
+    const changed = mutate(protTemplate);
+    assert.notEqual(changed, protTemplate, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(protectionRunProblems(changed), [], `${name} が通った`);
+  }
+});
+
+test("写し（.github/workflows/pr-body-protection.yml）があれば、定期・手動で走り、トークンを読めないときは protection_unreadable で飛ばさず落ちる", {
+  skip: existsSync(protCopyPath) ? false : "まだ .github/workflows/ に写していない",
+}, () => {
+  assert.deepEqual(protectionRunProblems(readFileSync(protCopyPath, "utf8")), []);
+});
+
+// ci/pr-body-patch.yml（engine/pr-body-gate.patch が ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で、既定のブランチへの push・
+// 毎日・手動で照らし、patch_stale か patch_partially_applied なら Issue を開くか更新する。議決 D-0068（起票時の番号は D-0066）、Issue #1179）の形と手順の振る舞い
+const patchTemplate = readFileSync(fileURLToPath(new URL("./ci/pr-body-patch.yml", import.meta.url)), "utf8");
+const patchCopyPath = fileURLToPath(new URL("../../.github/workflows/pr-body-patch.yml", import.meta.url));
+const patchSteps = jobSteps(jobBody(patchTemplate.split(/\r?\n/), "patch") ?? []);
+const patchEngineStep = patchSteps.find((s) => s.some((l) => /repository: guccyon\/factory-engine/.test(l)));
+const patchCheckStep = patchSteps.find((s) => /当たるかを照らす/.test(s[0]));
+const patchIssueStep = patchSteps.find((s) => /Issue を開くか更新する/.test(s[0]));
+const PATCH_ISSUE_TITLE = patchTemplate.match(/^ {2}ISSUE_TITLE: "(.+)"$/m)?.[1];
+
+test("pr-body-patch は既定のブランチへの push・定期（schedule）・手動でだけ走り、PR では走らない。Engine は既定のブランチの先頭を全部の履歴で取る", () => {
+  const lines = patchTemplate.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l))).filter((l) => l.trim() !== "");
+  assert.deepEqual(onBody.filter((l) => /^ {2}[\w-]+:/.test(l)).map((l) => l.trim()), ["push:", "schedule:", "workflow_dispatch:"],
+    "push・schedule・workflow_dispatch のほかで走らせない");
+  assert.ok(onBody.some((l) => /^ {4}branches: \[main\]$/.test(l)), "push は既定のブランチ（main）だけにする");
+  assert.ok(!onBody.some((l) => /^ {4}(paths|paths-ignore|tags|branches-ignore):/.test(l)), "push を道やタグで絞らない");
+  assert.ok(onBody.some((l) => /^ {4}- cron: "[^"]+"$/.test(l)), "schedule の cron がない");
+  assert.ok(!lines.some((l) => /^\s*(- )?continue-on-error:/.test(l)), "continue-on-error があると外れても気づかない");
+  assert.match(patchTemplate, /^ {2}contents: read$/m);
+  assert.match(patchTemplate, /^ {2}issues: write$/m, "Issue を開くので issues: write が要る");
+  assert.ok(!lines.some((l) => /secrets\./.test(l)), "シークレットは使わない");
+  assert.ok(!jobBody(lines, "patch").some((l) => /^ {4}if:/.test(l)), "ジョブを飛ばさない");
+  assert.ok(patchEngineStep, "Engine を取る手順がない");
+  assert.ok(!patchEngineStep.some((l) => /^\s*ref:/.test(l)), "Engine は ref なしで既定のブランチの先頭を取る");
+  assert.ok(patchEngineStep.some((l) => /^\s*path: \.engine$/.test(l)));
+  assert.ok(patchEngineStep.some((l) => /^\s*fetch-depth: 0$/.test(l)), "ENGINE_REF の版も照らすので全部の履歴で取る");
+  assert.ok(!patchCheckStep.some((l) => /^\s*if:/.test(l)), "照らす手順を飛ばさない");
+  assert.ok(patchCheckStep.some((l) => /^\s*id: check$/.test(l)));
+  assert.ok(patchCheckStep.some((l) => /^\s*working-directory: tools\/pr-body-check$/.test(l)));
+  assert.match(runScript(patchCheckStep), /node patch\.mjs --engine "\$\{GITHUB_WORKSPACE\}\/\.engine" --json patch-result\.json/);
+  assert.doesNotMatch(runScript(patchCheckStep), /\|\||; *true|exit 0/, "照らす手順の外れを握りつぶさない");
+  assert.ok(patchIssueStep.some((l) => /^\s*if: always\(\)$/.test(l)), "Issue の手順は照らす手順が落ちたときも走らせる");
+  assert.ok(patchIssueStep.some((l) => /^\s*CHECK_OUTCOME: \$\{\{ steps\.check\.outcome \}\}$/.test(l)));
+  assert.ok(patchSteps.indexOf(patchEngineStep) < patchSteps.indexOf(patchCheckStep) && patchSteps.indexOf(patchCheckStep) < patchSteps.indexOf(patchIssueStep));
+  assert.ok(PATCH_ISSUE_TITLE, "ISSUE_TITLE がない");
+  assert.notEqual(PATCH_ISSUE_TITLE, ISSUE_TITLE, "pr-body-protection と同じ題だと、片方が通ったときにもう片方の Issue を閉じる");
+});
+
+/** 偽の gh（Issue の list・create・comment・close と、Issue の本文とコメントの api）。 */
+function fakePatchGh({ open = "", recorded = "", create = 0 } = {}) {
+  const q = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+  return [
+    `case "$1 $2" in`,
+    `  "issue list") [ -n ${q(open)} ] && printf '%s\\n' ${q(open)}; exit 0 ;;`,
+    `  "issue create") exit ${create} ;;`,
+    `  api\\ *) printf '%s\\n' ${q(recorded)}; exit 0 ;;`,
+    `esac`,
+    `exit 0`,
+  ].join("\n");
+}
+
+const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
+const gitIn = (cwd, ...args) => spawnSync("git", args, { cwd, env: gitEnv, encoding: "utf8" }).stdout.trim();
+
+/**
+ * 仮のリポジトリに patch.mjs と偽の差分（engine/pr-body-gate.patch。entrypoint.sh に関所の呼び出しを足す）を置き、.engine に偽の Engine を作って、
+ * 照らす・Issue の 2 つの手順を順に動かす。refState・headState は ENGINE_REF の版と先頭の版の中身（applies・merged・patch_stale・patch_partially_applied）。
+ * engine が false なら Engine を置かない（照らせない）。
+ */
+function runPatch({ refState = "applies", headState = "applies", engine = true, gh = {} } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "pr-body-patch-ci-"));
+  const dir = join(root, "tools", "pr-body-check");
+  mkdirSync(join(dir, "engine"), { recursive: true });
+  mkdirSync(join(dir, "ci"), { recursive: true });
+  writeFileSync(join(dir, "patch.mjs"), readFileSync(fileURLToPath(new URL("./patch.mjs", import.meta.url))));
+  const e = join(root, ".engine");
+  const sh = join(e, "orchestrator", "worker", "entrypoint.sh");
+  const bodies = { applies: "a\nb\nc\n", merged: "a\nb\nnode tools/pr-body-check/gate.mjs\nc\n",
+    patch_partially_applied: "a\nB\nnode tools/pr-body-check/gate.mjs --x\nc\n", patch_stale: "p\nq\nr\n" };
+  mkdirSync(join(e, "orchestrator", "worker"), { recursive: true });
+  gitIn(e, "init", "-q");
+  writeFileSync(sh, bodies.applies);
+  gitIn(e, "add", ".");
+  gitIn(e, "commit", "-qm", "base");
+  writeFileSync(sh, bodies.merged);
+  writeFileSync(join(dir, "engine", "pr-body-gate.patch"), gitIn(e, "diff") + "\n");
+  const commit = (state) => { writeFileSync(sh, bodies[state]); gitIn(e, "commit", "-qam", state, "--allow-empty"); return gitIn(e, "rev-parse", "HEAD"); };
+  const ref = commit(refState);
+  const head = commit(headState);
+  writeFileSync(join(dir, "ci", "pr-body-engine.yml"), `env:\n  ENGINE_REF: ${ref}\n`);
+  if (!engine) rmSync(e, { recursive: true, force: true });
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: "guccyon/rally", GITHUB_SERVER_URL: "https://github.com",
+    GITHUB_RUN_ID: "123", GITHUB_WORKSPACE: root, ISSUE_TITLE: PATCH_ISSUE_TITLE, GITHUB_STEP_SUMMARY: join(root, "summary"), GITHUB_ACTIONS: "true" };
+  const runStep = (step, extra) => spawnSync("bash", ["-e", "-o", "pipefail", "-c", runScript(step)], { cwd: dir, env: { ...env, ...extra }, encoding: "utf8" });
+  const check = runStep(patchCheckStep, {});
+  /** 偽の gh を opts にして Issue の手順を動かす（同じ照らした結果で何度でも動かせる）。 */
+  const runIssue = (opts) => {
+    writeFileSync(join(bin, "gh"), `#!/usr/bin/env bash\necho "gh $*" >> "${join(root, "calls.log")}"\n${fakePatchGh(opts)}\n`);
+    chmodSync(join(bin, "gh"), 0o755);
+    writeFileSync(join(root, "calls.log"), "");
+    const issue = runStep(patchIssueStep, { GH_TOKEN: "github-token", CHECK_OUTCOME: check.status === 0 ? "success" : "failure" });
+    const commentPath = join(dir, "patch-comment.md");
+    return { check, issue, calls: readFileSync(join(root, "calls.log"), "utf8"), ref, head, runIssue,
+      body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+  };
+  return runIssue(gh);
+}
+
+test("pr-body-patch: ENGINE_REF の版と先頭のどちらでも当たるかもう入っていれば通り、Issue は開かない", () => {
+  for (const [refState, headState] of [["applies", "applies"], ["applies", "merged"], ["merged", "merged"]]) {
+    const r = runPatch({ refState, headState });
+    assert.equal(r.check.status, 0, r.check.stdout + r.check.stderr);
+    assert.match(r.check.stdout, new RegExp(`^ENGINE_REF ${r.ref}: ${refState === "applies" ? "当たる" : "もう入っている"}$`, "m"));
+    assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+    assert.doesNotMatch(r.calls, /^gh issue (create|comment|close)/m);
+  }
+});
+
+test("pr-body-patch: patch_stale と patch_partially_applied は、ENGINE_REF の版でも先頭でも落ち、開いている Issue がなければ開く", () => {
+  for (const [refState, headState, rule, target] of [["applies", "patch_stale", "patch_stale", "既定のブランチの先頭"],
+    ["applies", "patch_partially_applied", "patch_partially_applied", "既定のブランチの先頭"],
+    ["patch_stale", "merged", "patch_stale", "ENGINE_REF"], ["patch_partially_applied", "applies", "patch_partially_applied", "ENGINE_REF"]]) {
+    const r = runPatch({ refState, headState });
+    const label = `${refState}/${headState}`;
+    assert.equal(r.check.status, 1, label);
+    assert.match(r.check.stdout, new RegExp(`^::error title=pr-body-patch ${rule}::${target}`, "m"), label);
+    assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+    assert.match(r.calls, /^gh issue create --repo guccyon\/rally --title .+ --body-file patch-comment\.md$/m, label);
+    assert.match(r.body, /^<!-- pr-body-patch: [0-9a-f]{16} -->\n/, label);
+    assert.match(r.body, new RegExp(`^${rule}: ${target}`, "m"), label);
+    assert.match(r.body, new RegExp(`^- ENGINE_REF（\`${r.ref}\`）: ${refState}$`, "m"), label);
+    assert.match(r.body, new RegExp(`^- 既定のブランチの先頭（\`${r.head}\`）: ${headState}$`, "m"), label);
+    assert.match(r.body, /https:\/\/github\.com\/guccyon\/rally\/actions\/runs\/123/);
+  }
+});
+
+test("pr-body-patch: 開いている Issue があれば、それにコメントで足す（同じ版の同じ外れ方の記録がすでにあれば足さない）", () => {
+  const first = runPatch({ headState: "patch_stale", gh: { open: "42", recorded: "前の記録" } });
+  assert.doesNotMatch(first.calls, /^gh issue create/m);
+  assert.match(first.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file patch-comment\.md$/m);
+  const marker = first.body.split("\n")[0];
+  const again = first.runIssue({ open: "42", recorded: `本文\n${marker}` });
+  assert.equal(again.issue.status, 0, again.issue.stdout + again.issue.stderr);
+  assert.doesNotMatch(again.calls, /^gh issue (create|comment)/m);
+  // 外れ方が変われば足す
+  const other = runPatch({ headState: "patch_partially_applied", gh: { open: "42", recorded: marker } });
+  assert.notEqual(other.body.split("\n")[0], marker);
+  assert.match(other.calls, /^gh issue comment 42 /m);
+});
+
+test("pr-body-patch: 通ったら、開いている Issue に通ったことを書いて閉じる", () => {
+  const r = runPatch({ gh: { open: "42" } });
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.match(r.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file patch-comment\.md$/m);
+  assert.match(r.calls, /^gh issue close 42 --repo guccyon\/rally$/m);
+  assert.match(r.body, /当たるか、もう入っている/);
+});
+
+test("pr-body-patch: Engine がない・ENGINE_REF の版がないときは patch_check_failed で落ち、Issue は開かない", () => {
+  const r = runPatch({ engine: false });
+  assert.equal(r.check.status, 2);
+  assert.match(r.check.stdout, /^::error title=pr-body-patch patch_check_failed::/m);
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.doesNotMatch(r.calls, /^gh issue (create|comment|close)/m);
+});
+
+test("pr-body-patch: Issue を開けなければ Issue の手順も落ちる（黙って通さない）", () => {
+  const r = runPatch({ headState: "patch_stale", gh: { create: 1 } });
+  assert.notEqual(r.issue.status, 0);
+});
+
+test("写し（.github/workflows/pr-body-patch.yml）があれば、ひな形と同じ", {
+  skip: existsSync(patchCopyPath) ? false : "まだ .github/workflows/ に写していない",
+}, () => {
+  assert.equal(readFileSync(patchCopyPath, "utf8").trimEnd(), patchTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
+});
+
+// ci/pr-body-check.yml（知見 K-0006 と K-0012 で共有するマージ前の必須チェック。議決 D-0006・D-0050、Issue #906・#1122）の形を見る。
+// 本文だけの直し（head_sha の変わらない pull_request edited）でも走り、本文を環境変数で check.mjs に渡し、Engine の supervisor
+// （engine/pr-body-recheck.patch）が待つチェックの名前とワークフローの道に合っていること。写しがあればひな形と同じであること
+const bodyTemplate = readFileSync(fileURLToPath(new URL("./ci/pr-body-check.yml", import.meta.url)), "utf8");
+const BODY_COPY = ".github/workflows/pr-body-check.yml";
+const bodyCopyPath = fileURLToPath(new URL(`../../${BODY_COPY}`, import.meta.url));
+const recheckPatch = readFileSync(fileURLToPath(new URL("./engine/pr-body-recheck.patch", import.meta.url)), "utf8");
+const BODY_JOB = "pr-body-check";
+const BODY_TYPES = ["opened", "synchronize", "reopened", "edited"];
+
+/** 本文だけの直しでも走るマージ前の必須チェックの形かの外れ（空なら通る）。注釈の行は見ない。 */
+function bodyCheckProblems(text) {
+  const problems = [];
+  const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = on < 0 ? [] : lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l))).map((l) => l.trim()).filter((l) => l !== "");
+  const types = onBody.length === 2 && onBody[0] === "pull_request:" ? onBody[1].match(/^types:\s*\[([^\]]*)\]$/)?.[1].split(",").map((t) => t.trim()) : null;
+  if (!types || BODY_TYPES.some((t) => !types.includes(t))) {
+    problems.push(`on は pull_request の types（${BODY_TYPES.join("・")}）だけにする（edited がないと本文だけの直しを照らさない。paths・branches で絞ると報告されない PR が出る）`);
+  }
+  if (lines.some((l) => /^\s*(- )?continue-on-error:/.test(l))) problems.push("continue-on-error があると落ちても止めない");
+  if (lines.some((l) => /^\s*(- )?if:/.test(l))) problems.push("if: があるとジョブや手順が飛ばされて照らさない");
+  const job = jobBody(lines, BODY_JOB);
+  if (job === null) return [...problems, `${BODY_JOB} のジョブがない`];
+  if (jobCheckNames(lines.join("\n")).get(BODY_JOB) !== BODY_JOB) {
+    problems.push(`${BODY_JOB} の name: を ${BODY_JOB} にする（Engine の supervisor と必須のチェックがこの名前で待つ）`);
+  }
+  if (job.some((l) => /^ {4}needs:/.test(l))) problems.push(`${BODY_JOB} に needs があると、待つジョブが落ちたときに飛ばされて走らない`);
+  const steps = jobSteps(job);
+  const check = steps.find((s) => s.some((l) => /node tools\/pr-body-check\/check\.mjs/.test(l)));
+  if (!check) {
+    problems.push("tools/pr-body-check/check.mjs を呼ぶ手順がない");
+  } else {
+    if (!check.some((l) => /^\s*BODY: \$\{\{ github\.event\.pull_request\.body \}\}\s*$/.test(l))) {
+      problems.push("本文を env の BODY に github.event.pull_request.body で受けていない");
+    }
+    const run = check.map((l) => l.trim()).filter((l) => l.startsWith("run:") || !/^[\w-]+:/.test(l));
+    if (!check.some((l) => /^\s*run: printf '%s' "\$BODY" \| node tools\/pr-body-check\/check\.mjs\s*$/.test(l)) || run.some((l) => l.includes("${{"))) {
+      problems.push(`run は printf '%s' "$BODY" | node tools/pr-body-check/check.mjs の 1 行にする（本文を \${{ }} で run に埋めない。引数で外れを握りつぶさない）`);
+    }
+  }
+  return problems;
+}
+
+test("pr-body-check のひな形は、本文だけの直し（edited）でも走り、本文を環境変数で check.mjs に渡す必須のチェックの形", () => {
+  assert.deepEqual(bodyCheckProblems(bodyTemplate), []);
+});
+
+test("pr-body-check の見張りを外す直しは外れになる", () => {
+  const mutations = [
+    ["edited を外す", (t) => t.replace("types: [opened, synchronize, reopened, edited]", "types: [opened, synchronize, reopened]")],
+    ["types を外す", (t) => t.replace("    types: [opened, synchronize, reopened, edited]\n", "")],
+    ["paths で絞る", (t) => t.replace("    types: [opened, synchronize, reopened, edited]\n", "    types: [opened, synchronize, reopened, edited]\n    paths: [apps/**]\n")],
+    ["continue-on-error", (t) => t.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    continue-on-error: true\n")],
+    ["if:", (t) => t.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    if: github.event.action != 'edited'\n")],
+    ["チェックの名前を変える", (t) => t.replace("    name: pr-body-check\n", "    name: body\n")],
+    ["本文を run に埋める", (t) => t.replace(`run: printf '%s' "$BODY" | node`, "run: printf '%s' '${{ github.event.pull_request.body }}' | node")],
+    ["外れを握りつぶす", (t) => t.replace("node tools/pr-body-check/check.mjs\n", "node tools/pr-body-check/check.mjs || true\n")],
+    ["本文を渡さない", (t) => t.replace("          BODY: ${{ github.event.pull_request.body }}\n", "          BODY: ''\n")],
+    ["check.mjs を呼ばない", (t) => t.replace("node tools/pr-body-check/check.mjs", "node --version")],
+  ];
+  for (const [label, mutate] of mutations) {
+    const mutated = mutate(bodyTemplate);
+    assert.notEqual(mutated, bodyTemplate, `${label}: 書き換えが当たっていない`);
+    assert.ok(bodyCheckProblems(mutated).length > 0, `${label} の直しが外れにならない`);
+  }
+});
+
+test("Engine の supervisor（engine/pr-body-recheck.patch）が待つチェックの名前とワークフローの道は、このひな形の写しに合う", () => {
+  assert.match(recheckPatch, new RegExp(`^\\+BODY_CHECK = "${BODY_JOB}"`, "m"));
+  assert.match(recheckPatch, new RegExp(`^\\+BODY_CHECK_WORKFLOW = "${BODY_COPY.replace(/\./g, "\\.")}"`, "m"));
+});
+
+test("写し（.github/workflows/pr-body-check.yml）があれば、ひな形と同じ", {
+  skip: existsSync(bodyCopyPath) ? false : "写しがまだない（建設者が写す）",
+}, () => {
+  assert.equal(readFileSync(bodyCopyPath, "utf8"), bodyTemplate);
 });

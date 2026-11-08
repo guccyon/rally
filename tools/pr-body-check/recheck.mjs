@@ -10,6 +10,7 @@
 //     supervisor.merged が来た（merged_before_body_fix_finished。事例 C-0005 は、直しの終わりがマージの 7 秒後）
 //   - 本文の直しが失敗で終わり（pr.body_amend_failed）、そのあと直しが成功しないまま supervisor.merged が来た（merged_after_body_fix_failed）
 // 本文の検査は gate.evaluated で数える。gate は問わない（検査役の rubric も、pr-body-check を gate: "pr-body-check" で記録したものも数える）。
+// supervisor が直した本文の pr-body-check が通ったのを確かめて残す supervisor.body_rechecked（engine/pr-body-recheck.patch。議決 D-0050、Issue #1122）も数える。
 // 本文の直しの積みと終わりは job_id で結ぶ。終わりに job_id がなければ同じ PR の古いものから、積んだ側に job_id がなければ job_id のないものと結ぶ。
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,7 +19,7 @@ import { parseArgs } from "node:util";
 import { parseEvents } from "../sendback-check/check.mjs";
 
 /** 本文の検査として数えるイベント。 */
-export const BODY_CHECK_EVENTS = Object.freeze(["gate.evaluated"]);
+export const BODY_CHECK_EVENTS = Object.freeze(["gate.evaluated", "supervisor.body_rechecked"]);
 /** 本文の直しの終わり（成功と失敗）。 */
 export const BODY_FIX_FINISHED = Object.freeze(["pr.body_amended", "pr.body_amend_failed"]);
 

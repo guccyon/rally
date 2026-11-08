@@ -7,6 +7,7 @@ PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突の�
 ```sh
 python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査・見張りのテスト（どちらも Engine の job.finished の欄を含む）と、Engine の本物の処理のテストと、CI のひな形の形のテスト
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
+python3 -B tools/conflict-check/schema.py --events <イベントの JSON か JSONL> [--defs <定義>] [--json]   # 衝突したファイルの列が載っているか（K-0014。下の「衝突したファイルの列の定義」）
 ```
 
 依存は Python 3 と PyYAML（Engine の `core-gates/knowledge_check.py` と同じ）。機械的な解消の検査（`verify_mechanical`）とそのテストは git と node も使う（node か git がなければ飛ばす。CI（`CI=true`）では飛ばさない）。`test_engine.py` は bash・jq と Engine のチェックアウトも使う。
@@ -116,7 +117,7 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 - Engine が今の形（`agent_resumed` も `agent_tier` も出さない。`legacy_finished`）のときだけ `todo:` の理由で飛ばす。どちらかを出す版からは必須で、片方だけを出す版はもう片方が照らせずに落ちる。欄の名前を変えて出した版も今の形と見るので、その時は `FINISHED_FIELDS` を合わせる
 - Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ（`ENGINE_DIR` を渡したときと `CI=true` では飛ばさずに落とす）。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
 - 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`legacy_finished` の todo の呼び出しを消す（`test_watch.py` の同じ todo も。下の「Engine の job.finished の欄で見張るテスト」）
-- todo が黙って残らないよう、todo の理由に照らせない件数（`agent_resumed=3・tier=3` など）を添え、知見 `K-0010` の `review_by`（`.factory-config/knowledge/K-0010.yaml` から読む。2026-11-08 の時点で 2026-12-05）を過ぎても Engine が今の形なら、todo にせずに落とす（議決 `D-0043`、Issue #1104）。期限の日までは todo、翌日から落ちる（`core-gates/knowledge_check.py` の「過ぎた」と同じ）。`review_by` を読めないときも落ちる。直し方は、Engine を直して `ENGINE_REF` を上げるか、委員会で `K-0010` を再確認して `review_by` を動かす。今日の日付は環境変数 `CONFLICT_CHECK_TODAY`（`YYYY-MM-DD`）で差し替えられる。期限の判定と todo の理由の組み立ては `test_events.py` の `todo_until_review_by` の 1 か所に置き、`test_watch.py` の `EngineFinishedTest` もそれを呼ぶ
+- todo が黙って残らないよう、todo の理由に照らせない件数（`agent_resumed=3・tier=3` など）を添え、知見 `K-0010` の `review_by`（`.factory-config/knowledge/K-0010.yaml` から読む。2026-11-08 の時点で 2026-12-05）を過ぎても Engine が今の形なら、todo にせずに落とす（議決 `D-0043`、Issue #1104）。期限の日までは todo、翌日から落ちる（`core-gates/knowledge_check.py` の「過ぎた」と同じ）。`review_by` を読めないときも落ちる。直し方は、Engine を直して `ENGINE_REF` を上げる。Engine が今の形のまま `review_by` を前の版より後ろへ動かす PR は、`tools/knowledge-enforcement-check/check.py` の「review_by の先送りの照合」が落とす（延ばすだけで期限切れの失敗を先送りしない。議決 `D-0067`（起票時の番号は `D-0066`）、Issue #1178）。今日の日付は環境変数 `CONFLICT_CHECK_TODAY`（`YYYY-MM-DD`）で差し替えられる。期限の判定と todo の理由の組み立ては `test_events.py` の `todo_until_review_by` の 1 か所に置き、`test_watch.py` の `EngineFinishedTest` もそれを呼ぶ
 
 ## supervisor の周期ごとの見張り（`watch.py`）
 
@@ -148,6 +149,23 @@ supervisor への配線（建設者が入れる）: `merge_step` の `ci_failure
 
 - `ci_failure_step` は、次の head で CI が通ったときと人の判断待ちの間に同じ `ci:` の停止を閉じる。閉じたあとは `stoppage.opened:<key>` の dedupe で同じ key を開き直せない（Engine の `ci:` の停止すべてに共通）。見張りの停止を閉じないようにするか、key を分けるかは配線のときに建設者が決める
 - `conflict_step` は停止が開いていても衝突を解く続きのジョブを積む（`awaiting_decision` は `ci:` を見ない）。見張りの停止で積むのを止めるのも配線のときに入れる
+
+## 衝突したファイルの列の定義（`conflict-files.yaml`・`schema.py`）
+
+知見 `K-0014` の担保で、委員会の議決 `D-0049` と Issue #1136 で作った。衝突を解く続きのジョブを積むときに衝突したファイルを記録しないと、同じファイルの衝突が繰り返している型が集計で見えない（事例 `C-0007` では衝突の解消のジョブの記録に衝突したファイルがなく、事後の backfill（`conflict.files` の `source: backfill`）が要った）。そこで、衝突にかかわる 3 つの制御プレーンのイベントに、衝突したファイルの列 `conflict_files` を必須の欄として定義した。
+
+| イベント | いつ要るか |
+|---|---|
+| `pr.conflicted` | いつも |
+| `continue.enqueued` | `reason` が `conflict` のとき |
+| `handoff.saved` | `continue_reason` が `conflict` のとき |
+
+- 欄の形は `paths`（空でない文字列（ファイルの道）の列）で 1 件以上。欄がない・`null` は `missing_field`、空の列・文字列の列でないものは `bad_field` で落とす（要らないイベントでも、載せたなら形を見る）。ほかのイベント（`conflict.files` など）は照らさない
+- 定義は `conflict-files.yaml`（Engine の `definitions/events.yaml` の `events` と同じ形の抜き書き。`required`・`required_when`・`fields`）。`schema.py` はこの定義か、`--defs` で渡した Engine の `events.yaml` でイベント列を照らし、外れがあれば終了コード 1、記録か定義を読めなければ 2
+- Engine は別のリポジトリなので、Engine の定義に同じ欄を足す差分を `engine/conflict-files.patch` に置いた。`test_schema.py` の `EngineDefsTest` が、Engine のチェックアウトの `definitions/events.yaml` の写しに差分を当て（もう入っていればそのまま）、Engine の定義が `conflict-files.yaml` とそろうことを確かめる。Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
+- C-0005 の流れ（`fixtures/c0005-pr659-events.json`）は、今の Engine の形どおりイベントに衝突したファイルが載らず（`conflict.files` を `job_id` で結ぶだけ）、`pr.conflicted` と `continue.enqueued`（reason=conflict）のすべてが `missing_field` で落ちる
+
+配線は建設者が入れる。差分を Engine に当てることと、Engine がこの欄を載せてイベントを出すこと（`pr_events.py` の `pr.conflicted` は GitHub の `mergeable_state` からしか衝突を知らないので、衝突したファイルを求める手順が要る。`continuation.enqueue` と `dispatcher.py` の `handoff.saved` も同じ）、欄がない・空のイベントを出さないこと、`schema.py` を周期ごとか PR ごとに走らせることが要る。入るまでは `K-0014` の解決策は `wired: false`・`verified: false`。
 
 ## Engine の本物の処理のテスト（`test_engine.py`）
 

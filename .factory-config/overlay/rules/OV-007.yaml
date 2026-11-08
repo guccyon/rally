@@ -1,0 +1,22 @@
+id: OV-007
+title: "API の応答を読む境界で、契約に反する応答をすべて境界の失敗にそろえる（型のキャストで漏らさない）"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#314"
+  - "github:guccyon/rally#357"
+  - "github:guccyon/rally#86"
+  - "github:guccyon/rally#88"
+signature: "judgment:error_handling"
+check:
+  kind: rubric
+  text: >-
+    API の応答を型に変える境界（`fromJson`・`listSubscriptionPlans` のような HTTP クライアントの操作）の追加行が、
+    必須の項目の欠落・型違いを確かめずに `as int`・`as List<dynamic>` のキャストで読み、境界の失敗の型（`StudentApiException` など）に変えるのが一部の失敗（`on FormatException` だけなど）に限られているときは、
+    `TypeError` が呼び出し側に漏れ、失敗の表示も出ないので欠陥とする。
+    `is!` などで型と必須の項目を確かめて境界の失敗の型（`FormatException` を `StudentApiException` に包むなど）にそろえている差分や、応答を読む処理を変えていない差分（文書だけの変更など）は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-007/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-007/negative-1.diff" }
