@@ -1,0 +1,61 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0081
+pr: https://github.com/guccyon/rally/pull/1233
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に 1 件足しただけなので、README の決まりや D-0004 から D-0055 までの議決と矛盾しません。
+  - 足した test は D-0055 の enforcement の 1 つめの案（MUTANTS の名前の集合が 2 件ちょうどであることを確かめ、消されたり減らされたりしたら落とす）とそのまま対応していて、decided_by
+    を committee:D-0055 にしたのも合っています。
+  - issue 1079 の解決策は変異体ごとの総当たりで、今回の issue 1151 は変異体の集合そのものを固定する別の担保なので、担う範囲が分かれていて重複ではありません。
+  - '「Issue #1151 の起票時の番号は D-0054」という書き方は D-0052・D-0053 の項目と同じ形で、議決番号のずれを記録に残す扱いとして揃っています。'
+  - 'test_engine.py のひな形が .github/workflows/ にまだ写されていないので wired: false・verified: false
+    は README の決まりに合っており、confidence は hypothesis のままが妥当です。'
+  - D-0055 の 2 つめの案（ci_check）はこの PR では扱っておらず、K-0004 の solutions には supervisor の差し戻しとは別の知見の置き場の担保の記録がたまり続けているので、別の知見に分けるかを委員会で見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した solution は issue 1151 と committee:D-0055（PR #1148）を指しており、D-0055 の enforcement
+    の 1 つめの案（MUTANTS の名前の集合が 2 件ちょうどかを確かめ、減らされたら落とす）とそのまま対応しているので、一次記録に辿れます。'
+  - '起票時の番号 D-0054 と実際の議決 D-0055 の食い違いを what に書き添えていて、committee/D-0054.yaml は PR #1146
+    の別の議決なので、取り違えずに辿れます。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変えておらず、新しい主張を足していないので、根拠のつながりは保たれています。'
+  - '手元で変異体を消した写しと字面を同じにした写しで落ちることを確かめたのは手元の確認だけで、.github/workflows/ への写しがなく PR ごとには走っていないと自分で書き、wired:
+    false・verified: false としているので、記録の書き方は正直です。'
+  - 本物の CI で効き目を確かめた記録がまだないので、confidence は hypothesis のままが妥当です。
+  - 差分に出てくるのは issue と PR の番号、議決の id、ツールのパス、テストや値の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0055 で担保の担当が求めた「変異体の数と名前を固定して確かめるテスト」を入れた記録を
+    enforcement.solutions に 1 件足しただけなので、担保の観点で採ってよいです。
+  - MutantsTest は MUTANTS の名前の集合を 2 件ちょうどで照らし、置き換えの前後で字面が違うことも確かめるので、MUTANTS を空にする・減らす・置き換えを空振りにする変更を毎回の決定論で止められ、線は明確です。
+  - このテストは Engine のチェックアウトがなくても走るので、EnginePatchTest が飛ぶ環境でも変異体の一覧の崩れを見落とさず、外したときの痛さに対して作る費用も小さいです。
+  - 残る穴は .github/workflows/ への写しと必須チェックへの登録だけで、これは issue 1063・1144 の解決策と同じく建設者の配線待ちとしてすでに追われているので、この
+    PR で新たに決定論の案を足す必要はありません。
+  - 'wired: false・verified: false と書き、本物の CI で効き目を確かめていないので、confidence は hypothesis
+    のままが妥当です。'
+  - K-0004 の solutions には知見の置き場の担保の仕組みの記録がたまり続けていて、D-0055 で挙がった別の知見に分けるかの見直しはまだ済んでいないので、建設者の配線が入る前に委員会で扱ってください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、議決 D-0055 の test の案（MUTANTS
+    が 2 件ちょうどであることを確かめる）を入れた記録を enforcement.solutions に 1 件足しただけで、案の範囲を超えていません。
+  - 'wired: false・verified: false とし、.github/workflows/ への写しが建設者待ちで PR ごとには走っていないと自分で書いているので、言い過ぎはありません。'
+  - 反例として、MutantsTest は変異体の名前と字面の違いを見るだけで、変異体が総当たりのゆるめを本当に捕まえるかは Engine がないと飛ぶ EnginePatchTest
+    任せなので、D-0055 の ci_check の案（CI では飛ばさずに落とす）が入るまでは効き目の確認にならないことを次に直すときに書き添えてください。
+  - 名前の集合を 2 件ちょうどに固定したので、D-0055 で挙がった "false" の文字列や 0 を配線済みに数える変異体を足すときはこのテストも同時に直す必要があり、その手順を
+    what かテストの注釈に残してください。
+  - K-0004 の solutions には supervisor の差し戻しという主張とは別の、知見の置き場の担保の記録がたまり続けているので、別の知見に分けるかを委員会か人で見直してください。
+  - 本物の CI で走った記録がないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
