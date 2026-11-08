@@ -3,11 +3,13 @@ theme: 4
 kind: causal
 statement: >-
   衝突を解く続きのジョブを積むときに、衝突したファイルを記録しない（pr.conflicted・continue.enqueued・handoff に載せない）と、
-  指示役（supervisor）も解く役も毎回を新しい衝突として扱い、同じファイルの衝突が繰り返している型が役割の間でも集計でも見えず、
-  手を打つのが遅れる（C-0007 では、CHANGELOG.md だけの衝突の束が窓の費用の約 74% に育つまで型として見えなかった）。
+  同じファイルの衝突が繰り返している型が集計で見えない（C-0007 では、衝突解消ジョブの samples の detail がすべて null で、
+  CHANGELOG.md だけの衝突の束として数えるには事後の backfill（conflict.files）が要った）。
+  ただし、記録の欠けが手を打つ時期を遅らせたかは確かめていない。型が見えた日と手を打った日の差は材料になく、
+  CHANGELOG.md の衝突は記録がないままの窓の中で C-0001 から K-0002 として見つかり、断片方式（at 2026-11-03）という手が打たれている（反例になりうる）。
 scope:
   work: [dev.build]
-  roles: [supervisor, implement]
+  roles: [supervisor]
 acts_on: engine
 confidence: hypothesis
 evidence:
@@ -21,4 +23,5 @@ confidentiality: product
 related: [K-0010, K-0001]
 invalidate_when:
   - "pr.conflicted か continue.enqueued(reason=conflict) に、衝突したファイルがその場で（backfill ではなく）載るようになった"
-  - "衝突したファイルがその場で記録されるようになったあとも、同じファイルの衝突の束が窓の費用の大半に育つまで手が打たれなかった（原因は記録の欠けではなかった）"
+  - "衝突したファイルがその場で記録されるようになったあとも、同じファイルの衝突の束が集計で見えなかった（原因は記録の欠けではなかった）"
+  - "記録の欠けが手を打つ時期を遅らせたかを確かめる: 同じファイルの衝突の束ごとに、束が集計で最初に見えた日（conflict.files が数えられた日）と手を打った日（担保の at）を並べ、記録のある束とない束で差がなかった"
