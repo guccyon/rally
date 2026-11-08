@@ -1286,6 +1286,63 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
         self.assertEqual(self.errors(d, wired=False), [])
 
 
+class PrBodyEngineCopyWiringTest(PrBodyEngineTestsWiringTest):
+    """K-0012 の issue 1131（recheck.test.mjs）と issue 1205（写しとひな形のずれを落とす ci.test.mjs）の ci_check の解決策は、
+    .github/workflows/pr-body-engine.yml の pull_request のジョブからその検査を呼ぶ項目がないと wired にできない（議決 D-0074（起票時の番号は D-0072）、Issue #1205）"""
+
+    CASES = {1131: "tools/pr-body-check/recheck.test.mjs", 1205: "tools/pr-body-check/ci.test.mjs"}
+
+    def item(self, runs=None, workflow=PrBodyEngineTestsWiringTest.WF, issue=1205, wired=True) -> dict:
+        runs = (self.CASES[issue],) if runs is None else runs
+        return {"id": "K-0012", "_file": "K-0012.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": workflow, "job": "engine-test", "runs": r} for r in runs]}]}}
+
+    def test_対象に挙げてある(self):
+        for issue, target in self.CASES.items():
+            key = ("K-0012", issue)
+            self.assertEqual(check.REQUIRED_PR[key], (target, "D-0074"))
+            self.assertEqual(check.REQUIRED_PR_WORKFLOW[key], self.WF)
+            self.assertNotIn(key, check.REQUIRED_PR_ALSO)
+            self.assertNotIn(key, check.REQUIRED_ENGINE_WAIT)
+
+    def test_ひな形をそのまま写したジョブで_3_つとも呼べば通る(self):
+        d = self.repo()
+        for issue in self.CASES:
+            self.assertEqual(self.errors(d, issue=issue), [], issue)
+
+    def test_3_つのどれかの項目がなければ落ちる(self):
+        d = self.repo()
+        for issue, target in self.CASES.items():
+            other = next(t for t in self.TESTS if t != target)
+            e = self.errors(d, issue=issue, runs=(other,))
+            self.assertEqual(len(e), 1, (issue, e))
+            for part in (f"on.pull_request のある {self.WF} で", target, "議決 D-0074", f"issue {issue}"):
+                self.assertIn(part, e[0])
+
+    def test_別のワークフローの写しでは落ちる(self):
+        d = self.repo(files={self.OTHER: self.TEMPLATE.read_text(encoding="utf-8")})
+        for issue in self.CASES:
+            e = self.errors(d, issue=issue, workflow=self.OTHER)
+            self.assertEqual(len(e), 1, e)
+            self.assertIn(self.WF, e[0])
+
+    def test_pull_request_を外すか道を渡して絞った写しでは落ちる(self):
+        text = self.TEMPLATE.read_text(encoding="utf-8")
+        no_pr = text.replace("on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n", 1)
+        self.assertNotEqual(no_pr, text)
+        for issue in self.CASES:
+            self.assertEqual(len(self.errors(self.repo(no_pr), issue=issue)), 1, issue)
+        # 道を渡して recheck.test.mjs だけを走らせると、写しのずれの見張り（ci.test.mjs）は呼んでいない側に数える
+        narrowed = text.replace("node --test --test-reporter=spec >", "node --test --test-reporter=spec recheck.test.mjs >", 1)
+        self.assertNotEqual(narrowed, text)
+        d = self.repo(narrowed)
+        self.assertEqual([x for x in self.errors(d, issue=1131) if "wired にするには" in x], [])
+        e = [x for x in self.errors(d, issue=1205) if "wired にするには" in x]
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.CASES[1205], e[0])
+
+
 class DecisionTest(unittest.TestCase):
     """decided_by の議決との照合（議決 D-0041、Issue #1094）"""
 

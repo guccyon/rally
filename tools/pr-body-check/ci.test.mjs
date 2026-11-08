@@ -2,6 +2,7 @@
 // 建設者がこのひな形を .github/workflows/pr-body-engine.yml に写し、engine-test を必須のチェックにすると、関所を呼ばない Engine の版では
 // engine.test.mjs の (3) で落ちる。その止め方が効くのは、ひな形が PR ごとに必ず走り、落ちたら止め、ENGINE_REF の行を変えた PR でその版の
 // Engine を確かめる形のときだけなので、それを見る。写しがあれば ENGINE_REF の行のほかがひな形と同じかも見る（写すときに変えてよいのはその行だけ）。
+// そのずれの見張りが、見張りを外さない直しのずれも落とし、どの行かを返すことを確かめる（知見 K-0012 の担保。議決 D-0074 の ci_check の案、Issue #1205）。
 // このテストは engine-test の node --test の中で走るので、写しから見張りを外す変更も同じジョブで落ちる。
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が skip・todo・only・道や名前の絞り込みで実行の対象から外れていないことも見る
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
@@ -32,8 +33,8 @@ const sendbackTemplate = readFileSync(fileURLToPath(new URL("../sendback-check/c
 const sendbackCopyPath = fileURLToPath(new URL("../../.github/workflows/sendback-engine.yml", import.meta.url));
 
 const engineRef = (text) => text.match(/^ {2}ENGINE_REF:\s*(\S+)\s*$/m)?.[1];
-/** ENGINE_REF の行を除いた中身（ずれの比べ方）。 */
-const withoutRef = (text) => text.split(/\r?\n/).filter((l) => !/^\s*ENGINE_REF:/.test(l)).join("\n").trimEnd();
+/** ENGINE_REF の行（ワークフローの env の 1 行。engineRef が読む行）を除いた中身（ずれの比べ方）。ほかの深さの ENGINE_REF: はずれに数える。 */
+const withoutRef = (text) => text.split(/\r?\n/).filter((l) => !/^ {2}ENGINE_REF:/.test(l)).join("\n").trimEnd();
 
 /** ジョブの本体（`  <job>:` の次の行から次のジョブの前まで）。 */
 function jobBody(lines, job) {
@@ -157,21 +158,82 @@ test("GitHub Actions では写し（.github/workflows/pr-body-engine.yml）が�
   assert.ok(existsSync(copyPath), "写しが .github/workflows/pr-body-engine.yml にない。ひな形はこの名前に写す");
 });
 
+// 写しとひな形のずれの見張り（知見 K-0012 の担保。議決 D-0074（Issue #1205 の起票時の番号は D-0072。PR #1202）の ci_check の案、Issue #1205）。
+// 写すときに変えてよいのは ENGINE_REF の行だけなので、写しの中身がほかの 1 行でもひな形とずれたら落とす。ずれは見張り（workflowProblems）を
+// 外さない直し（手順の名前・Node の版・要約の書き出し・足した手順など）でも落とし、どの行がずれたかを返す。このテストは写しの engine-test の中で走るので、
+// 写しから ci.test.mjs を外す直しはここでは止まらない。それは tools/knowledge-enforcement-check/check.py が、この解決策の wired_by に
+// 写しの pull_request のジョブから ci.test.mjs を呼ぶ項目を求めて止める（REQUIRED_PR の ("K-0012", 1205)）。
+
+/** 写しの外れ（空なら通る）。ENGINE_REF の行のほかのずれ・見張りの外れ・写しの sendback-engine.yml との版のずれ（sendbackCopy を渡したとき）。 */
+function copyProblems(copy, base, sendbackCopy = null) {
+  const problems = [];
+  const a = withoutRef(copy).split("\n");
+  const b = withoutRef(base).split("\n");
+  const at = a.findIndex((l, i) => l !== b[i]);
+  if (at >= 0 || a.length !== b.length) {
+    const i = at >= 0 ? at : Math.min(a.length, b.length);
+    problems.push(`写しが ENGINE_REF の行のほかでひな形とずれている（ENGINE_REF の行を除いて ${i + 1} 行目。写し: ${JSON.stringify(a[i] ?? null)}、`
+      + `ひな形: ${JSON.stringify(b[i] ?? null)}）。ひな形を直してから写し直す`);
+  }
+  problems.push(...workflowProblems(copy).map((p) => `写し: ${p}`));
+  if (sendbackCopy !== null && engineRef(copy) !== engineRef(sendbackCopy)) {
+    problems.push("写しの ENGINE_REF が .github/workflows/sendback-engine.yml とずれている");
+  }
+  return problems;
+}
+
 test("写し（.github/workflows/pr-body-engine.yml）があれば、ENGINE_REF の行のほかはひな形と同じで、その版も見張りを通る", {
   skip: existsSync(copyPath) ? false : "まだ .github/workflows/ に写していない",
 }, () => {
-  const copy = readFileSync(copyPath, "utf8");
-  assert.equal(withoutRef(copy), withoutRef(template), "写しが ENGINE_REF の行のほかでひな形とずれている。ひな形を直してから写し直す");
-  assert.deepEqual(workflowProblems(copy), []);
-  if (existsSync(sendbackCopyPath)) {
-    assert.equal(engineRef(copy), engineRef(readFileSync(sendbackCopyPath, "utf8")),
-      "写しの ENGINE_REF が .github/workflows/sendback-engine.yml とずれている");
-  }
+  const sendbackCopy = existsSync(sendbackCopyPath) ? readFileSync(sendbackCopyPath, "utf8") : null;
+  assert.deepEqual(copyProblems(readFileSync(copyPath, "utf8"), template, sendbackCopy), []);
 });
 
 test("ずれの比べ方は ENGINE_REF の行だけを無視する", () => {
   assert.equal(withoutRef(template.replace(engineRef(template), "0".repeat(40))), withoutRef(template));
   assert.notEqual(withoutRef(template.replace(`name: ${CHECK_NAME}`, "name: engine-test")), withoutRef(template));
+});
+
+test("ひな形をそのまま写した写しと、ENGINE_REF の行だけを変えた写しは通る", () => {
+  assert.deepEqual(copyProblems(template, template), []);
+  assert.deepEqual(copyProblems(template.replace(/\n/g, "\r\n"), template), []);
+  const bumped = template.replace(engineRef(template), "0123456789abcdef0123456789abcdef01234567");
+  assert.deepEqual(copyProblems(bumped, template), []);
+  assert.deepEqual(copyProblems(bumped, template, sendbackTemplate.replace(engineRef(sendbackTemplate), engineRef(bumped))), []);
+});
+
+test("ENGINE_REF の行のほかでひな形とずれた写しは、見張りを外さない直しでも外れになる", () => {
+  const testStep = "          node --test --test-reporter=spec > pr-body-test.txt 2>&1 || rc=$?\n";
+  const cases = {
+    "注釈を書き換える": template.replace("# ワーカーは .github/workflows/ を変えられないので", "# 建設者が"),
+    "手順の名前を変える": template.replace("      - name: PR 本文の関所のテスト（K-0001）\n", "      - name: PR 本文のテスト\n"),
+    "Node の版を変える": template.replace("node-version: 22", "node-version: 20"),
+    "Python の手順を外す": template.replace(/^ {6}- uses: actions\/setup-python@v5\n {8}with:\n {10}python-version: "3\.12"\n/m, ""),
+    "要約に書き出さない": template.replace(/^ {10}\{ echo "## pr-body-engine.*\n/m, ""),
+    "テストの前に手順を足す": template.replace(testStep, `          npm ci\n${testStep}`),
+    "concurrency で取り消さない": template.replace("cancel-in-progress: true", "cancel-in-progress: false"),
+    "末尾にジョブを足す": `${template.trimEnd()}\n  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: "true"\n`,
+    "ログに出さない": template.replace(/^ {10}cat pr-body-test\.txt\n/m, ""),
+  };
+  for (const [name, copy] of Object.entries(cases)) {
+    assert.notEqual(copy.trimEnd(), template.trimEnd(), `${name}: 置き換えが効いていない`);
+    assert.deepEqual(workflowProblems(copy), [], `${name}: 見張りでも落ちる直しなので、ずれの見張りの確かめにならない`);
+    const problems = copyProblems(copy, template);
+    assert.equal(problems.length, 1, `${name}: ${problems.join(" / ")}`);
+    assert.match(problems[0], /^写しが ENGINE_REF の行のほかでひな形とずれている（ENGINE_REF の行を除いて \d+ 行目/, name);
+  }
+});
+
+test("写しの見張りを外す直しと、ENGINE_REF を別の深さに足す・sendback-engine.yml の写しと版がずれる写しも外れになる", () => {
+  const narrowed = template.replace("node --test --test-reporter=spec >", "node --test --test-reporter=spec recheck.test.mjs >");
+  assert.ok(copyProblems(narrowed, template).some((p) => p.startsWith("写しが ENGINE_REF の行のほかで")));
+  assert.ok(copyProblems(narrowed, template).some((p) => p.startsWith("写し: ")));
+  const override = template.replace("          ENGINE_DIR: ${{ github.workspace }}/.engine\n",
+    `          ENGINE_DIR: \${{ github.workspace }}/.engine\n          ENGINE_REF: ${"f".repeat(40)}\n`);
+  assert.notEqual(override, template);
+  assert.ok(copyProblems(override, template).some((p) => p.startsWith("写しが ENGINE_REF の行のほかで")), "手順の env の ENGINE_REF をずれに数えていない");
+  const otherRef = sendbackTemplate.replace(engineRef(sendbackTemplate), "0".repeat(40));
+  assert.deepEqual(copyProblems(template, template, otherRef), ["写しの ENGINE_REF が .github/workflows/sendback-engine.yml とずれている"]);
 });
 
 // 通る側のテスト（gate.test.mjs の関所と CLI、engine.test.mjs の (10)）が、ワークフローの node --test の実行の対象から外れていないことの見張り
