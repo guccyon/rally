@@ -42,7 +42,7 @@ def git(cwd: Path, *args: str) -> str:
 
 
 class Sandbox:
-    """一時のディレクトリにリポジトリの形（検査・差分・knowledge-check.yml）と、呼び出しを log に書く偽のコマンドを置く。"""
+    """一時のディレクトリにリポジトリの形（検査・差分・knowledge-check.yml と engine.lock）と、呼び出しを log に書く偽のコマンドを置く。"""
 
     def __init__(self, fakes: dict[str, str]):
         self.tmp = tempfile.TemporaryDirectory()
@@ -53,6 +53,9 @@ class Sandbox:
         shutil.copy(HERE / "engine" / "knowledge-enforcement.patch", self.dir / "engine")
         (self.root / ".github" / "workflows").mkdir(parents=True)
         shutil.copy(KNOWLEDGE_CHECK, self.root / ".github" / "workflows")
+        if (REPO / patch_check.LOCK_REL).is_file():   # knowledge-check.yml が ENGINE_REF を読む engine.lock（Issue #1225）
+            (self.root / patch_check.LOCK_REL).parent.mkdir(parents=True)
+            shutil.copy(REPO / patch_check.LOCK_REL, self.root / patch_check.LOCK_REL)
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.log = self.root / "calls.log"
@@ -171,11 +174,20 @@ class StepTest(unittest.TestCase):
         (self.box.dir / "patch-head.txt").write_text(STALE_OUT, encoding="utf-8")
         wf = self.box.root / ".github" / "workflows" / "knowledge-check.yml"
         bumped = "b" * 40
-        wf.write_text(KNOWLEDGE_CHECK.read_text(encoding="utf-8").replace(f"ENGINE_REF: {ENGINE_REF}", f'ENGINE_REF: "{bumped}"'), encoding="utf-8")
+        wf.write_text(f'env:\n  ENGINE_REF: "{bumped}"\n', encoding="utf-8")
         self.assertEqual(patch_check.engine_ref(wf), bumped)
         n = self.box.run(NOTIFY_STEP, ENGINE_HEAD=HEAD, HEAD_OUTCOME="failure")
         self.assertEqual(n.returncode, 0, n.stdout + n.stderr)
         self.assertIn(f"ENGINE_REF（{bumped}）", n.stdout)
+        # knowledge-check.yml が engine.lock を読む形なら、engine.lock の版を書く（Issue #1225）
+        shutil.copy(KNOWLEDGE_CHECK, wf)
+        lock = self.box.root / patch_check.LOCK_REL
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(f"# 版\n{'c' * 40}\n", encoding="utf-8")
+        if patch_check.LOCK_REL in KNOWLEDGE_CHECK.read_text(encoding="utf-8"):
+            n = self.box.run(NOTIFY_STEP, ENGINE_HEAD=HEAD, HEAD_OUTCOME="failure")
+            self.assertEqual(n.returncode, 0, n.stdout + n.stderr)
+            self.assertIn(f"ENGINE_REF（{'c' * 40}）", n.stdout)
         wf.write_text("env:\n  ENGINE_REF: main\n", encoding="utf-8")
         n = self.box.run(NOTIFY_STEP, ENGINE_HEAD=HEAD, HEAD_OUTCOME="failure")
         self.assertEqual(n.returncode, 0, n.stdout + n.stderr)

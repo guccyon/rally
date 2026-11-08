@@ -1039,4 +1039,26 @@ enforcement:
           workflow: .github/workflows/knowledge-enforcement.yml
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0080（Issue #1225 の起票時の番号は D-0078。PR #1222）の test の案（D-0053 の test の案を入れる: test_ci.py に、ci/knowledge-enforcement.yml
+        （と写してあれば .github/workflows/knowledge-enforcement.yml）の ENGINE_REF が knowledge-check.yml の ENGINE_REF と一致しなければ落ちるテストを足し、
+        片方だけ上げた PR を止める）を入れた。issue 1143 で足した EngineRefTest は knowledge-check.yml の env の ENGINE_REF の行を読んでいたが、
+        knowledge-check.yml が版を .factory-config/engine.lock から読む形（Engine ADR 0041）に変わって行がなくなり、test_engine_patch.py の engine_ref() が
+        読み込みの時点で落ちて、test_ci.py・test_ci_head.py・test_engine.py・test_engine_patch.py が 1 件も走らなくなっていた（engine.lock だけが ad5c659 に上がり、
+        ひな形は 9d3713a のままだった）。engine_ref() を、env に ENGINE_REF の行があればその値、なければ knowledge-check.yml が読む engine.lock の
+        コメントと空行を除いた最初の行（ワークフローと同じ読み方）を 40 桁の SHA として読むようにし、EngineRefTest で knowledge-check.yml の版を
+        engine.lock を読む形と env の行の形の両方で上げ、engine.lock だけ・ひな形だけ・写しだけを上げた組で落ち、3 つをそろえた組で通ることを確かめる。
+        ひな形の ENGINE_REF を engine.lock の ad5c659 にそろえ、engine/knowledge-enforcement.patch がその版に当たることを ENGINE_DIR に渡した
+        Engine のチェックアウトで確かめた（差分で Engine に足したテストは pytest がなく手元では確かめていない）。読み込みで隠れていた EnforcementScopeTest の
+        一時のリポジトリに、議決 D-0072 で求める enforcement のジョブの check.py の配線も足した。test_ci.py は ci/knowledge-enforcement.yml のひな形からしか
+        走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1225
+      at: 2026-11-08
+      decided_by: committee:D-0080
+      requires_check:
+        - runs: tools/knowledge-enforcement-check/test_ci.py
+          workflow: .github/workflows/knowledge-enforcement.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0004
