@@ -640,4 +640,41 @@ enforcement:
       decided_by: committee:D-0041
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0048 の ci_check の案（D-0021・D-0034 の案のとおり、建設者が ci/knowledge-enforcement.yml を .github/workflows/ に写して
+        check.py（wired_by と verified_by の照合を含む）を pull_request で走らせ、ブランチ保護の必須チェックに入れ、そのあとで issue 986・1059 の解決策を
+        wired: true にする）のうち、ワーカーの権限で入れられる分を入れた。tools/knowledge-enforcement-check/check.py の REQUIRED_PR に、
+        K-0004 の issue 986 と 1059 の解決策と tools/knowledge-enforcement-check/check.py の組を足し、その解決策を wired: true にするとき、
+        wired_by に、on.pull_request のある .github/workflows/ のワークフローで pull_request でも走るジョブから check.py を呼ぶ項目がなければ落とす
+        （手で走らせる・定期・手動・push だけ、check.py を呼ばない engine-test のジョブや test_check.py を指す項目では wired にできない）。
+        落とす文の議決は組ごとに出す（K-0010 は D-0043 のまま）。test_check.py で、ひな形をそのまま .github/workflows/knowledge-enforcement.yml に写した
+        enforcement のジョブなら通ること、on を workflow_dispatch・schedule・push に替えた写し、engine-test のジョブ、test_check.py を指す項目、
+        != 'pull_request' の if: を付けたジョブで落ちること、ほかの解決策と wired でない解決策は見ないことを確かめ、REQUIRED_PR から K-0004 の組を外すと
+        このテストが落ちることも確かめた。ひな形の注釈と README の「まだ入っていないもの」に、enforcement のジョブも必須チェックに入れ、そのあとで
+        2 つの解決策を wired: true にする手順を書いた。.github/workflows/ への写しと branch protection の必須チェックは建設者が行う（権限設定はワーカーが触れない）ので、
+        check.py はまだ PR ごとには走っておらず、この解決策も issue 986・1059 の解決策も未配線・未確認
+      issue: 1129
+      at: 2026-11-08
+      decided_by: committee:D-0048
+      wired: false
+      verified: false
+    - kind: schema
+      what: >-
+        議決 D-0048 の schema の案（wired_by と verified_by を Engine の定義に書き、verified が true のときは verified_by を必須・wired が true を条件とし、
+        Engine の knowledge_check.py でも同じ形を落とす）を、Engine に当てる差分 tools/knowledge-enforcement-check/engine/knowledge-enforcement.patch に足した。
+        wired_by は議決 D-0034（Issue #1060）でこの差分に入っているので、足したのは verified_by の分。definitions/knowledge.yaml の enforcement に
+        solution_verified_by（required_when: {verified: true}、requires: {wired: true}、items の case・pr・event、min_cases: 1）を書き、
+        core-gates/knowledge_check.py の check_verified_by() が verified: true の解決策で verified_by がない・空・列でない、項目が 1 つの参照でないか種類が
+        case・pr・event でない、case が C-NNNN でないか cases/ にない、pr が正の整数でない、event が <種類>:<id> でない、case が 1 件もないときに落とす
+        （check.py の check_verification と同じ線。wired でないのに verified が true は前からの check_item で落とす）。Engine の core-gates/tests/test_knowledge_check.py に
+        その場合分けのテストを足し、test_engine.py で verified・verified_by の値の組ごとに Engine の落とし方が check.py と一致すること、定義の値が check.py と
+        Engine の値とそろうことを確かめ、手元で Engine の判定を壊した写し（pr の true を番号に数える・0 を通す・event の形を見ない・case がなくても通す・
+        cases/ にない事例を通す・verified_by を見ない）で落ちることも確かめた。差分を Engine に当てて ENGINE_REF を上げることと、
+        ci/knowledge-enforcement.yml を .github/workflows/ に写すことは建設者が行うので、この解決策も未配線・未確認
+      issue: 1130
+      at: 2026-11-08
+      decided_by: committee:D-0048
+      wired: false
+      verified: false
 decided_by: committee:D-0004
