@@ -25,6 +25,10 @@ agent_tier を test_events.py の EngineFinishedTest で照らす）を wired: t
 pull_request でも走る（if: が github.event_name を見るなら == 'pull_request' を含み、!= 'pull_request' を含まない）ジョブから
 tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほかの検査（test_ci.py など）を呼ぶだけ、定期や手動だけでは wired にできない。
 
+議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
+.factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
+同じ種類（solution_kind が解決策の kind）の案があることを照らし、なければ decision_mismatch で落とす。
+
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
   - deterministic で、wired の解決策が 1 件もない: 未配線（deterministic とは出さない）
@@ -54,6 +58,8 @@ WORKFLOWS = ".github/workflows"
 WIRED_BY_KEYS = ("workflow", "job", "runs")
 VERIFIED_BY_KINDS = ("case", "pr", "event")
 CASE_RE = re.compile(r"^C-\d{4,}$")
+DECIDED_BY_RE = re.compile(r"^committee:(D-\d{4,})$")
+DECISION_MISMATCH = "decision_mismatch"
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088）
 REQUIRED_SCHEDULE = {("K-0004", 1018): "tools/sendback-check/protection.mjs"}
@@ -395,6 +401,41 @@ def check_verification(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def check_decision(k: dict, repo: Path, cache: dict | None = None) -> list[str]:
+    """decided_by を書いた解決策が、指す議決の enforcement の案（同じ knowledge と solution_kind）に当たるかを照らす（議決 D-0041、Issue #1094）。
+    decided_by を書いていない解決策は見ない"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    cache = {} if cache is None else cache
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or "decided_by" not in s:
+            continue
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {DECISION_MISMATCH}"
+        dec = s["decided_by"]
+        m = DECIDED_BY_RE.match(dec) if isinstance(dec, str) else None
+        if not m:
+            e.append(f"{where}: decided_by は committee:D-NNNN（{dec!r}）")
+            continue
+        did = m.group(1)
+        if did not in cache:
+            p = repo / ROOT / "committee" / f"{did}.yaml"
+            try:
+                cache[did] = load_yaml(p) if p.is_file() else None
+            except Exception as x:  # noqa: BLE001
+                cache[did] = x
+        d = cache[did]
+        if d is None:
+            e.append(f"{where}: 議決 {did} が {ROOT}/committee/ にない")
+            continue
+        if isinstance(d, Exception):
+            e.append(f"{where}: 議決 {did} が読めない（{d}）")
+            continue
+        plans = d.get("enforcement") if isinstance(d, dict) else None
+        if not any(isinstance(p, dict) and p.get("knowledge") == k.get("id") and p.get("solution_kind") == s.get("kind")
+                   for p in (plans if isinstance(plans, list) else [])):
+            e.append(f"{where}: 議決 {did} の enforcement に {k.get('id')} の {s.get('kind')} の案がない")
+    return e
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -438,7 +479,8 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, Path(a.repo)) + check_schedule(k, Path(a.repo)) + check_pull_request(k, Path(a.repo)) + check_verification(k, Path(a.repo))]
+    repo, decisions = Path(a.repo), {}
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
