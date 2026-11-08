@@ -17,6 +17,8 @@
 # （pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと check.py が落とす。写したあとは、CI か記録が写しを wired_by に書いていれば
 # 写しがないことを test_ci.py が飛ばさずに落とす。議決 D-0053、Issue #1144）。
 # enforcement のジョブは、PR が .factory-config/knowledge/ か tools/knowledge-enforcement-check/ を変えたときだけ、通らなければ落とす。ほかの PR では結果を Job Summary に残すだけ
+# check.py には PR の base（--base）と Engine の全履歴のチェックアウト（--engine）を渡し、K-0010 の review_by を延ばす PR では
+# conflict-check の ENGINE_REF の Engine で EngineFinishedTest が todo のままなら落とす（議決 D-0067、Issue #1178）
 # 写すときに変えてよいのは ENGINE_REF の行だけ（knowledge-check.yml の ENGINE_REF と同じ版にそろえる）。形は test_ci.py が見る。
 name: knowledge-enforcement
 
@@ -100,6 +102,15 @@ jobs:
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
+      # K-0010 の review_by を延ばす PR で、conflict-check の ENGINE_REF の版の Engine を check.py が照らすため（議決 D-0067、Issue #1178）。
+      # 版は check.py が tools/conflict-check/ci/conflict-check.yml（写しがあれば写し）から読むので、全履歴で取る
+      - name: Engine を取る（全履歴。K-0010 の review_by の先送りの照合）
+        if: steps.scope.outputs.changed == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          fetch-depth: 0
+          path: .engine
       - name: 検査とひな形の形のテスト（Engine のテストは engine-test のジョブ）
         run: |
           python3 -m pip install --quiet pyyaml
@@ -108,9 +119,11 @@ jobs:
       - name: 担保の配線と効き目
         env:
           CHANGED: ${{ steps.scope.outputs.changed }}
+          PR_BASE: ${{ github.base_ref }}
         run: |
           rc=0
-          python3 tools/knowledge-enforcement-check/check.py --repo . --json knowledge-enforcement.json --summary "$GITHUB_STEP_SUMMARY" || rc=$?
+          python3 tools/knowledge-enforcement-check/check.py --repo . --json knowledge-enforcement.json --summary "$GITHUB_STEP_SUMMARY" \
+            --base "origin/$PR_BASE" --engine .engine || rc=$?
           if [ "$CHANGED" = "true" ]; then exit $rc; fi
       - uses: actions/upload-artifact@v4
         if: always()

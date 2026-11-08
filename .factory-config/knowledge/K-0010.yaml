@@ -154,4 +154,21 @@ enforcement:
       decided_by: committee:D-0043
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0067（Issue #1178 の起票時の番号は D-0066。PR #1175）の ci_check の 1 つ目の案を入れた。tools/knowledge-enforcement-check/check.py に
+        check_review_by_hold() を足し、--base に前の版（CI では origin/<PR の base>）を渡すと、この知見の review_by を前の版より後ろへ動かす
+        （日付でなくすのも含む）PR で、tools/conflict-check/ci/conflict-check.yml（写しがあれば .github/workflows/conflict-check.yml）の ENGINE_REF の版の
+        Engine を --engine（または ENGINE_DIR）の全履歴のチェックアウトから取り出し、engine_harness.py の finished で読んだ job.finished に
+        test_events.py の FINISHED_FIELDS（agent_resumed・agent_tier）がどれもない（EngineFinishedTest が todo のまま）なら落とす。Engine のチェックアウトや
+        その版がない・欄を読めないときも照らせないとして落とす。review_by を延ばすだけで、期限切れで落ちるのを先送りできないようにするため。
+        test_check.py の ReviewByHoldTest で、一時の git リポジトリに作った Engine と K-0010 の前後の版を使い、延ばさなければ見ない・延ばして今の形なら落ちる・
+        片方か両方の欄を出す版なら通る・写しの ENGINE_REF を先に見る・照らせなければ落ちることを確かめた。ひな形 ci/knowledge-enforcement.yml の
+        enforcement のジョブに、Engine を全履歴で取る手順と --base・--engine を渡す形を足した。ひな形を .github/workflows/ に写すのは建設者で、
+        手元の Engine のチェックアウト（main の dcc3b1e、浅い取得）には ENGINE_REF の 2490db6 がなく、その版では走らせていないので、効き目はまだ確かめていない
+      issue: 1178
+      at: 2026-11-08
+      decided_by: committee:D-0067
+      wired: false
+      verified: false
 decided_by: committee:D-0013

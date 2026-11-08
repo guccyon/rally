@@ -4,6 +4,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -1038,6 +1040,127 @@ class RequiredRunsTest(unittest.TestCase):
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 1100）: wired にするには", errors[0])
+
+
+class ReviewByHoldTest(unittest.TestCase):
+    """K-0010 の review_by を前の版より後ろへ動かす PR では、ENGINE_REF の Engine で EngineFinishedTest が todo のままなら落とす
+    （議決 D-0067（起票時の番号は D-0066）、Issue #1178）。Engine は一時の git リポジトリに dispatcher.py の job.finished だけを置いて作る"""
+
+    LEGACY = ["state", "cost_usd", "exit"]
+    BEFORE = "2026-12-05"
+
+    @staticmethod
+    def git(cwd: Path, *args: str) -> str:
+        return subprocess.run(["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t", *args], cwd=cwd,
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def tmp(self) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        return Path(t.name)
+
+    def engine(self, *versions: list[str]) -> tuple[Path, list[str]]:
+        """versions の欄ごとに job.finished を出す dispatcher.py の版を積んだ Engine と、各版の SHA"""
+        d, shas = self.tmp(), []
+        self.git(d, "init", "-q")
+        f = d / check.ENGINE_DISPATCHER
+        f.parent.mkdir(parents=True)
+        for fields in versions:
+            payload = ", ".join(f'"{x}": None' for x in fields)
+            f.write_text(f'def run(cur, corr, job_id):\n    record_event(cur, "job.finished", corr, job_id, {{{payload}}})\n', encoding="utf-8")
+            self.git(d, "add", "-A")
+            self.git(d, "commit", "-q", "-m", "v")
+            shas.append(self.git(d, "rev-parse", "HEAD"))
+        return d, shas
+
+    def repo(self, ref: str, after: str | None, before: str | None = BEFORE, copy_ref: str | None = None) -> Path:
+        """base の版の K-0010 の review_by が before、作業ツリーで after。conflict-check のひな形の ENGINE_REF は ref（copy_ref があれば写しも置く）"""
+        d = self.tmp()
+        shutil.copytree(REPO / "tools/conflict-check", d / "tools/conflict-check", ignore=shutil.ignore_patterns("__pycache__", "fixtures"))
+        tpl = d / check.CONFLICT_CHECK_WORKFLOWS[1]
+        tpl.write_text(check.ENGINE_REF_RE.sub(f"  ENGINE_REF: {ref}", tpl.read_text(encoding="utf-8")), encoding="utf-8")
+        if copy_ref is not None:
+            (d / check.WORKFLOWS).mkdir(parents=True)
+            (d / check.CONFLICT_CHECK_WORKFLOWS[0]).write_text(f"env:\n  ENGINE_REF: {copy_ref}\n", encoding="utf-8")
+        self.git(d, "init", "-q")
+        if before is not None:
+            self.knowledge(d, before)
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "-m", "base")
+        self.knowledge(d, after)
+        return d
+
+    def knowledge(self, d: Path, review_by: str | None):
+        MainTest.write(None, d, "K-0010.yaml", "id: K-0010\n" + (f"review_by: {review_by}\n" if review_by is not None else ""))
+
+    def errors(self, d: Path, engine: Path | None, base="HEAD") -> list[str]:
+        return [e for x in check.load(d) for e in check.check_review_by_hold(x, d, base, engine)]
+
+    def test_延ばさなければ_Engine_なしでも見ない(self):
+        _, (sha,) = self.engine(self.LEGACY)
+        for after in (self.BEFORE, "2026-12-01"):
+            self.assertEqual(self.errors(self.repo(sha, after), None), [], after)
+
+    def test_延ばして_Engine_が今の形なら落とす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        e = self.errors(self.repo(sha, "2027-01-05"), eng)
+        self.assertEqual(len(e), 1, e)
+        for s in ("K-0010.yaml: review_by を 2026-12-05 から 2027-01-05 へ動かす", sha, "EngineFinishedTest が todo のまま", "議決 D-0067"):
+            self.assertIn(s, e[0])
+
+    def test_review_by_を読めなくしても延ばしたとみなす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        for after in (None, "いつか"):
+            self.assertEqual(len(self.errors(self.repo(sha, after), eng)), 1, after)
+
+    def test_延ばしても_Engine_が欄を出す版なら通る(self):
+        eng, shas = self.engine(self.LEGACY, self.LEGACY + ["agent_resumed"], self.LEGACY + ["agent_tier"], self.LEGACY + ["agent_resumed", "agent_tier"])
+        self.assertEqual(len(self.errors(self.repo(shas[0], "2027-01-05"), eng)), 1)
+        for sha in shas[1:]:   # 片方だけの版は todo でなく EngineFinishedTest そのものが落ちるので、ここでは落とさない
+            self.assertEqual(self.errors(self.repo(sha, "2027-01-05"), eng), [], sha)
+
+    def test_写しがあれば写しの_ENGINE_REF_を見る(self):
+        eng, (old, new) = self.engine(self.LEGACY, self.LEGACY + ["agent_resumed", "agent_tier"])
+        self.assertEqual(self.errors(self.repo(old, "2027-01-05", copy_ref=new), eng), [])
+        e = self.errors(self.repo(new, "2027-01-05", copy_ref=old), eng)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(".github/workflows/conflict-check.yml", e[0])
+
+    def test_照らせなければ落とす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        other, (missing,) = self.engine(["state", "exit"])   # cost_usd を持つ job.finished がない（engine_harness.py が読めない）
+        cases = {"Engine を渡さない": (self.repo(sha, "2027-01-05"), None, "--engine か ENGINE_DIR"),
+                 "Engine に版がない": (self.repo(missing, "2027-01-05"), eng, f"ENGINE_REF {missing} の版がない"),
+                 "欄を読めない": (self.repo(missing, "2027-01-05"), other, "finished が落ちた"),
+                 "ENGINE_REF が SHA でない": (self.repo("main", "2027-01-05"), eng, "40 桁のコミット SHA")}
+        for name, (d, engine, msg) in cases.items():
+            e = self.errors(d, engine)
+            self.assertEqual(len(e), 1, name)
+            self.assertIn("照らせない", e[0], name)
+            self.assertIn(msg, e[0], name)
+
+    def test_前の版を渡さない_前の版にない_ほかの知見は見ない(self):
+        _, (sha,) = self.engine(self.LEGACY)
+        self.assertEqual(self.errors(self.repo(sha, "2027-01-05"), None, base=None), [])
+        self.assertEqual(self.errors(self.repo(sha, "2027-01-05", before=None), None), [])
+        self.assertEqual(self.errors(self.repo(sha, "2027-01-05", before="いつか"), None), [])
+        d = self.repo(sha, "2027-01-05")
+        self.assertEqual(check.check_review_by_hold({"id": "K-0004", "_file": "K-0010.yaml"}, d, "HEAD", None), [])
+
+    def test_前の版が読めなければ落とす(self):
+        _, (sha,) = self.engine(self.LEGACY)
+        e = self.errors(self.repo(sha, self.BEFORE), None, base="origin/none")
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("前の版 origin/none がリポジトリにない", e[0])
+
+    def test_main_で落とす(self):
+        eng, (sha,) = self.engine(self.LEGACY)
+        d = self.repo(sha, "2027-01-05")
+        self.assertEqual(check.main(["--repo", str(d), "--base", "HEAD", "--engine", str(eng)]), 1)
+        self.assertEqual(check.main(["--repo", str(d)]), 0)
+
+    def test_求める欄は_test_events_py_の_FINISHED_FIELDS(self):
+        self.assertEqual(check.finished_fields_required(REPO), ("agent_resumed", "agent_tier"))
 
 
 class RepoTest(unittest.TestCase):
