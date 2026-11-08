@@ -14,9 +14,10 @@
 //   - --engine-report を渡したとき、ENGINE_REF の Engine で走らせた engine.test.mjs の結果で (3) か (c) が通っていない
 //     （LEGACY_BASIS の todo・飛ばした・落ちた・結果にない。engine_basis_not_passed。議決 D-0016、Issue #964）
 // check.mjs --events を GitHub Actions（GITHUB_ACTIONS=true）で動かしたときも、同じ見張りを先に通す（check.mjs の main）。
+// そのときは動いていること自体を配線と数え、静的な辿りが呼ぶ手順を見つけられなくても todo・未配線で落とす（議決 D-0026・D-0038、Issue #1084）。
 // 呼ぶ手順は npm scripts・シェルのラッパー・引数の順序を変えた呼び方も辿って見つける（議決 D-0017、Issue #967）。
 
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -294,15 +295,41 @@ export function parseTapReport(text) {
   return out;
 }
 
+/**
+ * GitHub Actions で動いている check.mjs --events の在りか（環境変数から）。workflow は GITHUB_WORKFLOW_REF の .github/workflows/ からの道、job は GITHUB_JOB。
+ * 分からなければ null。見張りの文に使うだけで、判定には使わない。
+ */
+export function runningFrom(env) {
+  const ref = env.GITHUB_WORKFLOW_REF?.match(/(\.github\/workflows\/[^@]+)@/);
+  return { workflow: ref ? ref[1] : null, job: env.GITHUB_JOB || null };
+}
+
+/**
+ * そのモジュールが node で直に起動されたか（main を走らせるか）。process.argv[1] と import.meta.url を実の道で比べる。
+ * 字面で比べると、シンボリックリンクや空白・日本語の入った道から起動したときに main が走らずに終了コード 0 で抜けていた（Issue #1084）。
+ */
+export function isMainModule(metaUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(metaUrl));
+  } catch {
+    return false;
+  }
+}
+
 const STATUS_TEXT = { todo: " todo になった（Engine の basis がまだ LEGACY_BASIS の形）", skip: "飛ばされた", fail: "落ちた" };
 
 /**
  * 配線の順序を見る。workflows は [{ path, text }]、engineTest は engine.test.mjs の中身（なければ null）。
  * scripts・readFile は callsEventsCheck と同じ（npm scripts とラッパーのスクリプトを辿るため）。
  * engineReport は ENGINE_REF の Engine で走らせた engine.test.mjs の TAP（渡さなければ結果は見ない。議決 D-0016、Issue #964）。
+ * running は GitHub Actions で動いている check.mjs --events の在りか（runningFrom）。渡すと、.github/workflows/ に呼ぶ手順を見つけられなくても
+ * 配線したと数えて見る（静的な辿りが見逃す呼び方への守り。議決 D-0026・D-0038、Issue #1084）。
  */
-export function checkOrder({ workflows, engineTest, engineReport, scripts = DEFAULT_SCRIPTS, readFile = () => null }) {
-  const callers = workflows.filter((w) => callsEventsCheck(w.text, { scripts, readFile })).map((w) => w.path);
+export function checkOrder({ workflows, engineTest, engineReport, scripts = DEFAULT_SCRIPTS, readFile = () => null, running = null }) {
+  const found = workflows.filter((w) => callsEventsCheck(w.text, { scripts, readFile })).map((w) => w.path);
+  const callers = found.length > 0 || running === null ? found
+    : [`GitHub Actions で動いている check.mjs --events（${[running.workflow ?? "ワークフロー不明", running.job].filter(Boolean).join(" の ")}）`];
   if (callers.length === 0) return { wired: [], errors: [] };
   const errors = [];
   const where = callers.join("・");
@@ -385,4 +412,4 @@ function main() {
   process.exit(result.errors.length === 0 ? 0 : 1);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isMainModule(import.meta.url)) main();
