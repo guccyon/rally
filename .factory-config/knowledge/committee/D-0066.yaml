@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0066
+pr: https://github.com/guccyon/rally/pull/1176
+decided_at: '2026-11-08'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。
+  - '足した項目の decided_by: committee:D-0044 は、D-0044 の enforcement の ci_check の案（protection.mjs
+    を既定のブランチへの push と定期のジョブから呼び、workflow_not_copied・check_name_changed・required_check_missing・check_name_shared
+    で落とす）とそのまま対応していて、食い違いはありません。'
+  - REQUIRED_SCHEDULE にこの解決策を足したのは、D-0061 の整合の票が求めた「D-0044 の案を入れるときにこの表へ足すかを決める」への答えで、K-0004
+    の issue 1018 と同じ扱いに揃っています。
+  - check_name_shared を意図した落とし方だと what に書き添えたのは D-0044 の反対の票が求めた一言に応えていて、D-0059 の
+    sendback 側の名前の付け方とも重なりません。
+  - what に「engine/pr-body-gate.patch が手元の Engine（476573e）にもう当たらない」とあり、D-0019 の解決策の記録の前提が古くなっているので、次に
+    K-0001 を直す変更セットで差分を今の Engine に合わせ直すか、D-0019 の項目にその旨を書き添えてください。
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致しているので、confidence
+    は hypothesis のまま、status は active のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した solution は decided_by: committee:D-0044 を指していて、D-0044 の ci_check の案（protection.mjs
+    を既定のブランチへの push と定期のジョブから呼ぶ）とそのまま対応しているので、一次記録に辿れます。'
+  - statement・scope・evidence・confidence は変えておらず、担保の記録を 1 件足すだけなので、主張の根拠を言い過ぎていません。
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致し、今の ENGINE_REF（9fee9c2）では走らせていないことも書いているので、確かさの書き方は正直です。'
+  - 手元の Engine（476573e）では engine/pr-body-gate.patch がもう当たらず (4)〜(10) も落ちると書いてあり、D-0019
+    の記録で確かめた差分の効き目が今の Engine では言えなくなっているので、次の変更セットで差分を今の Engine に合わせて当て直した記録を足してください。
+  - issue 1106・ci.test.mjs・pr-body-protection.yml の結果は知見の置き場の外にあってこの材料では確かめられませんが、担保の記録であって主張の根拠ではないので採る妨げにはなりません。
+  - 本物の続きのジョブで再発が止まった一次記録がまだないので confidence は hypothesis のままが妥当で、差分に利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0044 の ci_check の案のうちワーカーの権限で入れられる分を
+    1 件足すだけで、担保の観点では採ってよいです。
+  - ci.test.mjs は守りたいワークフローの中でしか走らないという D-0044 の穴に対し、protection.mjs を main への push・毎日・手動で呼ぶ
+    pr-body-protection.yml を用意し、REQUIRED_SCHEDULE で schedule の wired_by がないと wired
+    にできないようにしたのは、線を機械で引いた良い担保です。
+  - check_name_shared を偶然の同名でも意図して落とすと what に明記したのは、必須のチェックが別のジョブで満たされる穴を塞ぐ判断として妥当です。
+  - ただし what のとおり engine/pr-body-gate.patch は手元の Engine（476573e）にもう当たらず (4)〜(10) が落ちるので、担保の本体である差分が古びて配線の前に効かなくなっており、これを人の気づきに任せるのは外したときの痛さが大きいです。
+  - K-0004 の knowledge-enforcement.patch には test_engine_patch.py で patch_stale・patch_partially_applied
+    を見張る前例があるので、pr-body-gate.patch にも同じ形の決定論の見張りを入れるべきです。
+  - '配線も本物の続きのジョブでの確認もまだなので、wired: false・verified: false と confidence: hypothesis
+    のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0044 の ci_check の案の一部を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - D-0044 の反対の票が求めた check_name_shared が意図した反例か誤検知かの一言と、D-0061 が求めた REQUIRED_SCHEDULE
+    への追加の判断が、この記録で答えられています。
+  - 反例として、what に「engine/pr-body-gate.patch がもう当たらず (4)〜(10) も落ちる」とあるので、D-0019 と D-0032
+    の項目の「差分を当てた写しでは全部通る」という記述は今の手元の Engine では成り立たず、次に K-0001 を直す変更セットでその 2 項目に古くなった旨を書き添えてください。
+  - K-0004 には当たらなくなった差分を patch_stale で落とす見張りがあるのに K-0001 の pr-body-gate.patch にはないので、同じ見張りを足すかを次の変更セットで決めてください。
+  - 'wired: false・verified: false で、今の ENGINE_REF（9fee9c2）では走らせていないことも明記しており言い過ぎはないので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: K-0004 の test_engine_patch.py と同じ形で、tools/pr-body-check/ に ENGINE_REF
+    の版と Engine の既定ブランチの先頭に対して git apply --check と git apply --reverse --check で engine/pr-body-gate.patch
+    を照らす検査を足し、当たる・もう入っている・patch_partially_applied・patch_stale を分けて出し、patch_stale と
+    patch_partially_applied で落ちて Issue を開くジョブを pr-body-protection.yml と同じく main への
+    push・毎日・手動で走らせる。今の 476573e のように差分が当たらなくなったら、建設者が取り込む前に差分を直す変更セットを起こせるようにする。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: ci.test.mjs に、pr-body-protection.yml の写しが .github/workflows/ にあるときは schedule
+    と workflow_dispatch の on を持ち、PR_BODY_PROTECTION_TOKEN を読めないときに protection_unreadable
+    で飛ばさず落ちることを確かめるテストを足し、定期の照合そのものが黙って止まる外れ方を塞ぐ。
