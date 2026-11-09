@@ -106,6 +106,9 @@ Engine に差分を入れて ENGINE_REF を上げる前に、ワークフロー�
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
 同じ種類（solution_kind が解決策の kind）の案があることを照らし、なければ decision_mismatch で落とす。
+議決 D-0122（Issue #1232 の起票時の番号は D-0080。PR #1228）の lint の案で、番号を取り違えた先にも同じ知見と種類の案があると
+通ってしまう穴を塞いだ。what の最初の「議決 D-NNNN」が decided_by の番号と違う、その直後の括弧に書いた「PR #N」が
+指す議決の pr（…/pull/N）と違う（議決に pr がないときも）ときも decision_mismatch で落とす。what に議決や PR を書いていなければその照合はしない。
 
 engine-head の記録の照合（議決 D-0047、Issue #1114）: HEAD_RECORD_SOLUTIONS の解決策（K-0004 の issue 977・1046・1047。engine-head の定期の実行と
 その記録）が verified: true なら、--head-comments に渡した Issue #948 のコメント（gh api の出力）で tools/sendback-check/head-record.mjs を走らせ、
@@ -165,6 +168,10 @@ VERIFIED_BY_KINDS = ("case", "pr", "event")
 CASE_RE = re.compile(r"^C-\d{4,}$")
 DECIDED_BY_RE = re.compile(r"^committee:(D-\d{4,})$")
 DECISION_MISMATCH = "decision_mismatch"
+# what の最初の「議決 D-NNNN」と、その直後の括弧（入れ子なし）。括弧の中の「PR #N」を議決の pr と照らす（議決 D-0122（起票時の番号は D-0080）、Issue #1232）
+WHAT_DECISION_RE = re.compile(r"議決 (D-\d{4,})(?:（([^（）]*)）)?")
+WHAT_PR_RE = re.compile(r"PR #(\d+)")
+DECISION_PR_RE = re.compile(r"/pull/(\d+)$")
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106。
 # K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。requires_check にも書き、schedule と pull_request の両方のジョブから呼ぶことを求める。
@@ -742,6 +749,7 @@ def check_verification(k: dict, repo: Path) -> list[str]:
 
 def check_decision(k: dict, repo: Path, cache: dict | None = None) -> list[str]:
     """decided_by を書いた解決策が、指す議決の enforcement の案（同じ knowledge と solution_kind）に当たるかを照らす（議決 D-0041、Issue #1094）。
+    what に書いた最初の議決の番号と、その直後の括弧の PR の番号も、decided_by と議決の pr に照らす（議決 D-0122（起票時の番号は D-0080）、Issue #1232）。
     decided_by を書いていない解決策は見ない"""
     f, e = k.get("_file", str(k.get("id"))), []
     cache = {} if cache is None else cache
@@ -755,6 +763,10 @@ def check_decision(k: dict, repo: Path, cache: dict | None = None) -> list[str]:
             e.append(f"{where}: decided_by は committee:D-NNNN（{dec!r}）")
             continue
         did = m.group(1)
+        cited = WHAT_DECISION_RE.search(s["what"]) if isinstance(s.get("what"), str) else None
+        if cited and cited.group(1) != did:
+            e.append(f"{where}: what は議決 {cited.group(1)} を挙げるが decided_by は {dec}（議決の番号の取り違え）")
+            continue
         if did not in cache:
             p = repo / ROOT / "committee" / f"{did}.yaml"
             try:
@@ -772,6 +784,12 @@ def check_decision(k: dict, repo: Path, cache: dict | None = None) -> list[str]:
         if not any(isinstance(p, dict) and p.get("knowledge") == k.get("id") and p.get("solution_kind") == s.get("kind")
                    for p in (plans if isinstance(plans, list) else [])):
             e.append(f"{where}: 議決 {did} の enforcement に {k.get('id')} の {s.get('kind')} の案がない")
+            continue
+        pr = WHAT_PR_RE.search(cited.group(2) or "") if cited else None
+        if pr:
+            got = DECISION_PR_RE.search(d.get("pr", "")) if isinstance(d.get("pr"), str) else None
+            if not got or got.group(1) != pr.group(1):
+                e.append(f"{where}: what は議決 {did} を PR #{pr.group(1)} の議決と書くが、議決 {did} の pr は {d.get('pr')!r}（議決の番号の取り違え）")
     return e
 
 
