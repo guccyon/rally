@@ -1,0 +1,75 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0049
+pr: https://github.com/guccyon/rally/pull/1116
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0033 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」の決まりに合っています。
+  - 'solution の decided_by: committee:D-0033 と issue 1052 は、D-0033 の enforcement の案（body_fix
+    の終わりと直した本文の再検査が通るまで supervisor.merged を出さない、C-0006 の記録を fixtures にする）にそのまま対応していて、食い違いはありません。'
+  - '「起票時の番号は D-0032」の書き添えは、今の D-0032 が K-0001 についての別の議決（PR #1036）であることと食い違わず、D-0044・D-0045
+    で採った同じ書き方の注記とも揃っています。'
+  - 'wired: false・verified: false は、what の「.github/workflows/ への写しと Engine の配線は建設者が行うので未配線・未確認」という記述と合っていて、D-0033
+    の担保の票が求めた記録の形にも応えています。'
+  - INDEX.md の担保の列を context から deterministic に直したのは YAML の enforcement.level と一致し、README
+    の一覧に K-0012 を足したのも実態と合っていますが、配線がまだなので invalidate_when はどちらも満たされておらず、K-0012 は active・hypothesis
+    のままが妥当です。
+  - D-0033 の test の案（イベント列で再検査のない merged を失敗にする）は merge-gate.test.mjs で兼ねていると読めますが、K-0006
+    の ci_check と同じ check.mjs・ひな形を指すようになったので、次に K-0006 を直す変更セットでは K-0012 の solution
+    を参照して互いの記録を揃えてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0012 に足した enforcement.solutions は、議決 D-0033 の ci_check の案に辿れ、decided_by と issue
+    1052 で出どころが書かれています。
+  - fixtures の元にした時刻（C-0006 の inspector_approved 14:25:02・body_amended 14:25:04・merged
+    14:25:06、C-0005 の merged 20:08:43 と body_fix 3308 の終わり 20:08:50）は、どちらも cases/
+    の事例記録の文と一致しています。
+  - '配線も本物の記録での確かめもまだなので wired: false・verified: false としたのは README の決まりどおりで、verified_by
+    を求められる主張をしていない点も妥当です。'
+  - '「Issue #1052 の起票時の番号は D-0032」は、D-0032 が K-0001 の担保を扱う別の議決であることと食い違わないので、番号の取り違えの注記として読めます。'
+  - statement・evidence・確かさは変えておらず、根拠は 2 件で介入による確かめもまだないので、confidence は hypothesis
+    のままが妥当です。
+  - 足した文にあるのはファイルの道・イベント名・job 番号・時刻だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - K-0012 の enforcement.solutions は D-0033 の ci_check の案を merge-gate.mjs という決定論の関所として入れたもので、C-0005・C-0006
+    の記録を fixtures にした merge-gate.test.mjs で止まることを確かめており、担保の形として妥当です。
+  - 'wired: false・verified: false と未配線・未確認の範囲（.github/workflows/ への写し、必須チェック、supervisor
+    からの呼び出し、pr.body_checked の記録）を正直に書いていて、D-0033 で enforcement 担当が求めた記録の仕方に合っています。'
+  - 'INDEX.md の担保の列が deterministic になっても、README の決まりどおり check.py がすべて wired: false
+    の知見を未配線と出すので、担保されたと読み違える痛さは抑えられています。'
+  - D-0033 には test の案（イベント列で pr.body_amended のあとに本文の検査がないまま supervisor.merged が来たら失敗にする）もありますが、solutions
+    には ci_check の 1 件だけなので、merge-gate.test.mjs と --audit でその案を兼ねたことを what に書くか、test
+    の項目を別に足すとよいです。
+  - 担保の観点では、建設者が配線して本物の supervisor.merged の列で verified_by を残すまで、K-0012 の確かさは hypothesis
+    のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この変更セットは K-0012 の statement・scope・confidence・evidence を変えず、D-0033 で決めた ci_check
+    を wired: false・verified: false として記録するだけなので、範囲は広がっていません。'
+  - merge-gate.mjs はその PR のすべての body_fix のジョブを待ちますが、K-0012 の statement は「採用した PR 本文の指摘を直す
+    body_fix」に限っています。body_fix がそれ以外にも積まれるなら、担保が知見より広くなり、マージを余計に止める反例になりえます。配線する前に、body_fix
+    が採用した指摘のときだけ積まれることを確かめてください。
+  - INDEX.md の担保の列が deterministic になりますが、実際には未配線・未確認です。README.md には Engine の knowledge_check.py
+    が直るまでそう出ると書かれているので、採らない理由にはなりません。
+  - what に K-0006 の check.mjs の必須チェックのひな形（pr-body-check.yml）を置いたことも書かれています。しかし、K-0006
+    の enforcement.solutions には wired・verified が未記入のままです。次に K-0006 を直す変更セットで、この記録を
+    K-0006 の側にも揃えるのがよいです。
+  - D-0033 の K-0012 向けの test の案（イベント列で、再検査がないまま merged が来たら失敗にする）は、merge-gate.test.mjs
+    と --audit で一部が満たされています。ただし、別の解決策として記録されていないので、満たしたとみなすかどうかを次の再確認で書き分けてください。
+  - fixtures は C-0005・C-0006 の記録から組み直したもので、本物の配線で止まった記録はまだありません。そのため、確かさは hypothesis
+    のままが妥当です。
+  personal_data: false
+enforcement: []
