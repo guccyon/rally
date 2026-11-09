@@ -1,0 +1,70 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0126
+pr: https://github.com/guccyon/rally/pull/1329
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に issue 1247 の lint を 1 件足しただけなので、README の変更セットの決まりや specs/ の規範と矛盾しません。
+  - '足した解決策は D-0086 の enforcement の 2 つめの案（protection.mjs を呼ぶ解決策を issue 番号を問わずすべて対象にし、sendback-protection.yml
+    の schedule のジョブを求める lint）と中身が合い、decided_by: committee:D-0086 と what の PR #1243
+    も議決の pr と一致しています。'
+  - issue 1160（D-0060）と issue 1088（D-0061）で入れた REQUIRED_SCHEDULE の表を残したまま求めを重ねる一般化で、D-0086
+    の enforcement 担当が挙げた issue 番号ですり抜ける穴を塞ぐものなので、重複ではありません。
+  - issue 1158 がワークフローの名前を問うようになったのは、D-0086 の consistency 票が書いた「issue 1158 は名前を問わないまま」という前の扱いを変えるので、次に
+    K-0004 を直す変更セットで issue 1160 の what にもその変化を書き添えると辿りやすくなります。
+  - D-0086 の 1 つめの案（REQUIRED_SCHEDULE_WORKFLOW と ひな形の名前のずれを落とす test）と、D-0084 が求めた
+    issue 1087 の what の古い記述の書き添えはまだ手つかずなので、別の変更セットで扱ってください。
+  - 'wired: false・verified: false で、test_check.py が .github/workflows/ からまだ走っていないと正直に書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した lint の解決策（issue 1247）は decided_by の committee:D-0086 の 2 つめの enforcement
+    の案（wired_by に tools/sendback-check/protection.mjs を呼ぶ解決策をすべて対象にし、sendback-protection.yml
+    の schedule のジョブを必須にする）と中身が一致し、D-0086 の pr も what に書いた PR #1243 と合っているので一次記録に辿れます。'
+  - 'Issue #1247 の起票時の番号 D-0085 は PR #1241 の別の議決なので、辿り先を D-0086 にしたのは正しく、取り違えを what
+    で明かしている点もよいので、Issue #1247 の本文も D-0086 に直しておくと後で迷いません。'
+  - テストが名前を挙げる issue 1159・1158・1087・1018 の解決策は K-0004 の enforcement.solutions に実在し、what
+    の説明と食い違いません。
+  - '確かめたのは手元の test_check.py だけで、test_check.py が .github/workflows/ からまだ走っていないと書き、wired:
+    false・verified: false にしているので、効き目を言い過ぎていません。'
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の配線で落ちた記録もまだないので、確かさは
+    hypothesis のままが妥当です。
+  - 差分にあるのは議決の id、issue と PR の番号、ツールとワークフローのパス、テストのクラス名だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は、議決 D-0086 で決めた lint（wired_by に tools/sendback-check/protection.mjs を呼ぶ項目を持つ解決策には
+    sendback-protection.yml の schedule のジョブを求める）を K-0004 の enforcement.solutions に記録するだけです。
+  - issue 番号の表に組を足し忘れるとすり抜ける、という繰り返し起きる穴を、protection.mjs を呼ぶかどうかという線の引きやすい条件で機械的に塞いでいて、決定論での担保として筋が通っています。
+  - 新しい求めを外したときと issue 1158 を上書きしたときにテストが落ちることを確かめた、と書かれていて、担保の効き目を見る手立ては足りています。
+  - 'test_check.py が CI からまだ走っていないことは requires_check と wired: false で正直に記録されていて、wired:
+    true にするときは check.py がその配線を求めるので、新しく決定論を足す必要はありません。'
+  - '効き目を本物の記録でまだ確かめていないので（verified: false）、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0086 の 2 つめの enforcement
+    の案（lint）を入れた記録を issue 1247 として enforcement.solutions に 1 件足しただけなので、知見の範囲は広がっていません。
+  - '反例として、issue 1091 の解決策は ci/sendback-engine.yml の required-checks（PR ごとのジョブ）から
+    tools/sendback-check/protection.mjs を呼ぶ正しい配線で、D-0059 の案の PR ごとの分を受け持つのに、新しい lint
+    では wired: true にするとき sendback-protection.yml の schedule のジョブまで求められ、issue 1087
+    の写しが済むまで配線済みにできなくなります。'
+  - what は対象を「知見と issue を問わない」としながら issue 1091 の扱いに触れていないので、次に K-0004 を直す変更セットで、issue
+    1091 を表に挙げて除くか、schedule のジョブも wired_by に並べる前提だと書き添えてください。
+  - 同じく protection.mjs を PR ごとにだけ呼ぶ見張りを今後足すと一律に schedule を求められるので、対象を「schedule の役を受け持つ解決策」に絞るかどうかを議決で確かめるのが望ましいです。
+  - '今はどの対象の解決策も wired: false でこの lint は何も落とさず、test_check.py も .github/workflows/
+    から走っていないと本文が正直に書き、wired: false・verified: false としているので、confidence は hypothesis
+    のままが妥当です。'
+  - 差分にあるのは議決の id、issue と PR の番号、ツールとワークフローのパスだけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+enforcement: []

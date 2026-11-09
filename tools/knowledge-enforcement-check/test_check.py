@@ -422,8 +422,10 @@ class ScheduleTest(unittest.TestCase):
 
     def test_対象でない解決策と配線していない解決策は見ない(self):
         d = self.repo(self.wf("  workflow_dispatch:\n"))
-        self.assertEqual(self.errors(d, issue=1017), [])
-        self.assertEqual(self.errors(d, kid="K-0001"), [])
+        (d / "tools/sendback-check/order.mjs").write_text("", encoding="utf-8")
+        # protection.mjs を呼ぶ項目を持つ解決策は issue を問わず対象（議決 D-0086、Issue #1247。下の SendbackProtectionAnyIssueTest）
+        self.assertEqual(self.errors(d, issue=1017, runs="tools/sendback-check/order.mjs"), [])
+        self.assertEqual(self.errors(d, kid="K-0001", runs="tools/sendback-check/order.mjs"), [])
         self.assertEqual(self.errors(d, wired=False), [])
 
     def test_K_0001_の_issue_1106_は_pr_body_check_の_protection_mjs_を_schedule_のジョブから呼ぶ(self):
@@ -513,10 +515,15 @@ class SendbackProtectionWorkflowTest(unittest.TestCase):
         d = self.repo({self.WF: self.template()})
         self.assertEqual(len(self.errors(d, 1087, job="protection-pr")), 1)
 
-    def test_ほかの解決策はワークフローの名前を問わない(self):
+    def test_protection_mjs_を呼ぶほかの解決策も同じワークフローを求める(self):
+        """前は issue 1158 と K-0001 の解決策はワークフローの名前を問わなかった。議決 D-0086（起票時の番号は D-0085）、Issue #1247 で、
+        wired_by に protection.mjs を呼ぶ項目を持つ解決策はどれも sendback-protection.yml のジョブを求める"""
         d = self.repo({self.OTHER: self.template()})
-        self.assertEqual(self.errors(d, 1158, wf=self.OTHER), [])
-        self.assertEqual(self.errors(d, 1087, wf=self.OTHER, kid="K-0001"), [])
+        for issue, kid in ((1158, "K-0004"), (1087, "K-0001")):
+            e = self.errors(d, issue, wf=self.OTHER, kid=kid)
+            self.assertEqual(len(e), 1, (kid, issue, e))
+            self.assertIn(f"on.schedule（cron）のある {self.WF} で", e[0])
+            self.assertIn("議決 D-0086", e[0])
 
     def test_main_で落とす(self):
         d = self.repo({self.OTHER: self.template()})
@@ -720,7 +727,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0015", 1220): [("tools/conflict-check/test_events.py", None)],
                           ("K-0004", 1225): [("tools/knowledge-enforcement-check/test_ci.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0004", 1227): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
-                          ("K-0004", 1232): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0004", 1232): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0004", 1247): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
@@ -1252,6 +1260,97 @@ class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
 
 
 
+class SendbackProtectionAnyIssueTest(unittest.TestCase):
+    """wired_by に protection.mjs を呼ぶ項目を持つ wired: true の解決策は、知見と issue を問わず .github/workflows/sendback-protection.yml の
+    schedule でも走るジョブから protection.mjs を呼ばないと wired にできない（議決 D-0086（起票時の番号は D-0085）の lint の案、Issue #1247）"""
+
+    PROT = ScheduleTest.PROT
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-protection.yml"
+    WF = ".github/workflows/sendback-protection.yml"
+    OTHER = ".github/workflows/protection.yml"
+    ORDER = "tools/sendback-check/order.mjs"
+
+    def repo(self, files: dict[str, str]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.PROT: "", self.ORDER: "", **files}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def item(self, wired_by: list, issue=1247, kid="K-0004", wired=True) -> dict:
+        return {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wired_by}]}}
+
+    def errors(self, d: Path, wired_by: list, **kw) -> list[str]:
+        return check.check_schedule(self.item(wired_by, **kw), d)
+
+    def test_組に挙げていない(self):
+        for kid, issue in (("K-0004", 1247), ("K-0004", 1159), ("K-9999", 1)):
+            self.assertNotIn((kid, issue), check.REQUIRED_SCHEDULE)
+            self.assertNotIn((kid, issue), check.REQUIRED_SCHEDULE_WORKFLOW)
+
+    def test_ひな形をそのまま写した_protection_のジョブなら通る(self):
+        d = self.repo({self.WF: self.template()})
+        for kid, issue in (("K-0004", 1247), ("K-0004", 1159), ("K-9999", 1), ("K-0004", 1158)):
+            wb = [{"workflow": self.WF, "job": "protection", "runs": self.PROT}, {"workflow": self.WF, "job": "protection-pr", "runs": self.PROT}]
+            self.assertEqual(self.errors(d, wb, kid=kid, issue=issue), [], (kid, issue))
+
+    def test_ほかのワークフローか_PR_のジョブだけでは落ちる(self):
+        d = self.repo({self.WF: self.template(), self.OTHER: self.template()})
+        for wb in ([{"workflow": self.OTHER, "job": "protection", "runs": self.PROT}],
+                   [{"workflow": self.WF, "job": "protection-pr", "runs": self.PROT}],
+                   [{"workflow": self.OTHER, "job": "protection", "runs": self.PROT}, {"workflow": self.WF, "job": "protection-pr", "runs": self.PROT}],
+                   [{"workflow": self.WF, "job": "protection", "runs": self.ORDER}, {"workflow": self.OTHER, "job": "protection", "runs": "./tools/sendback-check/../sendback-check/protection.mjs"}]):
+            for kid, issue in (("K-0004", 1247), ("K-9999", 1), ("K-0004", 1158)):
+                e = self.errors(d, wb, kid=kid, issue=issue)
+                self.assertEqual(len(e), 1, (wb, kid, issue, e))
+                self.assertIn(f"on.schedule（cron）のある {self.WF} で", e[0])
+                self.assertIn(f"issue {issue}）", e[0])
+                self.assertIn("議決 D-0086", e[0])
+
+    def test_写しが_schedule_で走らなければ落ちる(self):
+        no_sched = self.template().replace('  schedule:\n    - cron: "0 20 * * *"\n', "", 1)
+        self.assertNotEqual(no_sched, self.template())
+        e = self.errors(self.repo({self.WF: no_sched}), [{"workflow": self.WF, "job": "protection", "runs": self.PROT}])
+        self.assertEqual(len(e), 1, e)
+
+    def test_表の求めと重ねても_1_件だけ出す(self):
+        """issue 1018・1087 は表の議決（D-0039・D-0060）のまま、1158 は表にワークフローがないので D-0086 で 1 件だけ"""
+        d = self.repo({self.OTHER: self.template()})
+        wb = [{"workflow": self.OTHER, "job": "protection", "runs": self.PROT}]
+        for issue, decision in ((1018, "議決 D-0039・D-0060"), (1087, "議決 D-0039・D-0060"), (1158, "議決 D-0086")):
+            e = self.errors(d, wb, issue=issue)
+            self.assertEqual(len(e), 1, (issue, e))
+            self.assertIn(decision, e[0])
+
+    def test_protection_mjs_を呼ばない解決策と配線していない解決策は見ない(self):
+        d = self.repo({self.OTHER: self.template()})
+        self.assertEqual(self.errors(d, [{"workflow": self.OTHER, "job": "protection", "runs": self.ORDER}]), [])
+        self.assertEqual(self.errors(d, [{"workflow": self.OTHER, "job": "protection", "runs": self.PROT}], wired=False), [])
+        # pr-body-check の protection.mjs は別の検査（K-0001 の表で見る）
+        prot = "tools/pr-body-check/protection.mjs"
+        self.assertFalse(check.calls_sendback_protection({"wired_by": [{"workflow": self.OTHER, "job": "protection", "runs": prot}]}))
+        for wb, want in ((None, False), ("x", False), ([None, 1, {"runs": 1}], False),
+                         ([{"runs": "tools/sendback-check/../sendback-check/protection.mjs"}], True)):
+            self.assertEqual(check.calls_sendback_protection({"wired_by": wb}), want, wb)
+
+    def test_main_で落とす(self):
+        d = self.repo({self.OTHER: self.template()})
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: ci_check, what: x, issue: 1247, wired: true, requires_check: {self.PROT}, wired_by: [{{workflow: {self.OTHER}, job: protection-pr, runs: {self.PROT}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = [x for x in without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"]) if "議決 D-0086" in x]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 1247）: wired にするには", errors[0])
+        self.assertIn(self.WF, errors[0])
+
+
 class SendbackHeartbeatScheduleTest(unittest.TestCase):
     """K-0004 の issue 1162 の解決策は schedule でも走るジョブから heartbeat.mjs を呼ばないと wired にできない
     （議決 D-0061（起票時の番号は D-0058）、Issue #1162）"""
@@ -1293,8 +1392,12 @@ class SendbackHeartbeatScheduleTest(unittest.TestCase):
         self.assertIn("on.schedule（cron）", e[0])
 
     def test_heartbeat_mjs_を呼ばない項目では落ちる(self):
-        e = self.errors(self.repo(self.template()), runs=ScheduleTest.PROT)
-        self.assertEqual(len([x for x in e if "wired にするには" in x]), 1, e)
+        e = [x for x in self.errors(self.repo(self.template()), runs=ScheduleTest.PROT) if "wired にするには" in x]
+        # protection.mjs を呼ぶ項目を書いたので、sendback-protection.yml のジョブも求める（議決 D-0086、Issue #1247）
+        self.assertEqual(len(e), 2, e)
+        self.assertIn(self.HB, e[0])
+        self.assertIn(ScheduleTest.PROT, e[1])
+        self.assertIn("議決 D-0086", e[1])
 
     def test_配線していなければ見ない(self):
         self.assertEqual(self.errors(self.repo("on:\n  workflow_dispatch:\njobs: {}\n"), wired=False), [])
