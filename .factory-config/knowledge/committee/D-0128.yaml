@@ -1,0 +1,67 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0128
+pr: https://github.com/guccyon/rally/pull/1332
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0010 の enforcement.solutions に test の項目を 1 件足しただけで、statement・scope・evidence・confidence
+    を変えていないので、過去の議決とも specs/ の規範とも矛盾しません。
+  - '足した項目は D-0090 の 2 つ目の案（EnforcementScopeTest で落とす範囲を check.py の REQUIRED_* が指す検査の置き場から導いて照らす）と中身が合い、D-0090
+    の pr が #1255 なので decided_by: committee:D-0090 と起票時の番号 D-0089 の注記は既存の項目の書き方と揃っています。'
+  - D-0090 の案は REQUIRED_PR を挙げていましたが、D-0077 で REQUIRED_PR が解決策の requires_check に移ったことを
+    what に書き、K-*.yaml の requires_check から置き場を導く形にしたのは、後の議決に合わせた正しい読み替えです。
+  - 既存の issue 1173 の項目は落とす範囲を広げたもの、今回の項目はその範囲と check.py の一覧のずれを落とすテストで、役が分かれているので重複ではありません。
+  - 導く置き場は K-0001・K-0004 などの requires_check にも効きますが、それらの知見の主張は変わらないので変更セットとしての扱いは「そのまま」で足り、D-0116
+    の案で REQUIRED_SCHEDULE・REQUIRED_RUNS が解決策の欄に移るときはこのテストの導き方も合わせて直してください。
+  - 'wired: false・verified: false で、ひな形が .github/workflows/ に写されておらず test_ci.py も
+    CI から走っていないと書いてあるので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0090 と issue 1259 を指していて、D-0090 の pr（PR
+    #1255）と enforcement の test の案（EnforcementScopeTest で落とす範囲を check.py の REQUIRED_*
+    から導き、足し忘れたら落とす）に中身が合うので、一次記録に辿れます。'
+  - '「Issue #1259 の起票時の番号は D-0089」とあり D-0089 は別の PR #1250 の議決なので、取り違えを防ぐため、起票時の番号と確定した議決の
+    id の対応を issue 1259 の側でも辿れるようにしておいてください。'
+  - D-0090 の案が挙げた REQUIRED_PR が D-0077 で requires_check に移ったため読み替えたことは what に書いてあり、D-0077
+    の議決とも合うので、案からのずれも辿れます。
+  - 改変すると落ちることを手元で確かめたと書いていますが、その実行の記録（CI の実行や出力）を what からも issue 1259 からも指していないので、次に直すときに書き足すと根拠を辿りやすくなります。
+  - 'ひな形が .github/workflows/ に写されておらず、test_ci.py も CI から走っていないと書いたうえで wired: false・verified:
+    false にしており、statement・evidence・confidence も変わっていないので、confidence は hypothesis のままが妥当です。'
+  - 差分に出てくるのは Issue と PR の番号・議決の id・ツールとワークフローの道・定数の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0090 の test の案（EnforcementScopeTest で落とす範囲の道を check.py の REQUIRED_*
+    から導き、置き場の足し忘れを落とす）を K-0010 の enforcement.solutions に 1 項目足すもので、issue 1259 と committee:D-0090
+    に辿れ、案と中身が合っています。
+  - 範囲の道を手書きの列ではなく check.py の REQUIRED_ で始まる一覧と K-*.yaml の requires_check から導くので、D-0090
+    の反対の票が挙げた漂流（tools/changelog-check/・tools/continue-input-check/ の足し忘れ）を機械で引ける線で落とせるようになり、決定論の形としては十分です。
+  - 導いた置き場が空にならないことと、範囲の外を見分ける対照、範囲を外す改変で落ちることまで確かめており、黙って通る抜け道を塞ぐ作りになっています。
+  - 'ひな形が .github/workflows/ に写されておらず test_ci.py を走らせるジョブも CI から走っていないので今は何も止めておらず、wired:
+    false・verified: false の記録はその実態と合っています。'
+  - 残る配線（ひな形の写しと必須のチェックへの登録）は D-0066・D-0090 の enforcement の案ですでに建設者に出ているので、この PR で新しい担保の案を重ねる必要はありません。
+  - 配線も本物の記録での確認もないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0010 の enforcement.solutions に議決 D-0090 の test の案を 1 項目足すだけで、statement・scope・evidence・confidence
+    を広げていないので、範囲が広すぎるとは判断しません。
+  - D-0090 の dissent が挙げた反例（tools/changelog-check/・tools/continue-input-check/ を REQUIRED_*
+    に足して範囲に入れ忘れる）に、REQUIRED_ で始まる一覧と requires_check から置き場を導いて照らすテストで答えており、手元の改変で落ちることも書かれています。
+  - what の「REQUIRED_SCHEDULE と REQUIRED_PR に tools/changelog-check/・tools/continue-input-check/
+    の検査を足した形では範囲の外と見分ける」は、足したら範囲に入るのか外と判定して落とすのか読み違えやすいので、次に直すときに書き分けてください。
+  - '反例として、test_ci.py を走らせる enforcement のジョブがまだ CI から走っていないので、今は置き場を足し忘れても何も落ちず、wired:
+    false・verified: false はその実態と合っています。'
+  - 反例として、Engine 側（supervisor の merge_step など）の変更で検査の呼び出しが外れる場合は置き場の導出では拾えないので、配線したあとも担保は部分的だと見てください。
+  - 配線も本物の記録での確認もないので、confidence は hypothesis のままにしてください。
+  personal_data: false
+enforcement: []
