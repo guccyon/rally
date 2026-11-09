@@ -513,17 +513,24 @@ class MyBooking {
 
 /// `MyBookingList`
 class MyBookingList {
-  const MyBookingList({required this.bookings});
+  const MyBookingList({required this.bookings, this.clockOffset});
 
   /// 予約したスロットの開始時刻の新しい順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む
   final List<MyBooking> bookings;
 
-  factory MyBookingList.fromJson(Map<String, dynamic> json) => MyBookingList(
+  /// 応答の Date ヘッダーから出した、サーバーの時計と端末の時計のずれ（契約の項目ではない。`server_clock.dart`）。Date を読めないときは null
+  final Duration? clockOffset;
+
+  factory MyBookingList.fromJson(
+    Map<String, dynamic> json, {
+    Duration? clockOffset,
+  }) => MyBookingList(
     bookings: List.unmodifiable(
       (json['bookings'] as List<dynamic>).map(
         (e) => MyBooking.fromJson(e as Map<String, dynamic>),
       ),
     ),
+    clockOffset: clockOffset,
   );
 }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/error_message.dart';
 import '../api/http_student_api.dart';
 import '../api/models.dart';
+import '../api/server_clock.dart';
 import '../api/student_api.dart';
 import 'chat.dart';
 import 'coach_profile.dart';
@@ -349,8 +350,30 @@ final studentApiProvider = Provider<StudentApi>(
   ),
 );
 
-/// 今の時刻。予約が始まったか・キャンセルで回数を使うかの表示に使う。テストでは固定の時刻に差し替える。
-final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+/// サーバーに合わせた時計（端末の時計と、応答の Date ヘッダーから出したずれ）。ずれはここ 1 か所で持ち、
+/// 自分の予約の一覧（`listMyBookings`）を読んだときと、入室（`startLiveLessonSession`）が 409 `slot_not_started` だったときに合わせ直す。
+/// テストでは端末の時計を差し替えた [ServerClock] を渡す。
+final serverClockProvider = NotifierProvider<ServerClockNotifier, ServerClock>(
+  ServerClockNotifier.new,
+);
+
+class ServerClockNotifier extends Notifier<ServerClock> {
+  ServerClockNotifier([this._initial]);
+
+  final ServerClock? _initial;
+
+  @override
+  ServerClock build() => _initial ?? const ServerClock(DateTime.now);
+
+  /// ずれを応答の Date から出した [offset] に合わせ直す。null（Date がない・読めない）なら今のまま
+  void adjust(Duration? offset) => state = state.adjustedTo(offset);
+}
+
+/// 今の時刻（サーバーに合わせた時計 [serverClockProvider]）。予約が始まったか・入室前チェックを開けるか・入室できるか・
+/// キャンセルで回数を使うかの表示に使う。テストでは固定の時刻に差し替える。
+final clockProvider = Provider<DateTime Function()>(
+  (ref) => ref.watch(serverClockProvider).now,
+);
 
 final studentFlowProvider =
     NotifierProvider<StudentFlowNotifier, StudentFlowState>(
@@ -626,12 +649,21 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// 入室前チェックの「入室する」（`startLiveLessonSession`）。通ったらビデオ通話へ移って true を返す。
   /// 応答の前に入室前チェックから戻っていたら応答を捨てる（段を移さない）。失敗の文言は [StudentFlowState.errorMessage]
+  /// 409 `slot_not_started`（サーバーの時刻ではまだ開始前）なら、その応答の Date で時計のずれを合わせ直す（入室は繰り返し送らない）。
   Future<bool> joinLiveLesson() async {
     var joined = false;
     await run(() async {
-      final session = await _api.startLiveLessonSession(
-        StartLiveLessonSessionRequest(bookingId: state.booking!.bookingId),
-      );
+      final LiveLessonSession session;
+      try {
+        session = await _api.startLiveLessonSession(
+          StartLiveLessonSessionRequest(bookingId: state.booking!.bookingId),
+        );
+      } on StudentApiException catch (e) {
+        if (e.error?.code == ErrorCode.slotNotStarted) {
+          ref.read(serverClockProvider.notifier).adjust(e.clockOffset);
+        }
+        rethrow;
+      }
       if (!ref.mounted || state.step != FlowStep.prejoinCheck) return;
       state = state.copyWith(session: session, step: FlowStep.liveLesson);
       joined = true;
@@ -846,8 +878,10 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
+  /// 読んだら、応答の Date で時計のずれを合わせ直す（予約の確定と入室前チェックの時刻の判断に使う）
   Future<void> _loadMyBookings() async {
     final list = await _api.listMyBookings();
+    ref.read(serverClockProvider.notifier).adjust(list.clockOffset);
     state = state.copyWith(myBookings: list.bookings);
   }
 
