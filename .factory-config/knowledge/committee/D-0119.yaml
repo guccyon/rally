@@ -1,0 +1,87 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0119
+pr: https://github.com/guccyon/rally/pull/1117
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0011 に足した test の解決策は、D-0033 の enforcement にある K-0011 の test の案（rubric_id ごとに本文が
+    judge の入力にあるかを確かめ、C-0006 の指摘 7 件を fixtures にする）に当たるので、decided_by: committee:D-0033
+    は議決と合っています。'
+  - 'wired: false・verified: false と書き、CI への組み込みも overlay の本文を渡す Engine の直しもまだだと本文で認めているので、README
+    の D-0021・D-0034 の決まりとも、D-0033 の enforcement の票の求め（wired: false・verified: false
+    で記録する）とも矛盾しません。'
+  - README の「すべての解決策に書いた知見」の一覧に K-0011 を K-0010 と K-0012 の間に足したのは、K-0011 の唯一の解決策に
+    wired・verified があることと合い、test_check.py が照らす順とも食い違いません。
+  - INDEX.md の担保の列が context から deterministic に変わったのは enforcement.level をそのまま出すという
+    README の決まりどおりで、statement・scope・evidence・related・確かさは変えておらず、関連する K-0005 の扱いは「そのまま」で足ります。
+  - D-0033 の dissent の票が求めた statement の絞り込み（PR 本文の rubric に絞るか、ほかの rubric の事例を足す）はまだなので、次に
+    K-0011 を直す変更セットで合わせるとよいです。
+  - specs/ は製品の領域の規範で judge や rubric の受け渡しに触れておらず矛盾はなく、配線も本物の記録での確認もないので confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0011 に足した解決策は issue: 1054・decided_by: committee:D-0033 を持ち、D-0033 の enforcement
+    にある K-0011 の test の案（指摘が引くすべての rubric_id の本文が入力にあるかを確かめ、C-0006 の指摘 7 件を fixtures
+    にする）と中身が合うので、一次記録に辿れます。'
+  - fixtures にした「C-0006 の指摘 7 件（仮決め 5 件と、PR-002・OV-001）」は、C-0006 の出来事（指摘 7 件のうち仮決めの承認
+    5 件、PR-002、reject された OV-001）と数も内訳も合っています。
+  - OV-001 の本文が判定役に渡らないという主張は C-0003 と C-0006 の記録に合いますが、C-0006 では判定役が「根拠にした rubric
+    の本文もない」と書いているのに、解決策では今の Engine が PR-002 の本文を渡すとしているので、いつの Engine で確かめたか（コミットか
+    ENGINE_REF）を書き添えると辿りやすくなります。
+  - PR-002 の本文がすでに渡っているなら invalidate_when の 1 つ目に一部が当たるので、次の再確認では「overlay の rubric（OV-001
+    など）の本文が渡らない」に statement を絞るか確かめてください。
+  - 'wired: false・verified: false とし、CI への組み込みも本物の記録での確かめもないと本文に書いているので言い過ぎがなく、confidence
+    は hypothesis のままが妥当です。'
+  - 差分に残るのは知見・事例・議決の id、rubric の id、Issue の番号、ファイルの道だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この変更は D-0033 で決めた K-0011 の test の案（judge の入力に、指摘が引くすべての rubric_id の本文が入っているかを確かめ、C-0006
+    の指摘 7 件を fixtures にする）をそのまま記録していて、担保の観点で線の引き方に問題はありません。
+  - 'D-0033 の担保の票が求めたとおり wired: false・verified: false と書いていて、CI に組み込んでいないことと効き目を確かめていないことを正直に残しているので、記録として採ってよいです。'
+  - INDEX.md の担保の列を context から deterministic にしたのは enforcement.level に合わせたもので、README.md
+    の「Engine の knowledge_check.py が同じ表示にするまで level のまま出る」という決まりと合っています。
+  - ただしテストは今の Engine の形（overlay の本文を 1 つも渡さない）のときだけ todo で通すので、CI に組み込まないままだと judge.py
+    が変わったときに本文の欠けを止められず、外したときの痛さ（検査役と判定役の基準が割れる）が残ります。
+  - Engine が overlay の本文を渡すようになった後も todo が黙って残らないよう、todo の条件に当たらなくなったら落ちる形にして、todo
+    を外すことを強制する必要があります。
+  - 配線も本物の記録での確認もまだないので、K-0011 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0011 に D-0033 で決めた test の解決策を wired: false・verified: false として足し、README
+    の一覧に K-0011 を加えるだけで、statement・scope・evidence・確かさは変えていないので、範囲が広がる問題はありません。'
+  - テストは検査役の指摘が引くすべての rubric_id を照らしますが、K-0011 の statement もすべての rubric を対象にしており、D-0033
+    の提案（C-0006 の指摘 7 件を fixtures にする）とも同じ範囲なので、知見より広い担保にはなっていません。
+  - '反例として、今の Engine では根拠の害そのもの（OV-001 の本文が judge に入らない）が todo で通り、このテストは今は既知の欠けを止めませんが、what
+    にそのことが書かれ wired: false・verified: false になっているので、採らない理由にはなりません。'
+  - todo の条件（overlay の本文を 1 つも渡さないときだけ）は、Engine が overlay の本文を渡すようになった時点で外す必要があり、外し忘れると欠けが黙って通るので、judge.py
+    を直す変更セットで todo を外すことを issue 1054 に書いておくとよいです。
+  - INDEX.md の担保の列が未配線のまま deterministic と出るのは README の決まり（Engine の knowledge_check.py
+    が同じ表示にするまで enforcement.level のまま）どおりですが、読み手が担保済みと取り違えやすいので、Engine 側の表示の直しを急ぐとよいです。
+  - 根拠は C-0003・C-0006 の 2 件で、C-0003 は rubric にだけある要求を退けた例ではなく、PR-002 が candidate だったという反例のおそれも残るので、K-0011
+    の確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0011
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/judge-input-check/ のテスト（line.mjs・engine.test.mjs・engine_harness.py）を、Engine
+    の core-gates/judge.py・core-gates/rubric.yaml や製品の overlay のルールが変わる pull_request
+    で走るジョブから呼んで必須のチェックにする。解決策に requires_check としてこの検査の道を書き、wired: true にするときは wired_by
+    にワークフローのファイル・job・検査の道を書く。'
+- knowledge: K-0011
+  level: deterministic
+  solution_kind: test
+  proposal: engine.test.mjs の todo を「overlay の本文が 1 つも入っていない」形のときだけに限ったまま、その形に当たらなくなった（overlay
+    の本文がすべて入るようになった）のに todo が残っていたら落ちる確かめを足し、Engine が直ったときに todo を外すことを強制する。外したあと
+    C-0006 の 7 件がすべて通ることを確かめて verified_by に C-0006 を書く。
