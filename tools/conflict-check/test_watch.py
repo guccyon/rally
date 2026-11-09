@@ -6,7 +6,7 @@ EngineFinishedTest は Engine の dispatcher.py の job.finished の欄で組ん
 「todo:」は test_events.py の EngineFinishedTest と同じ（K-0004 の engine.test.mjs の todo と同じ形）。todo は見逃した件数を理由に添えて
 test_engine.py の todo で数え、知見 K-0010 の review_by を過ぎても Engine が今の形なら落とすのも同じ（議決 D-0043・Issue #1104）
 todo の前に、watch.py が events.py と別の扱い（開く停止の rule の食い違いか、events.py では照らせる外れの見逃し）に変わっていないかを見て、
-変わっていれば Engine が今の形でも落とす（議決 D-0062・Issue #1174。委員会の記録は committee/D-0066.yaml）
+変わっていれば Engine が今の形でも落とす（議決 D-0066（Issue #1174 の起票時の番号は D-0062））
 """
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ PLANTED = {
 }
 PLANTED_URLS = {k: URL.replace("/1", f"/{n}") for n, k in enumerate(PLANTED, 2)}
 # job.finished の欄によらず events.py で照らせる外れの PR。agent_resumed と agent_tier を continue.enqueued に載せ（events.py はそこも読む）、
-# 4 回積む。Engine が今の形でも 3 つの rule が出るので、watch.py が events.py と別の扱いに変わったらここで食い違う（議決 D-0062）
+# 4 回積む。Engine が今の形でも 3 つの rule が出るので、watch.py が events.py と別の扱いに変わったらここで食い違う（議決 D-0066（Issue #1174 の起票時の番号は D-0062））
 CHECKABLE_URL = URL.replace("/1", f"/{len(PLANTED) + 2}")
 CHECKABLE = [({"agent_resumed": False, "agent_tier": "tier-large"}, {"files": ["CHANGELOG.md"], "cost": 1.2}),
              ({"agent_resumed": True, "agent_tier": "tier-large"}, {"files": ["apps/backend/src/x.rs"], "cost": 1.95}),
@@ -178,7 +178,7 @@ def finished_missed(fields: list[str]) -> dict:
 
 
 def finished_diverged(fields: list[str]) -> list[str]:
-    """Engine が出す欄の job.finished で組んだイベント列で、watch.py が events.py と別の扱いをした PR ごとの説明（議決 D-0062）。
+    """Engine が出す欄の job.finished で組んだイベント列で、watch.py が events.py と別の扱いをした PR ごとの説明（議決 D-0066（Issue #1174 の起票時の番号は D-0062））。
     watch.py が開く停止の rule が events.py の check の rule と違う PR と、watch.py が見逃した外れのうち events.py ではその項目を照らせる
     （照らせない件数が 0 の）もの。Engine が今の形で todo のあいだも、watch.py の見逃しが events.py の照らせない件数だけで説明できるかを見る"""
     c, evs = policy.load(), planted(fields)
@@ -242,7 +242,7 @@ class EngineFinishedTest(unittest.TestCase):
     def test_job_finishedにagent_resumedと解き方のtierを出す版のEngineでは外れのすべてに停止を開く(self):
         fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
         self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
-        # todo の前に見る。Engine が今の形のあいだも、watch.py が events.py と別の扱いに変わったら飛ばさずに落とす（議決 D-0062）
+        # todo の前に見る。Engine が今の形のあいだも、watch.py が events.py と別の扱いに変わったら飛ばさずに落とす（議決 D-0066（Issue #1174 の起票時の番号は D-0062））
         self.assertEqual(finished_diverged(fields), [],
                          f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列で、watch.py が events.py と別の扱いをした")
         if legacy_finished(fields):
