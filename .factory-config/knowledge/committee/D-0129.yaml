@@ -1,0 +1,68 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0129
+pr: https://github.com/guccyon/rally/pull/1333
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に issue 1253 の解決策を 1 件足し、issue 1168 の解決策に
+    requires_check を 1 行足しただけで、statement・scope・evidence・confidence を変えていないので、これまでの議決とも
+    specs/ の規範とも矛盾しません。
+  - '議決 D-0089 の enforcement の案は check.py の REQUIRED_PR に組を足すことでしたが、REQUIRED_PR は議決
+    D-0077（Issue #1216）で解決策の requires_check に置き換わっているので、issue 1168 の解決策に requires_check
+    を書いた扱いは README.md の今の決まりと揃っていて妥当です。'
+  - issue 1168 の requires_check を道 1 つの文字列で書いたのは README.md が許す形（検査の道か、道か {runs, workflow}
+    の列）に入り、ほかの項目と同じ検査（requires_check_unwired）で照らされるので、仕組みの重複はありません。
+  - '足した lint の項目の decided_by: committee:D-0089 は PR #1250 の議決と合い、起票時の番号のずれ（D-0087）を
+    what に書く扱いも既存の項目の書き方と揃っています。'
+  - 'ひな形 ci/sendback-engine.yml がまだ order.test.mjs を呼ばないことと test_check.py が .github/workflows/
+    から走っていないことを正直に書き、wired: false・verified: false なので、confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・関数名・検査名・issue と PR と議決の番号だけで、人を特定できる情報はありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した lint の項目は decided_by: committee:D-0089 と issue 1253 を指し、D-0089 の pr（PR #1250）の
+    enforcement の 2 つめの案（issue 1168 と order.test.mjs の組を必須にして wired_by を求める）と中身が対応するので、一次記録に辿れます。'
+  - 'REQUIRED_PR の組を足す代わりに requires_check を書いた扱いは、D-0077 の議決（PR #1211、REQUIRED_PR
+    を solutions の requires_check に置き換える案）に辿れるので、案からの変え方に根拠があります。'
+  - '「Issue #1253 の起票時の番号は D-0087」という注は番号のずれの説明で、D-0087 の pr は #1244 と別の PR なので、正しい辿り先は
+    D-0089（PR #1250）だと what から読み取れます。'
+  - test_check.py の SendbackOrderTestPullRequestTest で通る・落ちることを確かめたのは手元の実行だけで、事例記録にも
+    CI の記録にもないので、実行の出力を issue 1253 に残してください。
+  - 'wired: false・verified: false で、ひな形 ci/sendback-engine.yml がまだ order.test.mjs
+    を呼ばないことも正直に書いているので、K-0004 の confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・クラス名・検査名・Issue と議決と PR の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'この PR は issue 1168 の解決策に requires_check: tools/sendback-check/order.test.mjs
+    を書き足すもので、それ自体が check.py の requires_check_unwired による決定論の担保なので、さらに足す仕組みは要りません。'
+  - 名前で組を並べる REQUIRED_PR に足さず、議決 D-0077 の requires_check に寄せているので、足し忘れて黙って通る穴が開かず、線の引き方も明確です。
+  - '新しい lint の解決策にも requires_check で test_check.py と .github/workflows/knowledge-enforcement.yml
+    を挙げており、wired: true にするときに配線が機械で照らされます。'
+  - 'ひな形 ci/sendback-engine.yml がまだ order.test.mjs を呼ばないことと、test_check.py が .github/workflows/
+    から走っていないことは wired: false・verified: false として正直に記録されており、担保の残りの穴は追えます。'
+  - 確かさは hypothesis のままで妥当で、上げ下げを求める理由は担保の観点からはありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の issue 1168 の解決策に requires_check を 1 行足し、D-0089 の lint の案を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence を変えていないので、範囲は広すぎません。
+  - D-0089 の案は REQUIRED_PR に組を足す形でしたが、D-0077 で requires_check に置き換わった経緯を what に書いて同じ効き目で入れているので、案からの逸れとは読みません。
+  - 反例として、npm test を tools/sendback-check のテストを全部走らせる形と数えていますが、package.json の test
+    のスクリプトが order.test.mjs を含まない形に変わると、order.test.mjs を呼ばないジョブでも requires_check を満たしてしまうので、担保をこれより強く読まないでください。
+  - '反例として、order.test.mjs を pull_request で呼ぶことを求めても、CI で Engine を取り出し損ねると NO_ENGINE_CHECKOUT
+    の SKIP で写しのテストが飛ばされて緑になる穴（D-0089 の 1 つめの案）は残っているので、wired: true にしても engine.test.mjs
+    の照合が実際に走ったとは限りません。'
+  - 'ひな形 ci/sendback-engine.yml がまだ order.test.mjs を呼ばず、test_check.py も .github/workflows/
+    から走っていないと正直に書いており、wired: false・verified: false なので、confidence は hypothesis のままが妥当です。'
+  - 差分にはファイルの道・関数名・テストのクラス名・Issue と議決と PR の番号しかなく、人を特定できる情報はありません。
+  personal_data: false
+enforcement: []
