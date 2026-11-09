@@ -27,7 +27,7 @@ status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
-related: [K-0005, K-0006, K-0009]
+related: [K-0001, K-0005, K-0006, K-0009]
 invalidate_when:
   - "summary.md から本文を組み立てたあとに、先頭が ## 概要 で始まるか、その前に文が混じっていないかを機械で確かめるようになった"
   - "実装役の会話の記録と summary.md を突き合わせ、欠けが実装役の書き出しの側だと分かった（その場合は Engine の組み立てではなく実装役への指示の知見に直す）"
@@ -72,6 +72,28 @@ enforcement:
       issue: 1306
       at: 2026-11-09
       decided_by: committee:D-0117
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0117（PR #1305）の ci_check の案（建設者が engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げ、ci/pr-body-engine.yml を
+        .github/workflows/ に写して必須のチェックにし、engine.test.mjs の (13) が手元の Engine そのもので通ることと、本物のジョブで ## 概要 から
+        始まらない最初の本文に body_fix が積まれたことを cases/ に残してから wired と verified を true にする）のうち、ワーカーの権限で入れられる分を入れた。
+        tools/pr-body-check/ci.test.mjs（ひな形の engine-test の node --test の中で走る）に、engine.test.mjs の (13)〜(15)（(14) は k0016.mjs の
+        BROKEN_HEADS の 4 つの形ごと）が見張る名前の一覧と同じだけあり、TAP で走らせた結果でどれも pass と数えられ skip・todo が 0 かの見張りを足した。
+        (13) を消す・名前を変える・(14) のループを外したり絞ったりする書き換えと、(13) を SKIP・TODO にする・落ちる・走らない結果は外れになることを確かめた。
+        これで写しを必須のチェックにすれば、(13) を外して関所を呼ばない Engine の版のまま engine-test を通すことはできない。差分を当てた手元の Engine（2e402e5）の
+        写しでは ci.test.mjs が通り、差分を当てない手元の Engine では (13) が fail で外れになることを確かめた。今の ENGINE_REF（9fee9c2）の版は手元になく走らせていない。
+        差分を Engine に入れて ENGINE_REF を上げること（Engine への作用なので人の承認が要る）、写して必須にすること、本物のジョブでの記録は建設者が行うので
+        （tools/pr-body-check/README.md の「配線の手順（建設者）」）、まだ配線されておらず効き目は確かめていない
+      issue: 1307
+      at: 2026-11-09
+      decided_by: committee:D-0117
+      requires_check:
+        - runs: tools/pr-body-check/ci.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
 decided_by: committee:D-0078

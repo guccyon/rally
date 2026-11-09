@@ -1,0 +1,72 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0143
+pr: https://github.com/guccyon/rally/pull/1353
+decided_at: '2026-11-10'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0016 に足した issue 1307 の ci_check は、議決 D-0117 の ci_check の案のうちワーカーの権限で入れられる分だけを入れたと書いていて、decided_by:
+    committee:D-0117 とも筋が通っています。'
+  - 'Engine に差分を入れること、写しを必須のチェックにすること、本物のジョブでの確認は建設者に残しています。そのうえで wired: false・verified:
+    false としているのは、D-0117 の「cases/ に残してから true にする」という条件と合っています。'
+  - 'kind: ci_check の解決策に requires_check（ci.test.mjs と engine.test.mjs、workflow は
+    .github/workflows/pr-body-engine.yml）を書いていて、README.md の D-0116 の決まりと issue 1219
+    の項目の書き方にそろっています。'
+  - related に K-0001 を足したのは、D-0117 と D-0142 の整合の票が求めた直しに応えたもので、K-0006・K-0009 が K-0001
+    を related に持つ書き方とも矛盾しません。ただし D-0117 が求めた K-0001 の扱いの書き添えはまだありません。K-0001 の patch_stale
+    の見張りや engine.test.mjs の (10) は同じ engine/pr-body-gate.patch を共有しているので、次の変更セットで影響を添えてください。
+  - ci.test.mjs はテストが消えたり飛ばされたりしないかを見張るもので、K-0016 の主張を新しく担保するものではありません。D-0142 の反対の票が求めたとおり、担保の数を読み違えないよう、その旨を
+    what に書き添えるのが望ましいです。
+  - specs/ の用語や業務ルールを新しく定めるものはありません。配線も効き目の確認もまだで、欠けた場所も確かめられていないので、確かさは hypothesis
+    のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の解決策は decided_by: committee:D-0117 を指し、D-0117 の enforcement に同じ
+    ci_check の案（patch を Engine に入れて ENGINE_REF を上げ、写しを必須のチェックにし、本物のジョブの記録を cases/
+    に残してから wired と verified を true にする）が記録されているので、議決まで辿れます。'
+  - what は案のうちワーカーの権限で入れた分（tools/pr-body-check/ci.test.mjs の見張り）だけを書き、残りは建設者の作業として分けているので、議決の中身を言い過ぎていません。
+  - '確かめたのは手元の Engine（2e402e5）の写しだけで、今の ENGINE_REF（9fee9c2）では走らせていないと正直に書き、wired:
+    false・verified: false にしているのは記録の強さと合っています。'
+  - related への K-0001 の追加は D-0117 と D-0142 の整合の票が求めたもので、K-0001 の関所 gate.mjs と patch
+    を共有しているという本文の記述とも合うので、根拠のある直しです。
+  - statement・evidence・scope は変わっておらず、欠けた場所も確かめられていないままなので、確かさは hypothesis のままが妥当で、上げる材料はありません。
+  - 差分に出てくるのは議決・Issue・PR の番号、コミットの短いハッシュ、道の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0117 の ci_check の案のうちワーカーの権限で入れられる分を K-0016 の enforcement.solutions
+    に足したもので、中身は案とそろっており担保の観点で採ってよいです。
+  - ci.test.mjs は engine.test.mjs の (13)〜(15) が名前の一覧どおりにあり、TAP の結果でどれも pass で skip・todo
+    が 0 かを見るので白黒がはっきりしており、(13) を消す・SKIP にするといった書き換えで外れになることも確かめているので、関所を呼ばない Engine
+    のまま engine-test を通す抜け道をふさぐ見張りとして筋が通っています。
+  - '新しい解決策には requires_check（.github/workflows/pr-body-engine.yml の tools/pr-body-check/ci.test.mjs
+    と tools/pr-body-check/engine.test.mjs）が書かれているので、D-0116 の決まりを満たし、pull_request で走るジョブがないまま
+    wired: true にすれば check.py が落とせます。'
+  - 今の ENGINE_REF（9fee9c2）では走らせておらず、差分を当てない Engine では (13) が落ちると書かれているので、建設者は ENGINE_REF
+    を上げる前に pr-body-engine.yml を必須のチェックにすると全 PR が止まることに気をつけ、上げてから写す順にしてください。
+  - 'wired: false・verified: false を正直に書いており、追加の決定論の担保は D-0117 の案の残り（建設者の配線と cases/
+    への記録）で足りるので、新しい enforcement の案は出しません。'
+  - '配線も効き目の確認もまだで欠けた場所も確かめていないので確かさは hypothesis のままが妥当で、配線されたら invalidate_when の
+    1 つ目に当たるため wired: true にする変更セットで status を再確認してください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR で変えたのは K-0016 の related への K-0001 の追加と enforcement.solutions への ci_check
+    の項目の追加だけで、statement・scope・confidence は変えていないので、範囲は広がっていません。
+  - 'wired: false・verified: false のままで、今の ENGINE_REF（9fee9c2）では走らせていないことも書いているので、効き目を言い過ぎてはいません。'
+  - 反例として、ci.test.mjs はテストの名前と TAP の pass の数を見張るだけなので、(13) の名前を残したまま中身を常に通るように書き換えれば通ってしまいます。what
+    の「関所を呼ばない Engine の版のまま engine-test を通すことはできない」は言い過ぎなので、次に直すときは「名前と結果を消す・飛ばす書き換えは止められる」くらいに弱めてください。
+  - D-0117 の整合の票が求めた K-0001 の扱い（patch_stale の見張りや engine.test.mjs の (10) への影響）は、related
+    に足しただけでまだ添えていないので、次に K-0001 か K-0016 を直す変更セットで書いてください。
+  - 'D-0117 の反対の票が挙げた反例（Fixes #N のような行から始まる正しい本文まで落とすこと、ticket 以外の頼み方の本文にもかかること）は今回も手つかずなので、配線する前に確かめてください。'
+  - 欠けた場所も確かめておらず、担保も配線されていないので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
