@@ -144,6 +144,12 @@ ENGINE_DIR の全履歴のチェックアウトから版の dispatcher.py を取
 solution_fields_missing で落とす（未記入の解決策を残したまま知見を直す変更セットを止める）。変えていない知見の未記入は見ない。
 未記入の解決策のある知見で分かれ目を求められない・その版を読めないときは solution_fields_unverifiable で落とす。
 
+ci_check・test の解決策の requires_check の必須（議決 D-0116 の schema の案、Issue #1304）: kind が ci_check か test の解決策では requires_check を
+必須の欄にする（PR ごとに走らなくてよいものは空の列 [] を明示する。空の列は形の誤りに数えない）。--base を渡すと、PR の差分で足したり直したりした
+その種類の解決策（分かれ目の版の同じ知見に、同じ中身の解決策がないもの）に欄がなければ requires_check_missing で落とす。変えていない解決策は見ない。
+分かれ目を求められない・その版を読めないときは requires_check_unverifiable で落とす。wired: true の解決策の空の列は、挙げる検査がないので
+上の D-0080 の線では書いていないのと同じに数える（REQUIRED_SCHEDULE・REQUIRED_RUNS に挙げたものを除いて requires_check_missing）。
+
 写しの配線の記録（議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）: .github/workflows/knowledge-enforcement.yml（ひな形の写し）が
 実在するのに、MIRROR_WIRED の解決策（K-0004 の issue 1063・1144。engine-test のジョブ）が wired: true でない（false・未記入・真偽でない値）なら
 mirror_unwired で落とす。建設者が写したあとに記録の更新が遅れて、未配線と表示され続けるずれを止める。写しがなければ見ない。
@@ -245,6 +251,12 @@ REQUIRES_CHECK_UNWIRED = "requires_check_unwired"
 # （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案。requires_check を書き忘れた解決策が、check.py の配線だけで wired と読ませないように）
 REQUIRES_CHECK_MISSING = "requires_check_missing"
 REQUIRES_CHECK_MISSING_DECISION = "D-0080"
+# kind が REQUIRES_CHECK_KINDS の解決策は requires_check を必須の欄にする（PR ごとに走らなくてよいものは空の列 [] を明示する）。--base を渡すと、
+# PR の差分で足したり直したりした解決策で欄がなければ requires_check_missing で落とす（議決 D-0116 の schema の案、Issue #1304。
+# requires_check は書いた解決策しか照らさないので、PR ごとに走るべき解決策で欄を書き忘れると黙って通っていた）
+REQUIRES_CHECK_KINDS = ("ci_check", "test")
+REQUIRES_CHECK_DECLARED_DECISION = "D-0116"
+REQUIRES_CHECK_UNVERIFIABLE = "requires_check_unverifiable"
 # wired: true の解決策は、知見と issue を問わずどれも、ひな形 ci/knowledge-enforcement.yml の写しの .github/workflows/knowledge-enforcement.yml の
 # pull_request でも走るジョブから check.py を呼ぶ項目を wired_by に要する（議決 D-0072（起票時の番号は D-0071）の test の案、Issue #1201。
 # 前は K-0004 の issue 986・1059・1129 を REQUIRED_PR に名前で挙げていて、ほかの知見の解決策は組を足し忘れると黙って通っていた。
@@ -637,13 +649,13 @@ def required_checks(s: dict) -> tuple[list[tuple[str, str | None]], list[str]]:
     """解決策の requires_check を (検査の道, ワークフロー（なければ None）) の列にする（議決 D-0077（起票時の番号は D-0075）、Issue #1216）。
 
     値は検査の道の文字列か、その列。列の項目は道の文字列か {runs, workflow}（workflow は書けばそのワークフローのジョブを指す wired_by だけを数える）。
-    書いていなければ空の列。形の誤りは 2 つ目に返す"""
+    書いていなければ空の列。空の列 [] は PR ごとに走らなくてよい解決策の印として許す（議決 D-0116、Issue #1304）。形の誤りは 2 つ目に返す"""
     if REQUIRES_CHECK not in s:
         return [], []
     v = s[REQUIRES_CHECK]
     entries = [v] if isinstance(v, str) else v
-    if not isinstance(entries, list) or not entries:
-        return [], [f"{REQUIRES_CHECK} は検査の道か、道か {{runs, workflow}} の空でない列（{v!r}）"]
+    if not isinstance(entries, list):
+        return [], [f"{REQUIRES_CHECK} は検査の道か、道か {{runs, workflow}} の列（PR ごとに走らなくてよいなら空の列 []。{v!r}）"]
     out, bad = [], []
     for j, x in enumerate(entries):
         if isinstance(x, str):
@@ -695,10 +707,11 @@ def check_requires_check_missing(k: dict) -> list[str]:
     （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案）。
 
     requires_check は書いた解決策しか照らさないので、書き忘れると、どの解決策にも求める check.py の配線（knowledge_gate）だけで wired: true にできてしまう。
-    名前で組を並べていたころの足し忘れと同じ穴が、欄の書き忘れとして残っていた。形の誤りは check_pull_request が落とす"""
+    名前で組を並べていたころの足し忘れと同じ穴が、欄の書き忘れとして残っていた。形の誤りは check_pull_request が落とす。
+    空の列 []（PR ごとに走らなくてよい印。議決 D-0116）も、挙げる検査がないので書いていないのと同じに数える"""
     f, e = k.get("_file", str(k.get("id"))), []
     for i, s in enumerate(solutions(k)):
-        if not isinstance(s, dict) or s.get("wired") is not True or REQUIRES_CHECK in s:
+        if not isinstance(s, dict) or s.get("wired") is not True or (REQUIRES_CHECK in s and s[REQUIRES_CHECK] != []):
             continue
         key = (k.get("id"), s.get("issue"))
         if key in REQUIRED_SCHEDULE or key in REQUIRED_RUNS:
@@ -1162,6 +1175,38 @@ def check_solution_fields(k: dict, repo: Path, base: str | None, cache: dict | N
             for i, s, flags in missing]
 
 
+def check_requires_check_declared(k: dict, repo: Path, base: str | None, cache: dict | None = None) -> list[str]:
+    """kind が REQUIRES_CHECK_KINDS（ci_check・test）の解決策で、PR の差分で足したり直したりしたもの（分かれ目の版の同じ知見に、同じ中身の解決策がない）に
+    requires_check の欄がなければ requires_check_missing で落とす（議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を書く）。
+    base を渡さないとき・欄のない対象の解決策がないときは見ない。分かれ目を求められない・その版を読めないときは REQUIRES_CHECK_UNVERIFIABLE で落とす。
+    変えていない解決策は、欄がなくても見ない"""
+    if not base:
+        return []
+    f = k.get("_file", str(k.get("id")))
+    todo = [(i, s) for i, s in enumerate(solutions(k))
+            if isinstance(s, dict) and s.get("kind") in REQUIRES_CHECK_KINDS and REQUIRES_CHECK not in s]
+    if not todo:
+        return []
+    cache = {} if cache is None else cache
+    if base not in cache:
+        cache[base] = merge_base(repo, base)
+    mb = cache[base]
+    if mb is None:
+        return [f"{f}: {REQUIRES_CHECK_UNVERIFIABLE}: {'・'.join(REQUIRES_CHECK_KINDS)} の解決策に {REQUIRES_CHECK} のないものがあるが、前の版 {base} と HEAD の"
+                f"分かれ目を求められず、この変更セットで足したり直したりしたかを照らせない（fetch-depth: 0 で取る。照らせないときは落とす。"
+                f"議決 {REQUIRES_CHECK_DECLARED_DECISION}）"]
+    try:
+        prev = base_knowledge(repo, mb, f"{ROOT}/{f}")
+    except HoldUncheckable as x:
+        return [f"{f}: {REQUIRES_CHECK_UNVERIFIABLE}: {x}（議決 {REQUIRES_CHECK_DECLARED_DECISION}）"]
+    before = solutions(prev) if isinstance(prev, dict) else []
+    return [f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {REQUIRES_CHECK_MISSING}: kind が "
+            f"{'・'.join(REQUIRES_CHECK_KINDS)} の解決策を足したり直したりするときは {REQUIRES_CHECK} を書く（PR ごとに走らせる検査の道。"
+            f"例: {REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_check.py。PR ごとに走らなくてよいなら {REQUIRES_CHECK}: [] と明示する。"
+            f"議決 {REQUIRES_CHECK_DECLARED_DECISION}）"
+            for i, s in todo if s not in before]
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -1200,7 +1245,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json")
     ap.add_argument("--summary")
     ap.add_argument("--head-comments", help="Issue #948 のコメント（gh api の出力）。engine-head に関わる解決策が verified: true のときに照らす")
-    ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送り（議決 D-0067）と、差分で変わった知見の wired・verified の記入（議決 D-0071）を照らす")
+    ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送り（議決 D-0067）と、差分で変わった知見の wired・verified の記入（議決 D-0071）と、"
+                    "差分で足したり直したりした ci_check・test の解決策の requires_check（議決 D-0116）を照らす")
     ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR") or None, help="Engine のチェックアウト（全履歴。既定は ENGINE_DIR）")
     a = ap.parse_args(argv)
     try:
@@ -1213,7 +1259,8 @@ def main(argv: list[str] | None = None) -> int:
               + check_head_record(k, a.head_comments, heads)
               + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)
               + check_engine_wait(k, repo, Path(a.engine) if a.engine else None, waits)
-              + check_solution_fields(k, repo, a.base, bases)]
+              + check_solution_fields(k, repo, a.base, bases)
+              + check_requires_check_declared(k, repo, a.base, bases)]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
