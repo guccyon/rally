@@ -33,8 +33,19 @@ pull_request でも走る（if: が github.event_name を見るなら == 'pull_r
 tools/conflict-check/test_events.py を呼ぶ項目を必須にする。ほかの検査（test_ci.py など）を呼ぶだけ、定期や手動だけでは wired にできない。
 議決 D-0048（Issue #1129）で、K-0004 の issue 986・1059 の解決策（wired_by・verified_by の照合）も、pull_request のジョブから
 この check.py を呼ぶ項目がないと wired にできないようにした（ci/knowledge-enforcement.yml を写した enforcement のジョブで満たす）。
+議決 D-0072（Issue #1200。起票時の番号は D-0071）で、K-0004 の issue 1129 の解決策（この段そのもの）も REQUIRED_PR に挙げ、issue 986・1059・1129 の
+解決策は REQUIRED_PR_WORKFLOW の .github/workflows/knowledge-enforcement.yml のジョブを指す wired_by でないと数えないようにした
+（ほかのワークフローの pull_request のジョブから check.py を呼ぶだけでは、ひな形の写しがなくても wired と読ませてしまうため）。
+議決 D-0072（Issue #1201。起票時の番号は D-0071）の test の案で、その線を知見と issue の列挙に頼らない形に広げた。wired: true の解決策はどれも、
+KNOWLEDGE_GATE の .github/workflows/knowledge-enforcement.yml の pull_request でも走るジョブから check.py を呼ぶ項目が wired_by にないと
+knowledge_gate_unwired で落とす（K-0004 の issue 986・1059・1129 は REQUIRED_PR・REQUIRED_PR_WORKFLOW から外し、この線で見る。
+組を足し忘れたほかの知見の解決策が黙って通らないように）。
 議決 D-0052（Issue #1139）で、K-0004 の issue 1062 の解決策（README の一覧と K-*.yaml を照らす test_check.py のテスト）も、pull_request のジョブから
 test_check.py を呼ぶ項目がないと wired にできないようにした（同じく enforcement のジョブで満たす）。
+議決 D-0075（Issue #1215）で、K-0004 の issue 1138 の解決策（.factory-config/knowledge/README.md の一覧も K-*.yaml と照らす test_check.py のテスト）も
+REQUIRED_PR に挙げ、issue 1062・1138 の解決策は REQUIRED_PR_WORKFLOW の .github/workflows/knowledge-enforcement.yml のジョブを指す wired_by でないと
+数えないようにした（ひな形 ci/knowledge-enforcement.yml の写しの必須チェックでなく、ほかのワークフローの pull_request のジョブから test_check.py を呼ぶだけでは、
+一覧がずれた PR を止めるとは読めないため）。
 議決 D-0053（Issue #1144）で、K-0004 の issue 1063・1144 の解決策（Engine に移す差分を ENGINE_REF の版で確かめる engine-test のジョブ）も、
 pull_request のジョブから test_engine_patch.py を呼ぶ項目がないと wired にできないようにした（ci/knowledge-enforcement.yml を写した engine-test の
 unittest discover で満たす。check.py・test_check.py・test_ci.py を名指しで呼ぶ enforcement のジョブでは満たさない）。
@@ -45,10 +56,76 @@ protection と protection-pr のジョブで満たす）。
 議決 D-0060（Issue #1160。起票時の番号は D-0056）で、K-0004 の issue 1087（sendback-protection.yml のひな形）と issue 1018 の解決策は、
 REQUIRED_SCHEDULE_WORKFLOW の .github/workflows/sendback-protection.yml のジョブを指す wired_by でないと数えないようにした
 （ほかのワークフローの schedule のジョブから protection.mjs を呼ぶだけでは、ひな形の写しがなくても wired と読ませてしまうため）。
+議決 D-0061（Issue #1162。起票時の番号は D-0058）で、K-0004 の issue 1162 の解決策（sendback-protection の定期の実行が最後に通ってから
+2 日より長ければ落とす heartbeat.mjs）を REQUIRED_SCHEDULE に挙げ、schedule でも走るジョブから tools/sendback-check/heartbeat.mjs を呼ぶ項目がないと
+wired にできないようにした（tools/sendback-check/ci/sendback-protection-heartbeat.yml を写した heartbeat のジョブで満たす）。
+議決 D-0070（Issue #1182。起票時の番号は D-0067）で、K-0001 の issue 1182 の解決策（建設者が pr-body-engine.yml を写して pr-body-engine-test を
+必須のチェックにし、protection.mjs を定期に走らせる）を REQUIRED_SCHEDULE と REQUIRED_PR の両方に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
+.github/workflows/pr-body-protection.yml の schedule でも走るジョブから tools/pr-body-check/protection.mjs を呼ぶ項目と、REQUIRED_PR_WORKFLOW の
+.github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs を呼ぶ項目の両方がないと wired にできないようにした
+（tools/pr-body-check/ci/pr-body-protection.yml を写した protection と、ci/pr-body-engine.yml を写した engine-test のジョブで満たす）。
+議決 D-0100（Issue #1196。起票時の番号は D-0071）で、K-0012 の issue 1122・1196 の解決策と K-0006 の issue 906 の解決策（同じ check.mjs を使う
+マージ前の必須チェック pr-body-check）を REQUIRED_PR に挙げ、REQUIRED_PR_WORKFLOW の .github/workflows/pr-body-check.yml の pull_request でも走るジョブから
+tools/pr-body-check/check.mjs を呼ぶ項目がないと wired にできないようにした（tools/pr-body-check/ci/pr-body-check.yml を写した pr-body-check のジョブで満たす）。
+K-0012 の 2 つは REQUIRED_PR_ALSO で .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs
+（(12) が merge_step の待ちを確かめる）を呼ぶ項目も求め、下の「Engine の merge_step の照合」も通らないと wired にできない。
+議決 D-0100（Issue #1197。起票時の番号は D-0071）の test の案で、K-0012 の issue 1197 の解決策（recheck.test.mjs・engine.test.mjs・
+ci.test.mjs を PR ごとに走らせ、ひな形と Engine の待つチェックの名前のずれと、待ちの線を外す書き換えをマージ前に落とす）を REQUIRED_PR に挙げ、
+REQUIRED_PR_WORKFLOW の .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/recheck.test.mjs を呼ぶ項目と、
+REQUIRED_PR_ALSO で同じワークフローから tools/pr-body-check/engine.test.mjs と tools/pr-body-check/ci.test.mjs を呼ぶ項目がそれぞれないと
+wired にできないようにした（ci/pr-body-engine.yml を写した engine-test の node --test で 3 つとも満たす）。
+議決 D-0101（Issue #1207。起票時の番号は D-0073）で、K-0014 の issue 1136 の解決策（衝突したファイルの列を必須にした定義と schema.py）と
+issue 1207 の解決策（それを直近の窓のイベント列に対して定期に走らせる）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
+.github/workflows/conflict-schema.yml の schedule でも走るジョブから tools/conflict-check/schema.py を呼ぶ項目がないと wired にできないようにした
+（tools/conflict-check/ci/conflict-schema.yml を写した conflict-schema のジョブで満たす）。
+議決 D-0076（Issue #1214。起票時の番号は D-0074）で、K-0014 の issue 1214 の解決策（events.py の missing_conflict_files を直近の窓に積まれた
+衝突の続きのジョブに対して定期に走らせる）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の .github/workflows/conflict-schema.yml の
+schedule でも走るジョブから tools/conflict-check/events.py を呼ぶ項目がないと wired にできないようにした（同じひな形の conflict-record のジョブで満たす）。
+議決 D-0076（Issue #1213。起票時の番号は D-0074）で、K-0014 の issue 1213 の解決策（衝突の続きの handoff.saved にも conflict_files を求める定義を
+Engine の handoff.saved の形で確かめた schema の解決策。照らすのは同じ schema.py）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
+.github/workflows/conflict-schema.yml の schedule でも走るジョブから tools/conflict-check/schema.py を呼ぶ項目がないと wired にできないようにした
+（issue 1136・1207 と同じ conflict-schema のジョブで満たす）。
+
+呼ぶ検査を解決策に書く（議決 D-0077（Issue #1216。起票時の番号は D-0075）の schema の案）: 上で REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO に
+(知見の id, 解決策の issue) の名前で並べていた組をやめ、解決策の requires_check（検査の道か、道か {runs, workflow} の列）に書く形に一般化した。
+wired: true の解決策は、requires_check に挙げた検査ごとに、on.pull_request のあるワークフロー（workflow を書いた検査はそのファイル）の pull_request でも走る
+ジョブからそれを呼ぶ wired_by の項目がないと requires_check_unwired で落とす。requires_check の形の誤りと、挙げた検査がリポジトリにないことは、
+wired を問わず requires_check_invalid で落とす。上で REQUIRED_PR などに挙げたと書いた組は、今はそれぞれの解決策の requires_check に同じ中身で書いてある
+（組を check.py に足し忘れると、その解決策が wired: true でも黙って通っていた。検査の求めを解決策そのものに置き、足す場所を 1 つにする）。
+
+Engine の merge_step の照合（議決 D-0100（起票時の番号は D-0071）、Issue #1196）: REQUIRED_ENGINE_WAIT の解決策（K-0012 の issue 1122・1196）が
+wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の版の Engine の orchestrator/dispatcher/supervisor.py で、merge_step が
+body_recheck_pending（tools/pr-body-check/engine/pr-body-recheck.patch で足す、直した本文の pr-body-check を待つ関数）を定義どおりに呼んでいることを
+構文木で照らし、呼んでいなければ engine_unwired で落とす。Engine は --engine か ENGINE_DIR の全履歴のチェックアウトから版のファイルを取り出す。
+Engine のチェックアウトがない・写しや ENGINE_REF がない・版がない・読めないときは照らせないとして engine_unverifiable（<HoldUncheckable の kind>）で落とす。
+Engine に差分を入れて ENGINE_REF を上げる前に、ワークフローの写しだけで wired: true にする変更を止める。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
 同じ種類（solution_kind が解決策の kind）の案があることを照らし、なければ decision_mismatch で落とす。
+
+engine-head の記録の照合（議決 D-0047、Issue #1114）: HEAD_RECORD_SOLUTIONS の解決策（K-0004 の issue 977・1046・1047。engine-head の定期の実行と
+その記録）が verified: true なら、--head-comments に渡した Issue #948 のコメント（gh api の出力）で tools/sendback-check/head-record.mjs を走らせ、
+engine-head の記録がなければ head_record_missing、コメントを渡していない・読めない・head-record.mjs が結果を出さないときは head_record_unchecked で落とす。
+Issue #948 に engine-head の記録が残る前に verified を true にする変更を止める。
+
+review_by の先送りの照合（議決 D-0067（起票時の番号は D-0066）、Issue #1178）: --base に前の版（PR の base。例: origin/main）を渡すと、
+K-0010 の review_by をその版より後ろへ動かす（日付でなくする場合も含む）ときに、tools/conflict-check/ci/conflict-check.yml（写しがあれば
+.github/workflows/conflict-check.yml）の ENGINE_REF の版の Engine で、test_events.py の EngineFinishedTest が todo のまま（job.finished に
+agent_resumed も agent_tier も出ていない）なら落とす（review_by を延ばすだけで、期限切れで落ちるのを先送りできないように）。Engine は --engine か
+ENGINE_DIR の全履歴のチェックアウトから版の dispatcher.py を取り出し、tools/conflict-check/engine_harness.py の finished で欄を読む。
+求める欄は test_events.py の FINISHED_FIELDS を読む。Engine のチェックアウトがない・版がない・欄を読めないときは照らせないとして落とす。
+落とす行には種類の名前を添える（review_by_hold、照らせないときは review_by_unverifiable（<HoldUncheckable の kind>））。
+--base を渡さないとき、前の版に K-0010 がないとき、前の版の review_by が日付でないときは見ない。
+
+直した知見の記入の必須（議決 D-0071、Issue #1193）: --base を渡すと、PR の差分で変わった K-*.yaml（--base と HEAD の分かれ目（merge-base）の版から
+作業ツリーで中身が変わったか、その版になかったもの）の enforcement.solutions の各項目に wired と verified の両方が書かれていなければ、
+solution_fields_missing で落とす（未記入の解決策を残したまま知見を直す変更セットを止める）。変えていない知見の未記入は見ない。
+未記入の解決策のある知見で分かれ目を求められない・その版を読めないときは solution_fields_unverifiable で落とす。
+
+写しの配線の記録（議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）: .github/workflows/knowledge-enforcement.yml（ひな形の写し）が
+実在するのに、MIRROR_WIRED の解決策（K-0004 の issue 1063・1144。engine-test のジョブ）が wired: true でない（false・未記入・真偽でない値）なら
+mirror_unwired で落とす。建設者が写したあとに記録の更新が遅れて、未配線と表示され続けるずれを止める。写しがなければ見ない。
 
 担保の表示（この検査の出力に出す値。Engine の core-gates/knowledge_check.py に移したら INDEX.md の担保の列もこの値にする予定）:
   - level が deterministic でない: level のまま（context・checklist）
@@ -57,18 +134,22 @@ REQUIRED_SCHEDULE_WORKFLOW の .github/workflows/sendback-protection.yml のジ�
   - deterministic で、wired かつ verified が 1 件以上: deterministic
 
 使い方:
-  python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json out.json] [--summary "$GITHUB_STEP_SUMMARY"]
+  python3 tools/knowledge-enforcement-check/check.py [--repo .] [--json out.json] [--summary "$GITHUB_STEP_SUMMARY"] [--base origin/main --engine .engine] [--head-comments comments.jsonl]
   終了コード: 0 = 緑、1 = 通らない、2 = 読めなかった
 
-依存: python3。YAML は PyYAML があればそれ、なければ ruby で読む（Engine の knowledge_check.py と同じ）
+依存: python3（engine-head の記録の照合は node も）。YAML は PyYAML があればそれ、なければ ruby で読む（Engine の knowledge_check.py と同じ）
 """
 from __future__ import annotations
 
 import argparse
+import ast
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
+from datetime import date
 from pathlib import Path
 
 ROOT = ".factory-config/knowledge"
@@ -83,31 +164,88 @@ DECIDED_BY_RE = re.compile(r"^committee:(D-\d{4,})$")
 DECISION_MISMATCH = "decision_mismatch"
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106。
-# K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。REQUIRED_PR にも挙げ、schedule と pull_request の両方のジョブから呼ぶことを求める。
-# K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160）
+# K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。requires_check にも書き、schedule と pull_request の両方のジョブから呼ぶことを求める。
+# K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160。
+# K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs。
+# K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）。requires_check にも書く。
+# K-0014 の issue 1136・1207 は議決 D-0101（起票時の番号は D-0073）、Issue #1207。衝突したファイルの列を直近の窓のイベント列で照らす schema.py。
+# K-0014 の issue 1214 は議決 D-0076（起票時の番号は D-0074）、Issue #1214。直近の窓に積まれた衝突の続きのジョブを照らす events.py）
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
+PR_BODY_PROTECTION = "tools/pr-body-check/protection.mjs"
+SENDBACK_HEARTBEAT = "tools/sendback-check/heartbeat.mjs"
+CONFLICT_SCHEMA = "tools/conflict-check/schema.py"
+CONFLICT_EVENTS = "tools/conflict-check/events.py"
 REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
-                     ("K-0001", 1106): "tools/pr-body-check/protection.mjs",
+                     ("K-0001", 1106): PR_BODY_PROTECTION,
+                     ("K-0001", 1182): PR_BODY_PROTECTION,
                      ("K-0004", 1158): SENDBACK_PROTECTION,
-                     ("K-0004", 1087): SENDBACK_PROTECTION}
+                     ("K-0004", 1087): SENDBACK_PROTECTION,
+                     ("K-0004", 1162): SENDBACK_HEARTBEAT,
+                     ("K-0014", 1136): CONFLICT_SCHEMA,
+                     ("K-0014", 1207): CONFLICT_SCHEMA,
+                     ("K-0014", 1213): CONFLICT_SCHEMA,
+                     ("K-0014", 1214): CONFLICT_EVENTS}
 # (知見の id, 解決策の issue) → (REQUIRED_SCHEDULE の検査を呼ぶジョブがあることを求めるワークフロー, 落ちたときに挙げる議決)（議決 D-0060、Issue #1160）
 SENDBACK_PROTECTION_WORKFLOW = f"{WORKFLOWS}/sendback-protection.yml"
 REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
-                              ("K-0004", 1087): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060")}
-# (知見の id, 解決策の issue) → (pull_request のジョブから呼ぶことを求める検査, 決めた議決)（議決 D-0043、Issue #1103。
-# K-0004 の issue 986・1059 は議決 D-0048、Issue #1129。issue 1062 は議決 D-0052、Issue #1139。issue 1063・1144 は議決 D-0053、Issue #1144。
-# issue 1158 は議決 D-0059（起票時の番号は D-0056）、Issue #1158）
+                              ("K-0004", 1087): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
+                              ("K-0001", 1182): (f"{WORKFLOWS}/pr-body-protection.yml", "D-0070"),
+                              ("K-0014", 1136): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
+                              ("K-0014", 1207): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
+                              ("K-0014", 1213): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076"),
+                              ("K-0014", 1214): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076")}
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
-KNOWLEDGE_TEST = "tools/knowledge-enforcement-check/test_check.py"
-ENGINE_PATCH_TEST = "tools/knowledge-enforcement-check/test_engine_patch.py"
-REQUIRED_PR = {("K-0010", 1035): ("tools/conflict-check/test_events.py", "D-0043"), ("K-0010", 1103): ("tools/conflict-check/test_events.py", "D-0043"),
-               ("K-0004", 986): (KNOWLEDGE_CHECK, "D-0048"), ("K-0004", 1059): (KNOWLEDGE_CHECK, "D-0048"),
-               ("K-0004", 1062): (KNOWLEDGE_TEST, "D-0052"),
-               ("K-0004", 1063): (ENGINE_PATCH_TEST, "D-0053"), ("K-0004", 1144): (ENGINE_PATCH_TEST, "D-0053"),
-               ("K-0004", 1158): (SENDBACK_PROTECTION, "D-0059")}
+# 解決策が pull_request でも走るジョブから呼ぶことを求める検査は、その解決策の requires_check に書く（議決 D-0077（起票時の番号は D-0075）の schema の案、Issue #1216）。
+# 前は (知見の id, 解決策の issue) の名前で並べた組（REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO）をここに持っていて、
+# 組を足し忘れた解決策は wired: true にしても黙って通っていた。前の組は同じ中身でそれぞれの解決策の requires_check に移した（議決 D-0043・D-0052・D-0053・D-0059・D-0070・D-0074・D-0075・D-0100）
+REQUIRES_CHECK = "requires_check"
+REQUIRES_CHECK_KEYS = ("runs", "workflow")
+REQUIRES_CHECK_DECISION = "D-0077"
+REQUIRES_CHECK_INVALID = "requires_check_invalid"
+REQUIRES_CHECK_UNWIRED = "requires_check_unwired"
+# wired: true の解決策は、知見と issue を問わずどれも、ひな形 ci/knowledge-enforcement.yml の写しの .github/workflows/knowledge-enforcement.yml の
+# pull_request でも走るジョブから check.py を呼ぶ項目を wired_by に要する（議決 D-0072（起票時の番号は D-0071）の test の案、Issue #1201。
+# 前は K-0004 の issue 986・1059・1129 を REQUIRED_PR に名前で挙げていて、ほかの知見の解決策は組を足し忘れると黙って通っていた。
+# ほかのワークフローから check.py を呼ぶだけでは、必須チェックにする写しとは読めない（議決 D-0072、Issue #1200））
+KNOWLEDGE_ENFORCEMENT_WORKFLOW = f"{WORKFLOWS}/knowledge-enforcement.yml"
+KNOWLEDGE_GATE = (KNOWLEDGE_CHECK, KNOWLEDGE_ENFORCEMENT_WORKFLOW, "D-0072")
+KNOWLEDGE_GATE_UNWIRED = "knowledge_gate_unwired"
+# (知見の id, 解決策の issue)。KNOWLEDGE_ENFORCEMENT_WORKFLOW（ひな形の写し）が実在するなら wired: true であることを求める
+# （議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226。写したあとに記録の更新が遅れて、engine-test が PR ごとに走っているのに未配線と出続けるずれを止める）
+MIRROR_WIRED = (("K-0004", 1063), ("K-0004", 1144))
+MIRROR_WIRED_DECISION = "D-0080"
+MIRROR_UNWIRED = "mirror_unwired"
+# 知見 K-0012 の本文の直しのあとの再検査（issue 1122・1196）は Engine の merge_step の待ちも求める（REQUIRED_ENGINE_WAIT。議決 D-0100（起票時の番号は D-0071）、Issue #1196）
+PR_BODY_ENGINE_WORKFLOW = f"{WORKFLOWS}/pr-body-engine.yml"
+PR_BODY_RECHECK = (("K-0012", 1122), ("K-0012", 1196))
+# (知見の id, 解決策の issue)。wired: true にするには、ENGINE_REF の Engine の merge_step が待ちの関数を呼んでいることを求める（議決 D-0100、Issue #1196）
+REQUIRED_ENGINE_WAIT = set(PR_BODY_RECHECK)
+ENGINE_SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
+ENGINE_MERGE_STEP = "merge_step"
+ENGINE_RECHECK_WAIT = "body_recheck_pending"
+ENGINE_UNWIRED = "engine_unwired"
+ENGINE_UNVERIFIABLE = "engine_unverifiable"
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
+# (知見の id, 解決策の issue)。verified: true にするには Issue #948 に engine-head の記録が要る（議決 D-0047、Issue #1114）
+HEAD_RECORD_SOLUTIONS = {("K-0004", 977), ("K-0004", 1046), ("K-0004", 1047)}
+HEAD_RECORD = Path(__file__).resolve().parent.parent / "sendback-check" / "head-record.mjs"
+HEAD_RECORD_MISSING = "head_record_missing"
+HEAD_RECORD_UNCHECKED = "head_record_unchecked"
+# review_by を前の版より後ろへ動かすときに、ENGINE_REF の Engine で test_events.py の EngineFinishedTest が todo のままでないことを求める知見
+# （議決 D-0067（起票時の番号は D-0066）、Issue #1178）。ENGINE_REF は写しがあれば写し、なければひな形から読む（EngineFinishedTest を走らせる CI と同じ版）
+REVIEW_BY_HOLD = "K-0010"
+CONFLICT_CHECK_WORKFLOWS = (f"{WORKFLOWS}/conflict-check.yml", "tools/conflict-check/ci/conflict-check.yml")
+CONFLICT_HARNESS = "tools/conflict-check/engine_harness.py"
+CONFLICT_EVENTS_TEST = "tools/conflict-check/test_events.py"   # FINISHED_FIELDS（job.finished に求める欄）の定義元
+ENGINE_DISPATCHER = "orchestrator/dispatcher/dispatcher.py"
+# 出力の行に添える種類の名前。review_by_hold = Engine が今の形のまま延ばした、review_by_unverifiable = 照らせない（括弧に HoldUncheckable の kind）
+REVIEW_BY_HOLD_ERROR = "review_by_hold"
+REVIEW_BY_UNVERIFIABLE = "review_by_unverifiable"
+SOLUTION_FIELDS_MISSING = "solution_fields_missing"
+SOLUTION_FIELDS_UNVERIFIABLE = "solution_fields_unverifiable"
+ENGINE_REF_RE = re.compile(r"^\s*ENGINE_REF:\s*['\"]?([^'\"\s#]*)['\"]?\s*(?:#.*)?$", re.M)
 SCRIPT_RE = re.compile(r"(?:^|[\s\"'=(])((?:\.{0,2}/)?[\w.\/-]+\.(?:py|sh|bash|mjs|cjs|js|ts))\b")
 
 
@@ -405,34 +543,110 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def required_checks(s: dict) -> tuple[list[tuple[str, str | None]], list[str]]:
+    """解決策の requires_check を (検査の道, ワークフロー（なければ None）) の列にする（議決 D-0077（起票時の番号は D-0075）、Issue #1216）。
+
+    値は検査の道の文字列か、その列。列の項目は道の文字列か {runs, workflow}（workflow は書けばそのワークフローのジョブを指す wired_by だけを数える）。
+    書いていなければ空の列。形の誤りは 2 つ目に返す"""
+    if REQUIRES_CHECK not in s:
+        return [], []
+    v = s[REQUIRES_CHECK]
+    entries = [v] if isinstance(v, str) else v
+    if not isinstance(entries, list) or not entries:
+        return [], [f"{REQUIRES_CHECK} は検査の道か、道か {{runs, workflow}} の空でない列（{v!r}）"]
+    out, bad = [], []
+    for j, x in enumerate(entries):
+        if isinstance(x, str):
+            x = {"runs": x}
+        ok = (isinstance(x, dict) and set(x) <= set(REQUIRES_CHECK_KEYS) and "runs" in x
+              and all(isinstance(x[key], str) and x[key] for key in x))
+        runs = norm("", x["runs"]) if ok else None
+        if not runs:
+            bad.append(f"{REQUIRES_CHECK}[{j}]: 検査の道の文字列か、runs（とあれば workflow）を空でない文字列で書いた項目（{entries[j]!r}）")
+        elif "workflow" in x and not is_workflow(x["workflow"]):
+            bad.append(f"{REQUIRES_CHECK}[{j}]: workflow は {WORKFLOWS}/ の直下のファイル（{x['workflow']}）")
+        else:
+            out.append((runs, x.get("workflow")))
+    return out, bad
+
+
 def check_pull_request(k: dict, repo: Path) -> list[str]:
-    """REQUIRED_PR の解決策が wired: true なら、pull_request のジョブから検査を呼ぶ wired_by を求める（議決 D-0043、Issue #1103）"""
+    """requires_check を書いた解決策を照らす（議決 D-0077（起票時の番号は D-0075）の schema の案、Issue #1216）。
+
+    形が誤っているか、挙げた検査がリポジトリにないなら requires_check_invalid で落とす（wired を問わない）。
+    wired: true なら、挙げた検査ごとに、pull_request でも走るジョブからそれを呼ぶ wired_by の項目（workflow を書いた検査はそのワークフローの項目だけ）を求め、
+    なければ requires_check_unwired で落とす。前は (知見の id, 解決策の issue) の組を REQUIRED_PR に並べていて、組を足し忘れると黙って通っていた"""
     f, e = k.get("_file", str(k.get("id"))), []
     read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
-        if not isinstance(s, dict) or s.get("wired") is not True:
+        if not isinstance(s, dict):
             continue
-        required = REQUIRED_PR.get((k.get("id"), s.get("issue")))
-        if required is None:
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        required, bad = required_checks(s)
+        e += [f"{where}: {REQUIRES_CHECK_INVALID}: {b}" for b in bad]
+        for target, _ in required:
+            if read(target) is None:
+                e.append(f"{where}: {REQUIRES_CHECK_INVALID}: {REQUIRES_CHECK} の {target} がない")
+        if s.get("wired") is not True:
             continue
-        target, decision = required
-        ok = False
-        for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
-            if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+        for target, workflow in required:
+            if read(target) is None or pr_job_calls(s, repo, read, target, workflow):
                 continue
-            try:
-                doc = load_yaml(repo / w["workflow"])
-            except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
-                continue
-            if isinstance(doc, dict) and has_pull_request(doc) and job_calls(doc, w["job"], target, read, off_event("pull_request")):
-                ok = True
-                break
-        if not ok:
-            where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
-            e.append(f"{where}: wired にするには wired_by に、on.pull_request のある {WORKFLOWS}/ のワークフローで pull_request でも走るジョブから"
-                     f" {target} を呼ぶ項目が要る（ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。議決 {decision}）")
+            place = workflow or f"{WORKFLOWS}/ のワークフロー"
+            e.append(f"{where}: {REQUIRES_CHECK_UNWIRED}: wired にするには wired_by に、on.pull_request のある {place} で pull_request でも走るジョブから"
+                     f" {target} を呼ぶ項目が要る（{REQUIRES_CHECK} に挙げた検査。ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。"
+                     f"議決 {REQUIRES_CHECK_DECISION}）")
     return e
+
+
+def check_knowledge_gate(k: dict, repo: Path) -> list[str]:
+    """wired: true の解決策はどれも、KNOWLEDGE_GATE のワークフローの pull_request のジョブから check.py を呼ぶ wired_by を求める
+    （議決 D-0072（起票時の番号は D-0071）の test の案、Issue #1201。REQUIRED_PR の列挙に頼らない）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    read = repo_reader(repo)
+    target, workflow, decision = KNOWLEDGE_GATE
+
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True or pr_job_calls(s, repo, read, target, workflow):
+            continue
+        e.append(f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {KNOWLEDGE_GATE_UNWIRED}: wired にするには wired_by に、"
+                 f"on.pull_request のある {workflow} で pull_request でも走るジョブから {target} を呼ぶ項目が要る"
+                 f"（wired: true の解決策はどれも、この検査が PR ごとに走っていないと wired と読ませない。議決 {decision}）")
+    return e
+
+
+def check_mirror_wired(k: dict, repo: Path) -> list[str]:
+    """KNOWLEDGE_ENFORCEMENT_WORKFLOW が実在するのに、MIRROR_WIRED の解決策が wired: true でない（false・未記入・真偽でない値）なら
+    mirror_unwired で落とす（議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）。
+    写しがなければ見ない。wired: true にしたあとの wired_by の照合は check_wiring・check_pull_request・check_knowledge_gate が行う"""
+    if not (repo / KNOWLEDGE_ENFORCEMENT_WORKFLOW).is_file():
+        return []
+    f, e = k.get("_file", str(k.get("id"))), []
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or (k.get("id"), s.get("issue")) not in MIRROR_WIRED or s.get("wired") is True:
+            continue
+        now = f"wired: {s['wired']!r}" if "wired" in s else "未記入"
+        e.append(f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {MIRROR_UNWIRED}: {KNOWLEDGE_ENFORCEMENT_WORKFLOW} が"
+                 f"あるのに wired が true でない（{now}）。写した PR で wired: true にし、wired_by に engine-test のジョブの"
+                 f" test_engine_patch.py と enforcement のジョブの check.py の項目を書く（議決 {MIRROR_WIRED_DECISION}）")
+    return e
+
+
+def pr_job_calls(s: dict, repo: Path, read, target: str, workflow: str | None) -> bool:
+    """解決策の wired_by に、pull_request でも走るジョブから target を呼ぶ項目があるか（workflow を渡したらそのワークフローの項目だけを数える）"""
+    for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
+        if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+            continue
+        if workflow is not None and norm("", w["workflow"]) != workflow:
+            continue
+        try:
+            doc = load_yaml(repo / w["workflow"])
+        except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
+            continue
+        if isinstance(doc, dict) and has_pull_request(doc) and job_calls(doc, w["job"], target, read, off_event("pull_request")):
+            return True
+    return False
 
 
 def check_required_runs(k: dict, repo: Path) -> list[str]:
@@ -535,6 +749,259 @@ def check_decision(k: dict, repo: Path, cache: dict | None = None) -> list[str]:
     return e
 
 
+def head_record(comments: str | None, script: Path = HEAD_RECORD) -> tuple[str, str] | None:
+    """Issue #948 のコメント（gh api の出力のファイル）を head-record.mjs で照らす。記録があれば None、なければ (rule, 理由)。
+    head-record.mjs が --json に ok: true を書いて 0 で終わったときだけ通す（結果を書かずに 0 で抜けた形も通さない）"""
+    if not comments or not Path(comments).is_file():
+        return HEAD_RECORD_UNCHECKED, f"--head-comments に Issue #948 のコメント（gh api の出力）を渡していないか、ファイルがない（{comments}）"
+    with tempfile.TemporaryDirectory() as t:
+        out = Path(t) / "head-record.json"
+        try:
+            p = subprocess.run(["node", str(script), "--comments", str(Path(comments).resolve()), "--json", str(out)],
+                               capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.SubprocessError) as x:
+            return HEAD_RECORD_UNCHECKED, f"{script.name} を走らせられない（{x}）"
+        try:
+            result = json.loads(out.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            result = None
+    if not isinstance(result, dict):
+        return HEAD_RECORD_UNCHECKED, f"{script.name} が結果を出さなかった（終了コード {p.returncode}: {p.stderr.strip()}）"
+    if p.returncode == 0 and result.get("ok") is True:
+        return None
+    if p.returncode == 1 and any(isinstance(x, dict) and x.get("rule") == HEAD_RECORD_MISSING for x in result.get("errors") or []):
+        return HEAD_RECORD_MISSING, "Issue #948 に engine-head の先頭の Engine での実行の記録（github-actions[bot] の印と実行の URL）がない"
+    return HEAD_RECORD_UNCHECKED, f"{script.name} の結果が読めない（終了コード {p.returncode}）"
+
+
+def check_head_record(k: dict, comments: str | None, cache: dict | None = None, script: Path = HEAD_RECORD) -> list[str]:
+    """HEAD_RECORD_SOLUTIONS の解決策が verified: true なら、Issue #948 に engine-head の記録があることを求める（議決 D-0047、Issue #1114）。
+    head-record.mjs は 1 回だけ走らせる（cache に覚える）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    cache = {} if cache is None else cache
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("verified") is not True or (k.get("id"), s.get("issue")) not in HEAD_RECORD_SOLUTIONS:
+            continue
+        if "result" not in cache:
+            cache["result"] = head_record(comments, script)
+        if cache["result"] is None:
+            continue
+        rule, why = cache["result"]
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {rule}"
+        e.append(f"{where}: {why}。.github/workflows/sendback-engine-head.yml を schedule で走らせて Issue #948 に記録が残るまで verified を true にしない（議決 D-0047）")
+    return e
+
+
+class HoldUncheckable(Exception):
+    """review_by の先送りの照合と Engine の merge_step の照合で、前の版・ENGINE_REF・Engine の中身を読めず照らせないこと。kind は読めなかったものの種類
+    （base_unreadable・engine_missing・engine_ref_invalid・engine_ref_missing・finished_unreadable・fields_unreadable・supervisor_unreadable）"""
+
+    def __init__(self, kind: str, detail: str):
+        super().__init__(f"{kind}: {detail}")
+        self.kind, self.detail = kind, detail
+
+
+def git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+
+
+def as_date(v) -> date | None:
+    """review_by の値を日付にする（PyYAML は日付で、ruby で読むと文字列で返る）。読めなければ None"""
+    if isinstance(v, date):
+        return v
+    try:
+        return date.fromisoformat(str(v))
+    except ValueError:
+        return None
+
+
+def base_knowledge(repo: Path, base: str, rel: str):
+    """base の版の知見のファイルを読む。その版にファイルがなければ None。base が版として読めないか、ファイルを YAML として読めなければ HoldUncheckable"""
+    if git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        raise HoldUncheckable("base_unreadable", f"前の版 {base} がリポジトリにない（fetch-depth: 0 で取る）")
+    if git(repo, "cat-file", "-e", f"{base}:{rel}").returncode != 0:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / Path(rel).name
+        p.write_text(git(repo, "show", f"{base}:{rel}").stdout, encoding="utf-8")
+        try:
+            return load_yaml(p)
+        except Exception as x:  # noqa: BLE001  PyYAML と ruby で投げる例外が違うので、読むところだけで受けて種類を付ける
+            raise HoldUncheckable("base_unreadable", f"前の版 {base} の {rel} を読めない（{x}）") from x
+
+
+def conflict_engine_ref(repo: Path) -> tuple[str, str]:
+    """EngineFinishedTest を走らせる CI の ENGINE_REF と、読んだファイル（写しがあれば写し、なければひな形）。読めなければ HoldUncheckable"""
+    return engine_ref(repo, CONFLICT_CHECK_WORKFLOWS)
+
+
+def engine_ref(repo: Path, rels: tuple[str, ...]) -> tuple[str, str]:
+    """rels のうち最初にあるファイルの ENGINE_REF と、読んだファイル。読めなければ HoldUncheckable"""
+    for rel in rels:
+        p = repo / rel
+        if p.is_file():
+            refs = ENGINE_REF_RE.findall(p.read_text(encoding="utf-8"))
+            if len(refs) != 1 or not re.fullmatch(r"[0-9a-f]{40}", refs[0]):
+                raise HoldUncheckable("engine_ref_invalid", f"{rel} の ENGINE_REF が 40 桁のコミット SHA の 1 行でない（{refs!r}）")
+            return refs[0], rel
+    raise HoldUncheckable("engine_ref_invalid", f"ENGINE_REF を読むファイル（{'・'.join(rels)}）がない")
+
+
+def finished_fields_required(repo: Path) -> tuple[str, ...]:
+    """test_events.py の FINISHED_FIELDS（EngineFinishedTest が job.finished に求める欄）を構文木から読む（取り込むと Engine のテストまで読み込むため）"""
+    try:
+        tree = ast.parse((repo / CONFLICT_EVENTS_TEST).read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "FINISHED_FIELDS" for t in node.targets):
+                return tuple(ast.literal_eval(node.value))
+    except (OSError, SyntaxError, ValueError) as x:
+        raise HoldUncheckable("fields_unreadable", f"{CONFLICT_EVENTS_TEST} の FINISHED_FIELDS を読めない（{x}）") from x
+    raise HoldUncheckable("fields_unreadable", f"{CONFLICT_EVENTS_TEST} に FINISHED_FIELDS がない")
+
+
+def engine_finished_legacy(repo: Path, engine: Path, ref: str) -> tuple[bool, list[str]]:
+    """ENGINE_REF の版の Engine の job.finished が今の形（FINISHED_FIELDS をどれも出さない。EngineFinishedTest が todo になる）かと、その欄。
+    Engine のチェックアウト（全履歴）から版の dispatcher.py を取り出し、engine_harness.py の finished で欄を読む。読めなければ HoldUncheckable"""
+    if git(engine, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine のチェックアウト（{engine}）に ENGINE_REF {ref} の版がない（fetch-depth: 0 で取る）")
+    src = git(engine, "show", f"{ref}:{ENGINE_DISPATCHER}")
+    if src.returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine の {ref} の版に {ENGINE_DISPATCHER} がない")
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / ENGINE_DISPATCHER
+        p.parent.mkdir(parents=True)
+        p.write_text(src.stdout, encoding="utf-8")
+        out = subprocess.run([sys.executable, "-I", "-B", str(repo / CONFLICT_HARNESS), "finished", tmp], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise HoldUncheckable("finished_unreadable", f"{CONFLICT_HARNESS} finished が落ちた: {(out.stderr or out.stdout).strip()}")
+    try:
+        fields = json.loads(out.stdout)["fields"]
+    except (ValueError, KeyError, TypeError) as x:
+        raise HoldUncheckable("finished_unreadable", f"{CONFLICT_HARNESS} finished の出力に fields がない（{x!r}）") from x
+    if not isinstance(fields, list):
+        raise HoldUncheckable("finished_unreadable", f"{CONFLICT_HARNESS} finished の fields が列でない（{fields!r}）")
+    return not set(finished_fields_required(repo)) & set(fields), fields
+
+
+def check_review_by_hold(k: dict, repo: Path, base: str | None, engine: Path | None) -> list[str]:
+    """REVIEW_BY_HOLD の知見の review_by を base の版より後ろへ動かすなら、ENGINE_REF の Engine で EngineFinishedTest が todo のまま
+    （job.finished に FINISHED_FIELDS をどれも出さない）でないことを求める（議決 D-0067（起票時の番号は D-0066）、Issue #1178）。
+    base を渡さないとき・base にその知見がないとき・base の review_by が日付でないときは見ない。
+    落とす行には種類の名前を添える（REVIEW_BY_HOLD_ERROR、照らせないときは REVIEW_BY_UNVERIFIABLE と HoldUncheckable の kind）"""
+    if k.get("id") != REVIEW_BY_HOLD or not base:
+        return []
+    f = k.get("_file", str(k.get("id")))
+    rel = f"{ROOT}/{f}"
+    try:
+        prev = base_knowledge(repo, base, rel)
+    except HoldUncheckable as x:
+        return [f"{f}: {REVIEW_BY_UNVERIFIABLE}（{x.kind}）: review_by の先送りを照らせない（{x.detail}。議決 D-0067）"]
+    before = as_date(prev.get("review_by")) if isinstance(prev, dict) else None
+    if before is None:
+        return []
+    after = as_date(k.get("review_by"))
+    if after is not None and after <= before:
+        return []
+    moved = f"review_by を {before} から {k.get('review_by')} へ動かす"
+    try:
+        if engine is None:
+            raise HoldUncheckable("engine_missing", "Engine のチェックアウトを --engine か ENGINE_DIR で渡す")
+        ref, src = conflict_engine_ref(repo)
+        legacy, fields = engine_finished_legacy(repo, engine, ref)
+        required = finished_fields_required(repo)
+    except HoldUncheckable as x:
+        return [f"{f}: {REVIEW_BY_UNVERIFIABLE}（{x.kind}）: {moved}が、ENGINE_REF の Engine で EngineFinishedTest が todo のままかを照らせない"
+                f"（{x.detail}。照らせないときは落とす。議決 D-0067）"]
+    if legacy:
+        return [f"{f}: {REVIEW_BY_HOLD_ERROR}: {moved}が、ENGINE_REF（{ref}。{src}）の Engine の job.finished（{', '.join(fields)}）に"
+                f" {' と '.join(required)} がなく、{CONFLICT_EVENTS_TEST} の EngineFinishedTest が todo のまま。"
+                "review_by を延ばすだけで期限切れの失敗を先送りしない。Engine を直して ENGINE_REF を上げてから延ばす（議決 D-0067）"]
+    return []
+
+
+def engine_merge_waits(engine: Path, ref: str) -> bool:
+    """ref の版の Engine の supervisor.py で、merge_step が body_recheck_pending を呼び、その関数がモジュールの直下に定義されているか。
+    Engine のチェックアウト（全履歴）から版のファイルを取り出して構文木で見る（取り込まない）。読めなければ HoldUncheckable"""
+    if git(engine, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine のチェックアウト（{engine}）に ENGINE_REF {ref} の版がない（fetch-depth: 0 で取る）")
+    src = git(engine, "show", f"{ref}:{ENGINE_SUPERVISOR}")
+    if src.returncode != 0:
+        raise HoldUncheckable("engine_ref_missing", f"Engine の {ref} の版に {ENGINE_SUPERVISOR} がない")
+    try:
+        tree = ast.parse(src.stdout)
+    except SyntaxError as x:
+        raise HoldUncheckable("supervisor_unreadable", f"Engine の {ref} の版の {ENGINE_SUPERVISOR} を読めない（{x}）") from x
+    defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    if ENGINE_RECHECK_WAIT not in defs or ENGINE_MERGE_STEP not in defs:
+        return False
+    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == ENGINE_RECHECK_WAIT
+               for n in ast.walk(defs[ENGINE_MERGE_STEP]))
+
+
+def check_engine_wait(k: dict, repo: Path, engine: Path | None, cache: dict | None = None) -> list[str]:
+    """REQUIRED_ENGINE_WAIT の解決策が wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の Engine の merge_step が
+    body_recheck_pending を呼んでいることを求める（議決 D-0100（起票時の番号は D-0071）、Issue #1196）。
+    落とす行には種類の名前を添える（ENGINE_UNWIRED、照らせないときは ENGINE_UNVERIFIABLE と HoldUncheckable の kind）"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    cache = {} if cache is None else cache
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True or (k.get("id"), s.get("issue")) not in REQUIRED_ENGINE_WAIT:
+            continue
+        if "result" not in cache:
+            try:
+                if engine is None:
+                    raise HoldUncheckable("engine_missing", "Engine のチェックアウトを --engine か ENGINE_DIR で渡す")
+                ref, rel = engine_ref(repo, (PR_BODY_ENGINE_WORKFLOW,))
+                cache["result"] = (engine_merge_waits(engine, ref), ref, rel, None)
+            except HoldUncheckable as x:
+                cache["result"] = (None, None, None, x)
+        waits, ref, rel, x = cache["result"]
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        if x is not None:
+            e.append(f"{where}: {ENGINE_UNVERIFIABLE}（{x.kind}）: wired にするには ENGINE_REF の Engine の {ENGINE_MERGE_STEP} が"
+                     f" {ENGINE_RECHECK_WAIT} を呼んでいることを照らす（{x.detail}。照らせないときは落とす。議決 D-0100）")
+        elif not waits:
+            e.append(f"{where}: {ENGINE_UNWIRED}: ENGINE_REF（{ref}。{rel}）の Engine の {ENGINE_SUPERVISOR} の {ENGINE_MERGE_STEP} が"
+                     f" {ENGINE_RECHECK_WAIT} を呼んでいない。tools/pr-body-check/engine/pr-body-recheck.patch を Engine に入れて ENGINE_REF を上げてから"
+                     " wired にする（議決 D-0100）")
+    return e
+
+
+def merge_base(repo: Path, base: str) -> str | None:
+    """base と HEAD の分かれ目（PR の差分の起点）。求められなければ None"""
+    out = git(repo, "merge-base", base, "HEAD")
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
+
+
+def check_solution_fields(k: dict, repo: Path, base: str | None, cache: dict | None = None) -> list[str]:
+    """PR の差分で変わった知見の enforcement.solutions の各項目に wired と verified の両方が書かれていることを求める（議決 D-0071、Issue #1193）。
+    base を渡さないとき・未記入の解決策がないとき・分かれ目の版から変わっていないときは見ない。
+    落とす行には種類の名前を添える（SOLUTION_FIELDS_MISSING、照らせないときは SOLUTION_FIELDS_UNVERIFIABLE）"""
+    if not base:
+        return []
+    f = k.get("_file", str(k.get("id")))
+    missing = [(i, s, [flag for flag in FLAGS if flag not in s]) for i, s in enumerate(solutions(k)) if isinstance(s, dict)]
+    missing = [m for m in missing if m[2]]
+    if not missing:
+        return []
+    cache = {} if cache is None else cache
+    if base not in cache:
+        cache[base] = merge_base(repo, base)
+    mb, rel = cache[base], f"{ROOT}/{f}"
+    if mb is None:
+        return [f"{f}: {SOLUTION_FIELDS_UNVERIFIABLE}: 未記入の解決策があるが、前の版 {base} と HEAD の分かれ目を求められず、"
+                "この変更セットで直したかを照らせない（fetch-depth: 0 で取る。照らせないときは落とす。議決 D-0071）"]
+    if git(repo, "cat-file", "-e", f"{mb}:{rel}").returncode == 0:
+        prev = git(repo, "show", f"{mb}:{rel}")
+        if prev.returncode != 0:
+            return [f"{f}: {SOLUTION_FIELDS_UNVERIFIABLE}: 分かれ目の版 {mb} の {rel} を読めない（{prev.stderr.strip()}。議決 D-0071）"]
+        if prev.stdout == (repo / rel).read_text(encoding="utf-8"):
+            return []
+    return [f"{f}: {SOLUTION_FIELDS_MISSING}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）に {'・'.join(flags)} がない。"
+            "この変更セットで知見を直すので、実際の配線と確認の状態を真偽で書く（配線していない・確かめていないなら false。議決 D-0071）"
+            for i, s, flags in missing]
+
+
 def row(k: dict) -> dict:
     sols = [s for s in solutions(k) if isinstance(s, dict)]
     return {
@@ -572,14 +1039,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default=".")
     ap.add_argument("--json")
     ap.add_argument("--summary")
+    ap.add_argument("--head-comments", help="Issue #948 のコメント（gh api の出力）。engine-head に関わる解決策が verified: true のときに照らす")
+    ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送り（議決 D-0067）と、差分で変わった知見の wired・verified の記入（議決 D-0071）を照らす")
+    ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR") or None, help="Engine のチェックアウト（全履歴。既定は ENGINE_DIR）")
     a = ap.parse_args(argv)
     try:
         items = load(Path(a.repo))
     except Exception as e:  # noqa: BLE001
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
-    repo, decisions = Path(a.repo), {}
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)]
+    repo, decisions, heads, bases, waits = Path(a.repo), {}, {}, {}, {}
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_knowledge_gate(k, repo) + check_mirror_wired(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
+              + check_head_record(k, a.head_comments, heads)
+              + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)
+              + check_engine_wait(k, repo, Path(a.engine) if a.engine else None, waits)
+              + check_solution_fields(k, repo, a.base, bases)]
     rows = [row(k) for k in items]
     if a.json:
         Path(a.json).write_text(json.dumps({"ok": not errors, "errors": errors, "items": rows}, ensure_ascii=False, indent=1), encoding="utf-8")

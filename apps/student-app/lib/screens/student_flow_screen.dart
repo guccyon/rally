@@ -16,6 +16,7 @@ import 'my_bookings_screen.dart';
 import 'my_videos_screen.dart';
 import 'notification_settings_screen.dart';
 import 'notifications_screen.dart';
+import 'prejoin_check_screen.dart';
 import 'profile_screen.dart';
 import 'register_screen.dart';
 import 'slot_search_screen.dart';
@@ -37,6 +38,7 @@ class StudentFlowScreen extends ConsumerWidget {
       FlowStep.coachProfile => const CoachProfileScreen(),
       FlowStep.slotSearch => const SlotSearchScreen(),
       FlowStep.bookingPending => const BookingPendingScreen(),
+      FlowStep.prejoinCheck => const PrejoinCheckScreen(),
       FlowStep.liveLesson => const LiveLessonScreen(),
       FlowStep.videoSubmit => const VideoSubmitScreen(),
       FlowStep.videoReview => const VideoReviewScreen(),

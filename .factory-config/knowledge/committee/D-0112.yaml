@@ -1,0 +1,73 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0112
+pr: https://github.com/guccyon/rally/pull/1296
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この変更セットは K-0014 の enforcement.solutions に議決 D-0101 の test の案（issue 1208）を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence・invalidate_when は変えていないので、既存の知見や
+    D-0049・D-0076・D-0101・D-0111 の議決と矛盾しません。
+  - rule missing_conflict_files 自体は issue 1135 の項目ですでに入っていたと断ったうえで、今回足した分（rule がイベントの欄
+    conflict_files も読むこと）だけを書き分けているので、issue 1135 の項目と重複していません。
+  - D-0101 と D-0111 の consistency の票で挙げた、events.py の conflict.files と schema の欄 conflict_files
+    の表し方が 2 通りあるずれは、events.py が両方を読むことでコードの側ではそろったので、変更セットの扱いは妥当です。
+  - ただし invalidate_when の 1 つ目はまだ conflict.files だけを条件にしているので、次に K-0014 を直す変更セットで欄
+    conflict_files がその場で載ることも条件に足してください（D-0101・D-0111 から 3 回目の指摘です）。
+  - '「Issue #1208 の起票時の番号は D-0073」の注記も D-0111 で取り違えやすいと指摘されたまま繰り返しているので、次の変更セットで注記を外すか、D-0073
+    は中身が別の議決だと書き添えてください。'
+  - K-0010 の agent_for_mechanical も衝突したファイルに conflict_files を先に使うようになりましたが、K-0010
+    の線と解決策の中身は変わらないので、そのままの扱いで足り、specs の glossary・context-map にも衝突やイベントの欄の用語がないので製品の規範とぶつからず、未配線・未確認なので
+    confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0014 に足した issue 1208 の項目は、議決 D-0101 の enforcement の 2 つ目の案（solution_kind: test）に辿れて、decided_by:
+    committee:D-0101 とも合っています。'
+  - '「起票時の番号は D-0073」という断り書きは issue 1207 の項目と同じ書き方で、本当の議決が D-0101（PR #1204）であることが一次記録から確かめられます。'
+  - fixture にあるジョブ 309（backfill だけ）とジョブ 318・325・338（記録なし）は、C-0007 の事例記録にある事実と合っています。
+  - rule が欄 conflict_files も読むようにしたのは D-0101 の案の文言より一歩広いですが、D-0101 の consistency の票で出た表し方が
+    2 通りある問題に答えるものだと理由を書いてあるので、根拠のない拡張ではありません。
+  - 'Engine がまだ欄を載せず、配線もなく、本物のイベント列で確かめていないので、wired: false・verified: false としたのは正直な記録で、confidence
+    も hypothesis のままが妥当です。'
+  - 差分に出てくるのはファイル名・イベント名・ジョブと PR と Issue の番号・事例の id だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0101 の 2 つ目の案（test）を入れた記録を K-0014 の enforcement.solutions に足すだけで、中身は議決の案と
+    D-0049 の 1 つ目の案にそろっており、担保の観点で採ってよいです。
+  - missing_conflict_files が conflict_files の欄も読むようにしたことで、Engine が engine/conflict-files.patch
+    どおりに欄を載せたあと schema.py と events.py の判定が食い違う痛さを前もって消しており、決定論の担保として筋がよいです。
+  - ただし「空でない文字列の列で 1 件以上」という形の判定が schema.py と events.py の 2 か所に別々にあり、片方だけ直すと再び食い違うので、同じ入力の組で両方の判定がそろうことをテストで照らすべきです。
+  - 'Engine が欄をまだ載せず、検査を走らせる配線もないので wired: false・verified: false と書いたのは README の決まりどおりの正直な記録です。'
+  - 担保を足しても記録の欠けが手を打つ時期を遅らせたかは確かめられていないので、K-0014 の確かさは hypothesis のままが妥当です。
+  - 差分にあるのはファイル名・イベント名・Issue と PR の番号・ジョブの番号・事例の id だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0014 の statement・scope・evidence・確かさを変えず、議決 D-0101 の test の案（Issue #1208）を入れた記録を
+    enforcement.solutions に 1 項目足すだけなので、主張の範囲は広がっていません。'
+  - issue 1135 の解決策で rule missing_conflict_files と C-0007 の fixture がすでに入っていたことを断り、今回の差分は
+    conflict_files の欄も読むようにした分だけだと書き分けているので、同じ案を二重に数える読み違いは起きにくいです。
+  - 'wired: false・verified: false とし、Engine がまだ欄を載せず本物のイベント列で確かめていないことを自分で断っているので、効き目を言い過ぎてはいません。'
+  - 反例になりうる点として、continue.enqueued の conflict_files を conflict.files・worker_log より先に使うので、Engine
+    が載せた列が worker_log の記録より少ないと K-0010 の agent_for_mechanical の判断が変わるおそれがあり、両方あって食い違うときの扱いを配線の前に決めておくべきです。
+  - pr.conflicted の conflict_files を job_id で結べないので見ないという絞り方は、schema.py が pr.conflicted
+    を別に必須で照らしているため、担保の抜けにはなっていません。
+  - 担保を足しても主張（記録の欠けが手を打つ時期を遅らせたか）の確かめは進んでおらず、K-0002 の反例も残っているので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: test
+  proposal: 'conflict_files の形の判定（空でない文字列の列で 1 件以上、null・空の列・空白だけ・文字列でない要素は外れ）を tools/conflict-check/schema.py
+    の 1 つの関数にまとめて events.py の missing_conflict_files から呼ぶか、同じ入力の組を schema.py と events.py
+    の両方に通して通る・落ちるがそろうことを照らすテスト（例: test_events.py に ConflictFilesShapeParityTest）を足し、2
+    つの解決策の判定が片方だけ直されて食い違うのを CI で落とす。'

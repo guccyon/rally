@@ -11,6 +11,8 @@
 //   - template.json の必須の「## 」見出しが欠けていない
 //   - template.json の「## 」見出しが定義の順に並んでいる
 //   - template.json にない「## 」以上の見出し（工場の記録・続きのジョブの報告など）が、定義の見出しの最後のものより後ろにある
+//   - 本文の先頭（Closes・Refs の行と未完了の印の行を除く）の空でない最初の行が、template.json の最初の見出し（## 概要）である
+//     （知見 K-0016 の担保。議決 D-0078、Issue #1219。報告から組んだ本文の頭が欠けたり、## 概要 の前に文や箇条書きが混じったりした形を落とす）
 // コードブロック（``` と ~~~）の中の行は見出しとして数えない。
 //
 // 呼び出し: 本文の更新の前の関所 gate.mjs（議決 D-0013、Issue #956）がこの checkBody を使う。外れたら本文を書かずに body_fix に回す。
@@ -128,6 +130,7 @@ export function checkBody(body) {
   }
 
   errors.push(...checkTemplate(hs));
+  errors.push(...checkHead(body));
   return errors.sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 }
 
@@ -167,6 +170,25 @@ function checkTemplate(hs) {
     }
   }
   return errors;
+}
+
+/** 本文の頭に置いてよい、見出しの前の行（Engine の worker/entrypoint.sh が付ける Issue への参照と、途中終了の未完了の印）。 */
+const PREAMBLE = [/^(?:closes|refs) #\d+$/i, /^\*\*未完了\*\*:/];
+
+/**
+ * 本文の先頭を見る（知見 K-0016 の担保。議決 D-0078、Issue #1219）。空行と PREAMBLE の行を除いた最初の行が、
+ * 定義の最初の見出し（## 概要）でなければ 1 件。見出しのない文・箇条書き・ほかの見出し・コードブロックのどれから始まっても外れる。
+ */
+function checkHead(body) {
+  const first = loadTemplate()[0].text;
+  const lines = body.split(/\r?\n/);
+  const i = lines.findIndex((l) => l.trim() !== "" && !PREAMBLE.some((p) => p.test(l.trim())));
+  if (i < 0) return [];
+  const m = lines[i].match(HEADING);
+  if (m && m[1].length === 2 && m[2].trim() === first) return [];
+  const shown = lines[i].length > 40 ? `${lines[i].slice(0, 40)}…` : lines[i];
+  return [{ rule: "head_not_first_heading", line: i + 1, heading: first,
+    message: `本文が「## ${first}」から始まっていない（Closes の行のあとの最初の行が「${shown}」）。報告の頭が欠けていないかを確かめ、見出しのない文や箇条書きを「## ${first}」の下に入れる` }];
 }
 
 function main() {

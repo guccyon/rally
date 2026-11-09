@@ -15,6 +15,9 @@ class FlowScaffold extends ConsumerWidget {
     required this.title,
     required this.children,
     this.leading,
+    this.bottomBar,
+    this.showNavigation = true,
+    this.showError = true,
   });
 
   final String title;
@@ -22,6 +25,15 @@ class FlowScaffold extends ConsumerWidget {
 
   /// アプリバーの左端（戻るボタンなど）
   final Widget? leading;
+
+  /// 画面の下に固定する帯（入室前チェックの入室の帯）
+  final Widget? bottomBar;
+
+  /// アプリバーにホーム・自分の予約などの入口を出すか（入室前チェックは戻るだけにする）
+  final bool showNavigation;
+
+  /// 直前の操作の失敗を本文の上に出すか（入室前チェックは入室の帯の中に出す）
+  final bool showError;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,7 +51,9 @@ class FlowScaffold extends ConsumerWidget {
         leading: leading,
         title: Text(title),
         actions: [
-          if (state.accessToken != null && !state.step.isAside) ...[
+          if (showNavigation &&
+              state.accessToken != null &&
+              !state.step.isAside) ...[
             if (state.step != FlowStep.home)
               IconButton(
                 tooltip: 'ホーム',
@@ -94,7 +108,7 @@ class FlowScaffold extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         children: [
           if (state.busy) const LinearProgressIndicator(),
-          if (state.errorMessage case final message?)
+          if (state.errorMessage case final message? when showError)
             Card(
               color: Theme.of(context).colorScheme.errorContainer,
               child: Padding(
@@ -105,6 +119,7 @@ class FlowScaffold extends ConsumerWidget {
           ...children,
         ],
       ),
+      bottomNavigationBar: bottomBar,
     );
   }
 }

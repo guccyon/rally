@@ -1,5 +1,5 @@
 diff --git a/definitions/events.yaml b/definitions/events.yaml
-index 0682d89..72739a9 100644
+index 4d28f16..9a7b31b 100644
 --- a/definitions/events.yaml
 +++ b/definitions/events.yaml
 @@ -430,6 +430,10 @@ events:
@@ -9,33 +9,34 @@ index 0682d89..72739a9 100644
 +  pr.body_gate_blocked:
 +    source: control_plane
 +    required: [pr_url, rc, defects]
-+    note: "続きのジョブの本文が製品の関所（rally の tools/pr-body-check/gate.mjs）で外れ、ワーカーが本文を書かなかった。rc 1 は body_fix を積み（判定役を待たない）、2・3 は人へ回す（停止として開く）。finished は未完了の続きが仕上がった回だけ、仕上げ（未完了の印を外す・Closes・題・ドラフトを外す）をワーカーが済ませたか（false なら人へ回す）"
++    note: "続きのジョブの本文が製品の関所（rally の tools/pr-body-check/gate.mjs）で外れ、ワーカーが本文を書かなかった。新しい PR の最初の本文が外れたときも同じ（組んだ本文のまま PR を作ってある）。rc 1 は body_fix を積み（判定役を待たない）、2・3 は人へ回す（停止として開く）。finished は未完了の続きが仕上がった回だけ、仕上げ（未完了の印を外す・Closes・題・ドラフトを外す）をワーカーが済ませたか（false なら人へ回す）"
    learn.retrospected:
      source: control_plane
      required: [day, signals, clusters, rubric_candidates]
 diff --git a/orchestrator/dispatcher/dispatcher.py b/orchestrator/dispatcher/dispatcher.py
-index 8aaa356..e0fb4f1 100644
+index 3341311..fd7fda6 100644
 --- a/orchestrator/dispatcher/dispatcher.py
 +++ b/orchestrator/dispatcher/dispatcher.py
-@@ -578,6 +578,12 @@ def run_job(job: dict, reattaching: bool = False):
+@@ -587,6 +587,12 @@ def run_job(job: dict, reattaching: bool = False):
                          swap_label(repo, int(result["pr_number"]), [], [PROVISIONAL_LABEL])
                  except Exception as e:  # noqa: BLE001
                      log("provisional record failed", job_id, repr(e))
-+            if cont and result and result.get("pr_url") and isinstance(result.get("body_gate"), dict):
-+                # 続きのジョブの本文が関所で外れて書かなかった。body_fix か人に回す。記録の失敗でラインは止めない
++            if result and result.get("pr_url") and isinstance(result.get("body_gate"), dict):
++                # 本文が関所で外れた（続きのジョブは本文を書かなかった。新しい PR は組んだ本文のまま作った）。body_fix か人に回す。記録の失敗でラインは止めない
 +                try:
-+                    act_on_body_gate(cur, repo, corr, job_id, result["pr_url"], int(result.get("pr_number") or cont["pr_number"]), result["body_gate"])
++                    act_on_body_gate(cur, repo, corr, job_id, result["pr_url"], int(result.get("pr_number") or (cont or {})["pr_number"]), result["body_gate"])
 +                except Exception as e:  # noqa: BLE001
 +                    log("body gate follow-up failed", job_id, repr(e))
              if preempted_for:
                  requeue_preempted(cur, job, preempted_for, (result or {}).get("cost_usd"))
              elif state == "failed" and (err or "").startswith("exit=") and net_transient(lines) and requeue_transient(cur, job):
-@@ -920,6 +926,41 @@ def enqueue_body_fix(cur, repo: str, corr: str, pr_url: str, pr_number: int, def
+@@ -941,6 +947,42 @@ def enqueue_body_fix(cur, repo: str, corr: str, pr_url: str, pr_number: int, def
      log("body_fix enqueued", pr_url, "job", jid)
  
  
 +def act_on_body_gate(cur, repo: str, corr: str, job_id: int, pr_url: str, pr_number: int, gate: dict):
 +    """続きのジョブの本文が製品の関所（rally の tools/pr-body-check/gate.mjs）で外れ、ワーカーが本文を書かなかった（rally の知見 K-0001）。
++    新しい PR の最初の本文が外れたとき（gate.new_pr。rally の知見 K-0016）は、組んだ本文のまま PR を作ってあり、書かなかった報告はない。
 +    外れた（rc 1）なら判定役を待たず検査役にも回さずに body_fix を積む。書かなかった続きのジョブの報告は、工場の記録の下の ### に入れる指摘として渡す。
 +    読めない（rc 2）・見出しの定義が不正（rc 3）は本文を直しても通らないので、人に回す。
 +    未完了の続きが仕上がった回で、ワーカーが仕上げ（未完了の印を外す・Closes・題・ドラフトを外す）を書けなかった（finished.applied が false）ときも人に回す"""
@@ -73,7 +74,7 @@ index 8aaa356..e0fb4f1 100644
      pr_number = int(pr_url.rsplit("/", 1)[1])
      labels = [f"factory:judged:{mode}"]
 diff --git a/orchestrator/worker/entrypoint.sh b/orchestrator/worker/entrypoint.sh
-index 3a86eb5..4c7987f 100755
+index 3a86eb5..8c2b1bc 100755
 --- a/orchestrator/worker/entrypoint.sh
 +++ b/orchestrator/worker/entrypoint.sh
 @@ -365,14 +365,52 @@ if [ -n "${CONTINUE_BRANCH}" ]; then
@@ -131,7 +132,38 @@ index 3a86eb5..4c7987f 100755
      gh pr edit "${CONTINUE_PR}" -R "${REPO}" --title "${TITLE} (#${ISSUE_NUMBER})" --body "${NEW_BODY}" >/dev/null
      gh pr ready "${CONTINUE_PR}" -R "${REPO}" >/dev/null || true
    else
-@@ -409,8 +447,8 @@ if ! git diff --name-only "origin/${DEFAULT_BRANCH}...HEAD" | grep -vqE '(\.md$|
+@@ -397,9 +435,30 @@ ${SUMMARY}
+ - 権限: P0 は PR 作成まで。マージは人間の判断（manifest.yaml autonomy）
+ EOF
+ )
++# 作る前に、報告（SUMMARY）から組んだ最初の本文も製品のリポジトリの関所（tools/pr-body-check/gate.mjs）に照らす（rally の知見 K-0016・議決 D-0078）。
++# 本文の頭（## 概要・## 対応内容）が欠けたり、## 概要 の前に文が混じったりした本文を、検査役と判定役に回す前に止める。
++# PR がまだないので、外れても（1）作業を失わないよう組んだ本文のまま PR を作り、関所の出力（body_fix の入力）を FACTORY_RESULT の body_gate に載せて
++# dispatcher に判定役を待たずに body_fix を積ませる。読めない（2）・見出しの定義が不正（3）ときは dispatcher が人に回す。関所のないリポジトリでは今までどおり
++GATE_RC=0
++GATE_OUT=""
++if [ -f tools/pr-body-check/gate.mjs ]; then
++  GATE_OUT=$(printf '%s' "${PR_BODY}" | node tools/pr-body-check/gate.mjs --pr-url "https://github.com/${REPO}/pull/new/${BRANCH}") || GATE_RC=$?
++fi
+ PR_URL=$(gh pr create -R "${REPO}" --base "${DEFAULT_BRANCH}" --head "${BRANCH}" --title "${PR_TITLE}" --body "${PR_BODY}" ${INCOMPLETE:+--draft})
+ PR_NUMBER=$(basename "${PR_URL}")
+ echo "[worker] pr=${PR_URL}"
++if [ "${GATE_RC}" -ne 0 ]; then
++  # 関所は PR の URL を知らずに照らしたので、body_fix の入力の pr_url を作った PR に直す
++  BODY_FIX_JSON=$(jq -c --arg pr "${PR_URL}" '.pr_url = $pr' <<<"${GATE_OUT}" 2>/dev/null) || BODY_FIX_JSON=null
++  [ -n "${BODY_FIX_JSON}" ] || BODY_FIX_JSON=null
++  # 書かなかった報告はない（本文は PR に載せた）ので pending_entry は空
++  BODY_GATE=$(jq -nc --arg rc "${GATE_RC}" --argjson body_fix "${BODY_FIX_JSON}" --arg handoff "${HANDOFF_DIR:+${HANDOFF_DIR}/jobs/${JOB_ID}/body_gate.json}" \
++    '{rc:($rc|tonumber), body_fix:$body_fix, pending_entry:"", finished:null, new_pr:true, handoff:(if $handoff == "" then null else $handoff end)}')
++  if [ -n "${HANDOFF_DIR}" ]; then
++    mkdir -p "${HANDOFF_DIR}/jobs/${JOB_ID}" && printf '%s\n' "${BODY_GATE}" > "${HANDOFF_DIR}/jobs/${JOB_ID}/body_gate.json" || true
++  fi
++  echo "[worker] pr body gate blocked rc=${GATE_RC} pr=${PR_URL}; new pr body to body_fix"
++fi
+ 
+ fi
+ 
+@@ -409,8 +468,8 @@ if ! git diff --name-only "origin/${DEFAULT_BRANCH}...HEAD" | grep -vqE '(\.md$|
  
  echo "FACTORY_RESULT:$(jq -nc --arg pr "${PR_URL}" --arg n "${PR_NUMBER}" --argjson usage "${USAGE}" --arg cost "${COST}" --arg model "${MODEL}" --arg turns "${TURNS}" --arg ct "${CHANGE_TYPE}" --arg files "${CHANGED}" \
    --argjson lessons "${LESSONS_JSON}" --arg provisional "${PROVISIONAL}" --argjson knowledge "${KNOWLEDGE_IDS}" --argjson ksel "${KNOWLEDGE_SEL}" \

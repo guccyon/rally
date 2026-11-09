@@ -1,0 +1,85 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0116
+pr: https://github.com/guccyon/rally/pull/1302
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0004 に足した issue 1216 の解決策は、議決 D-0077 の enforcement にある schema の案（REQUIRED_PR
+    の名前で並べた組をやめて requires_check の欄に一般化する）と中身が合い、D-0080 の同じ趣旨の lint の案にも答える形なので、ほかの解決策との重複はありません。
+  - requires_check に移した 14 の組（K-0010 の 2 件、K-0004 の 5 件、K-0001 の 1 件、K-0012 の 5 件、K-0006
+    の 1 件）は、新しい解決策の what に書いた一覧と、差分の件数・置き場が合っています。
+  - 'README の新しい決まりは D-0021 の wired_by の決まりを広げたもので、requires_check を求めるのは wired: true
+    のときだけなので、wired: false・verified: false のままの各解決策とも、すべての解決策に書いた知見の一覧とも矛盾しません。'
+  - 'README と what の『D-0077（起票時の番号は D-0075）』に出てくる D-0075 は、PR #1210 の別の議決（K-0004 の
+    issue 1215）なので、読み手は取り違えないよう D-0077 を正としてください。'
+  - D-0075・D-0077 で続けて指摘されたとおり、supervisor の差し戻しの線である K-0004 に道具の解決策が積み増されているので、道具の知見を別に立てるかどうかは次の変更セットで委員会が決めてください。
+  - statement・scope・evidence は変えておらず、どの解決策も未配線・未確認なので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した schema の解決策（issue 1216、decided_by: committee:D-0077）は、議決 D-0077 の
+    enforcement にある schema の案（REQUIRED_PR をやめて requires_check の欄を足す）と中身が合っていて、議決の記録に辿れます。'
+  - requires_check を足した 14 の解決策は、K-0010 の issue 1035・1103、K-0004 の issue 1062・1138・1063・1144・1158、K-0001
+    の issue 1182、K-0012 の issue 1122・1196・1197・1131・1205、K-0006 の issue 906 として差分に実在し、what
+    に挙げた組と数が合っています。
+  - 移す前の REQUIRED_PR の中身は知見の置き場にはなく、同じ中身で移したことは test_check.py の RequiresCheckTest
+    と手元の確認だけが根拠なので、配線するときはその落ちた実行を cases/ の事例記録に残してください。
+  - what で「起票時の番号は D-0075」と番号のずれを書いて D-0077 に結んでいるので、別の PR の議決である D-0075 と取り違えずに辿れます。
+  - 'どの解決策も wired: false・verified: false のままで、test_check.py が .github/workflows/ からまだ走っていないと書いており、statement・scope・evidence
+    も変えていないので、confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはツールの道・ワークフローの道・Issue の番号・議決と知見の id だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0077 と D-0080 の schema の案（REQUIRED_PR の名前の組をやめて解決策の requires_check
+    に移す）をそのまま入れたもので、担保の観点では採ってよいです。
+  - 組を足し忘れると黙って通っていた穴が、解決策ごとの欄を check.py が機械で照らす形に変わり、線がはっきりして手の審査を繰り返さずに済みます。
+  - 前の 14 の組が同じ中身で requires_check に移ったことと、check_pull_request が requires_check を読まない改変で
+    RequiresCheckTest が落ちることを確かめたと書いているので、移し替えの確かさは十分です。
+  - ただし requires_check は書いた解決策にだけ効くので、PR ごとに走るべき新しい解決策で欄を書き忘れると、前と同じく黙って通る穴が形を変えて残ります。
+  - REQUIRED_SCHEDULE と REQUIRED_RUNS は名前で並べたままで、同じ足し忘れの痛さがあるので、同じ形に一般化する費用は小さいです。
+  - 'test_check.py はまだ .github/workflows/ から走っておらず、新しい解決策も wired: false・verified:
+    false なので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0077 の schema の案を入れて、check.py に並べていた 14 の組を各解決策の requires_check に移し、K-0004
+    に解決策を 1 件足しただけで、どの知見の statement・scope・evidence・confidence も変えていないので、範囲は広すぎません。
+  - 移した 14 の組（K-0010 の issue 1035・1103、K-0004 の issue 1062・1138・1063・1144・1158、K-0001
+    の issue 1182、K-0012 の issue 1122・1196・1197・1131・1205、K-0006 の issue 906）は差分の requires_check
+    と数も中身も合っていて、反例は見つかりません。
+  - 反例として、これから足す解決策に requires_check を書き忘れれば今も黙って通るので、README の「足し忘れると黙って通っていた」穴は名前の組から知見の側へ移っただけだと受け止め、kind
+    が ci_check か test の新しい解決策に requires_check がないと知らせる検査を次に考えてください。
+  - D-0077 の反対の票が挙げた反例のうち、on.pull_request に paths や branches の絞り込みがあって K-*.yaml だけを直した
+    PR では走らないワークフローは、書かれた落ちる例にまだ入っていないので、配線の前に確かめてください。
+  - '「起票時の番号は D-0075」の但し書きは、K-0004 で別の解決策の decided_by にも使われている別の中身の議決 D-0075（PR #1210）と取り違えやすいので、次に直すときは
+    D-0077 だけに寄せてもよいです。'
+  - '知見の置き場の道具の解決策を supervisor の差し戻しの知見 K-0004 にまた積み増しているので、道具の知見を別に立てるかどうかは委員会で決めてください。どの解決策も
+    wired: false・verified: false で本物の記録がないので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が ci/knowledge-enforcement.yml を .github/workflows/knowledge-enforcement.yml
+    に写して branch protection の必須チェックに入れ、requires_check を書いた解決策を wired_by なしで wired:
+    true にした PR で test_check.py と check.py が requires_check_unwired で落ちる実行を cases/
+    に残してから、issue 1216 の解決策の wired・verified を true にする。'
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: kind が ci_check・test の解決策では requires_check を必須の欄にし（PR ごとに走らなくてよいものは空の列
+    [] を明示する）、--base を渡した check.py が足したり直したりした解決策で欄がなければ requires_check_missing で落とすようにして、欄の書き忘れで黙って通る穴をふさぐ。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: 'REQUIRED_SCHEDULE と REQUIRED_RUNS も名前の組をやめ、解決策の欄（例: requires_schedule_check、requires_same_job）に移して
+    check.py がその欄を読むようにし、前の組が同じ中身で移ったことを test_check.py で照らす。'

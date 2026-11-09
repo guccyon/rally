@@ -268,3 +268,15 @@ terms:
       コーチを探す一覧（listCoachesForStudent）とコーチの紹介（getCoachProfile）にも、その生徒のお気に入りかを is_favorite で添える。
       student-app はゴルフを扱わないので、ゴルフだけを提供するコーチは入れられない（コーチの紹介と同じく 404）。
       外すのは何度でもでき、入っていないコーチを外しても何も変わらない。行動イベントは発火しない。
+  - id: coach_leave
+    ja: "コーチのお休み"
+    definition: "本部がコーチ 1 人について決める期間（日本時間の日付で始まりと終わりを含み、31 日まで、明日以降）の記録で、その期間に始まる有効な予約をすべて本部のキャンセルにし（キャンセル規定によらず回数を消費しない）、予約した生徒に予約ごとに知らせ、期間の枠をすべて取り下げ、期間・生徒への一言・操作した本部のアカウント・時刻を残し、書き換えも取り消しもしない。"
+    context: scheduling
+    code: [CoachLeave, CoachLeaveId, CoachLeaveNote, BookingCanceller::Headquarters, startCoachLeave, getCoachLeavePreview, scheduling.coach_leaves]
+    note: >-
+      全部か何もしないかで、同じコーチの期間の重なるお休みは断る（409 coach_leave_overlaps）。今は、予約がお休みで消えたことを
+      キャンセルした人（BookingCanceller。listCancelledBookings の cancelled_by が headquarters）と、その予約を含むお休みの記録で
+      たどる。キャンセルの理由は admin-web の契約の BookingCancelReason の coach_leave（getBooking の status_changes のキャンセルの記録と
+      listCancelledBookings の cancel_reason。getBooking はそのお休みの記録 CoachLeave も載せる。#1029）で、境界間イベント BookingCancelled には
+      理由を足さない（cancelled_by が headquarters なのはお休みだけ）。コーチの受付の停止（coach_acceptance）とは別で、お休みは受付を変えない。
+      コーチ自身が申し出る操作・お休みの記録の一覧はまだない（specs/ux/issue-455.yaml）。

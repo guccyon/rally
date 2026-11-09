@@ -1,12 +1,14 @@
 # 衝突の続きのジョブの検査
 
-既定ブランチとの衝突で supervisor が積む続きのジョブ（continue の reason=conflict）の積み方を、設定 `.factory-config/continuation.yaml` の `conflict` に照らして決定論で（LLM を使わずに）見る。知見 `K-0010`（`.factory-config/knowledge/K-0010.yaml`）の担保で、委員会の議決 `D-0013` と Issue #954 で作った。`events.py` の rule `missing_conflict_files` は知見 `K-0014`（衝突したファイルの記録）の担保（議決 `D-0049`、Issue #1135）。
+既定ブランチとの衝突で supervisor が積む続きのジョブ（continue の reason=conflict）の積み方を、設定 `.factory-config/continuation.yaml` の `conflict` に照らして決定論で（LLM を使わずに）見る。知見 `K-0010`（`.factory-config/knowledge/K-0010.yaml`）の担保で、委員会の議決 `D-0013` と Issue #954 で作った。`events.py` の rule `missing_conflict_files` は知見 `K-0014`（衝突したファイルの記録）の担保（議決 `D-0049`、Issue #1135。`continue.enqueued` の欄 `conflict_files` を読むのは議決 `D-0101`（Issue #1208 の起票時の番号は `D-0073`）、Issue #1208）。`schema.py` を直近の窓のイベント列に対して定期に走らせるひな形 `ci/conflict-schema.yml` も `K-0014` の担保（議決 `D-0101`（Issue #1207 の起票時の番号は `D-0073`）、Issue #1207）。同じひな形の `conflict-record` のジョブ（`record-events.sql` で読んだ直近の窓に積まれた衝突の続きのジョブを `events.py --record-only` で照らす）も `K-0014` の担保（議決 `D-0076`（Issue #1214 の起票時の番号は `D-0074`）、Issue #1214）。`events.py` の rule `mechanical_without_verify` と、同じファイルの機械的な解消の回数は知見 `K-0015`（検査を通さない機械的な解消の繰り返し）の担保（議決 `D-0078`（Issue #1220 の起票時の番号は `D-0077`）、Issue #1220）。
 
 PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理と、起きた記録（制御プレーンのイベント列）がそれに合っているかを見る。
 
 ```sh
 python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v   # 線のテストと、イベント列の検査・見張りのテスト（どちらも Engine の job.finished の欄を含む）と、Engine の本物の処理のテストと、CI のひな形の形のテスト
 python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # 設定を読めて形が正しいか（読めなければ終了コード 2）
+python3 -B tools/conflict-check/schema.py --events <イベントの JSON か JSONL> [--defs <定義>] [--since <時刻>] [--json]   # 衝突したファイルの列が載っているか（K-0014。下の「衝突したファイルの列の定義」）
+python3 -B tools/conflict-check/events.py --events <イベントの JSON か JSONL> --record-only [--since <時刻>]   # 衝突したファイルがその場で記録されたかだけを見る（K-0014。下の「直近の窓に積まれた衝突の続きのジョブの定期の照合」）
 ```
 
 依存は Python 3 と PyYAML（Engine の `core-gates/knowledge_check.py` と同じ）。機械的な解消の検査（`verify_mechanical`）とそのテストは git と node も使う（node か git がなければ飛ばす。CI（`CI=true`）では飛ばさない）。`test_engine.py` は bash・jq と Engine のチェックアウトも使う。
@@ -45,9 +47,10 @@ python3 -B tools/conflict-check/policy.py [--config <continuation.yaml>]     # �
 起きた記録（制御プレーンの events）を PR ごとに組んで、上の線に照らす。委員会の議決 `D-0023`（Issue #972 の起票時の番号は `D-0018`）と Issue #972 で作った。線は `policy.py` の `enqueue_decision`・`may_resume`・`resolution` をそのまま使う。
 
 ```sh
-python3 -B tools/conflict-check/events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--json]
+python3 -B tools/conflict-check/events.py --events <イベントの JSON か JSONL> [--pr <PR の URL>] [--config <continuation.yaml>] [--verify <検査の結果の JSON>] [--json]
 python3 -B tools/conflict-check/events.py --events tools/conflict-check/fixtures/c0005-pr659-events.json   # C-0005 の流れ。終了コード 1
 python3 -B tools/conflict-check/events.py --events tools/conflict-check/fixtures/c0007-pr290-pr295-events.json   # C-0007 の流れ。missing_conflict_files で終了コード 1
+python3 -B tools/conflict-check/events.py --events tools/conflict-check/fixtures/c0008-pr678-events.json --verify tools/conflict-check/fixtures/c0008-pr678-events.json   # C-0008 の流れ。mechanical_without_verify で終了コード 1
 ```
 
 PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何回目か・agent_resumed・tier・衝突したファイルを組む。`job.started`・`job.finished`・`conflict.files` は `job_id` で結ぶ。
@@ -63,13 +66,14 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 |---|---|
 | `over_limit` | 同じ PR で `max_attempts_per_pr` を超えて積まれた（今の線では 4 回目以降） |
 | `resumed_after_limit` | `resume_session_until_attempt` より後の回（今の線では 2 回目以降）で agent_resumed=true |
-| `agent_for_mechanical` | 衝突したファイルが `mechanical.paths`（`CHANGELOG.md` と `changelog.d/`）だけなのに、エージェントの tier（tier-large など）で解いた |
+| `agent_for_mechanical` | 衝突したファイルが `mechanical.paths`（`CHANGELOG.md` と `changelog.d/`）だけなのに、エージェントの tier（tier-large など）で解いた。その head が `mechanical.verify` の検査に落ちる（`--verify`）なら、エージェントで解くのが線どおりなので外れにしない |
+| `mechanical_without_verify` | PR の head が `mechanical.verify` の検査（`tools/changelog-check/check.mjs`。`CHANGELOG.md` を直接書き換えていると落ちる）に落ちるのに、`mechanical.agent_tier`（`none`。機械的）で衝突を解いた（知見 `K-0015` の担保。下の「検査を通さない機械的な解消の検査」） |
 | `missing_conflict_files` | `continue.enqueued`（reason=conflict）の時点で、同じ `job_id` の `conflict.files` が載っていない。ないか、backfill で後から足されたもの（`payload.source` が `backfill`）か、ジョブが動き出したあと（`job.started` か `job.finished` より後）に記録されたものしかない（知見 `K-0014` の担保。下の「衝突したファイルの記録の検査」） |
 
 - 記録がなく分からない項目（agent_resumed・tier・衝突したファイル）はその rule を照らさず、PR ごとに件数を出す（`--json` では `unknown`）。`pr.conflicted` は衝突した head の数として出す
   - これは Engine が今の形（`job.finished` に `agent_resumed` と解き方の tier（`agent_tier`）を出さない版）のときだけの扱い（議決 `D-0030`、Issue #1035。下の「Engine の job.finished の欄のテスト」）
-- 終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった（JSON・JSONL として読めない、`name` のない件がある、`payload` がオブジェクトでない）
-- 標準出力: 外れた回ごとに `<PR の URL> attempt=<回> job=<job_id> <rule>: 理由` と、PR ごとと全体の件数の行。`--json` は `{ "ok", "prs": [{ "pr_url", "attempts", "conflicted_heads", "unknown", "errors" }] }`
+- 終了コード: 0 = 通る、1 = 外れた、2 = 記録か設定を読めなかった（JSON・JSONL として読めない、`name` のない件がある、`payload` がオブジェクトでない、`--verify` の形が違う）
+- 標準出力: 外れた回ごとに `<PR の URL> attempt=<回> job=<job_id> <rule>: 理由` と、同じファイルの機械的な解消が上限を超えた PR の回数の行と、PR ごとと全体の件数の行。`--json` は `{ "ok", "prs": [{ "pr_url", "attempts", "conflicted_heads", "unknown", "errors", "mechanical": { "repeats", "unverified" } }] }`
 - `test_events.py` が、`fixtures/c0005-pr659-events.json`（C-0005 の流れ）で 3 つの rule がすべて落ちること（`over_limit` 17 件・`resumed_after_limit` 19 件・`agent_for_mechanical` 19 件）と、線どおりの積み方が通ることを確かめる
 - `fixtures/c0005-pr659-events.json` は `missing_conflict_files` でも 20 回すべて落ちる（13 回目は記録がなく、ほかの回は今の Engine と同じく `job.finished` のあとに記録している）
 - `fixtures/c0005-pr659-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0005.md`）にある事実だけを Engine のイベントの形に組み直したもの（制御プレーンの events はワーカーから読めない）。id・job_id・head_sha は仮の値。13 回目は衝突したファイルの記録を置かず、照らせない回にした
@@ -79,14 +83,16 @@ PR ごとに `continue.enqueued`（reason=conflict）の順に 1 件ずつ、何
 衝突を解く続きのジョブに、衝突したファイルがその場で記録されていない回を落とす。知見 `K-0014`（記録がないと、同じファイルの衝突が繰り返している型が集計で見えない）の担保で、委員会の議決 `D-0049`（PR #1127）と Issue #1135 で作った。
 
 - 線は議決 `D-0049` の test の案どおり「`continue.enqueued`（reason=conflict）の時点で載っているか」。同じ `job_id` の `conflict.files` が、そのジョブの `job.started`・`job.finished` より前（イベント列の順。`id` があれば `id` の順）にあればその場で載ったとみなす
+- `continue.enqueued` の payload に衝突したファイルの欄 `conflict_files`が `conflict-files.yaml` の定義の形（空でない文字列の列で 1 件以上）で載っていれば、積んだその場の記録として通し、衝突したファイルにもその列を使う（`conflict.files` より先に見る）。形の判定は `schema.py` の `field_error` を使う（`events.py` では判定を持たない。定義を読めなければ終了コード 2）。形どおりでない（空の列・null・文字列の列でない）ときは載っていないとみなし、`conflict.files` で見る（議決 `D-0101`、Issue #1208。Engine が `engine/conflict-files.patch` どおりに欄を載せたあとも、この検査が落とし続けないように）
 - 外れにするのは、`conflict.files` がない回、`payload.source` が `backfill`（`factoryctl learn backfill-conflicts` で後から埋めた）のものしかない回、ジョブが動き出したあと（`job.started` か `job.finished` より後）に記録されたものしかない回。`source` のない記録は位置だけで見る。衝突がなかった回の空の列（`files: []`）は、その場で載っていれば通る
 - 終わっていない回・終わらずに止まった回（`job.finished` がない回）も照らす。積んだ時点で載っているはずなので、終わるのを待たない。積んだだけでまだ動き出していない回も、載っていなければ落ちる
 - backfill の中身（衝突したファイル）は、上の 3 つの rule（`agent_for_mechanical` など）にはそのまま使う
 - `continuation.yaml` の線ではないので、`check` ではなく `record_check` が出す。`events.py` のコマンドの終了コード・標準出力・`--json` の `errors` には一緒に出るが、`watch.py` は `check` だけを使うので、記録の欠けだけでは停止を開かない
-- `test_events.py` の `MissingConflictFilesTest` が確かめること: `fixtures/c0007-pr290-pr295-events.json`（C-0007 の流れ）が落ちる（PR #290 のジョブ 309 は backfill の `conflict.files` だけ、PR #295 のジョブ 318・325・338 は記録なし。4 件）。`conflict.files` を `continue.enqueued` のすぐ後ろに載せた列は通る。今の Engine の形（ジョブの終わりに `worker_log` で記録）の回と、終わらずに止まった回で載っていないものは落ちる
+- `test_events.py` の `MissingConflictFilesTest` が確かめること: `fixtures/c0007-pr290-pr295-events.json`（C-0007 の流れ）が落ちる（PR #290 のジョブ 309 は backfill の `conflict.files` だけ、PR #295 のジョブ 318・325・338 は記録なし。4 件）。`conflict.files` を `continue.enqueued` のすぐ後ろに載せた列と、`conflict.files` を外して `continue.enqueued` に `conflict_files` を載せた列は通る（形どおりでない `conflict_files` は落ちる）。今の Engine の形（ジョブの終わりに `worker_log` で記録）の回と、終わらずに止まった回で載っていないものは落ちる
 - `fixtures/c0007-pr290-pr295-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0007.md`）にある事実だけを Engine のイベントの形に組み直したもの。id・head_sha・ブランチ名は仮の値。PR #295 の 3 回の tier・費用・agent_resumed は事例記録にないので置かない
 - 2026-11-08 の Engine（`main` の `57069a8`）は、`conflict.files` を `continue.enqueued` や `pr.conflicted` には載せず、ジョブが終わってからワーカーのログから記録する（`dispatcher.py` の `process_learn.record_conflict_files`、`source: worker_log`）。この記録は積んだ時点のものではないので、今の Engine の記録はすべて `missing_conflict_files` で落ちる（K-0014 が指す欠けがまだ残っている）。Engine が積むときに `conflict.files` を記録する（議決 `D-0049` の schema の案。`continue.enqueued`・`pr.conflicted`・handoff に衝突したファイルを必須の項目にする）のは建設者。イベントを出してこの検査を走らせる配線も建設者
-- handoff は制御プレーンのイベント列にないので、この検査では見ない。`continue.enqueued` の payload に衝突したファイルの欄を足す形も、欄の名前が決まっていないので読まない（Engine が入れたら別のチケットで合わせる）
+- 本物のイベント列に対しては、ひな形 `ci/conflict-schema.yml` の `conflict-record` のジョブが毎日と手動で走らせる（下の「直近の窓に積まれた衝突の続きのジョブの定期の照合」。議決 `D-0076`、Issue #1214）
+- handoff（`handoff.saved`）はこの検査では見ない（積んだ時点ではなくジョブの終わりに出るため）。衝突の続きの `handoff.saved` に衝突したファイルが載っているかは `schema.py` が見る（下の「衝突したファイルの列の定義」。議決 `D-0076`、Issue #1213）。`pr.conflicted` の `conflict_files` も見ない（続きのジョブとは `job_id` で結べないため。欄があるかは `schema.py` が見る）
 
 制御プレーンから出すときの例（その PR の conflict の続きのジョブと、それに結ぶジョブのイベント）:
 
@@ -105,7 +111,19 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 - tier は `continuation.enqueue` が常に tier-large で積むので、機械的に解いた回は `cost_usd` が 0 のことでしか `none` と分からない。解き方の tier（`agent_tier`）を記録（`job.finished`）に足すのも建設者。足した版からは照らせない件数が 1 以上で `EngineFinishedTest` が落ちる
 - この検査を supervisor の周期ごとに走らせる呼び出しは `watch.py`（下の「supervisor の周期ごとの見張り」）、PR ごとのテストの CI はひな形 `ci/conflict-check.yml` に置いた（議決 `D-0030`、Issue #1034）。どちらもまだ配線していない（Engine の supervisor と `.github/workflows/` は建設者）
 
-`over_limit` と `agent_for_mechanical` は、上限に数えるのをエージェントの回だけにした線（Issue #1010）にまだ合わせていない。`over_limit` は機械的に解いた回も含めて `continue.enqueued` の順番で数え、`agent_for_mechanical` は K-0002 の検査に通らずにエージェントで解いた回も外れとして出す。合わせるのは別のチケット。
+`over_limit` は、上限に数えるのをエージェントの回だけにした線（Issue #1010）にまだ合わせていない。機械的に解いた回も含めて `continue.enqueued` の順番で数える。合わせるのは別のチケット。`agent_for_mechanical` は、`--verify` で検査に落ちると分かった head をエージェントで解いた回は外れにしない（Issue #1220）。検査の結果を渡さない回は、今までどおり K-0002 の検査に通らずにエージェントで解いた回も外れとして出す。
+
+### 検査を通さない機械的な解消の検査（`mechanical_without_verify`）
+
+PR の中に衝突の元（`CHANGELOG.md` の直接の書き換え）が残っているのに、`mechanical.verify` の検査を経ずに機械的な解消が繰り返された回を落とす。知見 `K-0015`（機械的な解消は上限に数えないので、原因の直しに切り替わらず繰り返す）の担保で、委員会の議決 `D-0078`（Issue #1220 の起票時の番号は `D-0077`。PR #1212）と Issue #1220 で作った。
+
+- 制御プレーンの events には検査の結果が載らない（Engine は機械的に解く前に `mechanical.verify` を呼んでいない）ので、head ごとの `node tools/changelog-check/check.mjs --base <既定ブランチ> --head <head_sha>` の終了コードを `--verify` で渡す。形は `{ "<PR の URL>": { "<head_sha>": <終了コード> } }` か、それを `verify` に持つオブジェクト（fixture は `events` と同じファイルに置く）。head は `continue.enqueued` の `head_sha`（衝突した head）
+- 外れにするのは、その head の終了コードが 0 でない（読めなかった 2 も含む。`policy.py` の `verify_mechanical` と同じ）のに、tier が `mechanical.agent_tier`（`none`）だった回。衝突がなかった回（`files: []`）は解いていないので見ない。`--verify` にない head は照らさず、機械的に解いた回のうち照らせなかった回の数を出す（`--json` では `mechanical.unverified`）
+- あわせて、同じ PR で同じファイルの機械的な解消（tier が `none` の回の衝突したファイル）が `max_attempts_per_pr`（3 回）を超えたら、ファイルごとの回数を出す（`--json` では `mechanical.repeats`）。外れにはしない（線は機械的な解消を上限に数えないので、検査に通った回の繰り返しは線の中）。衝突したファイルの記録がない回は数えない
+- `continuation.yaml` の線なので `check` が出し、`watch.py` の停止にも使われる（`watch.py` は `--verify` を渡さないので、今は照らさない）
+- `test_events.py` の `MechanicalWithoutVerifyTest` が確かめること: `fixtures/c0008-pr678-events.json`（C-0008 の流れ）が 13 件落ち（ほかに `over_limit` 10 件と `missing_conflict_files` 13 件）、`CHANGELOG.md` 13 回と出る。同じ CHANGELOG.md だけの衝突でも、検査に落ちてエージェント（tier-large）で解き、3 回で停止した線どおりの積み方は通る。検査に通った head の機械的な解消と衝突のなかった回は落ちず、`--verify` の形が違えば終了コード 2
+- `fixtures/c0008-pr678-events.json` は、事例記録（`.factory-config/knowledge/cases/C-0008.md`）にある事実（`CHANGELOG.md` だけの機械的な解消が 13 回、ジョブ 3414〜3822。直接の書き換えは review_fix 3873 まで残った）だけを Engine のイベントの形に組み直したもの。最初と最後のほかの job_id、id・head_sha は仮の値。機械的に解いた回は今の Engine と同じく `cost_usd` を 0 にし、衝突したファイルはジョブの終わりに `worker_log` で記録した形。agent_resumed は事例記録にないので置かない。`verify` の終了コード 1 は事例記録からの読みで、本物の検査の結果ではない
+- 機械的に解く前に検査を呼ぶこと、その結果をイベントに出すか、この検査に渡して走らせる配線は建設者
 
 ### Engine の job.finished の欄のテスト（`test_events.py` の `EngineFinishedTest`）
 
@@ -116,7 +134,7 @@ where (e.name in ('pr.conflicted', 'continue.enqueued') and e.payload->>'pr_url'
 - Engine が今の形（`agent_resumed` も `agent_tier` も出さない。`legacy_finished`）のときだけ `todo:` の理由で飛ばす。どちらかを出す版からは必須で、片方だけを出す版はもう片方が照らせずに落ちる。欄の名前を変えて出した版も今の形と見るので、その時は `FINISHED_FIELDS` を合わせる
 - Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ（`ENGINE_DIR` を渡したときと `CI=true` では飛ばさずに落とす）。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
 - 建設者が `job.finished` に `agent_resumed` と `agent_tier` を足して `ENGINE_REF` を上げたら、`legacy_finished` の todo の呼び出しを消す（`test_watch.py` の同じ todo も。下の「Engine の job.finished の欄で見張るテスト」）
-- todo が黙って残らないよう、todo の理由に照らせない件数（`agent_resumed=3・tier=3` など）を添え、知見 `K-0010` の `review_by`（`.factory-config/knowledge/K-0010.yaml` から読む。2026-11-08 の時点で 2026-12-05）を過ぎても Engine が今の形なら、todo にせずに落とす（議決 `D-0043`、Issue #1104）。期限の日までは todo、翌日から落ちる（`core-gates/knowledge_check.py` の「過ぎた」と同じ）。`review_by` を読めないときも落ちる。直し方は、Engine を直して `ENGINE_REF` を上げるか、委員会で `K-0010` を再確認して `review_by` を動かす。今日の日付は環境変数 `CONFLICT_CHECK_TODAY`（`YYYY-MM-DD`）で差し替えられる。期限の判定と todo の理由の組み立ては `test_events.py` の `todo_until_review_by` の 1 か所に置き、`test_watch.py` の `EngineFinishedTest` もそれを呼ぶ
+- todo が黙って残らないよう、todo の理由に照らせない件数（`agent_resumed=3・tier=3` など）を添え、知見 `K-0010` の `review_by`（`.factory-config/knowledge/K-0010.yaml` から読む。2026-11-08 の時点で 2026-12-05）を過ぎても Engine が今の形なら、todo にせずに落とす（議決 `D-0043`、Issue #1104）。期限の日までは todo、翌日から落ちる（`core-gates/knowledge_check.py` の「過ぎた」と同じ）。`review_by` を読めないときも落ちる。直し方は、Engine を直して `ENGINE_REF` を上げる。Engine が今の形のまま `review_by` を前の版より後ろへ動かす PR は、`tools/knowledge-enforcement-check/check.py` の「review_by の先送りの照合」が落とす（延ばすだけで期限切れの失敗を先送りしない。議決 `D-0067`（起票時の番号は `D-0066`）、Issue #1178）。今日の日付は環境変数 `CONFLICT_CHECK_TODAY`（`YYYY-MM-DD`）で差し替えられる。期限の判定と todo の理由の組み立ては `test_events.py` の `todo_until_review_by` の 1 か所に置き、`test_watch.py` の `EngineFinishedTest` もそれを呼ぶ
 
 ## supervisor の周期ごとの見張り（`watch.py`）
 
@@ -149,6 +167,58 @@ supervisor への配線（建設者が入れる）: `merge_step` の `ci_failure
 
 - `ci_failure_step` は、次の head で CI が通ったときと人の判断待ちの間に同じ `ci:` の停止を閉じる。閉じたあとは `stoppage.opened:<key>` の dedupe で同じ key を開き直せない（Engine の `ci:` の停止すべてに共通）。見張りの停止を閉じないようにするか、key を分けるかは配線のときに建設者が決める
 - `conflict_step` は停止が開いていても衝突を解く続きのジョブを積む（`awaiting_decision` は `ci:` を見ない）。見張りの停止で積むのを止めるのも配線のときに入れる
+
+## 衝突したファイルの列の定義（`conflict-files.yaml`・`schema.py`）
+
+知見 `K-0014` の担保で、委員会の議決 `D-0049` と Issue #1136 で作った。衝突を解く続きのジョブを積むときに衝突したファイルを記録しないと、同じファイルの衝突が繰り返している型が集計で見えない（事例 `C-0007` では衝突の解消のジョブの記録に衝突したファイルがなく、事後の backfill（`conflict.files` の `source: backfill`）が要った）。そこで、衝突にかかわる 3 つの制御プレーンのイベントに、衝突したファイルの列 `conflict_files` を必須の欄として定義した。
+
+| イベント | いつ要るか |
+|---|---|
+| `pr.conflicted` | いつも |
+| `continue.enqueued` | `reason` が `conflict` のとき |
+| `handoff.saved` | `continue_reason` が `conflict` のとき |
+
+- 欄の形は `paths`（空でない文字列（ファイルの道）の列）で 1 件以上。欄がない・`null` は `missing_field`、空の列・文字列の列でないものは `bad_field` で落とす（要らないイベントでも、載せたなら形を見る）。ほかのイベント（`conflict.files` など）は照らさない
+- 定義は `conflict-files.yaml`（Engine の `definitions/events.yaml` の `events` と同じ形の抜き書き。`required`・`required_when`・`fields`）。`schema.py` はこの定義か、`--defs` で渡した Engine の `events.yaml` でイベント列を照らし、外れがあれば終了コード 1、記録か定義を読めなければ 2
+- Engine は別のリポジトリなので、Engine の定義に同じ欄を足す差分を `engine/conflict-files.patch` に置いた。`test_schema.py` の `EngineDefsTest` が、Engine のチェックアウトの `definitions/events.yaml` の写しに差分を当て（もう入っていればそのまま）、Engine の定義が `conflict-files.yaml` とそろうことを確かめる。Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ。ひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
+- C-0005 の流れ（`fixtures/c0005-pr659-events.json`）は、今の Engine の形どおりイベントに衝突したファイルが載らず（`conflict.files` を `job_id` で結ぶだけ）、`pr.conflicted` と `continue.enqueued`（reason=conflict）のすべてが `missing_field` で落ちる
+- handoff は `events.py` の `missing_conflict_files` では見ず、事例記録の fixtures にも `handoff.saved` がないので、`test_schema.py` の `EngineHandoffTest` が Engine の `orchestrator/dispatcher/dispatcher.py` の `handoff.saved` の payload の欄を `engine_harness.py handoff` で構文木から読み（動かさない）、`conflict-files.yaml` の `required_when` の欄（`continue_reason`）を Engine が出していること（欄の名前がずれると、衝突の続きの `handoff.saved` が `conflict_files` なしで黙って通るため）と、その欄の形のイベントが衝突の続きなら `conflict_files` がない・空の列で落ち、載せれば通り、衝突でない続きと続きでないジョブでは要らないことを確かめる（議決 `D-0076`（Issue #1213 の起票時の番号は `D-0074`。PR #1203）、Issue #1213）。payload が辞書の式でないか `handoff.saved` を出す呼び出しがなければ落ちる。Engine のチェックアウトの渡し方と飛ばし方は `EngineDefsTest` と同じ
+
+配線は建設者が入れる。差分を Engine に当てることと、Engine がこの欄を載せてイベントを出すこと（`pr_events.py` の `pr.conflicted` は GitHub の `mergeable_state` からしか衝突を知らないので、衝突したファイルを求める手順が要る。`continuation.enqueue` と `dispatcher.py` の `handoff.saved` も同じ）、欄がない・空のイベントを出さないこと、`schema.py` を定期に走らせること（下の「直近の窓のイベント列の定期の照合」）が要る。入るまでは `K-0014` の解決策は `wired: false`・`verified: false`。
+
+### 直近の窓のイベント列の定期の照合（`ci/conflict-schema.yml`・`window-events.sql`）
+
+`schema.py` を、制御プレーンの直近の窓のイベント列に対して毎日と手動で走らせるワークフローのひな形。議決 `D-0101`（Issue #1207 の起票時の番号は `D-0073`。PR #1204）と Issue #1207 で作った。
+
+```sh
+psql "$DATABASE_URL" -X -q -A -t -v ON_ERROR_STOP=1 -v since=<差分を当てた時刻> -v window_days=8 -f tools/conflict-check/window-events.sql > conflict-events.json
+python3 -B tools/conflict-check/schema.py --events conflict-events.json --since <差分を当てた時刻>
+```
+
+- `window-events.sql` は、`conflict-files.yaml` の 3 つのイベントのうち、`occurred_at` が差分を当てた時刻（`since`）と直近 `window_days` 日の始まりの遅いほうから後のものを、`schema.py` の `--events` に渡す JSON の配列（`id`・`name`・`occurred_at`・`job_id`・`correlation_id`・`payload`）で出す
+- `schema.py` の `--since` は、`occurred_at` がそれより前のイベントを照らさない（SQL で絞ったあとも同じ線で絞る）。差分の前の Engine はこの欄を出さないので、前のイベントまで照らすとすべて `missing_field` で落ちる。`--since` を渡したのに `occurred_at` がない・時差つきの ISO 8601 で読めないイベントがあれば、照らすかを決められないので終了コード 2。`--json` は照らさなかった件数を `skipped` に出す
+- ひな形の `conflict-schema` のジョブは、`CONFLICT_FILES_SINCE` が空か時差つきの ISO 8601 の時刻でなければ最初の手順で `conflict_files_since_missing`、シークレット `CONFLICT_EVENTS_DATABASE_URL` がないか events を読めなければ `events_unreadable` で落ちる（照らさずに緑にしない）。外れがあれば `schema.py` の終了コードで落ち、結果を手順の要約に出す。窓（`WINDOW_DAYS`）は 8 日（毎日の実行が 1 回飛んでも見落とさない幅）
+- PR には紐づかない記録を見るので、PR ごとには走らせない（落ちても PR を止めない。直すのは Engine）
+- `test_schema_ci.py` が、ひな形の形（`schedule` の cron と `workflow_dispatch`・`if:` と `continue-on-error` なし）、時刻の確かめ、シークレットのないとき、外れの終了コードを握りつぶさないこと、`window-events.sql` の照らすイベントが定義と同じこと、写しがあれば `CONFLICT_FILES_SINCE` の行のほかがひな形と同じでその値が時刻であることを見る。`WindowSqlTest` は SQL を `DATABASE_URL` の Postgres の使い捨ての schema で走らせ、差分を当てる前・窓の外・ほかのイベントを出さないことを見る（psql か `DATABASE_URL` がなければ飛ばす）。どちらもひな形 `ci/conflict-check.yml` の `unittest discover` で一緒に走る
+
+建設者が入れること（ワーカーは `.github/workflows/` を変えられず、Engine は別のリポジトリ）: 差分を Engine に当てて、Engine が衝突したファイルの列を載せてイベントを出すようにする。そのあとこのひな形を `.github/workflows/conflict-schema.yml` に写し、`CONFLICT_FILES_SINCE` に差分を当てた時刻を書く（写すときに変えてよいのはその行だけ）。events を読むだけの権限の接続先をシークレット `CONFLICT_EVENTS_DATABASE_URL` に置く。手動で走らせて通ったら、`K-0014` の issue 1136 と 1207 の解決策を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/conflict-schema.yml, job: conflict-schema, runs: tools/conflict-check/schema.py}` と、`{workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py}`（`tools/knowledge-enforcement-check/README.md` の「どの解決策にも求める `check.py` の配線」）を書く。`tools/knowledge-enforcement-check/check.py` が、`.github/workflows/conflict-schema.yml` の schedule でも走るジョブから `schema.py` を呼ぶ項目がなければ落とす（「定期の配線の必須」）。
+
+### 直近の窓に積まれた衝突の続きのジョブの定期の照合（`ci/conflict-schema.yml` の `conflict-record`・`record-events.sql`）
+
+`events.py` の rule `missing_conflict_files` を、制御プレーンの直近の窓に積まれた衝突の続きのジョブに対して毎日と手動で走らせるジョブ。上の `conflict-schema` と同じひな形に置き、`CONFLICT_FILES_SINCE`・`WINDOW_DAYS`・シークレット `CONFLICT_EVENTS_DATABASE_URL` を分け合う（Engine が積む時点で衝突したファイルを載せるのは同じ `engine/conflict-files.patch` なので、照らし始める時刻も同じ）。議決 `D-0076`（Issue #1214 の起票時の番号は `D-0074`。PR #1203）の ci_check の案と Issue #1214 で作った。
+
+```sh
+psql "$DATABASE_URL" -X -q -A -t -v ON_ERROR_STOP=1 -v since=<差分を当てた時刻> -v window_days=8 -f tools/conflict-check/record-events.sql > conflict-record-events.json
+python3 -B tools/conflict-check/events.py --events conflict-record-events.json --since <差分を当てた時刻> --record-only
+```
+
+- `record-events.sql` は、`occurred_at` が差分を当てた時刻（`since`）と直近 `window_days` 日の始まりの遅いほうから後の `continue.enqueued`（reason=conflict）と、同じ `job_id` の `job.started`・`job.finished`・`conflict.files` を、`events.py` の `--events` に渡す JSON の配列（`window-events.sql` と同じ列）で `id` の順に出す。結ぶイベントは窓の前でも出す（積んだ時点より前か後かは `events.py` が `id` の順で見る）
+- `events.py` の `--record-only` は `record_check`（`missing_conflict_files`）だけを出し、`continuation.yaml` の線（`over_limit` など。`check`）は照らさない（そちらは `watch.py` の見張り。ここで落とすと記録の欠けと積み方の外れが混ざる）
+- `events.py` の `--since` は `schema.py` の `--since` と同じ線で、`occurred_at` がそれより前のイベントを組まない。`occurred_at` がない・時差つきの ISO 8601 で読めないイベントがあれば終了コード 2
+- ジョブの手順と落ち方は `conflict-schema` と同じ（`CONFLICT_FILES_SINCE` が時刻でなければ `conflict_files_since_missing`、シークレットがないか events を読めなければ `events_unreadable`、外れがあれば `events.py` の終了コード 1 で落ち、結果を手順の要約に出す）。`needs` はなく、`conflict-schema` が落ちても照らす
+- `test_events.py` の `RecordOnlySinceTest` が、C-0007 の流れ（`fixtures/c0007-pr290-pr295-events.json`）が `--record-only` で `missing_conflict_files` の 4 件だけで落ちること、同じ形の衝突でも `continue.enqueued` に `conflict_files` を載せた列は通ること（PR #290 の K-0010 の `agent_for_mechanical` も出さない）、`--since` の絞り方と読めない時刻を確かめる。`test_schema_ci.py` の `RecordTemplateTest` がジョブの形と手順の振る舞いを、`RecordSqlTest` が SQL を `DATABASE_URL` の Postgres の使い捨ての schema で走らせて、差分を当てる前・窓の外・衝突でない続き・ほかのイベントを出さず、出した列を `events.py` が組めることを見る（psql か `DATABASE_URL` がなければ飛ばす）
+
+建設者が入れること: 上の `conflict-schema` と同じく、差分を Engine に当てて積むときに衝突したファイルを載せるようにしてから、ひな形を `.github/workflows/conflict-schema.yml` に写す（`conflict-record` のジョブも一緒に写る）。手動で走らせて通ったら、`K-0014` の issue 1214 の解決策を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/conflict-schema.yml, job: conflict-record, runs: tools/conflict-check/events.py}` と、`{workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py}` を書く。`tools/knowledge-enforcement-check/check.py` が、`.github/workflows/conflict-schema.yml` の schedule でも走るジョブから `events.py` を呼ぶ項目がなければ落とす（「定期の配線の必須」）。そのあと、C-0007 と同じ形の衝突（`CHANGELOG.md` だけの衝突の続きのジョブ）が窓に入った回で落ちなかったことを事例記録に残し、`verified: true` と `verified_by` を書く。
 
 ## Engine の本物の処理のテスト（`test_engine.py`）
 

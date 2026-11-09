@@ -5,11 +5,14 @@
 //
 // イベント列は古い順に並べて渡す（tools/sendback-check の check.mjs --events と同じ形。読み方も parseEvents を使う）。
 // 同じ PR の supervisor.merged ごとに、それより前のイベントを見る:
-//   - pr.body_amended（本文の直しが終わった）のあと、本文の検査（gate.evaluated）がないまま supervisor.merged が来た（merged_without_body_recheck。事例 C-0006）
+//   - pr.body_amended（本文の直しが終わった）のあと、本文の検査（本文を見た gate の gate.evaluated）がないまま supervisor.merged が来た（merged_without_body_recheck。事例 C-0006）
 //   - 本文の直し（job.enqueued の kind が body_fix）を積んだのに、その終わり（pr.body_amended か pr.body_amend_failed）より前に
 //     supervisor.merged が来た（merged_before_body_fix_finished。事例 C-0005 は、直しの終わりがマージの 7 秒後）
 //   - 本文の直しが失敗で終わり（pr.body_amend_failed）、そのあと直しが成功しないまま supervisor.merged が来た（merged_after_body_fix_failed）
-// 本文の検査は gate.evaluated で数える。gate は問わない（検査役の rubric も、pr-body-check を gate: "pr-body-check" で記録したものも数える）。
+// 本文の検査は gate.evaluated のうち本文を見た gate だけを数える: pr-body-check を gate: "pr-body-check" で記録したものと、検査役の rubric（gate: "rubric"）で
+// 見た rubric（checked）に本文の rubric（PR-002 など）があるもの。コードの検査（overlay・L1 など）と、本文の rubric を見ていない rubric は数えない
+// （本文と関係のない検査が直しのあとに来ただけでは、直した本文を再検査したことにならない。議決 D-0072、Issue #1206）。
+// supervisor が直した本文の pr-body-check が通ったのを確かめて残す supervisor.body_rechecked（engine/pr-body-recheck.patch。議決 D-0050、Issue #1122）も数える。
 // 本文の直しの積みと終わりは job_id で結ぶ。終わりに job_id がなければ同じ PR の古いものから、積んだ側に job_id がなければ job_id のないものと結ぶ。
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,12 +21,25 @@ import { parseArgs } from "node:util";
 import { parseEvents } from "../sendback-check/check.mjs";
 
 /** 本文の検査として数えるイベント。 */
-export const BODY_CHECK_EVENTS = Object.freeze(["gate.evaluated"]);
+export const BODY_CHECK_EVENTS = Object.freeze(["gate.evaluated", "supervisor.body_rechecked"]);
+/** gate.evaluated のうち、それだけで本文の検査に数える gate。 */
+export const BODY_CHECK_GATES = Object.freeze(["pr-body-check"]);
+/** 検査役の rubric の gate で、見た rubric（checked）にあれば本文の検査に数える rubric（Engine の core-gates/rubric.yaml。PR-002 は本文の構成）。 */
+export const BODY_RUBRIC_IDS = Object.freeze(["PR-002"]);
 /** 本文の直しの終わり（成功と失敗）。 */
 export const BODY_FIX_FINISHED = Object.freeze(["pr.body_amended", "pr.body_amend_failed"]);
 
 const prOf = (e) => e.payload?.pr_url ?? null;
 const isBodyFixEnqueued = (e) => e.name === "job.enqueued" && e.payload?.kind === "body_fix";
+/** 本文の検査か。gate.evaluated は本文を見た gate だけ（BODY_CHECK_GATES か、checked に BODY_RUBRIC_IDS がある rubric）。 */
+export function isBodyCheck(e) {
+  if (e.name === "supervisor.body_rechecked") return true;
+  if (e.name !== "gate.evaluated") return false;
+  const gate = e.payload?.gate;
+  if (BODY_CHECK_GATES.includes(gate)) return true;
+  const checked = e.payload?.checked;
+  return gate === "rubric" && Array.isArray(checked) && checked.some((id) => BODY_RUBRIC_IDS.includes(id));
+}
 
 /**
  * events: [{ name, payload: { pr_url, ... }, job_id?, occurred_at? }]（古い順）。prUrl を渡せばその PR だけを見る。
@@ -45,7 +61,7 @@ export function checkEvents(events, prUrl) {
       if (i < 0) i = st.pendingFixes.indexOf(null);   // 積んだ側に job_id がなかった
       if (i >= 0) st.pendingFixes.splice(i, 1);
       if (e.name === "pr.body_amended") { st.amendedUnchecked = e; st.fixFailed = null; } else st.fixFailed = e;
-    } else if (BODY_CHECK_EVENTS.includes(e.name)) {
+    } else if (isBodyCheck(e)) {
       st.amendedUnchecked = null;
     } else if (e.name === "supervisor.merged") {
       merges += 1;
@@ -62,7 +78,7 @@ export function checkEvents(events, prUrl) {
       if (st.amendedUnchecked) {
         const job = st.amendedUnchecked.job_id != null ? `（job ${st.amendedUnchecked.job_id}）` : "";
         errors.push({ rule: "merged_without_body_recheck", pr_url: pr,
-          message: `pr.body_amended${job}のあと本文の検査（${BODY_CHECK_EVENTS.join("・")}）がないまま supervisor.merged が来た（直した本文を再検査せずにマージした）` });
+          message: `pr.body_amended${job}のあと本文の検査（${BODY_CHECK_EVENTS.join("・")}。gate.evaluated は ${[...BODY_CHECK_GATES, `${BODY_RUBRIC_IDS.join("・")} を見た rubric`].join("・")}）がないまま supervisor.merged が来た（直した本文を再検査せずにマージした）` });
       }
     }
   }

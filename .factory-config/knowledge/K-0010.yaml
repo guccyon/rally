@@ -89,6 +89,8 @@ enforcement:
       issue: 1035
       at: 2026-11-07
       decided_by: committee:D-0030
+      requires_check:
+        - runs: tools/conflict-check/test_events.py
       wired: false
       verified: false
     - kind: test
@@ -120,6 +122,8 @@ enforcement:
       issue: 1103
       at: 2026-11-08
       decided_by: committee:D-0043
+      requires_check:
+        - runs: tools/conflict-check/test_events.py
       wired: false
       verified: false
     - kind: ci_check
@@ -152,6 +156,42 @@ enforcement:
       issue: 1104
       at: 2026-11-08
       decided_by: committee:D-0043
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0066（Issue #1173 の起票時の番号は D-0062。PR #1169）の ci_check の案のうち、ワーカーが入れられる部分を入れた。check.py を走らせる
+        PR ごとのひな形 tools/knowledge-enforcement-check/ci/knowledge-enforcement.yml の enforcement のジョブは、これまで PR が .factory-config/knowledge/ か
+        tools/knowledge-enforcement-check/ を変えたときしか check.py の結果で落とさず、配線したあとで .github/workflows/conflict-check.yml のジョブから
+        test_watch.py・test_engine.py を外す PR では REQUIRED_RUNS の照合が外れを見つけても止められなかった。落とす範囲に .github/workflows/ と、
+        check.py が呼ぶことを求める検査の置き場（tools/conflict-check/・tools/sendback-check/・tools/pr-body-check/）を足した。test_ci.py の
+        EnforcementScopeTest が、範囲の手順を偽の git で動かして check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW・REQUIRED_PR・REQUIRED_RUNS の
+        検査とワークフロー、K-*.yaml の wired_by の道のどれを変えても範囲に入り、ほかの道だけなら入らないことと、issue 1034 を wired: true にした
+        一時のリポジトリで、ひな形 ci/conflict-check.yml の写しなら落とす手順が通り、test_policy.py だけを呼ぶ形に変えると範囲の中では落ち、外では
+        落とさないことを確かめた（範囲を元に戻す・落とす手順で終了コードを捨てる改変で落ちることも手元で確かめた）。ワーカーは .github/workflows/ を
+        変えられないので、ひな形を .github/workflows/knowledge-enforcement.yml に、ci/conflict-check.yml を .github/workflows/conflict-check.yml に写して
+        両方を必須のチェックに入れ、issue 1034 と issue 1100 の項目を wired: true にして wired_by に同じ workflow・job（conflict-check）の
+        test_watch.py と test_engine.py を書くのは建設者。check.py はまだ .github/workflows/ から走っていないので、効き目は確かめていない
+      issue: 1173
+      at: 2026-11-08
+      decided_by: committee:D-0066
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0067（Issue #1178 の起票時の番号は D-0066。PR #1175）の ci_check の 1 つ目の案を入れた。tools/knowledge-enforcement-check/check.py に
+        check_review_by_hold() を足し、--base に前の版（CI では origin/<PR の base>）を渡すと、この知見の review_by を前の版より後ろへ動かす
+        （日付でなくすのも含む）PR で、tools/conflict-check/ci/conflict-check.yml（写しがあれば .github/workflows/conflict-check.yml）の ENGINE_REF の版の
+        Engine を --engine（または ENGINE_DIR）の全履歴のチェックアウトから取り出し、engine_harness.py の finished で読んだ job.finished に
+        test_events.py の FINISHED_FIELDS（agent_resumed・agent_tier）がどれもない（EngineFinishedTest が todo のまま）なら落とす。Engine のチェックアウトや
+        その版がない・欄を読めないときも照らせないとして落とす。review_by を延ばすだけで、期限切れで落ちるのを先送りできないようにするため。
+        test_check.py の ReviewByHoldTest で、一時の git リポジトリに作った Engine と K-0010 の前後の版を使い、延ばさなければ見ない・延ばして今の形なら落ちる・
+        片方か両方の欄を出す版なら通る・写しの ENGINE_REF を先に見る・照らせなければ落ちることを確かめた。ひな形 ci/knowledge-enforcement.yml の
+        enforcement のジョブに、Engine を全履歴で取る手順と --base・--engine を渡す形を足した。ひな形を .github/workflows/ に写すのは建設者で、
+        手元の Engine のチェックアウト（main の dcc3b1e、浅い取得）には ENGINE_REF の 2490db6 がなく、その版では走らせていないので、効き目はまだ確かめていない
+      issue: 1178
+      at: 2026-11-08
+      decided_by: committee:D-0067
       wired: false
       verified: false
     - kind: test

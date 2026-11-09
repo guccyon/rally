@@ -62,6 +62,139 @@ enforcement:
       issue: 1131
       at: 2026-11-08
       decided_by: committee:D-0050
+      requires_check:
+        - runs: tools/pr-body-check/recheck.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0050 の ci_check の案（D-0033 の ci_check の案と同じ線）を入れた。別の検査は作らず、K-0006 の #906 と同じ tools/pr-body-check/check.mjs を
+        1 つのマージ前の必須チェックにまとめた。ひな形 tools/pr-body-check/ci/pr-body-check.yml（ジョブとチェックの名前 pr-body-check）は pull_request の
+        opened・synchronize・reopened に加えて edited でも走り、head_sha の変わらない本文だけの直し（pr.body_amended）のあとの本文も照らす。
+        必須のチェックだけでは、直しのジョブが終わってから edited のチェックが始まるまでの間に前の本文で通ったチェックのままマージでき、Engine の今の
+        body_fix_pending は検査役の承認の中で直しの順番待ちと作業中しか見ないので、Engine の supervisor に入れる差分 tools/pr-body-check/engine/pr-body-recheck.patch を足した。
+        merge_step がマージの前に body_fix_pending と body_recheck_pending を待ち、body_recheck_pending は最後の body_fix のジョブが成功で終わっていれば、
+        そのジョブが走り始めたより後に始まった pr-body-check が success で終わるまで待って supervisor.body_rechecked を残し、失敗か取り消しで終わっていれば
+        停止（body_recheck:<PR の URL>、human）を開いて待つ。直しの終わりは pr.body_amended ではなくジョブの状態で見る。recheck.mjs は supervisor.body_rechecked も再検査に数える。
+        engine.test.mjs の (12) で、Engine（/work/engine の 57069a8）の写しに差分を当て、C-0006（PR #821）の記録の順（body_fix の job 4299 を 14:24:41 に積み、
+        マージ 14:25:06）を入力に、直しが走っている間・直しのあとに pr-body-check が走っていない・実行中・落ちた間は待ち、通ったら supervisor.body_rechecked を残して
+        その列が recheck.mjs に通ること、直しの失敗では人に回すこと、直しのない PR とワークフローを持たない製品では待たないことを確かめた。
+        merge_step の待ちを外す・直しのあとに始まったかを見ない・失敗を通す書き換えで (12) が落ちることも確かめた。ci.test.mjs でひな形の形
+        （edited を含む types、絞り込み・if:・continue-on-error がない、本文を env で渡す、名前が Engine の待つものと合う）を見張る。
+        GitHub の実行は時刻と結果を真似たもので、本物のイベント列や本物の PR では走らせていない。ワークフローの写し（.github/workflows/pr-body-check.yml）と
+        必須のチェック、Engine への差分の取り込みは建設者の権限なのでまだ入っておらず、配線されておらず効き目は確かめていない
+      issue: 1122
+      at: 2026-11-08
+      decided_by: committee:D-0050
+      requires_check:
+        - runs: tools/pr-body-check/check.mjs
+          workflow: .github/workflows/pr-body-check.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0100（Issue #1196 の起票時の番号は D-0071。PR #1192）の ci_check の案（建設者が tools/pr-body-check/ci/pr-body-check.yml を
+        .github/workflows/pr-body-check.yml に写して pr-body-check を必須チェックにし、tools/pr-body-check/engine/pr-body-recheck.patch を Engine の
+        supervisor に取り込み、wired_by にワークフローの job と Engine の merge_step の道を書いて wired: true にし、同じ check.mjs を使う K-0006 の
+        ci_check も揃える）のうち、ワーカーの権限で入れられる分を入れた。tools/knowledge-enforcement-check/check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW に、
+        この知見の issue 1122・1196 の解決策と K-0006 の issue 906 の解決策を挙げ、.github/workflows/pr-body-check.yml の pull_request でも走るジョブから
+        tools/pr-body-check/check.mjs を呼ぶ項目がないと wired: true にできないようにした（3 つとも同じ写しの同じジョブで揃う）。この知見の 2 つは、
+        新しく足した REQUIRED_PR_ALSO で .github/workflows/pr-body-engine.yml の pull_request でも走るジョブから tools/pr-body-check/engine.test.mjs
+        （(12) が merge_step の待ちを確かめる）を呼ぶ項目も求め、REQUIRED_ENGINE_WAIT で、その写しの ENGINE_REF の版の Engine の
+        orchestrator/dispatcher/supervisor.py で merge_step が body_recheck_pending を呼んでいることを構文木で照らし、呼んでいなければ engine_unwired、
+        Engine のチェックアウト・写し・版がなく照らせなければ engine_unverifiable で落とす（ワークフローの写しだけで wired にし、Engine が待たないままの
+        状態を止める）。Engine の merge_step は wired_by の形（workflow・job・runs）では書けないので、wired_by には 2 つのジョブを書き、Engine の道は
+        この照合で確かめる。test_check.py の PrBodyRecheckWiringTest が、2 つのひな形をそのまま写したジョブと待つ Engine で通り、pr-body-check の項目がない・
+        別の名前のワークフロー・pull_request を外した写し・check.mjs を呼ばない写し・engine-test の項目がない・merge_step が待たない Engine
+        （関数がない・呼ばない・別の関数でだけ呼ぶ）・照らせない Engine で落ちることと、手元の Engine（9f8f6b4）の supervisor.py が差分を当てる前は待たず、
+        当てると待つと読めることを確かめた。差分はその Engine の先頭に当たる。写すこと・必須のチェックに登録すること・差分を Engine に入れて ENGINE_REF を
+        上げること・wired を true にして wired_by を書くことは建設者が行うので（tools/pr-body-check/README.md の「マージ前の必須チェック（建設者）」）、
+        まだ配線されておらず効き目は確かめていない
+      issue: 1196
+      at: 2026-11-08
+      decided_by: committee:D-0100
+      requires_check:
+        - runs: tools/pr-body-check/check.mjs
+          workflow: .github/workflows/pr-body-check.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0100（Issue #1197 の起票時の番号は D-0071。PR #1192）の 1 つ目の test の案（tools/pr-body-check/ の recheck.test.mjs・engine.test.mjs・
+        ci.test.mjs を .github/workflows/ の job で pull_request ごとに走らせ、ひな形と Engine の待つチェック名のずれや待ちの線を外す書き換えをマージ前に落とす）のうち、
+        ワーカーの権限で入れられる分を入れた。3 つのテストは、ひな形 tools/pr-body-check/ci/pr-body-engine.yml の engine-test（tools/pr-body-check で道を渡さずに
+        走らせる node --test）ですでに走る。チェック名のずれは ci.test.mjs が engine/pr-body-recheck.patch の BODY_CHECK・BODY_CHECK_WORKFLOW と
+        ci/pr-body-check.yml の name: と写しの道を照らし、待ちの線は engine.test.mjs の (12) が差分を当てた Engine の写しで確かめる。足したのは 2 つ。
+        1 つ目に、ci.test.mjs で engine.test.mjs の (12) のテストの名前が見張りの一覧（6 件）と同じで、node --test --test-reporter=tap で走らせた結果で
+        それぞれが SKIP・TODO の指示のない ok と数えられ、集計の skip（(11) を除く）・todo が 0 かを見るようにした（これまで (12) は字面の skip・todo・only の
+        見張りしかなく、消す・名前を変える・落ちたままにする書き換えを見ていなかった）。(12) を消す・名前を変える・SKIP・TODO・失敗・欠けの列が外れになることと、
+        手元の Engine（/work/engine の 9f8f6b4）で、差分から merge_step の body_recheck_pending の待ちを外すと (12) とこの見張りの両方が落ちることを確かめた。
+        (12) の中の条件付きの早い return のように飛ばさずに pass と数えられる外し方は見ていない。2 つ目に、tools/knowledge-enforcement-check/check.py の
+        REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO にこの解決策を挙げ、.github/workflows/pr-body-engine.yml の pull_request でも走るジョブから
+        recheck.test.mjs・engine.test.mjs・ci.test.mjs をそれぞれ呼ぶ wired_by の項目がないと wired: true にできないようにした。test_check.py の
+        PrBodyEngineTestsWiringTest が、ひな形をそのまま写したジョブで通り、3 つのどれかの項目がない・別の名前のワークフロー・pull_request を外した写し・
+        道を渡して recheck.test.mjs だけを走らせる写しで落ちることを確かめた。ワーカーは .github/workflows/ を変えられないので、ひな形はまだ写されておらず
+        PR ごとには走っていない。建設者が写して pr-body-engine-test を必須のチェックにしたら、wired: true にして wired_by に
+        {workflow: .github/workflows/pr-body-engine.yml, job: engine-test} を runs が 3 つのテストの 3 項目で書く（tools/pr-body-check/README.md の
+        「マージ前の必須チェック（建設者）」）。まだ配線されておらず効き目は確かめていない
+      issue: 1197
+      at: 2026-11-08
+      decided_by: committee:D-0100
+      requires_check:
+        - runs: tools/pr-body-check/recheck.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+        - runs: tools/pr-body-check/ci.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0074（Issue #1205 の起票時の番号は D-0072。PR #1202）の ci_check の案（建設者が tools/pr-body-check/ci/pr-body-engine.yml を
+        .github/workflows/pr-body-engine.yml に写して engine-test を必須のチェックにし、issue 1131 の解決策を wired: true にして wired_by に
+        {workflow: .github/workflows/pr-body-engine.yml, job: engine-test, runs: tools/pr-body-check/recheck.test.mjs} を書き、check.py の照らし合わせを通す。
+        あわせてひな形と写しの中身がずれたら落とす検査を ci.test.mjs に足す）のうち、ワーカーの権限で入れられる分を入れた。写しとのずれの見張りは
+        Issue #1037 からあったが、写しがないと飛ぶので落ちる側を確かめておらず、比べ方も深さを問わず ENGINE_REF: の行をすべて無視していた。
+        ci.test.mjs の写しの照合を copyProblems に切り出し、無視するのをワークフローの env の ENGINE_REF の 1 行だけにして、ずれた行を出すようにした。
+        見張り（workflowProblems）では落ちない 9 通りの直し（注釈・手順の名前・Node の版・Python の手順を外す・要約やログに出さない・手順やジョブを足す・
+        concurrency を変える）がずれで落ち、ENGINE_REF だけを変えた写し・CRLF の写しは通り、手順の env に ENGINE_REF を足す写しと
+        sendback-engine.yml の写しと版がずれる写しも落ちることを確かめた。ずれの判定を外す書き換えと、無視する行を元の深さを問わない形に戻す書き換えで
+        このテストが落ちることも確かめた。このずれの見張りは写しの engine-test の中で走るので、写しから ci.test.mjs を外す直しは自分では止められない。
+        そこで tools/knowledge-enforcement-check/check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW に issue 1131（recheck.test.mjs）とこの解決策（ci.test.mjs）を挙げ、
+        .github/workflows/pr-body-engine.yml の pull_request でも走るジョブからそれぞれを呼ぶ wired_by の項目がないと wired: true にできないようにした。
+        test_check.py の PrBodyEngineCopyWiringTest が、ひな形をそのまま写したジョブで通り、項目がない・別の名前のワークフロー・pull_request を外した写しで落ち、
+        道を渡して recheck.test.mjs だけを走らせる写しでは issue 1131 は通りこの解決策は落ちることを確かめた。.github/workflows/ への写しと必須のチェックは、
+        ふつうのワーカーの権限にない（CLAUDE.md の「やってはいけないこと」、Engine ADR 0041）ので建設者が行う。写したら、issue 1131 とこの解決策を wired: true にし、
+        wired_by にそれぞれ recheck.test.mjs・ci.test.mjs を runs にした engine-test の項目を書く（tools/pr-body-check/README.md の「配線の手順（建設者）」）。
+        check.py もまだ PR ごとには走っておらず、写しがないのでずれの見張りも PR ごとには走っていない。配線されておらず効き目は確かめていない
+      issue: 1205
+      at: 2026-11-08
+      decided_by: committee:D-0074
+      requires_check:
+        - runs: tools/pr-body-check/ci.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
+    - kind: test
+      what: >-
+        議決 D-0074（Issue #1206 の起票時の番号は D-0072。PR #1202）の test の案を入れた。issue 1053 の解決策の recheck.mjs は gate.evaluated を gate を問わず
+        本文の再検査に数えていたので、pr.body_amended のあとにコードの検査（overlay・L1 など）が来ただけで、直した本文を見ないままのマージが通っていた。
+        recheck.mjs の数え方を本文を見た gate に絞り（isBodyCheck）、gate: "pr-body-check" と、検査役の rubric（gate: "rubric"）のうち見た rubric（checked）に
+        本文の構成の PR-002（BODY_RUBRIC_IDS。Engine の core-gates/rubric.yaml）があるものと、supervisor.body_rechecked だけを数えるようにした。
+        checked のない rubric の記録は数えない。recheck.test.mjs に、C-0006（PR #821）の列の本文の直し（14:25:04）とマージ（14:25:06）の間に
+        overlay・L1・PR-002 を見ていない rubric・checked のない rubric の gate.evaluated だけを挟んだ列を足し、どれも merged_without_body_recheck で落ち、
+        そのあと pr-body-check か PR-002 を見た rubric の検査を挟めば通ることを確かめた。数え方を元の gate を問わない形に戻す書き換えと、
+        checked に何かあれば数える書き換えでこのテストが落ちることも確かめた。recheck.mjs はまだどこからも呼んでおらず（issue 1053）、
+        recheck.test.mjs も写しの engine-test がないので PR ごとには走っていない（issue 1131）。配線されておらず効き目は確かめていない
+      issue: 1206
+      at: 2026-11-08
+      decided_by: committee:D-0074
       wired: false
       verified: false
 decided_by: committee:D-0033

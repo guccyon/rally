@@ -11,17 +11,21 @@
 // ci/sendback-engine-head.yml（Engine の既定のブランチの先頭で定期に走らせ、落ちたら知らせる。議決 D-0020、Issue #977）の形と記録の手順の振る舞いも見る。
 // その記録で、engine_harness.py のずれ（harness_unknown_query）と Engine の判定の変化（engine_head_failed）を分けることも見る（議決 D-0031、Issue #1046）。
 // 通ったときも engine_head_passed として記録し、その記録を head-record.mjs が数えることも見る（議決 D-0031、Issue #1047）。
+// required-checks のジョブ（engine-test と wiring-order が main の必須のチェックかを PR ごとに照らす。議決 D-0040、Issue #1091）の手順を、偽の gh で動かして確かめる。
 // ci/sendback-protection.yml（branch protection を読めるトークンで protection.mjs を毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0039、Issue #1087）の形と手順の振る舞い、写しとのずれも見る。
 // 同じひな形の protection-pr のジョブ（PR ごとに照らし、外れたら ::error で落とす。Issue は開かない。議決 D-0059（起票時の番号は D-0056）、Issue #1158）の形と振る舞いも見る。
+// protection が schedule で通ったときに上げる成果物と、それを読んで最後に通ってから 2 日より長ければ落ちて Issue を開く ci/sendback-protection-heartbeat.yml
+// （議決 D-0061（起票時の番号は D-0058）、Issue #1162）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { ARTIFACT } from "./heartbeat.mjs";
 import { headRecords } from "./head-record.mjs";
 import { CHECK_NAMES, checkNameProblems, COPY, jobCheckNames, loadTemplates, loadWorkflows, sharedCheckNames } from "./protection.mjs";
 
@@ -101,6 +105,7 @@ function requiredCheckProblems(text) {
   if (lines.some((l) => /^\s*(- )?if:/.test(l))) problems.push("if: があるとジョブや手順が飛ばされて見張らない");
   const wiring = jobBody(lines.join("\n"), "wiring-order");
   const engine = jobBody(lines.join("\n"), "engine-test");
+  const required = jobBody(lines.join("\n"), "required-checks");
   if (wiring === null) problems.push("wiring-order のジョブがない（必須のチェックの名前）");
   else {
     if (!wiring.some((l) => /^\s*run: node tools\/sendback-check\/order\.mjs(\s|$)/.test(l))) problems.push("wiring-order が order.mjs を走らせていない");
@@ -113,6 +118,15 @@ function requiredCheckProblems(text) {
   if (engine !== null) {
     if (!engine.some((l) => /^\s*ENGINE_DIR: \S/.test(l))) problems.push("engine-test が ENGINE_DIR を渡していない（渡さないと Engine がないときに飛ばす）");
     if (!engine.some((l) => /node --test (.* )?engine\.test\.mjs(\s|$)/.test(l))) problems.push("engine-test が engine.test.mjs を走らせていない");
+  }
+  // 議決 D-0040、Issue #1091。必須のチェックの照合を外すと、engine-test・wiring-order を必須から外しても気づけない
+  if (required === null) problems.push("required-checks のジョブがない（engine-test と wiring-order が必須のチェックかを照らさない）");
+  else {
+    if (!required.some((l) => /^\s*fetch branches\/main \S+$/.test(l))) problems.push("required-checks がブランチ（protection の要約）を gh api で取っていない");
+    if (!required.some((l) => /^\s*fetch rules\/branches\/main \S+$/.test(l))) problems.push("required-checks が rulesets を gh api で取っていない");
+    if (!required.some((l) => /^\s*node tools\/sendback-check\/protection\.mjs( --protection \S+){2}(\s|$)/.test(l))) {
+      problems.push("required-checks が取った 2 つの JSON を protection.mjs に渡していない");
+    }
   }
   return problems;
 }
@@ -136,6 +150,11 @@ test("見張りを外す・飛ばす・絞るひな形の直しは外れにな�
     "ci.test.mjs を外す": template.replace(/^ {8}run: node --test --test-reporter=spec ci\.test\.mjs\n/m, "        run: echo skip\n"),
     "ENGINE_DIR を外す": template.replace(/^ {10}ENGINE_DIR: .*\n/m, ""),
     "engine.test.mjs を外す": template.replace("--test-reporter-destination=engine-test.tap engine.test.mjs", "--test-reporter-destination=engine-test.tap"),
+    "required-checks を外す": template.replace("  required-checks:\n", "  protection:\n"),
+    "rulesets を取らない": template.replace(/^ {10}fetch rules\/branches\/main .*\n/m, ""),
+    "ブランチを取らない": template.replace(/^ {10}fetch branches\/main .*\n/m, ""),
+    "protection.mjs を外す": template.replace(/^ {10}node tools\/sendback-check\/protection\.mjs .*\n/m, "          echo skip\n"),
+    "protection.mjs に片方だけ渡す": template.replace(/(node tools\/sendback-check\/protection\.mjs --protection \S+) --protection \S+/, "$1"),
   };
   for (const [name, text] of Object.entries(cases)) {
     assert.notEqual(text, template, `${name}: 置き換えが効いていない`);
@@ -532,6 +551,68 @@ test("テストの手順が通っていない（failure・skipped・cancelled・
   }
 });
 
+// required-checks（議決 D-0040、Issue #1091）。engine-test と wiring-order を必須のチェックから外すと、写しを消す・見張りを書き換える PR が止まらない。
+// 手順を取り出し、偽の gh（ブランチと rulesets の JSON を返す）と、写しとひな形の protection.mjs を置いた一時のリポジトリで動かす。
+const requiredStep = jobSteps(template, "required-checks").find((s) => /main の必須のチェックか/.test(s[0]));
+
+/** 偽の gh が返すブランチの JSON（protection の要約）と rulesets の JSON。null を渡した API は 404 で落ちる。 */
+function runRequired({ branch, rules, copy = true }) {
+  const out = (v) => (v === null ? `echo 'gh: Not Found (HTTP 404)' >&2; exit 1` : `printf '%s' '${JSON.stringify(v)}'`);
+  const box = sandbox({ gh: `case "$2" in
+  repos/guccyon/rally/branches/main) ${out(branch)} ;;
+  repos/guccyon/rally/rules/branches/main) ${out(rules)} ;;
+  *) echo "unexpected $*" >&2; exit 9 ;;
+esac` });
+  for (const f of ["protection.mjs", "order.mjs"]) copyFileSync(fileURLToPath(new URL(`./${f}`, import.meta.url)), join(box.dir, f));
+  if (copy) {
+    mkdirSync(join(box.root, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(box.root, ".github", "workflows", "sendback-engine.yml"), template);
+  }
+  const summary = join(box.root, "summary");
+  const r = spawnSync("bash", ["-e", "-o", "pipefail", "-c", runScript(requiredStep)], {
+    cwd: box.root,
+    env: { ...process.env, PATH: `${box.bin}:${process.env.PATH}`, GITHUB_REPOSITORY: "guccyon/rally", GITHUB_ACTIONS: "true",
+      GITHUB_STEP_SUMMARY: summary, GH_TOKEN: "x" },
+    encoding: "utf8",
+  });
+  return { ...r, calls: box.calls(), summary: existsSync(summary) ? readFileSync(summary, "utf8") : "" };
+}
+const branchJson = (contexts) => ({ name: "main", protected: contexts.length > 0,
+  protection: { enabled: contexts.length > 0, required_status_checks: { enforcement_level: "non_admins", contexts, checks: contexts.map((context) => ({ context })) } } });
+const [ENGINE, WIRING] = [CHECK_NAMES["engine-test"], CHECK_NAMES["wiring-order"]];
+const rulesetJson = (contexts) => contexts.length === 0 ? [] : [{ type: "required_status_checks",
+  parameters: { required_status_checks: contexts.map((context) => ({ context })) } }];
+
+test("required-checks は gh api でブランチと rulesets を取り、engine-test と wiring-order が必須なら通る（古い形・rulesets・両方に分けて）", () => {
+  for (const [branch, rules] of [[[ENGINE, WIRING], []], [[], [WIRING, ENGINE]], [[ENGINE], [WIRING]]]) {
+    const r = runRequired({ branch: branchJson(branch), rules: rulesetJson(rules) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.calls, /^gh api repos\/guccyon\/rally\/branches\/main$/m);
+    assert.match(r.calls, /^gh api repos\/guccyon\/rally\/rules\/branches\/main$/m);
+    assert.match(r.summary, /通る: sendback-engine-test（engine-test）・sendback-wiring-order（wiring-order）が必須のチェックに入っている/);
+  }
+});
+
+test("required-checks は必須から外れていると required_check_missing、写しがないと workflow_not_copied で落ちる", () => {
+  // id の engine-test・wiring-order だけを必須にした形も、照らす名前（sendback-engine-test・sendback-wiring-order）がないので落ちる
+  for (const [branch, rules] of [[[ENGINE], []], [[], [WIRING]], [["backend"], []], [[], []], [["engine-test", "wiring-order"], []], [[], ["engine-test", "wiring-order"]]]) {
+    const r = runRequired({ branch: branchJson(branch), rules: rulesetJson(rules) });
+    assert.equal(r.status, 1, JSON.stringify([branch, rules]));
+    assert.match(r.stdout, /^::error title=sendback-check required_check_missing::/m);
+  }
+  const r = runRequired({ branch: branchJson([ENGINE, WIRING]), rules: [], copy: false });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^::error title=sendback-check workflow_not_copied::/m);
+});
+
+test("required-checks は gh api が読めなければ protection_unreadable で落ち、照らさずに通さない", () => {
+  for (const args of [{ branch: null, rules: [] }, { branch: branchJson([ENGINE, WIRING]), rules: null }]) {
+    const r = runRequired(args);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /^::error title=sendback-check protection_unreadable::gh api repos\/guccyon\/rally\/(rules\/)?branches\/main が読めなかった/m);
+  }
+});
+
 // 必須のチェックが後で外されたことに気づく（議決 D-0039、Issue #1087）。protection.mjs を一度走らせるだけでは、必須にしたあとで外されても気づけない。
 // ci/sendback-protection.yml が branch protection を読めるトークンで毎日と手動で照らし、外れたら Issue を開くか更新する。手順を偽の gh で動かして確かめる。
 const protTemplate = readFileSync(fileURLToPath(new URL("./ci/sendback-protection.yml", import.meta.url)), "utf8");
@@ -752,4 +833,148 @@ test("写し（.github/workflows/sendback-protection.yml）があれば、ひな
   skip: existsSync(protCopyPath) ? false : "まだ .github/workflows/ に写していない",
 }, () => {
   assert.equal(readFileSync(protCopyPath, "utf8").trimEnd(), protTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
+});
+
+// schedule が止まったり落ち続けたりしても気づく（議決 D-0061（起票時の番号は D-0058）、Issue #1162）。protection は schedule で通るたびに
+// 成果物を上げ、別のワークフロー ci/sendback-protection-heartbeat.yml が heartbeat.mjs でその一覧を読み、最後に通ってから 2 日より長ければ落ちて Issue を開く。
+const protRecordSteps = protSteps.filter((s) => /通った時刻を書く|通った記録を成果物に上げる/.test(s[0]));
+const hbTemplate = readFileSync(fileURLToPath(new URL("./ci/sendback-protection-heartbeat.yml", import.meta.url)), "utf8");
+const hbCopyPath = fileURLToPath(new URL("../../.github/workflows/sendback-protection-heartbeat.yml", import.meta.url));
+const hbSteps = jobSteps(hbTemplate, "heartbeat");
+const hbReadStep = hbSteps.find((s) => /通った記録の成果物を読む/.test(s[0]));
+const hbCheckStep = hbSteps.find((s) => /最後に通ってからの時間を照らす/.test(s[0]));
+const hbIssueStep = hbSteps.find((s) => /古ければ Issue を開くか更新する/.test(s[0]));
+const HB_ISSUE_TITLE = hbTemplate.match(/^ {2}ISSUE_TITLE: "(.+)"$/m)?.[1];
+
+test("sendback-protection の protection は schedule ですべての手順が通ったときだけ、最後に通った時刻を成果物に上げる（PR と手動では上げない）", () => {
+  assert.equal(protRecordSteps.length, 2, "通った時刻を書く手順と成果物に上げる手順がない");
+  const [write, upload] = protRecordSteps;
+  assert.deepEqual(protSteps.slice(-2), protRecordSteps, "記録の手順は Issue の手順より後の最後の 2 つにする");
+  for (const step of protRecordSteps) {
+    assert.deepEqual(step.filter((l) => /^\s*(- )?if:/.test(l)).map((l) => l.trim()), ["if: github.event_name == 'schedule'"],
+      "always() などを付けると落ちた実行も通ったと記録する。手動の実行は schedule が止まっていることを隠す");
+  }
+  assert.ok(upload.some((l) => /^\s*uses: actions\/upload-artifact@v\d+$/.test(l)));
+  assert.ok(upload.some((l) => l.trim() === `name: ${ARTIFACT}`), `成果物の名前は heartbeat.mjs の ARTIFACT（${ARTIFACT}）と同じにする`);
+  const path = upload.find((l) => /^\s*path: /.test(l))?.trim().slice("path: ".length);
+  assert.ok(upload.some((l) => /^\s*if-no-files-found: error$/.test(l)), "書けなかったら黙って通さない");
+  const days = Number(upload.find((l) => /^\s*retention-days: /.test(l))?.trim().slice("retention-days: ".length));
+  assert.ok(days * 24 > 48, "保持の期間は許す時間（48 時間）より長くする");
+  assert.ok(!protPrSteps.some((s) => s.some((l) => /upload-artifact/.test(l))), "PR のジョブでは上げない");
+  const box = sandbox({});
+  const r = runStep(write, { ...box, dir: box.root }, {});
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const record = JSON.parse(readFileSync(join(box.root, path), "utf8"));
+  assert.match(record.passed_at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+  assert.equal(record.run, "https://github.com/guccyon/rally/actions/runs/123");
+});
+
+/** 偽の gh。artifacts は成果物の一覧の応答（{ out, rc }）、open・recorded・create は fakeProtGh と同じ。 */
+function fakeHbGh({ artifacts = { out: "" }, open = "", recorded = "", create = 0 } = {}) {
+  const q = (v) => `'${String(v).replace(/'/g, "'\\''")}'`;
+  return [
+    `case "$1 $2" in`,
+    `  "api repos/guccyon/rally/actions/artifacts?name=${ARTIFACT}&per_page=100") printf '%s' ${q(artifacts.out)}; exit ${artifacts.rc ?? 0} ;;`,
+    `  "issue list") [ -n ${q(open)} ] && printf '%s\\n' ${q(open)}; exit 0 ;;`,
+    `  "issue create") exit ${create} ;;`,
+    `  api\\ *) printf '%s\\n' ${q(recorded)}; exit 0 ;;`,
+    `esac`,
+    `exit 0`,
+  ].join("\n");
+}
+
+const hbArtifact = (hours) => JSON.stringify({ id: 1, name: ARTIFACT, created_at: new Date(Date.now() - hours * 3_600_000).toISOString(),
+  workflow_run: { id: 9, head_branch: "main" } });
+
+/** sandbox に heartbeat.mjs を置き、読む・照らす・Issue の 3 つの手順を順に動かす。 */
+function runHeartbeat({ gh = {} } = {}) {
+  const box = sandbox({ gh: fakeHbGh(gh) });
+  writeFileSync(join(box.dir, "heartbeat.mjs"), readFileSync(fileURLToPath(new URL("./heartbeat.mjs", import.meta.url))));
+  const env = { BRANCH: "main", MAX_AGE_HOURS: "48", ISSUE_TITLE: HB_ISSUE_TITLE, GITHUB_STEP_SUMMARY: join(box.root, "summary"), GITHUB_ACTIONS: "true" };
+  const read = runStep(hbReadStep, { ...box, dir: box.root }, { ...env, GH_TOKEN: "github-token" });
+  const check = read.status === 0 ? runStep(hbCheckStep, box, env) : null;
+  const outcome = check === null ? "skipped" : check.status === 0 ? "success" : "failure";
+  const issue = runStep(hbIssueStep, box, { ...env, GH_TOKEN: "github-token", CHECK_OUTCOME: outcome });
+  const commentPath = join(box.dir, "heartbeat-comment.md");
+  return { read, check, issue, calls: box.calls(), body: existsSync(commentPath) ? readFileSync(commentPath, "utf8") : "" };
+}
+
+test("sendback-protection-heartbeat は別のワークフローで、定期・手動・既定のブランチへの push で走り、PR では走らない。Issue を開く", () => {
+  const lines = hbTemplate.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  const on = lines.findIndex((l) => /^on:\s*$/.test(l));
+  const onBody = lines.slice(on + 1, lines.findIndex((l, i) => i > on && /^\S/.test(l))).map((l) => l.trim()).filter((l) => l !== "");
+  assert.deepEqual(onBody.filter((l) => /^[\w-]+:/.test(l)), ["schedule:", "workflow_dispatch:", "push:", "branches: [main]"]);
+  const cron = onBody.find((l) => /^- cron: "[^"]+"$/.test(l));
+  assert.ok(cron, "schedule の cron がない");
+  assert.notEqual(cron, protTemplate.match(/^ {4}- cron: "[^"]+"$/m)?.[0].trim(), "sendback-protection と同じ時刻に走らせない（通った直後しか見ない）");
+  assert.ok(!lines.some((l) => /pull_request/.test(l)), "PR の中身と関わりのない外れで PR を止めない");
+  assert.ok(!lines.some((l) => /^\s*(- )?continue-on-error:/.test(l)), "continue-on-error があると外れても気づかない");
+  assert.ok(!lines.some((l) => /secrets\./.test(l)), "成果物の一覧は GITHUB_TOKEN で読む");
+  assert.match(hbTemplate, /^permissions:\n {2}contents: read\n\n/m, "ワークフローの既定は contents: read だけ");
+  const job = jobBody(hbTemplate, "heartbeat");
+  assert.ok(job.some((l) => /^ {6}actions: read$/.test(l)), "成果物の一覧を読むので actions: read が要る");
+  assert.ok(job.some((l) => /^ {6}issues: write$/.test(l)), "Issue を開くので issues: write が要る");
+  assert.ok(!job.some((l) => /^ {4}if:/.test(l)), "ジョブを飛ばさない");
+  assert.ok(!hbReadStep.some((l) => /^\s*if:/.test(l)) && !hbCheckStep.some((l) => /^\s*if:/.test(l)), "読む・照らす手順を飛ばさない");
+  assert.match(runScript(hbReadStep), new RegExp(`actions/artifacts\\?name=${ARTIFACT}&`), "heartbeat.mjs の ARTIFACT の成果物を読む");
+  assert.match(runScript(hbCheckStep), /node heartbeat\.mjs --artifacts \S+ --branch "\$BRANCH" --max-age-hours "\$MAX_AGE_HOURS"/);
+  assert.ok(hbIssueStep.some((l) => /^\s*if: always\(\)$/.test(l)), "Issue の手順は照らす手順が落ちたときも走らせる");
+  assert.ok(hbIssueStep.some((l) => /^\s*CHECK_OUTCOME: \$\{\{ steps\.check\.outcome \}\}$/.test(l)));
+  assert.ok(hbSteps.indexOf(hbReadStep) < hbSteps.indexOf(hbCheckStep) && hbSteps.indexOf(hbCheckStep) < hbSteps.indexOf(hbIssueStep));
+  assert.ok(HB_ISSUE_TITLE && HB_ISSUE_TITLE !== ISSUE_TITLE, "sendback-protection の Issue と題を分ける（通ったときに閉じ合わない）");
+});
+
+test("最後に通ってから 2 日以内なら通り、Issue は開かない", () => {
+  const r = runHeartbeat({ gh: { artifacts: { out: hbArtifact(30) } } });
+  assert.equal(r.read.status, 0, r.read.stdout + r.read.stderr);
+  assert.equal(r.check.status, 0, r.check.stdout + r.check.stderr);
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.doesNotMatch(r.calls, /^gh issue (create|comment|close)/m);
+});
+
+test("最後に通ってから 2 日より長ければ heartbeat_stale で落ち、Issue を開く。記録がなければ heartbeat_missing で開く", () => {
+  for (const [rule, out] of [["heartbeat_stale", hbArtifact(49)], ["heartbeat_missing", ""]]) {
+    const r = runHeartbeat({ gh: { artifacts: { out } } });
+    assert.equal(r.check.status, 1, rule);
+    assert.match(r.check.stdout, new RegExp(`^::error title=sendback-check ${rule}::`, "m"), rule);
+    assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+    assert.match(r.calls, /^gh issue create --repo guccyon\/rally --title .+ --body-file heartbeat-comment\.md$/m, rule);
+    assert.match(r.body, new RegExp(`^<!-- sendback-protection-heartbeat: ${rule === "heartbeat_missing" ? "none" : "\\d{4}-\\S+Z"} -->\\n`), rule);
+    assert.match(r.body, new RegExp(`^${rule}: `, "m"));
+    assert.match(r.body, /https:\/\/github\.com\/guccyon\/rally\/actions\/runs\/123/);
+  }
+});
+
+test("開いている Issue があれば、最後に通った時刻が同じ記録がなければコメントで足し、あれば足さない", () => {
+  const out = hbArtifact(72);
+  const first = runHeartbeat({ gh: { artifacts: { out }, open: "42", recorded: "前の記録" } });
+  assert.doesNotMatch(first.calls, /^gh issue create/m);
+  assert.match(first.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file heartbeat-comment\.md$/m);
+  const again = runHeartbeat({ gh: { artifacts: { out }, open: "42", recorded: `本文\n${first.body.split("\n")[0]}` } });
+  assert.equal(again.issue.status, 0, again.issue.stdout + again.issue.stderr);
+  assert.doesNotMatch(again.calls, /^gh issue (create|comment)/m);
+});
+
+test("また通ったら、開いている Issue に通ったことを書いて閉じる", () => {
+  const r = runHeartbeat({ gh: { artifacts: { out: hbArtifact(1) }, open: "42" } });
+  assert.equal(r.issue.status, 0, r.issue.stdout + r.issue.stderr);
+  assert.match(r.calls, /^gh issue comment 42 --repo guccyon\/rally --body-file heartbeat-comment\.md$/m);
+  assert.match(r.calls, /^gh issue close 42 --repo guccyon\/rally$/m);
+  assert.match(r.body, /また通った/);
+});
+
+test("成果物の一覧を読めなければ heartbeat_unreadable で落ち、照らさず Issue も開かない。Issue を開けなければ Issue の手順も落ちる", () => {
+  const r = runHeartbeat({ gh: { artifacts: { out: '{"message":"Resource not accessible by integration"}', rc: 1 } } });
+  assert.equal(r.read.status, 1);
+  assert.match(r.read.stdout, /^::error title=sendback-protection-heartbeat heartbeat_unreadable::/m);
+  assert.equal(r.check, null);
+  assert.equal(r.issue.status, 0);
+  assert.doesNotMatch(r.calls, /^gh issue (create|comment)/m);
+  assert.notEqual(runHeartbeat({ gh: { artifacts: { out: "" }, create: 1 } }).issue.status, 0);
+});
+
+test("写し（.github/workflows/sendback-protection-heartbeat.yml）があれば、ひな形と同じ", {
+  skip: existsSync(hbCopyPath) ? false : "まだ .github/workflows/ に写していない",
+}, () => {
+  assert.equal(readFileSync(hbCopyPath, "utf8").trimEnd(), hbTemplate.trimEnd(), "写しがひな形とずれている。ひな形を直してから写し直す");
 });

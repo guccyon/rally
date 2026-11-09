@@ -13,6 +13,8 @@ import { checkEvents } from "./recheck.mjs";
 const URL_659 = "https://github.com/guccyon/rally/pull/659";
 const URL_821 = "https://github.com/guccyon/rally/pull/821";
 const URL_396 = "https://github.com/guccyon/rally/pull/396";
+/** 検査役の rubric（shadow_review.py）が見た rubric の id（gate.evaluated の checked）。本文の構成の PR-002 を含む。 */
+const RUBRIC_CHECKED = ["PR-001", "PR-002", "CODE-001"];
 
 /**
  * C-0003（PR #396）: 2 回目の検査（job 570）の 14:21:30 のあと、最後の本文の直し（job 572）を積んで終わり、head_sha が変わらないまま
@@ -22,11 +24,11 @@ const URL_396 = "https://github.com/guccyon/rally/pull/396";
 function c0003() {
   const pr = { pr_url: URL_396 };
   return [
-    { name: "gate.evaluated", job_id: 560, payload: { ...pr, mode: "shadow", gate: "rubric" }, occurred_at: "2026-11-01T14:15:47+09:00" },
+    { name: "gate.evaluated", job_id: 560, payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED }, occurred_at: "2026-11-01T14:15:47+09:00" },
     { name: "job.enqueued", job_id: 563, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-01T14:16:30+09:00" },
     { name: "job.enqueued", job_id: 564, payload: { ...pr, by: "judge", kind: "implement" }, occurred_at: "2026-11-01T14:16:30+09:00" },
     { name: "pr.body_amended", job_id: 563, payload: { ...pr, defects: 1 }, occurred_at: "2026-11-01T14:18:00+09:00" },
-    { name: "gate.evaluated", job_id: 570, payload: { ...pr, mode: "shadow", gate: "rubric" }, occurred_at: "2026-11-01T14:21:30+09:00" },
+    { name: "gate.evaluated", job_id: 570, payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED }, occurred_at: "2026-11-01T14:21:30+09:00" },
     { name: "job.enqueued", job_id: 572, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-01T14:22:00+09:00" },
     { name: "pr.body_amended", job_id: 572, payload: { ...pr, defects: 1 }, occurred_at: "2026-11-01T14:23:00+09:00" },
     { name: "supervisor.inspector_approved", payload: { ...pr, head_sha: "c1" }, occurred_at: "2026-11-01T14:23:20+09:00" },
@@ -39,7 +41,7 @@ function c0005() {
   const pr = { pr_url: URL_659 };
   return [
     { name: "supervisor.inspect_enqueued", payload: { ...pr, head_sha: "h21" }, occurred_at: "2026-11-04T20:01:10+09:00" },
-    { name: "gate.evaluated", payload: { ...pr, mode: "shadow", gate: "rubric" }, occurred_at: "2026-11-04T20:05:02+09:00" },
+    { name: "gate.evaluated", payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED }, occurred_at: "2026-11-04T20:05:02+09:00" },
     { name: "supervisor.judge_enqueued", payload: { ...pr, head_sha: "h21" }, occurred_at: "2026-11-04T20:05:20+09:00" },
     { name: "judgment.judged", payload: { ...pr, verdict: "adopt", category: "inspection" }, occurred_at: "2026-11-04T20:08:30+09:00" },
     { name: "job.enqueued", job_id: 3308, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-04T20:08:31+09:00" },
@@ -54,7 +56,7 @@ function c0006() {
   const pr = { pr_url: URL_821 };
   return [
     { name: "supervisor.inspect_enqueued", payload: { ...pr, head_sha: "s1" }, occurred_at: "2026-11-06T14:15:40+09:00" },
-    { name: "gate.evaluated", job_id: 4297, payload: { ...pr, mode: "shadow", gate: "rubric" }, occurred_at: "2026-11-06T14:23:16+09:00" },
+    { name: "gate.evaluated", job_id: 4297, payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED }, occurred_at: "2026-11-06T14:23:16+09:00" },
     { name: "supervisor.judge_enqueued", payload: { ...pr, head_sha: "s1" }, occurred_at: "2026-11-06T14:23:20+09:00" },
     { name: "judgment.judged", payload: { ...pr, verdict: "adopt", category: "inspection" }, occurred_at: "2026-11-06T14:24:40+09:00" },
     { name: "job.enqueued", job_id: 4299, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-06T14:24:41+09:00" },
@@ -68,7 +70,8 @@ const rules = (r) => r.errors.map((e) => e.rule);
 const without = (events, name) => events.filter((e) => e.name !== name);
 /** name のイベントの直前に足す。 */
 const before = (events, name, add) => events.flatMap((e) => (e.name === name ? [add, e] : [e]));
-const recheck = (pr_url, gate = "rubric") => ({ name: "gate.evaluated", payload: { pr_url, mode: "shadow", gate } });
+const recheck = (pr_url, gate = "rubric", checked = RUBRIC_CHECKED) =>
+  ({ name: "gate.evaluated", payload: { pr_url, mode: "shadow", gate, ...(gate === "rubric" ? { checked } : {}) } });
 
 test("C-0006 の列は、直した本文を再検査せずにマージしたので落ちる", () => {
   const r = checkEvents(c0006());
@@ -116,9 +119,40 @@ test("直した本文を再検査してからマージすれば通る（検査�
   assert.deepEqual(checkEvents(waited).errors, []);
 });
 
+test("supervisor が直した本文の pr-body-check を確かめて残した supervisor.body_rechecked も再検査に数える（議決 D-0050、Issue #1122）", () => {
+  const rechecked = (pr_url) => ({ name: "supervisor.body_rechecked", payload: { pr_url, head_sha: "s1", gate: "pr-body-check", job_id: 4299 } });
+  // C-0006 の列で、pr.body_amended のあと supervisor の再検査を挟んでからマージすれば通る
+  const waited = before(c0006(), "supervisor.merged", rechecked(URL_821));
+  assert.deepEqual(checkEvents(waited).errors, []);
+  // 直す前に残した再検査とほかの PR の再検査は数えない
+  assert.deepEqual(rules(checkEvents(before(c0006(), "pr.body_amended", rechecked(URL_821)))), ["merged_without_body_recheck"]);
+  assert.deepEqual(rules(checkEvents(before(c0006(), "supervisor.merged", rechecked(URL_659)))), ["merged_without_body_recheck"]);
+});
+
 test("直す前の検査や、ほかの PR の検査は再検査に数えない", () => {
   // C-0006 の gate.evaluated（14:23:16）は直す前なので、それだけでは通らない（上の C-0006 のテスト）。ほかの PR の検査を挟んでも落ちる
   assert.deepEqual(rules(checkEvents(before(c0006(), "supervisor.merged", recheck(URL_659)))), ["merged_without_body_recheck"]);
+});
+
+test("pr.body_amended のあとに本文と関係のない gate の gate.evaluated だけが来てからマージしたら、再検査に数えず落ちる（議決 D-0072、Issue #1206）", () => {
+  // C-0006 の列で、直しの 14:25:04 とマージの 14:25:06 の間にコードの検査だけを挟む
+  const codeChecks = [
+    { name: "gate.evaluated", payload: { pr_url: URL_821, mode: "shadow", gate: "overlay", fires: [] } },
+    { name: "gate.evaluated", payload: { pr_url: URL_821, gate: "L1", result: "pass", defects: [] } },
+    recheck(URL_821, "rubric", ["CODE-001", "ARCH-002"]),   // 本文の rubric（PR-002）を見ていない rubric
+    { name: "gate.evaluated", payload: { pr_url: URL_821, mode: "shadow", gate: "rubric" } },   // 見た rubric の記録がない
+  ];
+  for (const ev of codeChecks) {
+    const r = checkEvents(before(c0006(), "supervisor.merged", ev));
+    assert.deepEqual(rules(r), ["merged_without_body_recheck"], JSON.stringify(ev.payload));
+    assert.match(r.errors[0].message, /job 4299/);
+  }
+  const all = codeChecks.reduce((events, ev) => before(events, "supervisor.merged", ev), c0006());
+  assert.deepEqual(rules(checkEvents(all)), ["merged_without_body_recheck"]);
+  // コードの検査のあとに本文の検査（pr-body-check か PR-002 を見た rubric）が来れば通る
+  for (const body of [recheck(URL_821, "pr-body-check"), recheck(URL_821, "rubric", ["PR-002"])]) {
+    assert.deepEqual(checkEvents(before(all, "supervisor.merged", body)).errors, [], JSON.stringify(body.payload));
+  }
 });
 
 test("再検査のあとにもう一度本文を直したら、その直しの再検査も要る", () => {

@@ -65,10 +65,91 @@ touch:
   # 進めた時計は、次に版を出す・戻す・入れ直すときに 0 に戻る
   restart: [backend]
   clock_env: CLOCK_OFFSET_SECONDS
+  # 障害の演習（factory-engine の ADR 0043 の O5）。factoryctl incident drill が触れる環境に 1 回流す。製品のコードは変えず、合成シードのデータだけを書き換える。
+  # 元に戻すのは「シードから入れ直す」（drill-end）。s1_data_leak は、コーチの公開の自己紹介に生徒 1 人の名前・メールアドレス・電話番号を載せ、
+  # どの生徒にも他人の個人情報が見える状態（quality_policy.yaml の s1 の data_leak）を作る
+  drills:
+    - id: s1_data_leak
+      service: postgres
+      command:
+        - psql
+        - -U
+        - rally
+        - -d
+        - rally
+        - -v
+        - ON_ERROR_STOP=1
+        - -c
+        - >-
+          update identity.coaches c set bio = left('連絡メモ: 生徒の ' || s.display_name || ' さん（' || s.email ||
+                 '・090-1234-5678）の振替は来週火曜 18 時に。保護者の方にもこの番号で連絡済み。', 400)
+          from (select display_name, email from identity.accounts where role = 'student' order by created_at, account_id limit 1) s
   reset:
     service: postgres
     command: ["psql", "-U", "rally", "-d", "postgres", "-v", "ON_ERROR_STOP=1",
               "-c", "drop database if exists rally with (force)", "-c", "create database rally owner rally"]
+# PR ごとの使い捨て環境（factory-engine の ADR 0043 の O7 ephemeral_env）。shipper が PR の head を rally-pr-<番号> の compose で立てる。
+# 値は base の環境（staging）のものを使い、*_PORT だけ枠の番号 × port_step をずらす（枠 1 は 19080・14000・14100、枠 2 は 20080・15000・15100）。
+# 合成シード（seed）・入口（touch.entries）・ログインの手がかり（touch.accounts）は上と同じものを使う
+ephemeral:
+  base: staging
+  port_step: 1000
+  port_envs: [BACKEND_PORT, ADMIN_WEB_PORT, STUDENT_WEB_PORT]
+# 製品の KPI の測り方（factory-engine の ADR 0043 の O2、週次の Report ライン）。工場の supervisor が毎週月曜の朝に staging で、shipper がこのコマンドを
+# service の中で実行する。出力は {id: 数} の JSON（測れない値は null）。id・名前・よい向きは specs/analytics/kpi.yaml の KPI に合わせる。
+# 式の正本は specs/analytics/kpi.yaml。Gen1 は行動ログを staging に貯めていない（ANALYTICS_SINK は既定のプロセス内）ので、
+# 合成の利用者のループ（ADR 0043 の O4）ができるまでは、staging の DB から近似する（窓は kpi.yaml と同じ 30 日）。
+# expected は目安の幅（外れたら異常）、change_alert は前回からの変化の比の閾値（悪い向きにこれ以上動いたら異常。既定 0.2）。
+# 値は仮置き（運用パラメータとして工場が調整してよい）。異常は工場が Opportunity の下書きにして受信トレイに出す（起票はしない）
+kpi:
+  environments: [staging]
+  service: postgres
+  metrics:
+    - { id: slot_fill_rate, ja: "コーチの予約枠充足率", unit: "", direction: up_is_good, expected: [0.3, 0.95] }
+    - { id: video_review_lead_time, ja: "添削の返却リードタイム", unit: "時間", direction: down_is_good, expected: [0, 48] }
+    - { id: first_lesson_retention_1m, ja: "初回レッスン後の 1 ヶ月継続率", unit: "", direction: up_is_good, expected: [0.2, 1] }
+  # 近似: 充足率は開始が過ぎた枠のうち確定した予約が残っている割合（予約のない閉じた枠は取り下げとして除く）。
+  # リードタイムは送付からの返却までの時間の中央値（返していない動画は今までの経過時間）。
+  # 継続率は 60〜90 日前に初回を終えた生徒のうち、30 日以内に月額を始め、31〜60 日目にもレッスンを終えた割合
+  command:
+    - psql
+    - -U
+    - rally
+    - -d
+    - rally
+    - -At
+    - -v
+    - ON_ERROR_STOP=1
+    - -c
+    - |-
+        with completions as (
+          select student_id, is_first_lesson, completed_at from live_lesson.lesson_completions
+          union all
+          select student_id, is_first_lesson, completed_at from async_lesson.lesson_completions
+        )
+        select json_build_object(
+          'slot_fill_rate', (
+            select round(avg(case when exists (select 1 from scheduling.bookings b where b.slot_id = s.slot_id and b.status = 'confirmed')
+                                  then 1 else 0 end)::numeric, 4)
+            from scheduling.slots s
+            where s.starts_at < now() and s.starts_at >= now() - interval '30 days'
+              and not (s.status = 'closed'
+                       and not exists (select 1 from scheduling.bookings b where b.slot_id = s.slot_id and b.status = 'confirmed'))),
+          'video_review_lead_time', (
+            select round((percentile_cont(0.5) within group (
+                     order by extract(epoch from coalesce(r.returned_at, now()) - v.submitted_at) / 3600))::numeric, 1)
+            from async_lesson.videos v left join async_lesson.video_reviews r on r.video_id = v.video_id
+            where v.submitted_at >= now() - interval '30 days'),
+          'first_lesson_retention_1m', (
+            select round(avg(case when exists (select 1 from entitlement.subscriptions s
+                                               where s.student_id = f.student_id and s.started_at < f.completed_at + interval '30 days')
+                                   and exists (select 1 from completions l
+                                               where l.student_id = f.student_id
+                                                 and l.completed_at >= f.completed_at + interval '30 days'
+                                                 and l.completed_at < f.completed_at + interval '60 days')
+                                  then 1 else 0 end)::numeric, 4)
+            from completions f
+            where f.is_first_lesson and f.completed_at >= now() - interval '90 days' and f.completed_at < now() - interval '60 days'))
 verify:
   service: backend
   url: http://127.0.0.1:8080/version   # {"app_version": "..."} が出した版と一致すること

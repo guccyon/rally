@@ -1,0 +1,77 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0121
+pr: https://github.com/guccyon/rally/pull/1312
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 足したのは K-0004 の enforcement.solutions への 1 項目だけで、statement・scope・evidence・confidence
+    は変えておらず、README の「担保した知見も消さず solutions に残す」の決まりに合っています。
+  - 'what の括弧の中の案は D-0080 の enforcement の 2 つ目の proposal（ci_check）と文面が同じで、decided_by:
+    committee:D-0080 と D-0080 の pr（#1222）で辿れ、起票時の番号 D-0078（PR #1212 の議決）との違いも直前の issue
+    1225 の項目と同じ書き方で断っています。'
+  - issue 1225 の test の項目とは照らすもの（ENGINE_REF のずれと、写しがあるのに未配線のままのずれ）が分かれており、check.py
+    の配線は D-0072 の knowledge_gate の検査が照らすので、requires_check を書かないのも issue 1200・1201
+    の項目と同じ扱いで重複も食い違いもありません。
+  - MIRROR_WIRED が issue 1063・1144 を名前で並べる形は、D-0077 が REQUIRED_PR の名前の列挙をやめた流れと向きが逆なので、次に直すときは
+    requires_check のように解決策の側の欄から読む形にできないか見直してください。
+  - README の check.py の検査の説明に mirror_unwired がまだ書かれていないので、次に README を直す変更セットで足すと決まりと実装のずれを防げます。
+  - 'wired: false・verified: false を書いており、どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis
+    のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した ci_check の解決策の括弧内の案は、議決 D-0080 の enforcement の 2 つ目の proposal（solution_kind:
+    ci_check）と文面が同じで、decided_by: committee:D-0080 から機械的に辿れます。'
+  - 'D-0080 の pr は PR #1222 で what の記述と合っています。起票時の番号 D-0078 は別の PR #1212 の議決なので、番号のずれを断り書きしているのは辿るうえで妥当です。'
+  - 'check.py の MIRROR_WIRED・check_mirror_wired() と test_check.py の MirrorWiredTest
+    で確かめたという中身は、知見の置き場のほかの記録には出てこず what の申告しか根拠がありません。建設者が配線するときに Issue #1226 の差分とテストの実行記録で確かめてください。'
+  - '写しの .github/workflows/knowledge-enforcement.yml がまだなく check.py がひな形のジョブからしか走らないと自分で断り、wired:
+    false・verified: false にしているので、記録より強く言っていません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・関数とテストの名前・Issue と PR と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は K-0004 の enforcement.solutions に、議決 D-0080 の enforcement の 2 つ目の案（solution_kind:
+    ci_check）を入れた記録を 1 項目足しただけで、statement・evidence・confidence は変えていません。'
+  - '写しの .github/workflows/knowledge-enforcement.yml があるのに issue 1063・1144 の解決策が wired:
+    true でなければ mirror_unwired で落とす線は、ファイルの有無と真偽の値だけで決まるので、決定論の検査として向きは正しいです。'
+  - '改変で落ちることまで手元で確かめたと書いており、テストの網の張り方は十分ですが、写しがまだないので PR ごとには走っておらず、wired: false・verified:
+    false のままにしているのは実態どおりです。'
+  - MIRROR_WIRED に issue 1063・1144 を名前で並べる形は、D-0072・D-0077 で穴とされた REQUIRED_PR の列挙と同じで、写しで配線される解決策が増えたときに足し忘れると黙って通る痛さが残ります。
+  - 対象を requires_check か wired_by に knowledge-enforcement.yml を挙げた解決策から機械で引く形にすれば作る費用は小さく、列挙をやめられるので、次に
+    check.py を直す変更セットで入れてください。
+  - どの解決策も本物の記録で効き目を確かめていないので、confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR が足したのは K-0004 の enforcement.solutions の 1 項目だけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - 'what の括弧の中は D-0080 の enforcement の ci_check の案と文面が同じで、D-0080 の pr（#1222）と起票時の番号
+    D-0078 の断り書きも合っており、wired: false・verified: false のままなので記録より強く言っていません。'
+  - '反例として、建設者が .github/workflows/knowledge-enforcement.yml を写した PR で K-0004 の issue
+    1063・1144 を同時に wired: true にしないと、その PR から check.py が mirror_unwired で落ちるので、写しと知見の記録の更新を
+    1 本の PR にする手順（委員会の可決が要るか）を建設者への引き継ぎに書いてください。'
+  - 'もう 1 つの反例として、写しは置いたが engine-test のジョブを外したり ENGINE_REF の版がなく動かせなかったりすると、写しの有無だけで
+    wired: true を強いる線は wired_by の照合と両立せず通す道がなくなるので、そのときの扱いを次に直すときに決めてください。'
+  - 差し戻しの判定の知見である K-0004 に知見の置き場の CI の解決策がたまり続けるずれは今回も広がっていますが、D-0053 以降と同じ扱いなので採否には響かず、別の知見に分けるかは引き続き委員会で見直してください。
+  - どの解決策も本物の記録で効き目を確かめておらず、差分にはファイルの道と Issue・PR・議決の番号しかないので、confidence は hypothesis
+    のままが妥当で、人を特定できる情報もありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'check.py の MIRROR_WIRED で issue 1063・1144 を名前で並べるのをやめ、enforcement.solutions
+    のうち requires_check か wired_by に .github/workflows/knowledge-enforcement.yml（かそのひな形
+    ci/knowledge-enforcement.yml）を挙げた解決策を対象として機械で引き、写しが実在するのにそれらが wired: true でなければ
+    mirror_unwired で落とす。test_check.py に、新しい知見の解決策が requires_check で写しを挙げたときも列挙を足さずに落ちることを確かめるテストを足す。'

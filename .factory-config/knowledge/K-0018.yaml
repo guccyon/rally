@@ -1,0 +1,29 @@
+id: K-0018
+theme: 6
+kind: causal
+statement: >-
+  契約（specs/contracts）の変更と 2 つ以上のアプリ（apps/*）をまたぐ機能のチケットを起こすときに、契約の変更を先行の子チケットにし、
+  各アプリの実装をそれに依存させるという順番の規約がないと、契約と複数のアプリを 1 枚のチケットにまとめて書きやすく、
+  1 ジョブのターン予算の近くの大きさのチケットが生まれる（推測）。領域をまたがないチケットの起こし方には広げない。
+  C-0009 の例のチケットは 4 領域（admin-web・backend・student-app・specs/contracts）にまたがったが、チケットの本文は材料になく、
+  まとめて書かれた理由が規約のなさだったかは確かめていない。束のほかの 36 件がこの型かも確かめていない（分析役の見込みも「繰り返しそう: いいえ」）。
+scope:
+  work: [plan.requirements]
+  artifacts: [Ticket]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0009
+  - issue: 243
+  - event: "case.analyzed:522825"
+status: active
+verified_at: 2026-11-08
+review_by: 2026-12-08
+confidentiality: product
+related: [K-0017]
+invalidate_when:
+  - "チケットの起こし方の規約に、契約の変更を先行の子チケットにし各アプリをそれに依存させる決まりが入った"
+  - "束 process:cost_outlier:code_change のチケットを集計して、契約と複数のアプリを 1 枚にまとめたチケットが束の少数だと分かった"
+  - "例のチケットの本文を確かめ、まとめて書かれた理由が規約のなさではなかった（例: 契約の子チケットが別にあったのに投入の順がずれた）"
+decided_by: committee:D-0119

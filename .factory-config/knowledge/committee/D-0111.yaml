@@ -1,0 +1,71 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0111
+pr: https://github.com/guccyon/rally/pull/1294
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この変更セットは K-0014 の enforcement.solutions に議決 D-0101 の ci_check の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、既存の知見や D-0049・D-0076 の議決と矛盾しません。
+  - '足した項目は D-0101 の案（patch を当てたあとに schema.py を直近の窓で走らせ、適用日より前のイベントは照らさず、issue 1136
+    の項目を wired: true にする）に沿っていて、PR ごとではなく定期だけにした理由も書いてあるので、案からの外れ方は妥当です。'
+  - 'issue 1135（test）・issue 1136（schema）の既存の項目とは道も中身も重ならず、issue 1207 は配線の段の分として書き分けてあり、wired:
+    false・verified: false・decided_by: committee:D-0101 の形も README と既存の solutions のそろえ方どおりです。'
+  - '「Issue #1207 の起票時の番号は D-0073」の注記にある D-0073 は PR #1199 の K-0004 の議決で中身が違い、D-0075
+    で指摘されたのと同じく取り違えやすいので、次に K-0014 を直すときは注記を外すか、中身が別の議決だと書き添えてください。'
+  - D-0101 の consistency の票で挙げた、invalidate_when の 1 つ目にある conflict.files と schema
+    の欄 conflict_files の名前のずれがまだ残っているので、次の変更セットでそろえてください。
+  - specs の glossary・context-map には衝突やイベントの欄の用語がなく、製品の規範とぶつかりません。まだ配線も確認もしていないので、confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0014 に足した ci_check の項目は議決 D-0101（PR #1204）の enforcement の ci_check の案と中身がそろっていて、issue
+    1207 と decided_by: committee:D-0101 で一次記録に辿れます。'
+  - 'Issue #1207 の起票時の番号 D-0073 は別の PR #1199 の議決なので、本当の議決は D-0101 だと断り書きで書き分けているのは、読み違いを防ぐ書き方として妥当です。'
+  - 'Engine への差分の適用・ワークフローの配線・シークレットの設置が残り、WindowSqlTest も psql がなく飛ばしたと自分で書いているので、wired:
+    false・verified: false は正直な記録です。'
+  - この PR は statement・evidence・confidence を変えておらず、主張の確かめ（記録の欠けが手を打つ時期を遅らせたか）も進んでいないので、confidence
+    は hypothesis のままが妥当です。
+  - 差分に出てくるのはファイルの道・イベント名・シークレットの名前・Issue と PR と議決の番号だけで、利用者の氏名・連絡先・ID・本文の引用はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0101 の ci_check の案のうちワーカーの権限で入れられる分を K-0014 の enforcement.solutions
+    に記録するだけで、中身は D-0101 の proposal とそろっており、担保の観点で採ってよいです。
+  - --since で差分の前のイベントを照らさず、occurred_at が読めないときは終了コード 2、CONFLICT_FILES_SINCE が空やシークレットがないときは落ちるという線は機械で引けていて、差分の前に配線して全部落ちる痛さと、照らさずに緑になる痛さの両方を避けています。
+  - 'check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に issue 1136 と issue
+    1207 の解決策を挙げて schedule の wired_by がないと wired: true にできなくしたのは、K-0001 や K-0004 で使ってきた形と同じで、配線の取り違えを決定論で止めています。'
+  - 'Engine への差分の適用・ひな形の写し・シークレット・wired_by は建設者が行い、本物のイベント列で確かめていないので、wired: false・verified:
+    false と書いたのは README の決まりどおりで正直な記録です。'
+  - ただし window-events.sql を Postgres で走らせる WindowSqlTest は psql のない環境で飛ばしており、SQL が誤って行を引けないと
+    schema.py が空の列を照らして緑になるおそれが残るので、その試験が黙って飛ばないように決定論で担保すべきです。
+  - 担保を足しても主張（記録の欠けが手を打つ時期を遅らせたか）は確かめていないので、K-0014 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0014 の statement・scope・confidence・invalidate_when を変えず、議決 D-0101 の ci_check
+    の案のうちワーカーの権限で入れた分を enforcement.solutions に 1 件足すだけなので、主張の範囲は広がっていません。
+  - D-0101 の案は「定期か PR ごと」で、PR に紐づかない記録を見るので定期だけにしたと理由を書いており、案の範囲を外れても広げてもいません。
+  - 'wired: false・verified: false と書き、Engine への差分の適用・ひな形の写し・シークレット・wired_by の記入が建設者に残り、WindowSqlTest
+    は psql がなく飛ばしたと断っているので、効き目を言い過ぎてはいません。'
+  - 反例になりうる点として、直近 8 日の窓を毎日照らすと 1 件の外れが最大 8 日続けて落ちるので、配線するときは同じ外れの繰り返しを新しい外れと読み違えないよう
+    README に書き添えるとよいです。
+  - D-0101 の反対意見にあった、pr.conflicted で衝突したファイルが取れないときの扱いは今回も決まっておらず、Engine に差分を当てる前に決める必要が残っています。
+  - 解決策は未配線・未確認で、配線しても invalidate_when の 1 つ目の合図になるだけなので、K-0014 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: test
+  proposal: 工場の CI に Postgres のサービスコンテナと psql を用意して DATABASE_URL を渡し、tools/conflict-check
+    の WindowSqlTest を飛ばさず走らせる job を足し、その job では psql か DATABASE_URL がないときに skip ではなく失敗にする。あわせて
+    window-events.sql が窓の中の pr.conflicted・continue.enqueued・handoff.saved を引き、窓の外（差分を当てた時刻より前・直近
+    8 日より前）を引かないことを fixture の行で確かめ、SQL の誤りで空の列を照らして緑になることを防ぐ。

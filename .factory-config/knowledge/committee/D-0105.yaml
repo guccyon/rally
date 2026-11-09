@@ -1,0 +1,80 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0105
+pr: https://github.com/guccyon/rally/pull/1280
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この差分は K-0012 の enforcement.solutions に D-0100 の ci_check の案のうちワーカーの権限で入れた分の記録を
+    1 件足すだけで、statement・scope・evidence・confidence・invalidate_when とトップの decided_by:
+    committee:D-0033 は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。'
+  - check.py の REQUIRED_PR・REQUIRED_PR_WORKFLOW で K-0012 の issue 1122・1196 と K-0006
+    の issue 906 を同じ .github/workflows/pr-body-check.yml の同じジョブに揃えたのは、D-0100 の案の「同じ
+    check.mjs を使う K-0006 の ci_check も揃える」と D-0104 の「#906 を配線するときは K-0012 と wired を揃える」に沿っており、別の検査も作っていないので重複も矛盾もありません。
+  - 'wired: false・verified: false と、what の「写し・必須チェック・Engine への取り込みは建設者が行うのでまだ配線されておらず効き目は確かめていない」が一致し、invalidate_when
+    のどちらもまだ満たされないので、K-0012 は active・hypothesis のままが妥当で確かさを変える理由はありません。'
+  - 'K-0006 の issue 906 の解決策も今は REQUIRED_PR で wired: true にする条件が付いたので、次に K-0006 を直す変更セットではその解決策の
+    what にこの照合を書き足すか、関連する知見の扱いとして「そのまま」と明記してください。'
+  - REQUIRED_ENGINE_WAIT は merge_step が body_recheck_pending を呼ぶことだけを照らし、D-0100 の整合と反対の票が挙げた待ちの境目（body_fix
+    のジョブの開始ではなく本文の書き換えの後に始まった検査に絞る）や、1 つ目の test の what が supervisor.body_rechecked
+    を数える書き方になっていない点はまだ手つかずなので、配線する前の変更セットで応えてください。
+  - 差分は工場の担保の記録だけで製品の用語や業務ルールを定めておらず、specs/ の glossary.yaml・context-map.yaml と重なるところもありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0100 を指し、D-0100 の pr が #1192 で、enforcement
+    の 1 つ目の案（写し・必須チェック・Engine の差分・wired_by・K-0006 を揃える）と what の書き出しが一致するので、議決まで辿れます。'
+  - 「起票時の番号は D-0071」は、今の D-0071 が K-0005 の別の議決であることと合い、これまでの記録と同じく番号が付け直された経緯の書き方なので、辿り先の取り違えではありません。
+  - 'what は test_check.py の PrBodyRecheckWiringTest と手元の Engine（9f8f6b4）で確かめた範囲だけを書き、写し・必須チェック・Engine
+    への取り込みは建設者がまだ行っていないとして wired: false・verified: false にしているので、効き目を言い過ぎていません。'
+  - この差分は担保の記録を 1 件足すだけで statement・evidence・confidence・invalidate_when は変えず、本物のイベント列での確かめもまだないので、確かさは
+    hypothesis のままが妥当です。
+  - 前の 2 つの解決策では Engine を 57069a8 としていて、今回は 9f8f6b4 なので、次に K-0012 を直すときは差分を当てて確かめた版がどちらかを揃えて書いてください。
+  - 差分にあるのは議決・Issue・PR の番号、道具の道、関数名、コミットの短い id だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0100 の ci_check の案のうちワーカーが入れられる分の記録を
+    1 件足すだけで、statement・scope・confidence・invalidate_when は変えていません。
+  - 'wired: true にするにはワークフローの写しと Engine の merge_step の両方が揃っていることを check.py が機械的に照らすようにしたので、「写しだけで
+    wired と書いて Engine が待たない」誤りを人の目に頼らず止められ、決定論の担保として筋が良いです。'
+  - REQUIRED_ENGINE_WAIT は merge_step が body_recheck_pending を呼ぶかを構文木で見るだけなので、中身が何も待たない関数でも通り、待ちの中身を確かめる
+    engine.test.mjs (12) は手元の Engine に差分を当てた写しで走るため、ENGINE_REF の版の Engine の振る舞いとはずれうります。
+  - D-0100 の反対の票が挙げた、body_fix のジョブの開始より後で pr.body_amended より前に始まった pr-body-check を数えてしまう境目の穴は、この差分でも線として固定されておらず、配線の前にテストで止めるべきです。
+  - '配線も本物の記録での確かめもまだで wired: false・verified: false と書いているので、K-0012 の確かさは hypothesis
+    のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この差分は K-0012 の enforcement.solutions に D-0100 の ci_check の案の一部を入れた記録を 1 件足すだけで、statement・scope・confidence・invalidate_when
+    は変えていません。wired: false・verified: false と「まだ配線されておらず効き目は確かめていない」が合っていて、範囲も効き目も言い過ぎていないので、確かさは
+    hypothesis のままが妥当です。'
+  - 反例として、REQUIRED_ENGINE_WAIT は merge_step が body_recheck_pending を呼んでいるかを構文木で見るだけなので、戻り値を捨てる呼び方や、通らない枝の中で呼ぶ書き方でも通ってしまいます。次に
+    K-0012 を直すときは、呼び出しの結果でマージを止めているかまで照らすか、照らさないことを what に書いてください。
+  - 'この照合は今のパッチの線をそのまま wired: true の条件にしています。そのため D-0100 の反対の票が挙げた穴（直しのジョブが走り始めたより後に始まった実行を数える境目、ワークフローを持たない製品では待たない逃げ道、gate
+    を問わずに数える recheck.mjs）が残ったままでも配線できます。建設者が配線する前に、それぞれ直すか残す理由を what に書いてください。'
+  - D-0100 の案は wired_by に Engine の merge_step の道を書く形でしたが、この記録は wired_by の形では書けないとして構文木の照合に代えています。案から変えた点と理由は
+    what に書かれているので、採らない理由にはなりません。
+  - 'D-0100 の案にある「K-0006 の ci_check も揃える」は、check.py の REQUIRED_PR に issue 906 を挙げたことでしか入っておらず、K-0006.yaml
+    の記録は変わっていません。配線する変更セットでは K-0006 の #906 の項目も一緒に直してください。'
+  - 差分にあるのは議決・Issue・PR の番号、道具の道、コミットの短い id だけで、利用者を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: 'Engine に差分が入ったあとは、engine.test.mjs (12) を差分を当てた写しではなく、.github/workflows/pr-body-engine.yml
+    の ENGINE_REF の版の Engine のチェックアウトに対して走らせ、check.py の REQUIRED_ENGINE_WAIT は構文木の照合に加えてその
+    job の成功を wired: true の条件にする（body_recheck_pending が何も待たない中身でも通る穴を塞ぐ）。'
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: engine.test.mjs に、body_fix のジョブが走り始めたあと pr.body_amended より前に始まった pr-body-check
+    が success で終わった列を足し、merge_step が待ち続けることを確かめ、待ちの境目を本文を直した時刻かその edited で始まった実行に絞る直しを入れる。

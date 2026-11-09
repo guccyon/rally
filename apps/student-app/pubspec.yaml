@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^3.4.3
   http: ^1.6.0
+  # 入室前チェックの Web 版でブラウザーのカメラ・マイク・Web Audio を使う（lib/device/web_local_media.dart）
+  web: ^1.1.2
 
 dev_dependencies:
   flutter_test:
