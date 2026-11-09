@@ -246,4 +246,22 @@ enforcement:
           workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0109（PR #1289）の test の案（D-0074 の 2 つ目の案）を入れた。recheck.mjs の数え方を本文を見た gate に絞る変更（isBodyCheck。
+        gate: "pr-body-check" と、見た rubric（checked）に PR-002 がある検査役の rubric と、supervisor.body_rechecked だけを数える）と、
+        C-0006（PR #821）の列に本文と関係のない gate の gate.evaluated だけを挟んで merged_without_body_recheck で落ちるテストは、
+        議決 D-0074 と Issue #1206 ですでに入っていた（D-0109 の票はそれより前の差分を見ていた。issue 1053 の解決策の what の「gate は問わず」は
+        その時点の記録なので書き換えず、今の数え方は issue 1206 の解決策とこの解決策が正）。そこで recheck.test.mjs に、数える線
+        （BODY_CHECK_GATES が pr-body-check だけ、BODY_RUBRIC_IDS が PR-002 だけ）を値で固め、C-0003（PR #396）の列の最後の本文の直し（job 572）と
+        マージの間に、本文の構成ではない PR の rubric（PR-001・PR-003・PR-004）だけを見た rubric と gate のない gate.evaluated だけを挟んだ列が
+        merged_without_body_recheck で落ち、そのあと pr-body-check を挟めば通るテストを足した（1 回目の直しは再検査済みでも、最後の直しの再検査は要る）。
+        BODY_RUBRIC_IDS に PR-001 を足す・gate のない記録を数える・checked に PR- で始まる id があれば数える書き換えで、このテストが落ちることを確かめた。
+        recheck.mjs はまだどこからも呼んでおらず（issue 1053）、recheck.test.mjs も写しの engine-test がないので PR ごとには走っていない（issue 1131）。
+        配線されておらず効き目は確かめていない
+      issue: 1291
+      at: 2026-11-09
+      decided_by: committee:D-0109
+      wired: false
+      verified: false
 decided_by: committee:D-0033
