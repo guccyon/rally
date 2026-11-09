@@ -94,7 +94,9 @@ class _Event extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = event.status;
     final muted = status == null || status == RallyStatus.neutral;
+    // container にしないと、並びの名前（Timeline の Semantics）に文が連結されて 1 つずつ読めない
     return Semantics(
+      container: true,
       label: event.sentence,
       excludeSemantics: true,
       child: IntrinsicHeight(
