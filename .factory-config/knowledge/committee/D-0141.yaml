@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0141
+pr: https://github.com/guccyon/rally/pull/1350
+decided_at: '2026-11-10'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'issue 1207・1208 の what で D-0073 は PR #1199 の K-0004 の別の議決だと書き直したのは committee/D-0073.yaml
+    の中身と合っていて、本当の議決 D-0101 を取り違えにくくする正しい直しです。'
+  - issue 1299 の test の項目は議決 D-0113 の enforcement の test の案（SinceParityTest で schema.py
+    --since と events.py --record-only --since の結果をそろえて照らす）と中身が合っていて、issue 1297 の ConflictFilesShapeParityTest
+    と同じ照らし方なので重複も食い違いもありません。
+  - 'D-0113 の enforcement の票は --since の絞り方が 2 か所に別々にあると読んでいましたが、新しい項目は PR #1298 から
+    schema.parse_time・schema.before を共有していると書いており、議決の読み違いを正す記述なので、evidence の担当が events.py
+    の実物で確かめてください。'
+  - requires_check を、直した issue 1207（定期のジョブなので []）・issue 1208・issue 1295・issue 1297
+    と新しい issue 1299 に書いたのは README と議決 D-0116 の決まり（足したり直したりした ci_check・test の解決策では必須で、PR
+    ごとに走らなくてよいものは [] を明示する）どおりで、手を付けていない issue 1214 の ci_check に欄がないのも同じ決まりに反しません。
+  - invalidate_when の 1 つ目に足した但し書き（conflict_files の欄でも、積んだ直後の conflict.files でもよい）は、issue
+    1135 の解決策が「その場で」を job.started より前の conflict.files とみなす線と issue 1136 の conflict_files
+    の欄の両方に合っており、主張の範囲は変わりません。
+  - 'statement・scope・evidence は変えておらず、新しい解決策も wired: false・verified: false なので、ほかの知見の扱いは「そのまま」でよく、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'D-0073 の断り書きの直しは、committee/D-0073.yaml が PR #1199 の K-0004 の議決であることから確かめられ、本当の議決
+    D-0101（PR #1204）に辿れるようになったので根拠が前より正確です。'
+  - invalidate_when の 1 つ目に conflict_files と conflict.files の両方を書いたのは、D-0101 の consistency
+    の票が求めた書き直しに沿っていて、一次記録に辿れます。
+  - '足した test の項目は decided_by: committee:D-0113 と issue 1299 で PR #1298 の議決に辿れ、SinceParityTest
+    の中身も D-0113 の enforcement の test の案と一致しています。'
+  - 'ただし「PR #1298 から events.py は schema.parse_time・schema.before を呼ぶ」という記述は、D-0113
+    の enforcement の票の「--since の絞り方が 2 か所に別々にある」という読みと食い違い、材料に tools/ がないので確かめられず、建設者が配線するときに実際のコードで確かめてください。'
+  - 'requires_check の追記は D-0116（Issue #1304）の決まりどおりで、wired: false・verified: false
+    のまま本物のイベント列で確かめていないと書いているので、confidence は hypothesis のままが妥当です。'
+  - 差分にあるのは議決・PR・Issue の番号とファイル名・テスト名だけで、利用者の氏名・連絡先・ID・本文の引用はなく、個人情報は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0116 の決まりどおり、直した K-0014 の ci_check・test の解決策（issue 1207・1208・1295・1297）と新しい
+    issue 1299 の解決策に requires_check を書いたもので、--base を渡した check.py の requires_check_missing
+    で照らせる形になっており、担保の観点では採ってよいです。
+  - 新しい issue 1299 の解決策は、議決 D-0113 の test の案のうち SinceParityTest で schema.py と events.py
+    の両方のコマンドの結果を照らす方を選び、誤りを入れた写しで落ちることも確かめているので、片方だけ直して 2 つのジョブの窓が食い違う穴が決定論でふさがれます。
+  - 'issue 1207 の ci_check は schedule で走る検査なので requires_check: [] と明示したのは妥当ですが、同じ
+    K-0014 の issue 1135 の test と issue 1214 の ci_check には欄がまだなく、直した解決策だけを照らす今の check.py
+    では黙って通ったままです。'
+  - 'requires_check は wired: true にする時点で効く欄で、この PR の解決策はどれも wired: false・verified:
+    false のままなので、配線と本物のイベント列での確認は建設者の手順に残っています。'
+  - invalidate_when の書き足しと D-0073 の取り違えの断り書きは文の直しで、繰り返しの機械の照合にする費用に見合わないので、決定論で担保する必要はありません。
+  - 担保を足しても記録の欠けが手を打つ時期を遅らせたかは確かめられていないので、K-0014 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0014 の statement・scope・evidence・確かさを変えず、invalidate_when の言い直し、議決番号の断り書きの直し、requires_check
+    の欄の追記、議決 D-0113 の test の案を入れた記録の追加だけなので、主張の範囲は広がっていません。
+  - '「起票時に書かれた D-0073 は PR #1199 の K-0004 の別の議決」という断り書きは committee/D-0073.yaml と合っていて、反例は見つかりませんでした。'
+  - 'issue 1207 の解決策に requires_check: [] と書いたのは、what に「PR には紐づかない記録を見るので PR ごとには走らせない」とあることと合っていて、D-0116
+    の決まりどおり空の列を明示した扱いです。'
+  - invalidate_when の 1 つ目は D-0101 の票が求めたとおり conflict_files と conflict.files の両方を条件にしましたが、「積んだ直後の
+    conflict.files」と backfill の conflict.files は同じイベント名なので、次に直すときは何秒以内か同じ job_id かなど、見分ける線を書き足すと見直しの判断がぶれにくくなります。
+  - D-0113 の案は関数のまとめかテストのどちらかでよいとしており、関数はすでに schema.parse_time・schema.before に共有済みとしてテストだけを足したのは案の範囲内で、言い過ぎはありません。
+  - 'どの解決策も wired: false・verified: false のままで、記録の欠けが手を打つ時期を遅らせたかの確かめも進んでいないので、確かさは
+    hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: lint
+  proposal: --base を渡した tools/knowledge-enforcement-check/check.py で、PR が触れた知見のファイルの中にある
+    kind が ci_check・test の解決策は、直したかどうかにかかわらず全部 requires_check の欄（PR ごとに走らないものは []）を求め、なければ
+    requires_check_missing で落とす。先に K-0014 の issue 1135（test）と issue 1214（ci_check。schedule
+    なので [] か、PR ごとに走る分があればその {runs, workflow}）に欄を書き足し、test_check.py に、同じファイルの触れていない解決策に欄がない形が落ちることを確かめる組を足す。
