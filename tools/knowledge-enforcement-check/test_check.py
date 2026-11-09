@@ -762,7 +762,9 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0004", 1227): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0004", 1232): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0004", 1247): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
-                          ("K-0004", 1248): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0004", 1248): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0004", 1168): [("tools/sendback-check/order.test.mjs", None)],
+                          ("K-0004", 1253): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
@@ -1124,6 +1126,103 @@ class EnginePatchPullRequestTest(unittest.TestCase):
         errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
         self.assertEqual(len(errors), 1, errors)
         self.assertIn(f"issue 1144）: {PR_UNWIRED}", errors[0])
+
+
+class SendbackOrderTestPullRequestTest(unittest.TestCase):
+    """K-0004 の issue 1168 の解決策（engine.test.mjs の TAP の SKIP を skipReportProblems で照らす order.test.mjs）は、pull_request のジョブから
+    order.test.mjs を呼ばないと wired にできない（議決 D-0089（Issue #1253 の起票時の番号は D-0087。PR #1250）の lint の案。
+    前の REQUIRED_PR の組の代わりに、解決策の requires_check に書いた）"""
+
+    ORDER_TEST = "tools/sendback-check/order.test.mjs"
+    TEMPLATE = REPO / "tools/sendback-check/ci/sendback-engine.yml"
+    WF = ".github/workflows/sendback-engine.yml"
+    CI_TEST_STEP = "        run: node --test --test-reporter=spec ci.test.mjs\n"
+
+    def repo(self, workflow: str) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        files = {self.WF: workflow, "tools/sendback-check/order.mjs": "", "tools/sendback-check/engine.test.mjs": "",
+                 "tools/sendback-check/ci.test.mjs": "", self.ORDER_TEST: "",
+                 "tools/sendback-check/package.json": (REPO / "tools/sendback-check/package.json").read_text(encoding="utf-8")}
+        for rel, text in files.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self, run: str | None = None, on: str | None = None) -> str:
+        """ひな形 ci/sendback-engine.yml の写し。run を渡すと wiring-order の ci.test.mjs の後ろに tools/sendback-check でそれを走らせる手順を足す"""
+        text = self.TEMPLATE.read_text(encoding="utf-8")
+        if run is not None:
+            self.assertIn(self.CI_TEST_STEP, text)
+            text = text.replace(self.CI_TEST_STEP, self.CI_TEST_STEP + "      - name: engine.test.mjs の skip の理由と件数（K-0004）\n"
+                                f"        working-directory: tools/sendback-check\n        run: {run}\n", 1)
+        if on is not None:
+            self.assertIn("on:\n  pull_request:\n", text)
+            text = text.replace("on:\n  pull_request:\n", f"on:\n{on}", 1)
+        return text
+
+    def item(self, kid="K-0004", issue=1168, wired=True, job="wiring-order", runs=None) -> dict:
+        return {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.ORDER_TEST}]}]}}
+
+    def errors(self, d: Path, **kw) -> list[str]:
+        item = self.item(**kw)
+        return pr_errors(item, d) + check.check_wiring(item, d)
+
+    def assert_unwired(self, e: list[str], what) -> None:
+        self.assertEqual(len(e), 1, (what, e))
+        for part in (f"issue 1168）: {PR_UNWIRED}", "on.pull_request", self.ORDER_TEST, PR_DECISION):
+            self.assertIn(part, e[0], what)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(requires("K-0004", 1168), [(self.ORDER_TEST, None)])
+
+    def test_order_test_mjs_を走らせる手順を足した写しなら通る(self):
+        for run in ("node --test --test-reporter=spec order.test.mjs", "node --test", "npm test"):
+            self.assertEqual(self.errors(self.repo(self.template(run))), [], run)
+
+    def test_ひな形をそのまま写しただけでは落ちる(self):
+        # ひな形の wiring-order は order.mjs と ci.test.mjs、engine-test は engine.test.mjs と order.mjs --engine-report だけを呼ぶ
+        d = self.repo(self.template())
+        for job in ("wiring-order", "engine-test"):
+            e = pr_errors(self.item(job=job), d)
+            self.assert_unwired(e, job)
+        for runs in ("tools/sendback-check/order.mjs", "tools/sendback-check/engine.test.mjs", "tools/sendback-check/ci.test.mjs"):
+            job = "engine-test" if runs.endswith("engine.test.mjs") else "wiring-order"
+            self.assert_unwired(pr_errors(self.item(job=job, runs=runs), d), runs)
+
+    def test_写しがなければ落ちる(self):
+        d = self.repo(self.template("node --test order.test.mjs"))
+        (d / self.WF).unlink()
+        self.assert_unwired(pr_errors(self.item(), d), "写しなし")
+
+    def test_定期や手動だけのワークフローでは落ちる(self):
+        for on in ("  workflow_dispatch:\n", "  schedule:\n    - cron: '0 0 * * *'\n", "  push:\n    branches: [main]\n"):
+            self.assert_unwired(pr_errors(self.item(), self.repo(self.template("node --test order.test.mjs", on))), on)
+
+    def test_pull_request_では走らないジョブは数えない(self):
+        text = self.template("node --test order.test.mjs")
+        guarded = text.replace("  wiring-order:\n", "  wiring-order:\n    if: github.event_name != 'pull_request'\n", 1)
+        self.assertNotEqual(guarded, text)
+        self.assert_unwired(pr_errors(self.item(), self.repo(guarded)), "if:")
+
+    def test_配線していない解決策とほかの知見は見ない(self):
+        d = self.repo(self.template(on="  workflow_dispatch:\n"))
+        self.assertEqual(pr_errors(self.item(wired=False), d), [])
+        self.assertEqual(pr_errors(self.item(kid="K-0010"), d), [])
+
+    def test_main_で落とす(self):
+        d = self.repo(self.template())
+        MainTest.write(None, d, "K-0004.yaml", "id: K-0004\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: test, what: x, issue: 1168, wired: true, verified: false, requires_check: {self.ORDER_TEST},"
+                       f" wired_by: [{{workflow: {self.WF}, job: wiring-order, runs: {self.ORDER_TEST}}}]}}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = [x for x in without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"]) if f": {check.REQUIRES_CHECK_UNWIRED}: " in x]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn(f"issue 1168）: {PR_UNWIRED}", errors[0])
 
 
 class MirrorWiredTest(unittest.TestCase):
