@@ -1,0 +1,66 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0131
+pr: https://github.com/guccyon/rally/pull/1337
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりと矛盾しません。
+  - '足した ci_check の項目は D-0094 の enforcement の 2 つ目の案（建設者が ci/pr-body-engine.yml を写して必須のチェックに登録し、本物の
+    CI の記録を事例記録に残してから wired と verified を true にする）に対応し、decided_by: committee:D-0094
+    と issue 1265 も食い違っていません。'
+  - requires_check の {runs, workflow} の列の形と、pull_request でも走るジョブを求める扱いは README に書かれた
+    D-0077 の決まりどおりです。
+  - engine.test.mjs と .github/workflows/pr-body-engine.yml の組は issue 1182 の解決策の requires_check
+    にもすでにありますが、requires_check は解決策ごとに照らすものであり、今回は ci.test.mjs を足して verified の条件まで書いているので、置き換えではなく別の解決策として並べてよいです。
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致していて、K-0001 は
+    README の記入済みの一覧に載ったままにできます。'
+  - '「起票時の番号は D-0090」という注記は、D-0094 の dissent が D-0067 について指摘したのと同じように別の議決と取り違えられうるので、次に直すときは
+    Issue #1265 の旧番号だと分かる書き方にしてください。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0094 を指していて、置き場の D-0094 は pr が #1261
+    で、enforcement の 2 つ目の案（pr-body-engine.yml を写して必須のチェックに登録し、本物の CI の記録を事例記録に残してから
+    wired と verified を true にする）と what の中身が一致するので、一次記録に辿れます。'
+  - 'what は、ワーカーの権限で入れたのが requires_check の記入だけであり、写すこと・必須のチェックへの登録・事例記録・wired と verified
+    を true にすることは建設者に残ると書いていて、wired: false・verified: false とも合っており、言い過ぎていません。'
+  - '「Issue #1265 の起票時の番号は D-0090」は、置き場の D-0090 が別の PR #1255 の議決なので取り違えられうるため、次に直すときは
+    Issue #1265 の旧番号だと分かる書き方にすると紛れが減ります。'
+  - issue 1265 と tools/pr-body-check/README.md の「配線の手順（建設者）」の 7 はこの材料の外で確かめられませんが、担保の記録であって主張の根拠を増やすものではないので採る妨げにはなりません。
+  - statement・evidence・confidence は変えておらず、配線も本物の記録での確認もまだなので、K-0001 の confidence は
+    hypothesis のままが妥当です。
+  - 差分にあるのはファイルの道・議決や Issue や PR の番号・検査の名前など工場の識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'この変更は K-0001 の enforcement.solutions に議決 D-0094 の ci_check を 1 件足すだけで、requires_check
+    に ci.test.mjs と engine.test.mjs を .github/workflows/pr-body-engine.yml の組で書いているので、wired:
+    true にするときの抜けは check.py の requires_check_unwired が機械で止めます。'
+  - 'verified: true にするときも check.py が cases/ の事例記録を含む verified_by と wired: true を照らすので、効き目の確認を飛ばすことも決定論で止まります。'
+  - 'これ以上の担保を足す必要はなく、残りは建設者がひな形を写して必須のチェックに登録することだけなので、wired: false と verified: false
+    のままにしておくのは正しいです。'
+  - 効き目を確かめた記録はまだないので、confidence は hypothesis のままにしておくのがよいです。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この差分は K-0001 の enforcement.solutions に wired: false・verified: false の項目を 1 件足すだけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。'
+  - what は議決 D-0094 の ci_check の案のうちワーカーの権限で入れられる分（requires_check の記入）だけを入れたと書き、写す・必須のチェックに登録する・事例記録を残すのは建設者だと断っているので、言い過ぎていません。
+  - '反例として、D-0094 の案が wired と verified を true にする対象に挙げたのは issue 1183 の test の解決策ですが、requires_check
+    を書いたのは新しく足したこの項目だけなので、issue 1183 の解決策は ci.test.mjs を呼ばない wired_by でも wired: true
+    にできる抜け道が残ります。'
+  - 次に K-0001 を直す変更セットでは、issue 1183 の test の解決策にも同じ requires_check（.github/workflows/pr-body-engine.yml
+    の tools/pr-body-check/ci.test.mjs）を書くか、この項目がそれを置き換えると what に明記してください。
+  - '「Issue #1265 の起票時の番号は D-0090」という但し書きは、置き場の D-0090 という別の議決と取り違えられうるので、旧番号だと分かる書き方にすると紛れが減ります。'
+  - 配線も本物の CI の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
