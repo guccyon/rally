@@ -36,7 +36,7 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 - `wired: true` の解決策（知見と issue を問わない）の `wired_by` に、`.github/workflows/knowledge-enforcement.yml` の pull_request でも走るジョブから `tools/knowledge-enforcement-check/check.py` を呼ぶ項目がない（`knowledge_gate_unwired`。下の「PR ごとの配線の必須」の「どの解決策にも求める `check.py` の配線」）
 - `requires_check` を書いた解決策が `wired: true` なのに、`wired_by` に、挙げた検査ごとに pull_request のジョブからそれを呼ぶ項目がない（`requires_check_unwired`。`workflow` を書いた検査はそのワークフローのジョブに限る）か、`wired` を問わず `requires_check` の形が誤っている・挙げた検査がリポジトリにない（`requires_check_invalid`）。今書いてあるのは `K-0010` の issue 1035・1103、`K-0004` の issue 1062・1063・1138・1144・1158・1168・1216・1225・1227・1232・1247・1248・1253、`K-0001` の issue 1182、`K-0012` の issue 1122・1131・1196・1197・1205、`K-0006` の issue 906、`K-0015` の issue 1220（下の「PR ごとの配線の必須」）
 - `wired: true` の解決策（知見と issue を問わない）が `requires_check` を書いておらず、`REQUIRED_SCHEDULE`・`REQUIRED_RUNS` にも挙げていない（`requires_check_missing`。`requires_check` は書いた解決策しか照らさないので、書き忘れると上の `check.py` の配線だけで `wired` と読ませてしまう。議決 `D-0080`（Issue #1227 の起票時の番号は `D-0078`）の lint の案、Issue #1227）
-- `REQUIRED_ENGINE_WAIT` の解決策（`K-0012` の issue 1122・1196）が `wired: true` なのに、`.github/workflows/pr-body-engine.yml` の `ENGINE_REF` の Engine の `merge_step` が `body_recheck_pending` を呼んでいない（`engine_unwired`）か、それを照らせない（`engine_unverifiable`。下の「Engine の merge_step の照合」）
+- `REQUIRED_ENGINE_WAIT` の解決策（`K-0012` の issue 1122・1196・1281）が `wired: true` なのに、`.github/workflows/pr-body-engine.yml` の `ENGINE_REF` の Engine の `merge_step` が `body_recheck_pending` を呼んでいない（`engine_unwired`）か、呼んでいてもその Engine で `tools/pr-body-check/engine.test.mjs` の (12) が通らない（`engine_wait_failed`）か、それを照らせない（`engine_unverifiable`。下の「Engine の merge_step の照合」）
 - `REQUIRED_RUNS` の解決策（`K-0010` の issue 1034・1100）が `wired: true` なのに、`wired_by` に 1 つのジョブから `tools/conflict-check/test_watch.py`・`test_engine.py` をすべて呼ぶ項目がない（下の「呼ぶ検査の必須」）
 - `.github/workflows/knowledge-enforcement.yml` が実在するのに、`MIRROR_WIRED` の解決策（`K-0004` の issue 1063・1144）が `wired: true` でない（`false`・未記入・真偽でない値）（`mirror_unwired`。下の「写しの配線の記録」）
 - `decided_by` を書いた解決策で、`committee:D-NNNN` の形でない、`.factory-config/knowledge/committee/D-NNNN.yaml` がないか読めない、その議決の `enforcement` に同じ知見の id（`knowledge`）と同じ種類（`solution_kind` が解決策の `kind`）の案がない、`what` に書いた最初の議決の番号が `decided_by` と違う、その直後の括弧の PR の番号が議決の `pr` と違う（`decision_mismatch`。下の「議決との照合」）
@@ -60,12 +60,13 @@ ENGINE_DIR=<factory-engine のチェックアウト> python3 -m unittest discove
 
 知見 `K-0012` の担保の pr-body-check（`tools/pr-body-check/ci/pr-body-check.yml`）は、必須のチェックにしただけでは、本文の直しのジョブが終わってから `edited` のチェックが始まるまでの間に前の本文で通ったチェックのままマージできる。待つのは Engine の supervisor の `merge_step`（`tools/pr-body-check/engine/pr-body-recheck.patch` で足す `body_recheck_pending`）で、Engine の呼び出しは上の「配線先の照合」の `wired_by` では書けない。ワークフローを写しただけで `wired: true` にすると、Engine が待たないままでも配線済みと読ませてしまう（議決 `D-0100`（起票時の番号は `D-0071`）、Issue #1196）。
 
-`check.py` の `REQUIRED_ENGINE_WAIT` に挙げた解決策（今は `K-0012` の issue 1122・1196）は、`wired: true` にするとき、`.github/workflows/pr-body-engine.yml` の `ENGINE_REF` の版の Engine の `orchestrator/dispatcher/supervisor.py` で、`merge_step` が `body_recheck_pending` を呼び、その関数がモジュールの直下に定義されていることを構文木で照らす（取り込まない）。Engine は `--engine` か `ENGINE_DIR` の全履歴のチェックアウトから版のファイルを取り出す。
+`check.py` の `REQUIRED_ENGINE_WAIT` に挙げた解決策（今は `K-0012` の issue 1122・1196・1281）は、`wired: true` にするとき、`.github/workflows/pr-body-engine.yml` の `ENGINE_REF` の版の Engine の `orchestrator/dispatcher/supervisor.py` で、`merge_step` が `body_recheck_pending` を呼び、その関数がモジュールの直下に定義されていることを構文木で照らす（取り込まない）。Engine は `--engine` か `ENGINE_DIR` の全履歴のチェックアウトから版のファイルを取り出す。
 
 - 呼んでいなければ `engine_unwired` で落とす（関数がない・`merge_step` から呼ばない・別の関数でだけ呼ぶ）
+- 呼んでいれば、その版の Engine を `git archive` で取り出したチェックアウトを `ENGINE_DIR` にして、`.github/workflows/pr-body-engine.yml` の `engine-test` が走らせる `tools/pr-body-check/engine.test.mjs` の (12) を `node --test --test-name-pattern='^\(12\) '` で走らせ、`engine.test.mjs` にある (12) のテストがすべて `ok`（`# SKIP`・`# TODO` なし）でなければ `engine_wait_failed` で落とす（`body_recheck_pending` を呼んでいても何も待たない中身、構文木の照合だけでは通っていた。議決 `D-0105`、Issue #1281）。`PR_BODY_RECHECK_ENGINE_ONLY=1` を渡すので、(12) は差分を当てた写しに頼らず、Engine に `body_recheck_pending` がなければ落ちる。`node` がない・走らせられないときは `engine_unverifiable（node_unavailable）`
 - Engine のチェックアウトがない・`.github/workflows/pr-body-engine.yml` がないか `ENGINE_REF` が 40 桁の SHA の 1 行でない・その版や `supervisor.py` がない・構文として読めないときは、照らせないとして `engine_unverifiable（<種類>）` で落とす
 
-`wired` が `true` でない間は見ない。手元の Engine を `ENGINE_DIR` に渡すと、`test_check.py` の `PrBodyRecheckWiringTest` が、その `supervisor.py` が差分を当てる前は待たず、当てると待つと読めることも確かめる（渡さなければ飛ばす）。
+`wired` が `true` でない間は見ない。`test_check.py` の `PrBodyRecheckWiringTest` は、差分の足す行で組んだ待つ Engine で通り、`merge_step` から呼ぶが何も待たない Engine で `engine_wait_failed`、差分の入っていない Engine で (12) がすべて通らない側に数えられることを確かめる。手元の Engine を `ENGINE_DIR` に渡すと、`test_check.py` の `PrBodyRecheckWiringTest` が、その `supervisor.py` が差分を当てる前は待たず、当てると待つと読めることも確かめる（渡さなければ飛ばす）。
 
 ## 定期の配線の必須
 

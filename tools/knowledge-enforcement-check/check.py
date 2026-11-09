@@ -113,6 +113,10 @@ body_recheck_pending（tools/pr-body-check/engine/pr-body-recheck.patch で足�
 構文木で照らし、呼んでいなければ engine_unwired で落とす。Engine は --engine か ENGINE_DIR の全履歴のチェックアウトから版のファイルを取り出す。
 Engine のチェックアウトがない・写しや ENGINE_REF がない・版がない・読めないときは照らせないとして engine_unverifiable（<HoldUncheckable の kind>）で落とす。
 Engine に差分を入れて ENGINE_REF を上げる前に、ワークフローの写しだけで wired: true にする変更を止める。
+議決 D-0105（Issue #1281）の test の案で、構文木の照合に加えて、ENGINE_REF の版の Engine のチェックアウト（git archive で取り出したもの）を ENGINE_DIR にして、
+pr-body-engine.yml の engine-test が走らせる tools/pr-body-check/engine.test.mjs の (12) を PR_BODY_RECHECK_ENGINE_ONLY=1（差分を当てた写しに頼らない）で
+走らせ、(12) のテストがすべて ok（SKIP・TODO なし）で終わらなければ engine_wait_failed で落とすようにした（body_recheck_pending を呼んでいても、
+何も待たない中身なら wired にできない）。この解決策（K-0012 の issue 1281）も REQUIRED_ENGINE_WAIT に挙げた。node がない・取り出せないときは engine_unverifiable。
 
 議決との照合（議決 D-0041、Issue #1094）: decided_by を書いた解決策は、それが committee:D-NNNN の形で、
 .factory-config/knowledge/committee/D-NNNN.yaml があり、その議決の enforcement に同じ知見の id（knowledge）と
@@ -160,11 +164,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -255,12 +261,17 @@ MIRROR_UNWIRED = "mirror_unwired"
 PR_BODY_ENGINE_WORKFLOW = f"{WORKFLOWS}/pr-body-engine.yml"
 PR_BODY_RECHECK = (("K-0012", 1122), ("K-0012", 1196))
 # (知見の id, 解決策の issue)。wired: true にするには、ENGINE_REF の Engine の merge_step が待ちの関数を呼んでいることを求める（議決 D-0100、Issue #1196）
-REQUIRED_ENGINE_WAIT = set(PR_BODY_RECHECK)
+# 議決 D-0105（Issue #1281）で、(12) を ENGINE_REF の Engine で走らせる解決策そのものも挙げ、(12) が通ることも求める
+REQUIRED_ENGINE_WAIT = set(PR_BODY_RECHECK) | {("K-0012", 1281)}
 ENGINE_SUPERVISOR = "orchestrator/dispatcher/supervisor.py"
 ENGINE_MERGE_STEP = "merge_step"
 ENGINE_RECHECK_WAIT = "body_recheck_pending"
 ENGINE_UNWIRED = "engine_unwired"
 ENGINE_UNVERIFIABLE = "engine_unverifiable"
+# merge_step の待ちの中身を確かめる engine.test.mjs の (12)（議決 D-0105、Issue #1281）
+ENGINE_WAIT_TEST = Path(__file__).resolve().parent.parent / "pr-body-check" / "engine.test.mjs"
+ENGINE_WAIT_TEST_PREFIX = "(12) "
+ENGINE_WAIT_FAILED = "engine_wait_failed"
 # (知見の id, 解決策の issue) → 1 つのジョブからすべて呼ぶことを求める検査（議決 D-0042、Issue #1100）
 CONFLICT_TESTS = ("tools/conflict-check/test_watch.py", "tools/conflict-check/test_engine.py")
 REQUIRED_RUNS = {("K-0010", 1034): CONFLICT_TESTS, ("K-0010", 1100): CONFLICT_TESTS}
@@ -903,7 +914,8 @@ def check_head_record(k: dict, comments: str | None, cache: dict | None = None, 
 
 class HoldUncheckable(Exception):
     """review_by の先送りの照合と Engine の merge_step の照合で、前の版・ENGINE_REF・Engine の中身を読めず照らせないこと。kind は読めなかったものの種類
-    （base_unreadable・engine_missing・engine_ref_invalid・engine_ref_missing・finished_unreadable・fields_unreadable・supervisor_unreadable）"""
+    （base_unreadable・engine_missing・engine_ref_invalid・engine_ref_missing・finished_unreadable・fields_unreadable・supervisor_unreadable・
+    engine_test_missing・node_unavailable）"""
 
     def __init__(self, kind: str, detail: str):
         super().__init__(f"{kind}: {detail}")
@@ -1047,10 +1059,44 @@ def engine_merge_waits(engine: Path, ref: str) -> bool:
                for n in ast.walk(defs[ENGINE_MERGE_STEP]))
 
 
+def engine_wait_test(engine: Path, ref: str) -> list[str]:
+    """ref の版の Engine のチェックアウト（git archive で取り出す）を ENGINE_DIR にして engine.test.mjs の (12) を走らせ、通らなかったテストを返す
+    （すべて ok で SKIP・TODO もなければ空。議決 D-0105、Issue #1281）。差分を当てた写しで通らないよう PR_BODY_RECHECK_ENGINE_ONLY=1 を渡す。
+    (12) の数は engine.test.mjs の test("(12) …") の数と比べ、走らなかったテストも通らなかった側に数える。走らせられなければ HoldUncheckable"""
+    try:
+        expected = re.findall(r'^test\("(\(12\) [^"]*)"', ENGINE_WAIT_TEST.read_text(encoding="utf-8"), re.M)
+    except OSError as x:
+        raise HoldUncheckable("engine_test_missing", f"{ENGINE_WAIT_TEST} を読めない（{x}）") from x
+    if not expected:
+        raise HoldUncheckable("engine_test_missing", f"{ENGINE_WAIT_TEST} に (12) のテストがない")
+    with tempfile.TemporaryDirectory() as tmp:
+        out = subprocess.run(["git", "-C", str(engine), "archive", "--format=tar", ref], capture_output=True)
+        if out.returncode != 0:
+            raise HoldUncheckable("engine_ref_missing", f"Engine の {ref} の版を取り出せない（{out.stderr.decode(errors='replace').strip()}）")
+        with tarfile.open(fileobj=io.BytesIO(out.stdout)) as tar:   # filter は 3.12（と 3.11.4 以降）にだけある
+            tar.extractall(tmp, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
+        env = {"PATH": os.environ.get("PATH", ""), "ENGINE_DIR": tmp, "PR_BODY_RECHECK_ENGINE_ONLY": "1"}
+        try:
+            run = subprocess.run(["node", "--test", "--test-reporter=tap", f"--test-name-pattern=^{re.escape(ENGINE_WAIT_TEST_PREFIX)}",
+                                  ENGINE_WAIT_TEST.name], cwd=ENGINE_WAIT_TEST.parent, env=env, capture_output=True, text=True, timeout=600)
+        except (OSError, subprocess.TimeoutExpired) as x:
+            raise HoldUncheckable("node_unavailable", f"node で {ENGINE_WAIT_TEST.name} を走らせられない（{x}）") from x
+    passed = set()
+    for line in run.stdout.splitlines():   # 入れ子でない行だけ（ok N - 名前 [# SKIP|# TODO]）
+        m = re.match(r"^ok \d+ - (.*)$", line)
+        if m and not re.search(r"#\s*(SKIP|TODO)\b", m[1], re.I):
+            passed.add(m[1].strip())
+    failed = [n for n in expected if n not in passed]
+    if run.returncode != 0 and not failed:
+        failed = [f"node --test の終了コード {run.returncode}"]
+    return failed
+
+
 def check_engine_wait(k: dict, repo: Path, engine: Path | None, cache: dict | None = None) -> list[str]:
     """REQUIRED_ENGINE_WAIT の解決策が wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の Engine の merge_step が
-    body_recheck_pending を呼んでいることを求める（議決 D-0100（起票時の番号は D-0071）、Issue #1196）。
-    落とす行には種類の名前を添える（ENGINE_UNWIRED、照らせないときは ENGINE_UNVERIFIABLE と HoldUncheckable の kind）"""
+    body_recheck_pending を呼んでいることを求める（議決 D-0100（起票時の番号は D-0071）、Issue #1196）。呼んでいれば、その Engine のチェックアウトで
+    engine.test.mjs の (12) が通ることも求める（議決 D-0105、Issue #1281）。
+    落とす行には種類の名前を添える（ENGINE_UNWIRED・ENGINE_WAIT_FAILED、照らせないときは ENGINE_UNVERIFIABLE と HoldUncheckable の kind）"""
     f, e = k.get("_file", str(k.get("id"))), []
     cache = {} if cache is None else cache
     for i, s in enumerate(solutions(k)):
@@ -1061,10 +1107,11 @@ def check_engine_wait(k: dict, repo: Path, engine: Path | None, cache: dict | No
                 if engine is None:
                     raise HoldUncheckable("engine_missing", "Engine のチェックアウトを --engine か ENGINE_DIR で渡す")
                 ref, rel = engine_ref(repo, (PR_BODY_ENGINE_WORKFLOW,))
-                cache["result"] = (engine_merge_waits(engine, ref), ref, rel, None)
+                waits = engine_merge_waits(engine, ref)
+                cache["result"] = (waits, engine_wait_test(engine, ref) if waits else [], ref, rel, None)
             except HoldUncheckable as x:
-                cache["result"] = (None, None, None, x)
-        waits, ref, rel, x = cache["result"]
+                cache["result"] = (None, None, None, None, x)
+        waits, failed, ref, rel, x = cache["result"]
         where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
         if x is not None:
             e.append(f"{where}: {ENGINE_UNVERIFIABLE}（{x.kind}）: wired にするには ENGINE_REF の Engine の {ENGINE_MERGE_STEP} が"
@@ -1073,6 +1120,10 @@ def check_engine_wait(k: dict, repo: Path, engine: Path | None, cache: dict | No
             e.append(f"{where}: {ENGINE_UNWIRED}: ENGINE_REF（{ref}。{rel}）の Engine の {ENGINE_SUPERVISOR} の {ENGINE_MERGE_STEP} が"
                      f" {ENGINE_RECHECK_WAIT} を呼んでいない。tools/pr-body-check/engine/pr-body-recheck.patch を Engine に入れて ENGINE_REF を上げてから"
                      " wired にする（議決 D-0100）")
+        elif failed:
+            e.append(f"{where}: {ENGINE_WAIT_FAILED}: ENGINE_REF（{ref}。{rel}）の Engine のチェックアウトで {ENGINE_WAIT_TEST.name} の (12) が通らない"
+                     f"（{len(failed)} 件: {' / '.join(failed)}）。{ENGINE_RECHECK_WAIT} を呼んでいても、本文の直しの終わりと直した本文の"
+                     " pr-body-check を待つ中身でなければ wired にしない（議決 D-0105）")
     return e
 
 

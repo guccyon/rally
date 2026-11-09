@@ -197,4 +197,28 @@ enforcement:
       decided_by: committee:D-0074
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0105（PR #1280）の 1 つ目の test の案を入れた。これまで engine.test.mjs の (12) は Engine に body_recheck_pending がなければ
+        engine/pr-body-recheck.patch を当てた写しで通り、check.py の REQUIRED_ENGINE_WAIT は merge_step が body_recheck_pending を呼ぶかを構文木で
+        見るだけだったので、何も待たない中身（return None だけ）の Engine でも wired: true にできた。engine.test.mjs の (12) は、Engine に差分が入っていれば
+        写さずに ENGINE_DIR（CI では ENGINE_REF の版）のチェックアウトそのものに対して走り、PR_BODY_RECHECK_ENGINE_ONLY=1 では差分を当てた写しに頼らず、
+        Engine に入っていなければ落ちるようにした。check.py の REQUIRED_ENGINE_WAIT（issue 1122・1196 とこの解決策）は、構文木の照合に加えて、
+        .github/workflows/pr-body-engine.yml の ENGINE_REF の版の Engine を git archive で取り出したチェックアウトを ENGINE_DIR にして、
+        その写しの engine-test が走らせる engine.test.mjs の (12) を PR_BODY_RECHECK_ENGINE_ONLY=1 で走らせ、engine.test.mjs にある (12) のテストが
+        すべて ok（SKIP・TODO なし）でなければ engine_wait_failed で落とす（node がなければ engine_unverifiable（node_unavailable））。
+        案の「その job の成功」は、GitHub の実行の結果を読まず、同じ版の Engine で同じ (12) を check.py の中で走らせた結果で決定論に照らす形にした。
+        test_check.py の PrBodyRecheckWiringTest で、差分の足す行で組んだ待つ Engine で通り、merge_step から呼ぶが何も待たない Engine で
+        3 つの解決策とも engine_wait_failed で落ち、差分の入っていない Engine では (12) の 8 件がすべて通らない側に数えられ、走らせるのが作業ツリーではなく
+        ENGINE_REF の版であることと、node がないと照らせずに落ちることを確かめた。手元の Engine（/work/engine の 4922e5f。差分は入っていない）では、
+        PR_BODY_RECHECK_ENGINE_ONLY=1 で (12) の 8 件が落ち、渡さなければ差分を当てた写しで通ることを確かめた。待ちの境目（D-0105 の 2 つ目の案）は
+        この解決策では扱っていない。Engine に差分が入っておらず、写しの engine-test もまだないので、配線されておらず効き目は確かめていない
+      issue: 1281
+      at: 2026-11-09
+      decided_by: committee:D-0105
+      requires_check:
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0033

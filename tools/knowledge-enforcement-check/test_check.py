@@ -1837,7 +1837,9 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
     """K-0012 の issue 1122・1196 と K-0006 の issue 906 の解決策は、.github/workflows/pr-body-check.yml の pull_request のジョブから check.mjs を
     呼ばないと wired にできない。K-0012 の 2 つは、.github/workflows/pr-body-engine.yml の pull_request のジョブから engine.test.mjs を呼び、
     その ENGINE_REF の Engine の merge_step が body_recheck_pending を呼んでいることも求める（議決 D-0100（起票時の番号は D-0071）、Issue #1196）。
-    Engine は一時の git リポジトリに supervisor.py だけを置いて作る"""
+    呼んでいれば、その Engine のチェックアウトで engine.test.mjs の (12) が通ることも求める（議決 D-0105、Issue #1281）。
+    Engine は一時の git リポジトリに supervisor.py と definitions/events.yaml だけを置いて作る。待つ Engine（WAITS）の body_recheck_pending と定数は
+    engine/pr-body-recheck.patch で足す行をそのまま使い、body_fix_pending は Engine のものと同じ問い合わせにする"""
 
     CHECK = "tools/pr-body-check/check.mjs"
     ENGINE_TEST = "tools/pr-body-check/engine.test.mjs"
@@ -1848,9 +1850,21 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
     ENGINE_WF = ".github/workflows/pr-body-engine.yml"
     OTHER = ".github/workflows/pr-body.yml"
     WIRED_BY = ((CHECK_WF, "pr-body-check", CHECK), (ENGINE_WF, "engine-test", ENGINE_TEST))
-    WAITS = ("def merge_step(cur, rules, manifests):\n    for p in prs:\n        if body_fix_pending(cur, p):\n            continue\n"
-             "        if body_recheck_pending(cur, p, sha):\n            continue\n        merge(p)\n\n\n"
-             "def body_fix_pending(cur, pr_url):\n    return False\n\n\ndef body_recheck_pending(cur, pr_url, sha):\n    return None\n")
+    # 差分の supervisor.py の節の足す行（定数と body_recheck_pending）
+    _ADDED = [ln[1:] for ln in RECHECK_PATCH.read_text(encoding="utf-8").split("diff --git a/orchestrator/dispatcher/supervisor.py")[1].splitlines()
+              if ln.startswith("+") and not ln.startswith("+++")]
+    _CONSTS = "\n".join(ln for ln in _ADDED if ln.startswith("BODY_CHECK"))
+    _WAIT = "\n".join(_ADDED[next(i for i, ln in enumerate(_ADDED) if ln.startswith("def body_recheck_pending(")):]).rstrip() + "\n"
+    _MERGE = ("def merge_step(cur, rules, manifests):\n    for p in prs:\n        if body_fix_pending(cur, p):\n            continue\n"
+              "        if body_recheck_pending(cur, p, sha):\n            continue\n        gh(\"PUT\", p)\n"
+              "        record(cur, \"supervisor.merged\", None, {})\n\n\n")
+    _FIX = ("def body_fix_pending(cur, pr_url):\n    m = re.match(r\"https://github\\.com/([^/]+/[^/]+)/pull/(\\d+)$\", pr_url)\n    if not m:\n        return False\n"
+            "    cur.execute(\"select 1 from jobs where repo=%s and issue_number=%s and kind='body_fix' and state in ('queued','running') limit 1\",\n"
+            "                (m[1], int(m[2])))\n    return cur.fetchone() is not None\n\n\n")
+    WAITS = f"import re\n\n{_CONSTS}\n\n\n{_MERGE}{_FIX}{_WAIT}"
+    # merge_step から呼ぶが、何も待たない中身（構文木の照合だけなら通っていた。議決 D-0105、Issue #1281）
+    HOLLOW = f"import re\n\n{_CONSTS}\n\n\n{_MERGE}{_FIX}def body_recheck_pending(cur, pr_url, sha):\n    return None\n"
+    EVENTS = "events:\n  supervisor.body_rechecked:\n    payload: {}\n"
     LEGACY = ("def merge_step(cur, rules, manifests):\n    for p in prs:\n        if body_fix_pending(cur, p):\n            continue\n        merge(p)\n\n\n"
               "def body_fix_pending(cur, pr_url):\n    return False\n")
 
@@ -1871,6 +1885,8 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
         f = d / check.ENGINE_SUPERVISOR
         f.parent.mkdir(parents=True)
         f.write_text(text, encoding="utf-8")
+        (d / "definitions").mkdir()
+        (d / "definitions/events.yaml").write_text(self.EVENTS, encoding="utf-8")
         self.git(d, "add", "-A")
         self.git(d, "commit", "-q", "-m", "v")
         return d, self.git(d, "rev-parse", "HEAD")
@@ -1899,7 +1915,7 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
     def test_対象に挙げてある(self):
         for key in (("K-0012", 1122), ("K-0012", 1196)):
             self.assertEqual(requires(*key), [(self.CHECK, self.CHECK_WF), (self.ENGINE_TEST, self.ENGINE_WF)], key)
-        self.assertEqual(check.REQUIRED_ENGINE_WAIT, {("K-0012", 1122), ("K-0012", 1196)})
+        self.assertEqual(check.REQUIRED_ENGINE_WAIT, {("K-0012", 1122), ("K-0012", 1196), ("K-0012", 1281)})
         self.assertEqual(requires("K-0006", 906), [(self.CHECK, self.CHECK_WF)])
 
     def test_ひな形の名前は_Engine_の差分が待つものと合う(self):
@@ -1911,7 +1927,7 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
     def test_2_つのひな形の写しと待つ_Engine_なら通る(self):
         eng, sha = self.engine(self.WAITS)
         d = self.repo(sha)
-        for issue in (1122, 1196):
+        for issue in (1122, 1196, 1281):
             self.assertEqual(self.errors(d, eng, issue=issue), [], issue)
         # K-0006 の issue 906 は pr-body-check の写しだけで足り、Engine を見ない
         self.assertEqual(self.errors(d, None, kid="K-0006", issue=906, wired_by=self.WIRED_BY[:1]), [])
@@ -1962,6 +1978,38 @@ class PrBodyRecheckWiringTest(unittest.TestCase):
             self.assertEqual(len(e), 1, e)
             for part in (f"issue 1196）: {check.ENGINE_UNWIRED}:", sha, self.ENGINE_WF, "pr-body-recheck.patch", "議決 D-0100"):
                 self.assertIn(part, e[0])
+
+    def test_merge_step_から呼んでも何も待たない_Engine_では_12_が通らず落ちる(self):
+        eng, sha = self.engine(self.HOLLOW)
+        self.assertTrue(check.engine_merge_waits(eng, sha), "構文木の照合だけでは通る入力になっていない")
+        for issue in (1122, 1196, 1281):
+            e = self.errors(self.repo(sha), eng, issue=issue)
+            self.assertEqual(len(e), 1, e)
+            for part in (f"issue {issue}）: {check.ENGINE_WAIT_FAILED}:", sha, self.ENGINE_WF, "engine.test.mjs の (12) が通らない",
+                         "通るまではマージしない", "議決 D-0105"):
+                self.assertIn(part, e[0])
+
+    def test_12_は差分を当てた写しに頼らず_ENGINE_REF_の_Engine_で走る(self):
+        # 差分が入っていない Engine では、engine.test.mjs が差分を当てた写しで (12) を通すことはなく、(12) がすべて通らない側に数える
+        legacy, sha = self.engine(self.LEGACY)
+        failed = check.engine_wait_test(legacy, sha)
+        self.assertEqual(len(failed), len(re.findall(r'^test\("\(12\) ', check.ENGINE_WAIT_TEST.read_text(encoding="utf-8"), re.M)), failed)
+        # 走らせるのは ENGINE_REF の版で、チェックアウトの作業ツリー（あとの版）ではない
+        eng, ref = self.engine(self.HOLLOW)
+        (eng / check.ENGINE_SUPERVISOR).write_text(self.WAITS, encoding="utf-8")
+        self.assertNotEqual(check.engine_wait_test(eng, ref), [])
+        self.git(eng, "commit", "-q", "-am", "waits")
+        self.assertNotEqual(check.engine_wait_test(eng, ref), [])
+        self.assertEqual(check.engine_wait_test(eng, self.git(eng, "rev-parse", "HEAD")), [])
+
+    def test_node_がなければ照らせないとして落とす(self):
+        eng, sha = self.engine(self.WAITS)
+        bin_ = self.tmp()   # git だけがある PATH
+        (bin_ / "git").symlink_to(shutil.which("git"))
+        with mock.patch.dict(os.environ, {"PATH": str(bin_)}):
+            e = self.errors(self.repo(sha), eng)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"{check.ENGINE_UNVERIFIABLE}（node_unavailable）", e[0])
 
     def test_照らせなければ落とす(self):
         eng, sha = self.engine(self.WAITS)
