@@ -221,4 +221,29 @@ enforcement:
           workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0106（PR #1282）の test の案を入れた。issue 1197 の見張りは engine.test.mjs の (12) が TAP で pass と数えられたかを見るだけで、
+        (12) の中に条件付きの早い return を入れて確かめを飛ばしたまま pass と数えさせる書き換えを見ていなかった。engine.test.mjs の (12) を、
+        どれも中身を recheckPlanned(t, 数, (a) => { … }) に渡す形にし、中身の確かめ（a の assert。strict のまま、1 回ごとに t.assert.ok(true) で数える）の数を
+        t.plan で固定して、最後まで来たら走った数を「# (12) の確かめの数 N: テストの名前」の診断で TAP に残すようにした。ci.test.mjs は、(12) のどれもが
+        一覧 ENGINE_RECHECK_ASSERTS（名前と確かめの数）の数で recheckPlanned を呼び、recheckPlanned に t.plan(expected)・body(a)・走った数の印の行が
+        この順にあること（字面）と、engine.test.mjs を node --test --test-reporter=tap で走らせた結果でそれぞれの印がちょうど一覧の数で 1 回残ったこと
+        （走らせた結果）を見る。案は (12) を 6 件と書いていたが、Issue #1268 と #1281 で 8 件になっていたので 8 件すべてに入れた。
+        写しの engine.test.mjs の (12) の頭とループの 2 回目からの条件付きの return が、名前の見張りと字面の数の見張りをすり抜けても t.plan で落ちて
+        pass と数えられないこと、t.plan も外して頭で return すると pass と数えられて issue 1197 の見張りはすり抜けるが、印の数（0 回）がずれて外れになることを、
+        手元の Engine（/work/engine の 8a34337。差分は入っていないので差分を当てた写し）で写しを走らせて確かめた。数の変更・recheckPlanned を通さない・
+        t.plan や印を外す・印を中身の前に残す・印に固定した数を書く書き換えが字面で外れになることも確かめた。recheckPlanned ごと書き換えて印に偽の数を書く
+        ような、見張りそのものを狙う書き換えまでは見ていない。ci.test.mjs と engine.test.mjs はひな形の engine-test で走るが、写しがまだないので
+        PR ごとには走っていない（issue 1197・1205）。配線されておらず効き目は確かめていない
+      issue: 1283
+      at: 2026-11-09
+      decided_by: committee:D-0106
+      requires_check:
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+        - runs: tools/pr-body-check/ci.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0033
