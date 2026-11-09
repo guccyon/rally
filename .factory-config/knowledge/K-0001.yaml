@@ -317,4 +317,24 @@ enforcement:
           workflow: .github/workflows/pr-body-engine.yml
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0102（PR #1274）の ci_check の案（建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test を
+        既定ブランチの必須のチェックにし、ENGINE_REF の Engine で ci.test.mjs の条件付きの飛ばしの見張りと engine.test.mjs の (10) が通ることを記録したら、
+        この解決策の wired を true にして wired_by にワークフローのファイル・job・tools/pr-body-check/ci.test.mjs を書く）のうち、ワーカーの権限で入れられる分を入れた。
+        この解決策の requires_check に .github/workflows/pr-body-engine.yml の tools/pr-body-check/ci.test.mjs を書いたので、
+        tools/knowledge-enforcement-check/check.py が、その写しの pull_request でも走るジョブから ci.test.mjs を呼ぶ wired_by がないと
+        wired: true にできない（requires_check_unwired）。この項目は issue 1187 の解決策（議決 D-0099 の ci_check。(10) の中の条件付きの飛ばしの見張り）の
+        配線の記録を引き受ける。issue 1187 の項目には requires_check を書いておらず、その wired は false のまま残し、配線はこの項目で記録する。
+        手順は tools/pr-body-check/README.md の「配線の手順（建設者）」の 8。このチケットは特権のラインでなく .github/workflows/ を変えられないので、
+        写すこと・必須のチェックに登録すること・ENGINE_REF の Engine で走らせた記録を残すこと・wired を true にして wired_by を書くことは建設者が行う。
+        まだ配線されておらず効き目は確かめていない
+      issue: 1276
+      at: 2026-11-09
+      decided_by: committee:D-0102
+      requires_check:
+        - runs: tools/pr-body-check/ci.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0001
