@@ -1,0 +1,78 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0133
+pr: https://github.com/guccyon/rally/pull/1339
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この差分は K-0001 の enforcement.solutions に wired: false・verified: false の項目を 1 件足すだけで、statement・scope・confidence・evidence
+    は変えていないので、既存の知見や specs/ と矛盾しません。'
+  - '足した項目の decided_by: committee:D-0102 と PR #1274 は D-0102 の pr と合っており、内容も D-0102
+    の enforcement の 2 件目（kind: ci_check、wired_by に ci.test.mjs を書く案）とそのまま対応しています。'
+  - issue 1187 の項目を書き換えず、配線の記録をこの項目が引き受けると what に明記しており、requires_check の組が issue 1265
+    の項目と重なっても照らす解決策が別なので重複ではありません。
+  - 'issue 1187 の項目には requires_check がなく ci.test.mjs を呼ばない wired_by でも wired: true
+    にできる抜け道が残るので、次に K-0001 を直す変更セットで同じ requires_check を書き、D-0131 が指摘した issue 1183
+    の項目の抜けも併せて扱ってください。'
+  - 起票時の仮の番号の注記を書かず議決 D-0102 を直に指しているので、D-0102 や D-0131 が指摘した番号の取り違えは今回は起きていません。
+  - 配線も本物の記録での確認もまだなので、K-0001 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0102 を指し、D-0102 の pr は PR #1274 で what
+    の記述と合い、D-0102 の enforcement の 2 件目（ci_check の案）の文面にそのまま辿れます。'
+  - '引き受けると書いた issue 1187 の項目は K-0001 に decided_by: committee:D-0099 で実在し、requires_check
+    がなく wired: false のままなので、what の説明と食い違いません。'
+  - 'Issue #1276 と tools/pr-body-check/README.md の手順 8 はこの材料の外の記録で確かめられませんが、担保の記録であって主張の根拠を増やすものではなく、配線も効き目の確認もまだだと正直に書いています。'
+  - wired と verified を false のままにし、statement・evidence・confidence は変えていないので、K-0001
+    の confidence は hypothesis のままが妥当です。
+  - 差分にはファイルの道・Issue 番号・PR 番号・議決 id など工場の識別子しかなく、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は D-0102 の ci_check の案のうちワーカーの権限で入れられる分（requires_check の記入）を K-0001 の enforcement.solutions
+    に 1 件足すだけで、担保の観点では採ってよいです。
+  - 'requires_check に .github/workflows/pr-body-engine.yml の tools/pr-body-check/ci.test.mjs
+    を書いたことで、check.py が requires_check_unwired で wired: true を機械で止められるので、配線の記録の確かさは決定論で担保されています。'
+  - 'ただし issue 1187 の項目には requires_check がなく wired は false のまま残るので、だれかがその項目だけを wired:
+    true にすると ci.test.mjs を呼ぶ wired_by がなくても通ってしまう抜け道が残ります。'
+  - 'この抜け道は「配線はこの項目で記録する」という what の文だけで守られているので、issue 1187 の項目にも同じ requires_check
+    を書くか、check.py で issue 1187 の項目の wired: true を落とすかして機械で塞いでください。'
+  - D-0102 のもう 1 つの test の案（ENGINE_DIR の Engine で (10) と (11) のちょうど一方だけが走って通ることを確かめる）はまだ入っていないので、次の変更セットで入れてください。
+  - 配線も本物の記録での確認もまだで wired と verified を false にしているので、K-0001 の confidence は hypothesis
+    のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0102 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - 足した項目の requires_check（.github/workflows/pr-body-engine.yml の tools/pr-body-check/ci.test.mjs）は
+    issue 1265 の項目の requires_check の一部とそのまま重なり、建設者が issue 1265 の分を配線すれば同じ wired_by
+    でこの項目も通るので、新しい止める力はほとんど足していないと what に書き添えるとよいです。
+  - '反例として、check.py が照らすのは wired_by の配線だけで、what が wired: true の条件に挙げる「ENGINE_REF の
+    Engine で条件付きの飛ばしの見張りと (10) が通った記録」は機械で照らされないので、記録なしに wired: true にできてしまう恐れがあります。'
+  - 'issue 1187 の項目を wired: false のまま残して配線をこの項目に引き受けさせる形は、issue 1187 の項目に requires_check
+    を足す形より読み手に分かりにくく、issue 1187 の項目の what に引き受け先（issue 1276）を書き添えるとつながりが辿りやすくなります。'
+  - D-0102 のもう 1 つの test の案（(10) と (11) のちょうど一方だけが走って通ることを確かめる）はまだこの差分に入っていないので、残っていることを次の変更セットで記録してください。
+  - 配線も本物の記録での確認もまだで wired と verified を false にしているので言い過ぎておらず、K-0001 の confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'K-0001 の issue 1187 の解決策にも requires_check（runs: tools/pr-body-check/ci.test.mjs、workflow:
+    .github/workflows/pr-body-engine.yml）を書くか、tools/knowledge-enforcement-check/check.py
+    に issue 1187 の項目の wired: true を落とす規則を足し、test_check.py でその項目だけを wired: true にした形が落ちることを確かめる。'
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: D-0102 の案どおり、tools/pr-body-check/ci.test.mjs か engine.test.mjs に、ENGINE_DIR
+    の Engine で engine.test.mjs の (10) と (11) のちょうど一方だけが走って通ることを確かめるテストを足し、(10) が飛ぶか両方が飛ぶ形で落ちるようにする。
