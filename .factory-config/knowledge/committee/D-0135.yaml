@@ -1,0 +1,73 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0135
+pr: https://github.com/guccyon/rally/pull/1341
+decided_at: '2026-11-10'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この変更セットは K-0014 の enforcement.solutions に議決 D-0111（PR #1294）の test の案を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence・invalidate_when は変えていないので、既存の知見や
+    D-0049・D-0076・D-0101 の議決と矛盾しません。'
+  - 足した項目は D-0111 の enforcement の案（Postgres と psql を用意して WindowSqlTest を飛ばさず走らせ、ないときは失敗にし、窓の中と外の行を
+    fixture で確かめる）とそろっており、同じ形の RecordSqlTest を同じジョブに含めたのも issue 1214 の項目と重ならない妥当な広げ方です。
+  - ジョブ conflict-sql は K-0010 の項目が使う PR ごとのひな形 tools/conflict-check/ci/conflict-check.yml
+    に別のジョブとして足しており、既存の conflict-check のジョブとは CONFLICT_SQL_REQUIRED の有無で振る舞いを分けているので、K-0010
+    の担保と食い違いません。
+  - PR ごとに走らないと止められない試験なのに requires_check を書いていないので、README の決まりにそろえて、次に K-0014 を直すときは
+    conflict-sql のジョブと test_schema_ci.py を requires_check に書き添えてください。
+  - D-0101・D-0111・D-0112 の consistency の票で繰り返し挙げた、invalidate_when の 1 つ目の conflict.files
+    と schema の欄 conflict_files の名前のずれはまだ残っているので、別の変更セットでそろえてください。
+  - 'wired: false・verified: false で、担保を足しても主張（記録の欠けが手を打つ時期を遅らせたか）は確かめていないので、confidence
+    は hypothesis のままが妥当で、specs の glossary・context-map ともぶつかりません。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0014 に足した issue 1295 の test の項目は、議決 D-0111（PR #1294）の enforcement の案と中身がそろっていて、decided_by:
+    committee:D-0111 で一次記録に辿れます。'
+  - 議決の案にあった、Postgres と psql を用意して WindowSqlTest を飛ばさず走らせること、psql か DATABASE_URL がないときは落とすこと、窓の中と外を
+    fixture の行で確かめることが、conflict-sql のジョブ・SqlRequiredTest・fixture の行として一つずつ書かれています。
+  - '配線は建設者に残り、本物のイベント列でも確かめていないと書いてあるので、wired: false・verified: false は正直な記録です。'
+  - この PR は statement・evidence・confidence を変えていません。主張（記録の欠けが手を打つ時期を遅らせたか）の確かめも進んでいないので、confidence
+    は hypothesis のままが妥当です。
+  - 差分に出てくるのはファイルの道・テストの名前・イベント名・Issue と PR と議決の番号だけで、利用者の氏名・連絡先・ID・本文の引用はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0111 の test の案を K-0014 の enforcement.solutions に 1 件記録するだけで、中身は D-0111
+    の proposal（Postgres と psql を用意し、飛ばさず落とし、窓の内外を fixture で確かめる）とそろっているので、担保の観点で採ってよいです。
+  - CONFLICT_SQL_REQUIRED=true のときに conflict_sql_unavailable で落とす SqlRequiredTest
+    と、SQL の誤り 4 通りで WindowSqlTest が落ちることを確かめた点は、黙って飛ぶ・空の列で緑になる痛さを機械で止めていて線の引き方も明確です。
+  - 'ただし足した issue 1295 の項目には requires_check がなく、conflict-sql のジョブが pull_request で走るように写されていなくても
+    wired: true にできてしまうので、K-0001・K-0006 と同じ形で requires_check を書いて check.py に照らさせるべきです。'
+  - test_ci.py の SqlJobTest はひな形 tools/conflict-check/ci/conflict-check.yml の形しか見ないため、写し先の
+    .github/workflows/conflict-check.yml との食い違いは requires_check による照合でしか止められません。
+  - 担保を足しても主張（記録の欠けが手を打つ時期を遅らせたか）は確かめておらず、未配線・未確認なので、K-0014 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0014 の statement・scope・confidence・invalidate_when を変えず、議決 D-0111 の test
+    の案を入れた記録を enforcement.solutions に 1 件足すだけなので、主張の範囲は広がっていません。
+  - D-0111 の案は WindowSqlTest だけでしたが、同じ形の RecordSqlTest（issue 1214）もこのジョブで走らせており、案より少し広げているものの、同じ「SQL
+    が行を引けず空の列で緑になる」おそれへの手当てなので採ってよい範囲です。
+  - 反例として、unittest discover -k の名前がテストの組の名前とずれると 1 件も走らずに緑になるおそれがありますが、SqlJobTest
+    が -k の名前を今の組の名前と照らしているので塞がれています。
+  - fixture の「直近 8 日」の窓が走らせた日時に頼る作りだと日によって結果が変わるおそれがあるので、次に直すときは窓の基準の時刻を固定しているかを書き添えるとよいです。
+  - 'wired: false・verified: false と書き、.github/workflows/ への写しと必須チェック化は建設者に残り、本物のイベント列では確かめていないと断っているので、効き目を言い過ぎてはいません。'
+  - 担保を足しても主張（記録の欠けが手を打つ時期を遅らせたか）は確かめていないので、K-0014 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'K-0014 の issue 1295 の解決策に requires_check（runs: tools/conflict-check/test_schema_ci.py、workflow:
+    .github/workflows/conflict-check.yml）を書き、tools/knowledge-enforcement-check/check.py
+    が、pull_request で走る conflict-sql のジョブから CONFLICT_SQL_REQUIRED=true で test_schema_ci.py
+    を呼ぶ wired_by の項目がなければ requires_check_unwired で wired: true を落とすようにする。test_check.py
+    にその組を足して照らす。'
