@@ -1,0 +1,28 @@
+id: K-0021
+theme: 4
+kind: causal
+statement: >-
+  Issue が「いまの絞り込み」「ほかの期間の欄」のように今の画面を前提にした言葉で書かれているのに、指示役が前提にしている既存の欄や
+  手本の画面をファイル名で挙げず、今の画面と照らし合わせてもいないと、指示役と実装役で指すものがずれ、範囲の仮決めが出る
+  （C-0010 では Issue が画面にない絞り込み（競技・コーチ）がある前提で書かれていて、範囲の仮決めが出た）。
+  根拠はこの 1 件だけで、分析役の見込みは「繰り返しそう: いいえ」。
+scope:
+  work: [plan.requirements]
+  artifacts: [Ticket]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0010
+  - issue: 732
+  - pr: 798
+  - event: "case.analyzed:522932"
+status: active
+verified_at: 2026-11-09
+review_by: 2026-12-09
+confidentiality: product
+related: [K-0018, K-0019]
+invalidate_when:
+  - "Issue を起こす指示役の手順に、前提にしている既存の欄・手本の画面をファイル名で挙げる決まりが入った"
+  - "前提の欄や画面をファイル名で挙げた Issue でも、同じように範囲の仮決めが出た（原因は前提の書き方ではなかった）"
+decided_by: committee:D-0144

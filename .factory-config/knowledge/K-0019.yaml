@@ -1,0 +1,31 @@
+id: K-0019
+theme: 4
+kind: causal
+statement: >-
+  実装役が契約や API の振る舞いの意味を解釈して仮決めしたときに、backend の実装・テストでその振る舞いを確かめた場所（ファイル名と関数名）を
+  根拠に添えず、契約の文がどちらにも読めるのにそれを問いとして書かずに、自分の読みを「契約では」と言い切って渡すと、判定役（judge）は
+  実装役の報告（self_report）と差分だけではその解釈を確かめられず、確かめれば機械で決められた問いを人の判断（escalate）に回す
+  （C-0010 では期間で絞ったときの文言の仮決めが人に回り、約 11 時間の待ちになった）。
+  契約の文を引くだけでは足りない（C-0010 では契約の文そのものが 2 通りに読めたので、引いても judge は裁けなかったと見られる）。
+  根拠はこの 1 件だけで、judge に backend を確かめる手段がないこと（推測）も同じ結果を生みうる。
+scope:
+  work: [dev.build, dev.review.judge]
+  roles: [implement, judge]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0010
+  - pr: 798
+  - issue: 732
+  - event: "case.analyzed:522932"
+status: active
+verified_at: 2026-11-09
+review_by: 2026-12-09
+confidentiality: product
+related: [K-0011, K-0021]
+invalidate_when:
+  - "実装役への指示に、契約・API の解釈を含む仮決めでは backend で確かめた場所（ファイル名と関数名）を根拠に書き、契約の文がどちらにも読めて確かめられなければ問いとして書く決まりが入った"
+  - "backend で確かめた場所を添えた仮決めでも、judge が同じように裁けずに escalate した（原因は根拠の欠けではなく、judge に backend を確かめる手段がないことだった）"
+  - "judge が自分で backend の実装やテストを読んで仮決めの解釈を確かめるようになった（実装役の根拠に頼らなくなった）"
+decided_by: committee:D-0144
