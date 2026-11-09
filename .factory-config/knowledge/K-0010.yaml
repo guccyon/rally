@@ -194,4 +194,22 @@ enforcement:
       decided_by: committee:D-0067
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0066（Issue #1174 の起票時の番号は D-0062。PR #1169）の test の案を入れた。照らせずに停止を開かなかった外れが 1 件以上なら落とす
+        test_watch.py の EngineFinishedTest は Issue #1101 で入っていたが、Engine が今の形（job.finished に agent_resumed も agent_tier も出さない版）の
+        あいだは todo で飛ぶので、watch.py が events.py と別の扱いに変わっても黙って通っていた。todo の前に finished_diverged を見て、Engine の
+        job.finished の欄だけにしたイベント列で、watch.py の stoppages が開く停止の rule が PR ごとに events.py の check の rule と違うか、watch.py が
+        見逃した外れのうち events.py ではその項目を照らせる（unknown が 0 の）ものがあれば、今の形でも todo にせずに落とす。イベント列には、
+        job.finished の欄によらず照らせる外れの PR（agent_resumed と agent_tier を continue.enqueued に載せて 4 回積む）も混ぜ、今の形でも 3 つの rule が出るようにした。
+        ENGINE_DIR と CI=true では飛ばさない（test_engine.py と同じ）。手元の Engine（main の dcc3b1e。ENGINE_REF の 2490db6 は手元になく、その版では走らせていない）で、
+        変えない watch.py では todo のままになり、watch.py が over_limit を照らさないように変えた形と、照らせない回を外れにするように変えた形では
+        CI=true で落ちることを確かめた。Engine なしでも FinishedFieldsTest が、4 通りの欄で食い違わないことと、照らし方を変えた形ではどの欄でも食い違うことを確かめる。
+        ひな形 ci/conflict-check.yml を .github/workflows/ に写すのと、job.finished に agent_resumed と agent_tier を足して ENGINE_REF を上げるのは建設者なので、
+        効き目はまだ確かめていない
+      issue: 1174
+      at: 2026-11-08
+      decided_by: committee:D-0066
+      wired: false
+      verified: false
 decided_by: committee:D-0013

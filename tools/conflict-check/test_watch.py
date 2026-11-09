@@ -5,6 +5,8 @@ EngineFinishedTest は Engine の dispatcher.py の job.finished の欄で組ん
 1 以上なら落とす（議決 D-0042・Issue #1101）。欄の読み方・Engine のチェックアウトの渡し方と飛ばし方・今の形（LEGACY_FINISHED）のときだけの
 「todo:」は test_events.py の EngineFinishedTest と同じ（K-0004 の engine.test.mjs の todo と同じ形）。todo は見逃した件数を理由に添えて
 test_engine.py の todo で数え、知見 K-0010 の review_by を過ぎても Engine が今の形なら落とすのも同じ（議決 D-0043・Issue #1104）
+todo の前に、watch.py が events.py と別の扱い（開く停止の rule の食い違いか、events.py では照らせる外れの見逃し）に変わっていないかを見て、
+変わっていれば Engine が今の形でも落とす（議決 D-0062・Issue #1174。委員会の記録は committee/D-0066.yaml）
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -139,28 +142,60 @@ PLANTED = {
                                               {"resumed": True, "agent_tier": "tier-large", "files": ["apps/admin-web/src/a.ts"], "cost": 2.4}]),
     "tier": ("agent_for_mechanical", [{"resumed": False, "agent_tier": "tier-large", "files": ["CHANGELOG.md"], "cost": 1.2}]),
 }
+PLANTED_URLS = {k: URL.replace("/1", f"/{n}") for n, k in enumerate(PLANTED, 2)}
+# job.finished の欄によらず events.py で照らせる外れの PR。agent_resumed と agent_tier を continue.enqueued に載せ（events.py はそこも読む）、
+# 4 回積む。Engine が今の形でも 3 つの rule が出るので、watch.py が events.py と別の扱いに変わったらここで食い違う（議決 D-0062）
+CHECKABLE_URL = URL.replace("/1", f"/{len(PLANTED) + 2}")
+CHECKABLE = [({"agent_resumed": False, "agent_tier": "tier-large"}, {"files": ["CHANGELOG.md"], "cost": 1.2}),
+             ({"agent_resumed": True, "agent_tier": "tier-large"}, {"files": ["apps/backend/src/x.rs"], "cost": 1.95}),
+             ({}, {"files": ["apps/admin-web/src/a.ts"], "cost": 2.4}),
+             ({}, {"files": ["apps/admin-web/src/b.ts"], "cost": 2.4})]
+
+
+def planted(fields: list[str]) -> list[dict]:
+    """線どおりの PR（test_events.py の FULL）と PLANTED・CHECKABLE の外れの PR を 1 本にし、job.finished を Engine が出す欄だけにしたイベント列"""
+    evs = stream(FULL)
+    prs = [(PLANTED_URLS[k], attempts) for k, (_, attempts) in PLANTED.items()] + [(CHECKABLE_URL, [a for _, a in CHECKABLE])]
+    for m, (url, attempts) in enumerate(prs, 1):
+        for e in stream(attempts, url=url):
+            # stream は PR ごとに job_id を 101 から振るので、job_id で結ぶ job.finished が PR をまたがないようにずらす
+            e = {**e, "job_id": e["job_id"] + 100 * m if e["job_id"] is not None else None}
+            if url == CHECKABLE_URL and e["name"] == "continue.enqueued":
+                e["payload"] = {**e["payload"], **CHECKABLE[e["payload"]["attempt"] - 1][0]}
+            evs.append(e)
+    for n, e in enumerate(evs, 1):
+        e["id"] = n   # PR ごとに作った列を 1 本にしたので id を振り直す
+    return engine_shaped(evs, fields)
 
 
 def finished_missed(fields: list[str]) -> dict:
     """Engine が出す欄の job.finished で組んだイベント列で、watch.py が照らせずに停止を開かなかった外れの件数（照らすのに要る項目ごと）。
     線どおりの PR（test_events.py の FULL）も混ぜ、そこに開いたら落とす"""
-    urls = {k: URL.replace("/1", f"/{n}") for n, k in enumerate(PLANTED, 2)}
-    evs = stream(FULL)
-    for m, (k, (_, attempts)) in enumerate(PLANTED.items(), 1):
-        for e in stream(attempts, url=urls[k]):
-            # stream は PR ごとに job_id を 101 から振るので、job_id で結ぶ job.finished が PR をまたがないようにずらす
-            evs.append({**e, "job_id": e["job_id"] + 100 * m if e["job_id"] is not None else None})
-    for n, e in enumerate(evs, 1):
-        e["id"] = n   # PR ごとに作った列を 1 本にしたので id を振り直す
-    found = {s["pr_url"]: s["rules"] for s in watch.stoppages(policy.load(), engine_shaped(evs, fields))}
+    found = {s["pr_url"]: s["rules"] for s in watch.stoppages(policy.load(), planted(fields))}
     if URL in found:
         raise AssertionError(f"線どおりの PR に停止を開いた: {found[URL]}")
-    return {k: 0 if rule in found.get(urls[k], []) else 1 for k, (rule, _) in PLANTED.items()}
+    return {k: 0 if rule in found.get(PLANTED_URLS[k], []) else 1 for k, (rule, _) in PLANTED.items()}
+
+
+def finished_diverged(fields: list[str]) -> list[str]:
+    """Engine が出す欄の job.finished で組んだイベント列で、watch.py が events.py と別の扱いをした PR ごとの説明（議決 D-0062）。
+    watch.py が開く停止の rule が events.py の check の rule と違う PR と、watch.py が見逃した外れのうち events.py ではその項目を照らせる
+    （照らせない件数が 0 の）もの。Engine が今の形で todo のあいだも、watch.py の見逃しが events.py の照らせない件数だけで説明できるかを見る"""
+    c, evs = policy.load(), planted(fields)
+    records = events.records_from_events(evs)
+    opened = {s["pr_url"]: s["rules"] for s in watch.stoppages(c, evs)}
+    out = [f"{url}: watch.py は {opened.get(url, [])}、events.py は {want}" for url, r in records.items()
+           if opened.get(url, []) != (want := sorted({e["rule"] for e in events.check(c, r)}))]
+    for k, n in finished_missed(fields).items():
+        if n and not events.unknown(records[PLANTED_URLS[k]])[k]:
+            out.append(f"{PLANTED_URLS[k]}: events.py では {k} を照らせるのに watch.py が {PLANTED[k][0]} の停止を開かない")
+    return out
 
 
 class FinishedFieldsTest(unittest.TestCase):
     """下の EngineFinishedTest の線そのものを、Engine なしで確かめる"""
     NOW = test_events.FinishedFieldsTest.NOW   # 2026-11-07 の Engine（main の 2490db6）の job.finished の欄
+    VARIANTS = (NOW, NOW + ["agent_resumed"], NOW + ["agent_tier"], NOW + list(FINISHED_FIELDS))
 
     def test_今の形では照らせずに外れを見逃す(self):
         self.assertTrue(legacy_finished(self.NOW))
@@ -173,12 +208,43 @@ class FinishedFieldsTest(unittest.TestCase):
         self.assertEqual(finished_missed(self.NOW + ["agent_resumed"]), {"agent_resumed": 0, "tier": 1})
         self.assertEqual(finished_missed(self.NOW + ["agent_tier"]), {"agent_resumed": 1, "tier": 0})
 
+    def test_どの欄でもwatchはeventsと同じ扱いで見逃しはeventsの照らせない件数だけ(self):
+        for fields in self.VARIANTS:
+            with self.subTest(fields=fields[len(self.NOW):]):
+                self.assertEqual(finished_diverged(fields), [])
+        evs = planted(self.NOW)
+        self.assertEqual(watch.stoppages(policy.load(), evs, CHECKABLE_URL)[0]["rules"],
+                         ["agent_for_mechanical", "over_limit", "resumed_after_limit"])   # 今の形でも照らせる外れの PR
+
+    def test_watchがeventsと別の扱いに変わったらどの欄でも食い違う(self):
+        def drop(rule):   # watch.py が rule を 1 つ照らさなくなった形
+            return lambda c, r: [e for e in events.check(c, r) if e["rule"] != rule]
+
+        def unknown_as_error(c, r):   # watch.py が照らせない回も外れにするようになった形
+            return events.check(c, r) + [{"rule": "unknown", "attempt": a["attempt"], "job_id": a["job_id"], "message": "照らせない"}
+                                         for a in r["attempts"] if a["agent_resumed"] is None or a["tier"] is None]
+
+        changed = {f"{rule} を照らさない": drop(rule) for rule in ("over_limit", "resumed_after_limit", "agent_for_mechanical")}
+        changed["照らせない回を外れにする"] = unknown_as_error
+        for what, check in changed.items():
+            fake = types.SimpleNamespace(records_from_events=events.records_from_events, check=check)
+            for fields in self.VARIANTS:
+                with self.subTest(what=what, fields=fields[len(self.NOW):]), mock.patch.object(watch, "events", fake):
+                    try:
+                        diverged = finished_diverged(fields)
+                    except AssertionError:   # 線どおりの PR に停止を開いた。EngineFinishedTest もここで落ちるので、食い違いを見つけた側に数える
+                        continue
+                    self.assertNotEqual(diverged, [])
+
 
 @unittest.skipIf(test_engine.SKIP, test_engine.SKIP)
 class EngineFinishedTest(unittest.TestCase):
     def test_job_finishedにagent_resumedと解き方のtierを出す版のEngineでは外れのすべてに停止を開く(self):
         fields = test_engine.harness("finished", str(test_engine.ENGINE_DIR))["fields"]
         self.assertIn("cost_usd", fields, "job.finished の欄を読めている確かめ")
+        # todo の前に見る。Engine が今の形のあいだも、watch.py が events.py と別の扱いに変わったら飛ばさずに落とす（議決 D-0062）
+        self.assertEqual(finished_diverged(fields), [],
+                         f"Engine の job.finished（{', '.join(fields)}）で組んだイベント列で、watch.py が events.py と別の扱いをした")
         if legacy_finished(fields):
             m = finished_missed(fields)
             todo_until_review_by(self, f"見逃した外れ agent_resumed={m['agent_resumed']}・tier={m['tier']}")
