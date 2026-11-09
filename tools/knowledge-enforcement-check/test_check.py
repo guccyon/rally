@@ -1657,6 +1657,77 @@ class ConflictRecordScheduleTest(unittest.TestCase):
         self.assertEqual(self.errors(self.repo({}), wired=False), [])
 
 
+class PrBodyPatchScheduleTest(unittest.TestCase):
+    """K-0001 の issue 1179 の解決策は .github/workflows/pr-body-patch.yml の schedule でも走るジョブから patch.mjs を呼ばないと
+    wired にできない（議決 D-0093（Issue #1262 の起票時の番号は D-0089。PR #1257）、Issue #1262）"""
+
+    PATCH = "tools/pr-body-check/patch.mjs"
+    TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-patch.yml"
+    WF = ".github/workflows/pr-body-patch.yml"
+
+    def repo(self, files: dict[str, str]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in {self.PATCH: "", check.PR_BODY_PROTECTION: "", **files}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def errors(self, d: Path, wf=None, job="patch", runs=None, wired=True) -> list[str]:
+        item = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": 1179, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": runs or self.PATCH}]}]}}
+        return check.check_schedule(item, d) + check.check_wiring(item, d)
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0001", 1179)], self.PATCH)
+        self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0001", 1179)], (self.WF, "D-0093"))
+        self.assertEqual(requires("K-0001", 1179), [])
+
+    def test_ひな形をそのまま写した_patch_なら通る(self):
+        # ひな形は working-directory: tools/pr-body-check で node patch.mjs を呼ぶ
+        self.assertEqual(self.errors(self.repo({self.WF: self.template()})), [])
+
+    def test_別の名前のワークフローでは落ちる(self):
+        other = ".github/workflows/patch.yml"
+        e = self.errors(self.repo({other: self.template()}), wf=other)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(self.WF, e[0])
+        self.assertIn("議決 D-0093", e[0])
+
+    def test_schedule_を外した写しでは落ちる(self):
+        text = self.template().replace('  schedule:\n    - cron: "50 19 * * *"\n', "", 1)
+        self.assertNotEqual(text, self.template())
+        e = self.errors(self.repo({self.WF: text}))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("on.schedule（cron）", e[0])
+
+    def test_patch_mjs_を呼ばない写しでは落ちる(self):
+        text = self.template().replace("node patch.mjs", "true", 1)
+        self.assertNotEqual(text, self.template())
+        e = self.errors(self.repo({self.WF: text}))
+        self.assertTrue(any("wired にするには" in x and self.PATCH in x for x in e), e)
+
+    def test_ほかの検査を指す項目では落ちる(self):
+        e = self.errors(self.repo({self.WF: self.template()}), runs=check.PR_BODY_PROTECTION)
+        self.assertTrue(any("wired にするには" in x and self.PATCH in x for x in e), e)
+
+    def test_落ちても伝わらない写しでは落ちる(self):
+        text = self.template().replace("      - name: 差分が ENGINE_REF の版と先頭に当たるかを照らす（K-0001）\n",
+                                       "      - name: 差分が ENGINE_REF の版と先頭に当たるかを照らす（K-0001）\n        continue-on-error: true\n", 1)
+        self.assertNotEqual(text, self.template())
+        e = self.errors(self.repo({self.WF: text}))
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("continue-on-error", e[0])
+
+    def test_配線していなければ見ない(self):
+        self.assertEqual(self.errors(self.repo({}), wired=False), [])
+
+
 class PrBodyEngineWiringTest(unittest.TestCase):
     """K-0001 の issue 1182 の解決策は、.github/workflows/pr-body-engine.yml の pull_request のジョブから engine.test.mjs を呼び、
     .github/workflows/pr-body-protection.yml の schedule のジョブから protection.mjs を呼ばないと wired にできない（議決 D-0070（起票時の番号は D-0067）、Issue #1182）"""
