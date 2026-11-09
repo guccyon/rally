@@ -7,6 +7,7 @@
 // アプリ全体（StudentApp）を API のモック（test/support の FakeStudentApi）で動かし、画面を押してたどる。
 // 画面を足したり、たどり方（押す文言）を変えたりしたら、下の screens を直す。
 // id はファイル名と前後の突き合わせに使うので変えない（変えると「消えた画面」と「新しい画面」になる）。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,26 +16,58 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/app.dart';
+import 'package:rally_student_app/device/local_media.dart';
 import 'package:rally_student_app/screens/design_catalog_screen.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
+import 'package:rally_student_app/state/prejoin_check.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/ui/theme/rally_tokens.dart';
 
+import '../test/support/fake_local_media.dart';
 import '../test/support/fake_student_api.dart';
 import '../test/support/pump.dart';
 
 typedef Navigate = Future<void> Function(WidgetTester tester);
 
 class Screen {
-  const Screen(this.id, this.title, this.navigate, {this.home});
+  const Screen(
+    this.id,
+    this.title,
+    this.navigate, {
+    this.home,
+    this.media,
+    this.api,
+  });
   final String id;
   final String title;
   final Navigate navigate;
 
   /// 最初の画面（なければアプリの画面の流れ）
   final Widget? home;
+
+  /// 端末のカメラ・マイク・スピーカー（なければどれも使える作り物の端末）
+  final FakeLocalMedia Function()? media;
+
+  /// API のモック（なければ [_api]）
+  final FakeStudentApi Function()? api;
 }
+
+/// 今の時刻。撮るたびに [Fixtures.now]（予約したスロットの 2 日前）に戻し、入室前チェックをたどるときは [_setNow] で進める
+var _now = Fixtures.now;
+
+/// 今の時刻を [now] に進め、時刻で切り替わる表示（入室前チェックの入口・入室の帯）を描き直す
+Future<void> _setNow(WidgetTester tester, DateTime now) async {
+  _now = now;
+  await tester.pump(const Duration(seconds: 1));
+  await tester.pumpAndSettle();
+}
+
+/// 開始の 2 分 48 秒前（入室前チェックの画面の仕様の代表の「あと 2:48」）
+final _beforeStart = Fixtures.slot.startsAt.subtract(
+  const Duration(minutes: 2, seconds: 48),
+);
 
 Future<void> _register(WidgetTester tester) async {
   await tester.enterText(
@@ -74,10 +107,21 @@ Future<void> _toConfirmed(WidgetTester tester) async {
   await tapText(tester, '予約を確定する');
 }
 
-Future<void> _toCompletion(WidgetTester tester) async {
+/// 予約の確定から、[now]（開始 5 分前より後）に入室前チェックを開く
+Future<void> _toPrejoin(WidgetTester tester, DateTime now) async {
   await _toConfirmed(tester);
+  await _setNow(tester, now);
   await tapText(tester, 'ビデオ通話で受ける');
-  await tapText(tester, '通話を開始する');
+}
+
+/// 開始時刻に入室前チェックから入室する
+Future<void> _toLiveLesson(WidgetTester tester) async {
+  await _toPrejoin(tester, Fixtures.slot.startsAt);
+  await tapText(tester, '入室する');
+}
+
+Future<void> _toCompletion(WidgetTester tester) async {
+  await _toLiveLesson(tester);
   await tapText(tester, '通話を終了する');
 }
 
@@ -117,11 +161,75 @@ final screens = <Screen>[
     await tapText(t, 'このコーチの空き枠を見る');
   }),
   Screen('booking-pending', '予約の確定待ち', _toBooking),
+  // 開始 5 分前より早い（「ビデオ通話で受ける」は押せず、開ける時刻を出す）
   Screen('booking-confirmed', '予約の確定', _toConfirmed),
-  Screen('live-lesson', 'ビデオ通話', (t) async {
+  Screen('booking-confirmed-prejoin-open', '予約の確定: 入室前チェックを開ける', (t) async {
     await _toConfirmed(t);
-    await tapText(t, 'ビデオ通話で受ける');
+    await _setNow(t, prejoinCheckOpensAt(Fixtures.slot.startsAt));
   }),
+  Screen('prejoin-check', '入室前チェック: 開始前', (t) async {
+    await _toPrejoin(t, _beforeStart);
+    await _showWholePage(t);
+  }),
+  Screen(
+    'prejoin-check-waiting',
+    '入室前チェック: 許可を待っている',
+    (t) => _toPrejoin(t, _beforeStart),
+    media: () => FakeLocalMedia()..permissionGate = Completer<void>(),
+  ),
+  Screen('prejoin-check-off', '入室前チェック: カメラ・マイクを切っている', (t) async {
+    await _toPrejoin(t, _beforeStart);
+    await tapText(t, 'カメラを切る');
+    await tapText(t, 'マイクを切る');
+    await _showWholePage(t);
+  }),
+  Screen('prejoin-check-tone', '入室前チェック: 試し音を鳴らしている', (t) async {
+    await _toPrejoin(t, _beforeStart);
+    await _showWholePage(t);
+    await tapText(t, 'スピーカーを試す');
+  }),
+  Screen(
+    'prejoin-check-denied',
+    '入室前チェック: 許可を断られた',
+    (t) async {
+      await _toPrejoin(t, _beforeStart);
+      await _showWholePage(t);
+    },
+    media: () => FakeLocalMedia(
+      camera: MediaDeviceStatus.denied,
+      mic: MediaDeviceStatus.denied,
+    ),
+  ),
+  Screen('prejoin-check-nodevice', '入室前チェック: カメラがない', (t) async {
+    await _toPrejoin(t, _beforeStart);
+    await _showWholePage(t);
+  }, media: () => FakeLocalMedia(camera: MediaDeviceStatus.missing)),
+  Screen('prejoin-check-ready', '入室前チェック: 開始時刻になった', (t) async {
+    await _toPrejoin(t, _beforeStart);
+    await _setNow(t, Fixtures.slot.startsAt);
+    await _showWholePage(t);
+  }),
+  Screen(
+    'prejoin-check-failed',
+    '入室前チェック: 入室に失敗した',
+    (t) async {
+      await _toPrejoin(t, Fixtures.slot.startsAt);
+      await tapText(t, '入室する');
+      await _showWholePage(t);
+    },
+    api: () => _api(
+      failures: {
+        'startLiveLessonSession': const StudentApiException(
+          statusCode: 409,
+          error: ApiError(
+            code: ErrorCode.slotNotStarted,
+            message: 'slot has not started',
+          ),
+        ),
+      },
+    ),
+  ),
+  Screen('live-lesson', 'ビデオ通話', _toLiveLesson),
   Screen('video-submit', '動画を送る', (t) async {
     await _toConfirmed(t);
     await tapText(t, '動画を送って添削を受ける');
@@ -164,34 +272,35 @@ final screens = <Screen>[
 ];
 
 /// キャプチャ用の API のモック。既定の見本に、受講権とお知らせとお気に入りのコーチを足して画面を埋める。
-FakeStudentApi _api() => FakeStudentApi(
-  entitlement: Fixtures.subscriptionStarted.entitlement,
-  favoriteCoaches: [Fixtures.favoriteCoach()],
-  notifications: [
-    ApiNotification(
-      notificationId: '99999999-9999-4999-8999-999999999991',
-      kind: NotificationKind.bookingConfirmed,
-      body: '10/28（水）12:00 の予約が確定しました。',
-      createdAt: Fixtures.now.subtract(const Duration(hours: 2)),
-      isRead: false,
-    ),
-    ApiNotification(
-      notificationId: '99999999-9999-4999-8999-999999999993',
-      kind: NotificationKind.bookingCancelledByHeadquarters,
-      body:
-          'コーチのお休みで予約をキャンセルしました\n佐藤 コーチのお休みのため、10/30（金）19:00〜19:30 の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。',
-      createdAt: Fixtures.now.subtract(const Duration(hours: 5)),
-      isRead: false,
-    ),
-    ApiNotification(
-      notificationId: '99999999-9999-4999-8999-999999999992',
-      kind: NotificationKind.videoReviewReturned,
-      body: '佐藤 コーチが動画の添削を返しました。',
-      createdAt: Fixtures.now.subtract(const Duration(days: 1)),
-      isRead: true,
-    ),
-  ],
-);
+FakeStudentApi _api({Map<String, StudentApiException> failures = const {}}) =>
+    FakeStudentApi(
+      failures: failures,
+      entitlement: Fixtures.subscriptionStarted.entitlement,
+      favoriteCoaches: [Fixtures.favoriteCoach()],
+      notifications: [
+        ApiNotification(
+          notificationId: '99999999-9999-4999-8999-999999999991',
+          kind: NotificationKind.bookingConfirmed,
+          body: '10/28（水）12:00 の予約が確定しました。',
+          createdAt: Fixtures.now.subtract(const Duration(hours: 2)),
+          isRead: false,
+        ),
+        ApiNotification(
+          notificationId: '99999999-9999-4999-8999-999999999993',
+          kind: NotificationKind.bookingCancelledByHeadquarters,
+          body: 'コーチのお休みで予約をキャンセルしました\n佐藤 コーチのお休みのため、10/30（金）19:00〜19:30 の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。',
+          createdAt: Fixtures.now.subtract(const Duration(hours: 5)),
+          isRead: false,
+        ),
+        ApiNotification(
+          notificationId: '99999999-9999-4999-8999-999999999992',
+          kind: NotificationKind.videoReviewReturned,
+          body: '佐藤 コーチが動画の添削を返しました。',
+          createdAt: Fixtures.now.subtract(const Duration(days: 1)),
+          isRead: true,
+        ),
+      ],
+    );
 
 /// 撮った画像を SCREENSHOT_DIR に書くだけの比較役（matchesGoldenFile の描画をそのまま使う）。
 class _WriteComparator extends GoldenFileComparator {
@@ -279,11 +388,15 @@ void main() {
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
 
+      _now = Fixtures.now;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            studentApiProvider.overrideWithValue(_api()),
-            clockProvider.overrideWithValue(() => Fixtures.now),
+            studentApiProvider.overrideWithValue((screen.api ?? _api)()),
+            localMediaProvider.overrideWithValue(
+              (screen.media ?? FakeLocalMedia.new)(),
+            ),
+            clockProvider.overrideWithValue(() => _now),
           ],
           child: StudentApp(home: screen.home ?? const StudentFlowScreen()),
         ),

@@ -95,6 +95,18 @@ String formatClockRange(DateTime start, DateTime end) {
   );
 }
 
+/// 端末のタイムゾーンで時刻だけ。例: `12:00`（入室の帯の開始時刻）
+String formatClock(DateTime value) => _clockLabel(value.toLocal());
+
+/// 入室前チェックを開けるようになる時刻（端末のタイムゾーンで）。[now] と同じ日なら `11:55`、別の日なら `11/9（月）11:55`
+String prejoinOpensAtLabel(DateTime opensAt, DateTime now) {
+  final at = opensAt.toLocal();
+  final today = now.toLocal();
+  final sameDay =
+      at.year == today.year && at.month == today.month && at.day == today.day;
+  return '${sameDay ? '' : _dayLabel(at)}${_clockLabel(at)}';
+}
+
 String _dayLabel(DateTime d) =>
     '${d.month}/${d.day}（${_weekdays[d.weekday - 1]}）';
 

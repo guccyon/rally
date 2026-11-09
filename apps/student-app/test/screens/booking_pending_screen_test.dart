@@ -1,7 +1,9 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/booking_pending_screen.dart';
+import 'package:rally_student_app/state/prejoin_check.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/state/subscription.dart';
 
@@ -137,7 +139,7 @@ void main() {
     expect(find.textContaining('メニュー'), findsNothing);
   });
 
-  testWidgets('通話か動画の送付を選ぶと、それぞれの画面に進む', (tester) async {
+  testWidgets('開始 5 分前を過ぎて通話か動画の送付を選ぶと、入室前チェックか動画の送付に進む', (tester) async {
     final confirmed = pending().copyWith(booking: Fixtures.bookingConfirmed);
 
     final container = await pumpScreen(
@@ -145,9 +147,11 @@ void main() {
       const BookingPendingScreen(),
       api: FakeStudentApi(),
       initial: confirmed,
+      now: prejoinCheckOpensAt(Fixtures.slot.startsAt),
     );
+    expect(find.textContaining('から入室前チェックができます'), findsNothing);
     await tapText(tester, 'ビデオ通話で受ける');
-    expect(container.read(studentFlowProvider).step, FlowStep.liveLesson);
+    expect(container.read(studentFlowProvider).step, FlowStep.prejoinCheck);
 
     final other = await pumpScreen(
       tester,
@@ -157,5 +161,39 @@ void main() {
     );
     await tapText(tester, '動画を送って添削を受ける');
     expect(other.read(studentFlowProvider).step, FlowStep.videoSubmit);
+  });
+
+  testWidgets('開始 5 分前より早いと「ビデオ通話で受ける」は押せず開ける時刻を出し、開いたまま 5 分前になると押せる', (
+    tester,
+  ) async {
+    final opensAt = prejoinCheckOpensAt(Fixtures.slot.startsAt);
+    var now = opensAt.subtract(const Duration(seconds: 2));
+    final container = await pumpScreen(
+      tester,
+      const BookingPendingScreen(),
+      api: FakeStudentApi(),
+      initial: pending().copyWith(booking: Fixtures.bookingConfirmed),
+      clock: () => now,
+    );
+
+    final button = find.widgetWithText(FilledButton, 'ビデオ通話で受ける');
+    expect(tester.widget<FilledButton>(button).onPressed, isNull);
+    final local = opensAt.toLocal();
+    final clock = '${local.hour}:${local.minute.toString().padLeft(2, '0')}';
+    expect(
+      find.text(
+        '$clock から入室前チェックができます（開始 5 分前から）。'
+        'カメラとマイクの映りと音を確かめてから、開始時刻に入室します。',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(button);
+    await tester.pump();
+    expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
+
+    now = opensAt;
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
+    expect(find.textContaining('から入室前チェックができます'), findsNothing);
   });
 }

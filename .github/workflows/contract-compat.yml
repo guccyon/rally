@@ -16,8 +16,6 @@ concurrency:
   group: contract-compat-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  ENGINE_REF: a51fd782b9d2e7d42674cedf9b299931efd0beac
 
 jobs:
   compat:
@@ -27,6 +25,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Engine の版を読む（.factory-config/engine.lock。factory-engine の main にある版だけ受ける）
+        run: |
+          lock=.factory-config/engine.lock
+          if [ ! -f "$lock" ]; then echo "ENGINE_REF=self" >> "$GITHUB_ENV"; exit 0; fi
+          ref=$(grep -Ev '^[[:space:]]*(#|$)' "$lock" | head -1 | tr -d '[:space:]')
+          if ! printf '%s' "$ref" | grep -qE '^[0-9a-f]{40}$'; then echo "::error::$lock には 40 桁の commit SHA を 1 行で書く"; exit 1; fi
+          git init -q "$RUNNER_TEMP/engine"
+          git -C "$RUNNER_TEMP/engine" fetch -q --filter=blob:none https://github.com/guccyon/factory-engine.git main
+          if ! git -C "$RUNNER_TEMP/engine" merge-base --is-ancestor "$ref" FETCH_HEAD 2>/dev/null; then echo "::error::$lock の版 $ref は factory-engine の main にない"; exit 1; fi
+          echo "ENGINE_REF=$ref" >> "$GITHUB_ENV"
       - name: チェッカーを取る
         run: |
           python3 -m pip install --quiet pyyaml

@@ -2,6 +2,8 @@
 // 残り時間の表記（content.yaml の notation.datetime.countdown）。
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
 
@@ -161,4 +163,18 @@ test("入室に失敗したらボタンの上に失敗の知らせを出し、�
   const buttons = screen.getAllByRole("button");
   expect(buttons.map((b) => b.textContent)).toEqual(["予約の一覧に戻る", "入室する"]);
   expect(buttons[0]).toHaveClass("bg-primary-container");
+});
+
+// 部品は見た目だけを持ち、映像（stream）と音の大きさ（level）は呼ぶ側から受け取る（#1041）。
+// カメラ・マイク・スピーカーを開く・計るのは入室前チェックの画面の側で、components/ui には書かない。
+test("部品はカメラ・マイクを開かず、音を計らない（映像と音の大きさは呼ぶ側から受け取る）", () => {
+  const dir = resolve(process.cwd(), "src/components/ui");
+  const offenders = readdirSync(dir)
+    .filter((name) => /\.tsx?$/.test(name))
+    .filter((name) =>
+      /\b(mediaDevices|getUserMedia|getDisplayMedia|enumerateDevices|AudioContext|AnalyserNode|setSinkId)\b/.test(
+        readFileSync(join(dir, name), "utf8"),
+      ),
+    );
+  expect(offenders).toEqual([]);
 });

@@ -9,6 +9,7 @@ schema_version: "0.1"
 provisional: true
 decided:
   - { date: "2026-11-05", by: builder, note: "初版を仮置き。既存の specs/design/ と Blueprint の事業の形から起こした" }
+  - { date: "2026-11-09", by: builder, note: "重要度 S2〜S4 の基準とエラーバジェットを仮置き（Engine ADR 0043 の O5）" }
 
 accessibility:
   standard: WCAG 2.2 AA
@@ -60,3 +61,30 @@ s1:
     - { id: data_loss,        ja: "予約・契約・受講権・送った動画・メッセージが消える、再起動や再ログインで元に戻る" }
     - { id: billing_wrong,    ja: "課金と受講権の誤り（契約プランの上限を超えて予約できる、二重に消費する、コーチへの支払い額が違う）" }
     - { id: core_flow_broken, ja: "一周の流れ（登録 → 予約 → レッスン → 完了の記録）か、ログインが通らない" }
+
+# 重要度 S2〜S4（S1 は上の s1.conditions）。QA 役が Defect に付け、Incident の重要度にもなる（Engine ADR 0043 の O5）
+severities:
+  s2:
+    ja: "流れが exit まで通らない"
+    conditions:
+      - { id: flow_blocked,   ja: "予約・レッスン・動画の添削・メッセージ・契約の流れが途中で止まり、利用者が画面の操作だけでは先に進めない" }
+      - { id: wrong_state,    ja: "予約・添削・契約の状態が、操作のあとに違う状態で出る（再読み込みで直るものを含む）" }
+      - { id: role_dead_end,  ja: "コーチ・本部の毎日の仕事（枠を開ける・添削を返す・問い合わせを追う）が画面でできない" }
+  s3:
+    ja: "通るが、見えるもの・言葉が違う"
+    conditions:
+      - { id: wrong_display,  ja: "日時・回数・金額・名前の表示が違う、並びや件数が合わない（操作の結果は正しい）" }
+      - { id: words,          ja: "内部のコードや英語の取り残し、用語集と違う語、何をすればよいか分からない文言" }
+      - { id: detour,         ja: "遠回りすれば通る（戻る・再読み込み・別の入口で先に進める）" }
+  s4:
+    ja: "気づきにくい小さな食い違い"
+    conditions:
+      - { id: minor,          ja: "利用者の目的と結果に影響しない食い違い（細かな表記の揺れ、まれな状況での出方の違い）" }
+
+# エラーバジェット（Engine ADR 0043 の O5）。期間の中で許す Incident の数。超えない限り S2〜S4 は機能開発の順番を変えない。
+# Gen1 は staging を本番の代わりにし、QA 役が起票した Defect（known_gap を除く）を数える。演習は数えない。
+# 許容を増やす・期間を縮めるのは緩める変更（人の承認）
+error_budget:
+  period_days: 7
+  allowed: { s1: 0, s2: 2, s3: 8, s4: 30 }
+  on_exceed: "超えた重要度の Defect を機能開発より先に流すかを、工場の状況と週の報告で人に問う（Gen1 は知らせるだけ。品質の Learn と委員会の材料）"

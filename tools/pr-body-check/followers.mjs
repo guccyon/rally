@@ -1,5 +1,6 @@
 // PR 本文の見出しの正本（template.json）に、ほかの見出しの一覧が合っているかを決定論で照らす（知見 K-0005 の担保。Issue #1121）。LLM を使わない。
-// 正本と、正本に合わせる側（CLAUDE.md の「PR の説明」と Engine の rubric の PR-002 の check）は followers.json に書く（正本はオーナーが決めた。Issue #936）。
+// 正本と、正本に合わせる側（CLAUDE.md の「PR の説明」と Engine の rubric の PR-002 の check と、Engine の entrypoint.sh の実装役の報告の型）は
+// followers.json に書く（正本はオーナーが決めた。Issue #936。実装役の報告の型は議決 D-0071 と Issue #1194 で足した）。
 //
 //   node followers.mjs [--engine-dir <Engine のチェックアウト>] [--json <出力先>]
 //   Engine の道は --engine-dir、なければ環境変数 ENGINE_DIR、なければリポジトリの隣の ../engine
@@ -9,6 +10,8 @@
 //   - 合わせる側の見出しの一覧が、template.json の見出しを定義の順に区切りでつないだものと同じ（headings_mismatch）
 //   - 合わせる側に必須の一覧があれば、template.json の必須の見出しを同じ順につないだものと同じ（required_mismatch）
 // 区切りで割らずに、つないだ文字列どうしで比べる（rubric の区切りの「・」が見出し「影響範囲・互換性」にも入るため）。
+// 一覧に item があれば、pattern で捕まえた範囲から item の捕まえる組を出てくる順に拾い、separator でつないだものを一覧にする
+// （実装役の報告の型のように、見出しの間に注釈が挟まって 1 つの組では捕まえられない形のため）。
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -36,22 +39,30 @@ export class SourceError extends Error {
 
 const ROOTS = ["repo", "engine"];
 
-/** 一覧の取り出し方（pattern は捕まえる組が 1 つの正規表現、separator は見出しの区切り）を検証して返す。 */
+/**
+ * 一覧の取り出し方（pattern は捕まえる組が 1 つの正規表現、separator は見出しの区切り、任意の item は捕まえた範囲から見出しを 1 つずつ拾う、
+ * 捕まえる組が 1 つの正規表現）を検証して返す。
+ */
 function parseList(v, where) {
   const fail = (why) => { throw new FollowersError(`${where}: ${why}`); };
   if (v === null || typeof v !== "object" || Array.isArray(v)) fail("オブジェクトでない");
-  const extra = Object.keys(v).filter((k) => k !== "pattern" && k !== "separator");
+  const extra = Object.keys(v).filter((k) => !["pattern", "separator", "item"].includes(k));
   if (extra.length > 0) fail(`知らない欄がある（${extra.join("・")}）`);
   if (typeof v.separator !== "string" || v.separator === "") fail("separator が空でない文字列でない");
-  if (typeof v.pattern !== "string" || v.pattern === "") fail("pattern が空でない文字列でない");
-  let re;
-  try {
-    re = new RegExp(v.pattern, "g");
-  } catch (e) {
-    fail(`pattern が正規表現でない（${e.message}）`);
-  }
-  if (new RegExp(`${v.pattern}|`).exec("").length !== 2) fail("pattern の捕まえる組が 1 つでない");
-  return Object.freeze({ pattern: v.pattern, separator: v.separator, re });
+  const regex = (key) => {
+    if (typeof v[key] !== "string" || v[key] === "") fail(`${key} が空でない文字列でない`);
+    let re;
+    try {
+      re = new RegExp(v[key], "g");
+    } catch (e) {
+      fail(`${key} が正規表現でない（${e.message}）`);
+    }
+    if (new RegExp(`${v[key]}|`).exec("").length !== 2) fail(`${key} の捕まえる組が 1 つでない`);
+    return re;
+  };
+  const re = regex("pattern");
+  const item = "item" in v ? regex("item") : null;
+  return Object.freeze({ pattern: v.pattern, separator: v.separator, re, item });
 }
 
 /**
@@ -137,11 +148,17 @@ export function rubricField(text, id, field) {
   throw new SourceError(`rubric の ${id} に ${field} がない`);
 }
 
-/** 本文から一覧（捕まえた組）を取り出す。ちょうど 1 か所で当たらなければ SourceError。 */
+/**
+ * 本文から一覧（捕まえた組）を取り出す。ちょうど 1 か所で当たらなければ SourceError。
+ * item があれば、捕まえた範囲から item の組を順に拾って separator でつなぐ（1 つも拾えなければ SourceError）。
+ */
 function capture(text, list, what) {
   const hits = [...text.matchAll(list.re)];
   if (hits.length !== 1) throw new SourceError(`${what}が ${hits.length} か所で当たった（1 か所のはず。pattern: ${list.pattern}）`);
-  return hits[0][1];
+  if (list.item === null) return hits[0][1];
+  const items = [...hits[0][1].matchAll(list.item)].map((m) => m[1]);
+  if (items.length === 0) throw new SourceError(`${what}の範囲に見出しが 1 つもない（item: ${list.item.source}）`);
+  return items.join(list.separator);
 }
 
 /** 合わせる側の本文（rubric なら項目の欄の値）から、見出しと必須の一覧の文字列を取り出す。 */

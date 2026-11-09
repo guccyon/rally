@@ -13,6 +13,9 @@ import {
 } from "@/components/labels";
 
 import { bookingLessonMenuLabel } from "./bookingLessonMenu";
+import { browserLocalMedia, type LocalMedia } from "./localMedia";
+import { PrejoinCheck, type PrejoinMediaState } from "./PrejoinCheck";
+import { canOpenPrejoinCheck, formatPrejoinOpensAt, PREJOIN_CHECK_LEAD_MINUTES, useNow } from "./prejoinWindow";
 
 type CoachBooking = Schemas["CoachBooking"];
 
@@ -68,19 +71,29 @@ function BookingTable({
   );
 }
 
+const onOff = (on: boolean) => (on ? "入" : "切");
+
 /**
- * 通話への参加。開いたときに自分の予約の一覧（listMyCoachBookings）を、生徒が予約したときのレッスンメニューとともに出し、
- * 確定した予約の行からセッションを開始し、同じセッションを終了する。映像はモックなので出さない。
+ * 通話への参加。開いたときに自分の予約の一覧（listMyCoachBookings）を、生徒が予約したときのレッスンメニューとともに出す。
+ * 確定した予約の行は開始 5 分前から「入室前チェック」（PrejoinCheck）を開け、開始時刻から入室（セッションの開始）できる。
+ * 開始 5 分前より早い行は開ける時刻を出し、開いたまま時刻をまたいだら読み込み直さずにボタンに切り替える。
+ * 入室したら同じセッションを終了できる。相手の映像はモックなので出さない。
+ * media はブラウザーのカメラ・マイク・スピーカー（テストでは作り物に差し替える）。
  */
 export function LiveSessionPanel({
   api,
+  media = browserLocalMedia,
 }: {
   api: Pick<CoachApi, "listMyCoachBookings" | "startLiveLessonSession" | "endLiveLessonSession">;
+  media?: LocalMedia;
 }) {
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [session, setSession] = useState<Schemas["LiveLessonSession"] | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [prejoin, setPrejoin] = useState<CoachBooking | null>(null);
+  const [joinedMedia, setJoinedMedia] = useState<PrejoinMediaState | null>(null);
+  const now = useNow();
 
   const fetchBookings = useCallback(async (): Promise<ListState> => {
     const response = await api.listMyCoachBookings();
@@ -99,16 +112,52 @@ export function LiveSessionPanel({
     };
   }, [fetchBookings]);
 
-  async function onStart(bookingId: string) {
-    setBusy(true);
+  /** 入室前チェックの「入室する」。成功したらチェックを閉じ（カメラとマイクは止まる）、通話中の表示にする。 */
+  async function onJoin(bookingId: string, state: PrejoinMediaState): Promise<string | null> {
     const response = await api.startLiveLessonSession({ booking_id: bookingId });
-    setBusy(false);
-    if (response.ok) {
-      setSession(response.data);
-      setResult({ ok: true, message: "通話を開始しました。" });
-    } else {
-      setResult(response);
+    if (!response.ok) return response.message;
+    setSession(response.data);
+    setJoinedMedia(state);
+    setResult({ ok: true, message: "通話を開始しました。" });
+    setPrejoin(null);
+    return null;
+  }
+
+  function openPrejoin(item: CoachBooking) {
+    setResult(null);
+    setPrejoin(item);
+  }
+
+  function renderAction(item: CoachBooking): ReactNode {
+    if (item.booking.status !== "confirmed" || session?.booking_id === item.booking.booking_id) return "—";
+    if (!canOpenPrejoinCheck(item.slot.starts_at, now)) {
+      return (
+        <span className="text-sm text-text-muted">
+          開始 {PREJOIN_CHECK_LEAD_MINUTES} 分前から入室前チェックができます（{formatPrejoinOpensAt(item.slot.starts_at, now)} から）
+        </span>
+      );
     }
+    return (
+      <Button
+        variant="secondary"
+        disabled={busy || session?.status === "in_progress"}
+        onClick={() => openPrejoin(item)}
+      >
+        入室前チェック
+      </Button>
+    );
+  }
+
+  if (prejoin) {
+    return (
+      <PrejoinCheck
+        booking={prejoin}
+        media={media}
+        now={now}
+        onJoin={(state) => onJoin(prejoin.booking.booking_id, state)}
+        onClose={() => setPrejoin(null)}
+      />
+    );
   }
 
   async function onEnd() {
@@ -127,7 +176,7 @@ export function LiveSessionPanel({
   return (
     <div className="space-y-4">
       <p className="text-sm">
-        あなたの枠に入った予約です。確定した予約の「通話を開始」を押すと、その生徒との通話を始めます。
+        あなたの枠に入った予約です。確定した予約は、開始 {PREJOIN_CHECK_LEAD_MINUTES} 分前から「入室前チェック」でカメラとマイクを確かめ、開始時刻から入室できます。
       </p>
       {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
       {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
@@ -144,17 +193,7 @@ export function LiveSessionPanel({
               <BookingTable
                 label="これからの予約"
                 bookings={list.upcoming}
-                renderAction={(item) =>
-                  item.booking.status === "confirmed" && (
-                    <Button
-                      variant="secondary"
-                      disabled={busy || session?.status === "in_progress"}
-                      onClick={() => void onStart(item.booking.booking_id)}
-                    >
-                      通話を開始
-                    </Button>
-                  )
-                }
+                renderAction={renderAction}
               />
             )}
           </div>
@@ -180,6 +219,14 @@ export function LiveSessionPanel({
             <>
               <dt>終了</dt>
               <dd>{formatDateTime(session.ended_at)}</dd>
+            </>
+          )}
+          {session.status === "in_progress" && joinedMedia && (
+            <>
+              <dt>カメラ・マイク</dt>
+              <dd>
+                カメラ: {onOff(joinedMedia.camera)}・マイク: {onOff(joinedMedia.mic)}（入室前チェックのまま）
+              </dd>
             </>
           )}
           {session.duration_sec != null && (

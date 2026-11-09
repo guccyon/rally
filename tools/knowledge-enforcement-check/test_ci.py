@@ -9,18 +9,31 @@ pytest を入れて飛ばさずに走らせる形かを見る（差分が ENGINE
 写しを消した・名前を変えた PR を止める。議決 D-0053、Issue #1144）。どちらでもない手元では、まだ写していないとして飛ばす。
 形の検査（problems）が外れを見逃さないことは、ひな形を書き換えた写しで確かめる。
 ひな形と写しの ENGINE_REF は、形の検査とは別に knowledge-check.yml の ENGINE_REF と字面で照らし、片方だけ上げたら落とす
-（写しがなくても飛ばさない。議決 D-0053、Issue #1143）。
+（写しがなくても飛ばさない。議決 D-0053、Issue #1143）。knowledge-check.yml が ENGINE_REF を .factory-config/engine.lock から読む形（Engine ADR 0041）なら、
+engine.lock の版と照らし、engine.lock だけを上げた PR も落とす（議決 D-0080（起票時の番号は D-0078）、Issue #1225）。
+skipped を見る手順はひな形から走らせたときしか効かないので、test_engine.py と test_engine_patch.py そのものが CI=true か ENGINE_DIR を渡したときに
+Engine のチェックアウトや ENGINE_REF の版がなくても飛ばさずに落ちることを、Engine のない一時の置き場で子のプロセスとして走らせて確かめ、
+どちらも渡さないときだけ飛ぶことを対照にする（議決 D-0037 の ci_check の案。議決 D-0055、Issue #1152）。
+このディレクトリで unittest.TestCase を定義する .py がすべて unittest discover の既定の形（test*.py、下のディレクトリは __init__.py のあるパッケージ）に
+合うかを照らし、ひな形の engine-test は飛ばした件数の手順のすぐ後で test_ci.py --log knowledge-enforcement-unittest.log を走らせ、
+拾われないファイルか、その出力にテストが 1 件も（飛ばさずに）走った跡のないファイルがあれば落とす（議決 D-0057（起票時の番号は D-0055）、Issue #1154）。
+ひな形の enforcement のジョブが check.py の結果で落とす範囲が、check.py が呼ぶことを求める検査とワークフロー・K-*.yaml の wired_by を覆うことと、
+配線先のジョブから REQUIRED_RUNS の検査を外した PR でその手順が落ちることを、手順を bash で動かして確かめる（議決 D-0066（起票時の番号は D-0062）、Issue #1173）。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
+  python3 tools/knowledge-enforcement-check/test_ci.py --log knowledge-enforcement-unittest.log   # 出力に走った跡があるか
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import yaml
@@ -37,6 +50,9 @@ REF_LINE = re.compile(r"^\s*ENGINE_REF:\s*\S+\s*$", re.M)
 DIR = "tools/knowledge-enforcement-check"
 LOG = "knowledge-enforcement-unittest.log"
 REF_VALUE = re.compile(r"^\s*ENGINE_REF:\s*['\"]?([^'\"\s#]*)['\"]?\s*(?:#.*)?$", re.M)
+LOG_STEP = re.compile(rf"^\s*python3\s+(?:-B\s+)?{re.escape(DIR)}/test_ci\.py\s+--log\s+{re.escape(LOG)}\s*$", re.M)
+PATTERN = "test*.py"   # unittest discover の既定の -p
+LOG_HEAD = re.compile(r"^(test\S*) \(([\w.]+)\)", re.M)   # unittest -v の 1 件の行（3.11 からは mod.Class.test、それより前は mod.Class）
 
 spec = importlib.util.spec_from_file_location("knowledge_enforcement_check_c", HERE / "check.py")
 check = importlib.util.module_from_spec(spec)
@@ -86,7 +102,7 @@ def problems(text: str, ref: str) -> list[str]:
     engine = [s for s in steps if (s.get("with") or {}).get("repository") == "guccyon/factory-engine"]
     if len(engine) != 1 or engine[0]["with"].get("ref") != "${{ env.ENGINE_REF }}" or engine[0]["with"].get("path") != ".engine":
         e.append("Engine を ref: ${{ env.ENGINE_REF }}・path: .engine で 1 回だけ取る")
-    runs = [s for s in steps if DIR in (s.get("run") or "")]
+    runs = [s for s in steps if DIR in (s.get("run") or "") and not LOG_STEP.search(s.get("run") or "")]
     if len(runs) != 1:
         return e + [f"{DIR} のテストを 1 つの手順で走らせる"]
     s = runs[0]
@@ -102,6 +118,9 @@ def problems(text: str, ref: str) -> list[str]:
     guard_skip = [x for x in after if LOG in (x.get("run") or "") and "skipped=" in (x.get("run") or "")]
     if len(guard_skip) != 1 or guard_skip[0] is not (after[0] if after else None) or guard_skip[0].get("shell") != "bash":
         e.append(f"テストの手順のすぐ後に、{LOG} の skipped が 1 件以上なら落とす手順を bash で 1 つ置く")
+    log_steps = [x for x in steps if LOG_STEP.search(x.get("run") or "")]
+    if len(log_steps) != 1 or len(after) < 2 or log_steps[0] is not after[1]:
+        e.append(f"飛ばした件数の手順のすぐ後に、python3 -B {DIR}/test_ci.py --log {LOG} で拾われないファイル・走らなかったファイルを落とす手順を 1 つ置く")
     env = s.get("env") or {}
     if env.get("CI") != "true":
         e.append("テストの手順に CI: \"true\" を渡す（Engine・ENGINE_REF の版・pytest がなければ飛ばさずに落とす）")
@@ -167,7 +186,8 @@ class CopyMissingTest(unittest.TestCase):
 
 
 def ref_mismatches(repo: Path = REPO) -> list[str]:
-    """ひな形と（あれば）写しのうち、ENGINE_REF が knowledge-check.yml の ENGINE_REF と同じ版でないもの（議決 D-0053、Issue #1143）"""
+    """ひな形と（あれば）写しのうち、ENGINE_REF が knowledge-check.yml の ENGINE_REF と同じ版でないもの（議決 D-0053、Issue #1143）。
+    knowledge-check.yml が .factory-config/engine.lock を読む形なら、その版と照らす（test_engine_patch.py の engine_ref()。議決 D-0080、Issue #1225）"""
     ref = patch_check.engine_ref(repo / patch_check.WORKFLOW.relative_to(REPO))
     e = []
     for path, required in ((repo / TEMPLATE.relative_to(REPO), True), (repo / COPY.relative_to(REPO), False)):
@@ -176,7 +196,7 @@ def ref_mismatches(repo: Path = REPO) -> list[str]:
         refs = REF_VALUE.findall(path.read_text(encoding="utf-8"))
         if refs != [ref]:
             e.append(f"{path.relative_to(repo)} の ENGINE_REF（{', '.join(refs) or 'なし'}）が knowledge-check.yml の {ref} と同じ版でない。"
-                     "ENGINE_REF は knowledge-check.yml・ひな形・写しの 3 つを同じ PR でそろえて上げる")
+                     "ENGINE_REF は knowledge-check.yml（が読む .factory-config/engine.lock）・ひな形・写しの 3 つを同じ PR でそろえて上げる")
     return e
 
 
@@ -188,9 +208,12 @@ class EngineRefTest(unittest.TestCase):
 
     def test_ENGINE_REFを片方だけ上げると落ちる(self):
         ref, new = patch_check.engine_ref(), "a" * 40
-        texts = {patch_check.WORKFLOW: patch_check.WORKFLOW.read_text(encoding="utf-8"),
-                 TEMPLATE: TEMPLATE.read_text(encoding="utf-8")}
-        texts[COPY] = texts[TEMPLATE]   # 写しはひな形と同じ中身で置く
+        check_text = patch_check.WORKFLOW.read_text(encoding="utf-8")
+        # knowledge-check.yml の版は、env の ENGINE_REF の行の形でも、.factory-config/engine.lock を読む形（Engine ADR 0041）でも上げる（Issue #1225）
+        forms = {"engine.lock を読む形": (check_text if patch_check.LOCK_REL in check_text and not REF_LINE.search(check_text)
+                                          else f"run: |\n  lock={patch_check.LOCK_REL}\n", True),
+                 "env の ENGINE_REF の行": (f"env:\n  ENGINE_REF: {ref}\n", False)}
+        template = TEMPLATE.read_text(encoding="utf-8")
         cases = [
             # （knowledge-check.yml・ひな形・写しの ENGINE_REF（None は写しなし）、落ちるか）
             ((ref, ref, None), False), ((new, new, None), False), ((new, new, new), False), ((ref, ref, ref), False),
@@ -198,15 +221,20 @@ class EngineRefTest(unittest.TestCase):
             ((new, new, ref), True), ((ref, ref, new), True), ((new, ref, new), True),
             ((ref, f"'{ref}'", None), False), ((ref, f"{ref}  # 版", None), False),
         ]
-        for refs, fails in cases:
-            with self.subTest(refs), tempfile.TemporaryDirectory() as d:
-                for (src, text), value in zip(texts.items(), refs):
-                    if value is None:
-                        continue
-                    dst = Path(d) / src.relative_to(REPO)
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    dst.write_text(REF_LINE.sub(f"  ENGINE_REF: {value}", text), encoding="utf-8")
-                self.assertEqual(bool(ref_mismatches(Path(d))), fails, ref_mismatches(Path(d)))
+        for form, (check_body, by_lock) in forms.items():
+            for (check_ref, *refs), fails in cases:
+                with self.subTest(form=form, refs=(check_ref, *refs)), tempfile.TemporaryDirectory() as d:
+                    files = {patch_check.WORKFLOW: check_body if by_lock else REF_LINE.sub(f"  ENGINE_REF: {check_ref}", check_body)}
+                    if by_lock:
+                        files[REPO / patch_check.LOCK_REL] = f"# 版\n{check_ref}\n"
+                    for src, value in zip((TEMPLATE, COPY), refs):   # 写しはひな形と同じ中身で置く
+                        if value is not None:
+                            files[src] = REF_LINE.sub(f"  ENGINE_REF: {value}", template)
+                    for src, body in files.items():
+                        dst = Path(d) / src.relative_to(REPO)
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        dst.write_text(body, encoding="utf-8")
+                    self.assertEqual(bool(ref_mismatches(Path(d))), fails, ref_mismatches(Path(d)))
 
     def test_ENGINE_REFがないか2行あると落ちる(self):
         template = TEMPLATE.read_text(encoding="utf-8")
@@ -215,11 +243,157 @@ class EngineRefTest(unittest.TestCase):
                                                    f"        env:\n          ENGINE_REF: {patch_check.engine_ref()}\n          CI: \"true\"\n", 1)}.items():
             with self.subTest(name), tempfile.TemporaryDirectory() as d:
                 self.assertNotEqual(text, template)
-                for src, body in ((patch_check.WORKFLOW, patch_check.WORKFLOW.read_text(encoding="utf-8")), (TEMPLATE, text)):
+                for src, body in ((patch_check.WORKFLOW, patch_check.WORKFLOW.read_text(encoding="utf-8")), (TEMPLATE, text),
+                                  (REPO / patch_check.LOCK_REL, f"{patch_check.engine_ref()}\n")):
                     dst = Path(d) / src.relative_to(REPO)
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     dst.write_text(body, encoding="utf-8")
                 self.assertNotEqual(ref_mismatches(Path(d)), [])
+
+
+def defines_testcase(path: Path) -> bool:
+    """ファイルが unittest.TestCase（を継いだ同じファイルのクラス）を継ぐクラスを定義するか。名前の末尾が TestCase の基底を数える"""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    local: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for b in node.bases:
+            name = b.attr if isinstance(b, ast.Attribute) else b.id if isinstance(b, ast.Name) else ""
+            if name.endswith("TestCase") or name in local:
+                local.add(node.name)
+                break
+    return bool(local)
+
+
+def discovered_module(root: Path, path: Path) -> str | None:
+    """unittest discover -s root（-p は既定の test*.py）が path を拾うときのモジュール名。拾わなければ None"""
+    rel = path.relative_to(root)
+    if not fnmatchcase(rel.name, PATTERN) or not unittest.loader.VALID_MODULE_NAME.match(rel.name):
+        return None
+    d = root
+    for part in rel.parts[:-1]:   # 下のディレクトリは __init__.py のあるパッケージのときだけ辿る
+        d = d / part
+        if not part.isidentifier() or not (d / "__init__.py").is_file():
+            return None
+    return ".".join(rel.parts[:-1] + (rel.stem,))
+
+
+def testcase_files(root: Path = HERE) -> list[Path]:
+    return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts and defines_testcase(p))
+
+
+def discovery_problems(root: Path = HERE) -> list[str]:
+    """TestCase を定義するのに unittest discover に拾われないファイル（議決 D-0057、Issue #1154）"""
+    return [f"{p.relative_to(root)} は unittest.TestCase を定義するが、unittest discover の既定の形（{PATTERN}・"
+            "__init__.py のあるパッケージの下）に合わず拾われない" for p in testcase_files(root) if discovered_module(root, p) is None]
+
+
+def ran_modules(log: str) -> set[str]:
+    """unittest -v の出力で、飛ばさずに走ったテストが 1 件以上あるモジュール（の名前を含む点区切りの名前）"""
+    heads, out = list(LOG_HEAD.finditer(log)), set()
+    for i, m in enumerate(heads):
+        body = log[m.end():heads[i + 1].start() if i + 1 < len(heads) else len(log)]
+        result = re.search(r" \.\.\. (\S+)", body)   # docstring のあるテストは結果が次の行に出る
+        if result and result.group(1) != "skipped":
+            out.add(m.group(2))
+    return out
+
+
+def log_problems(log: str, root: Path = HERE) -> list[str]:
+    """拾われないファイルと、unittest discover の出力（LOG）にテストが 1 件も走った跡のないファイル（議決 D-0057、Issue #1154）"""
+    e, ran = discovery_problems(root), ran_modules(log)
+    for p in testcase_files(root):
+        mod = discovered_module(root, p)
+        # 3.11 からは mod.Class.test、それより前は mod.Class。setUpClass などの失敗の行は test で始まらないので数えない
+        if mod and not any(r.startswith(mod + ".") and r[len(mod) + 1:].count(".") <= 1 for r in ran):
+            e.append(f"{p.relative_to(root)} のテストが {LOG} に 1 件も走った跡がない（読み込めなかった・すべて飛ばした・走らせていない）")
+    return e
+
+
+class DiscoveryTest(unittest.TestCase):
+    """TestCase を定義するファイルがすべて unittest discover に拾われ、CI の出力に走った跡があるか（知見 K-0004 の担保。議決 D-0057、Issue #1154）"""
+
+    def tree(self, d: str, files: dict[str, str]) -> Path:
+        root = Path(d)
+        for rel, body in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(body, encoding="utf-8")
+        return root
+
+    CASE = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_a(self):\n        pass\n"
+
+    def test_このディレクトリのTestCaseはすべてdiscoverに拾われる(self):
+        self.assertEqual(discovery_problems(), [])
+        found = {p.name for p in testcase_files()}
+        self.assertTrue({"test_check.py", "test_ci.py"} <= found, found)
+        self.assertNotIn("check.py", found)
+
+    def test_拾われないファイルは落ちる(self):
+        cases = {
+            "check_x.py": {"check_x.py": self.CASE},
+            "x_test.py": {"x_test.py": self.CASE},
+            "test-x.py": {"test-x.py": self.CASE},
+            "TestCase を直に継ぐ": {"helper.py": "from unittest import TestCase\n\n\nclass T(TestCase):\n    pass\n"},
+            "継いだクラスをさらに継ぐ": {"helper.py": self.CASE + "\n\nclass U(T):\n    pass\n"},
+            "パッケージでない下のディレクトリ": {"sub/test_x.py": self.CASE},
+        }
+        for name, files in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as d:
+                self.assertEqual(len(discovery_problems(self.tree(d, files))), 1, name)
+
+    def test_拾われるファイルとTestCaseのないファイルは通る(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self.tree(d, {"test_x.py": self.CASE, "check.py": "import unittest\n\n\nclass X:\n    pass\n",
+                                 "sub/__init__.py": "", "sub/test_y.py": self.CASE, "data/helper.py": "x = 1\n"})
+            self.assertEqual(discovery_problems(root), [])
+            self.assertEqual([discovered_module(root, p) for p in testcase_files(root)], ["sub.test_y", "test_x"])
+
+    def test_ログに走った跡がないファイルは落ちる(self):
+        ran = "Ran 3 tests in 0.010s\n\nOK\n"
+        cases = [
+            # （ログ、落ちるファイル）
+            ("test_a (test_x.T.test_a) ... ok\ntest_a (sub.test_y.T.test_a) ... ok\n" + ran, []),
+            ("test_a (test_x.T) ... ok\ntest_a (sub.test_y.T) ... FAIL\n" + ran, []),   # 3.10 までの形・落ちたテストも走った跡に数える
+            ("test_a (test_x.T.test_a)\ndocstring の 1 行目 ... ok\ntest_a (sub.test_y.T.test_a) ... ERROR\n" + ran, []),
+            ("test_a (test_x.T.test_a) ... ok\n" + ran, ["sub/test_y.py"]),
+            ("test_a (test_x.T.test_a) ... ok\ntest_a (sub.test_y.T.test_a) ... skipped 'Engine がない'\n" + ran, ["sub/test_y.py"]),
+            ("test_a (test_x.T.test_a) ... ok\nsetUpClass (sub.test_y.T) ... ERROR\n" + ran, ["sub/test_y.py"]),
+            ("test_a (test_x.T.test_a) ... ok\nsub.test_y (unittest.loader._FailedTest.sub.test_y) ... ERROR\n" + ran, ["sub/test_y.py"]),
+            ("test_a (test_x_more.T.test_a) ... ok\ntest_a (sub.test_y.T.test_a) ... ok\n" + ran, ["test_x.py"]),
+            ("", ["sub/test_y.py", "test_x.py"]),
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            root = self.tree(d, {"test_x.py": self.CASE, "sub/__init__.py": "", "sub/test_y.py": self.CASE})
+            for log, files in cases:
+                with self.subTest(log):
+                    e = log_problems(log, root)
+                    self.assertEqual(sorted(f.split(" ")[0] for f in e), files, e)
+            self.tree(d, {"helper.py": self.CASE})
+            self.assertEqual(len(log_problems("test_a (test_x.T.test_a) ... ok\ntest_a (sub.test_y.T.test_a) ... ok\n" + ran, root)), 1)
+
+    def test_ログの手順はこのファイルの_log_で落ちるか通る(self):
+        ok = "".join(f"test_a ({discovered_module(HERE, p)}.T.test_a) ... ok\n" for p in testcase_files())
+        for log, rc in ((ok + "Ran 5 tests in 0.1s\n\nOK\n", 0), (ok.split("\n", 1)[1], 1), (None, 1)):
+            with self.subTest(log), tempfile.TemporaryDirectory() as d:
+                path = Path(d) / LOG
+                if log is not None:
+                    path.write_text(log, encoding="utf-8")
+                p = subprocess.run([sys.executable, "-B", str(HERE / "test_ci.py"), "--log", str(path)], capture_output=True, text=True)
+                self.assertEqual(p.returncode, rc, p.stdout + p.stderr)
+                if rc:
+                    self.assertIn("::error title=knowledge-enforcement tests_not_discovered::", p.stdout)
+
+
+def main_log(path: str) -> int:
+    """ひな形の engine-test の手順から呼ぶ。拾われないファイルか、LOG に走った跡のないファイルがあれば 1"""
+    p = Path(path)
+    e = log_problems(p.read_text(encoding="utf-8")) if p.is_file() else [f"{path} がない（unittest discover の出力を残していない）"]
+    for x in e:
+        print(f"::error title=knowledge-enforcement tests_not_discovered::{x}")
+    if not e:
+        print(f"{len(testcase_files())} 件のテストのファイルがすべて拾われ、{path} に走った跡がある")
+    return 1 if e else 0
 
 
 class TemplateTest(unittest.TestCase):
@@ -263,6 +437,9 @@ class TemplateTest(unittest.TestCase):
         self.assertIn(engine_step, t)
         skip_step = "      - name: 飛ばしたテストがないか（K-0004）\n"
         self.assertIn(skip_step, t)
+        log_step = ("      - name: テストのファイルがすべて拾われて走ったか（K-0004）\n        shell: bash\n        run: |\n"
+                    f"          python3 -B {DIR}/test_ci.py --log {LOG}\n")
+        self.assertIn(log_step, t)
         cases = {
             "paths の絞り込み": t.replace("  pull_request:\n", "  pull_request:\n    paths: ['.factory-config/**']\n", 1),
             "ENGINE_REF のずれ": t.replace(self.ref, "0" * 40),
@@ -285,6 +462,9 @@ class TemplateTest(unittest.TestCase):
             "飛ばした件数を見ない": t[:t.index(skip_step)] + t[t.index("  enforcement:\n"):],
             "飛ばした件数の手順がすぐ後でない": t.replace(skip_step, "      - name: x\n        run: echo ok\n" + skip_step, 1),
             "飛ばした件数の手順の continue-on-error:": t.replace(skip_step + "        shell: bash\n", skip_step + "        continue-on-error: true\n        shell: bash\n", 1),
+            "走った跡を照らさない": t.replace(log_step, ""),
+            "走った跡を照らす手順が飛ばした件数の前": t.replace(log_step, "").replace(skip_step, log_step + skip_step, 1),
+            "走った跡を別のログで照らす": t.replace(log_step, log_step.replace(f"--log {LOG}", "--log other.log")),
             "最初の手順がない": t.replace("      - name: ENGINE_REF が 40 桁のコミット SHA か（K-0004）\n", "      - name: x\n", 1).replace(
                 "        shell: bash\n        run: |\n          if [[", "        run: |\n          if [[", 1),
         }
@@ -304,5 +484,166 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(REF_LINE.sub("ENGINE_REF:", text), REF_LINE.sub("ENGINE_REF:", self.text))
 
 
+SCOPE_JOB = "enforcement"
+CONFLICT_TEMPLATE = REPO / "tools/conflict-check/ci/conflict-check.yml"
+
+
+def scope_targets(items: list[dict]) -> list[str]:
+    """enforcement のジョブが落とす範囲に入れる道。check.py が呼ぶことを求める検査とそのワークフロー、K-*.yaml の wired_by の workflow・runs"""
+    out = [f"{check.ROOT}/K-0010.yaml", check.KNOWLEDGE_CHECK, ".github/workflows/conflict-check.yml", COPY_REL]
+    out += list(check.REQUIRED_SCHEDULE.values()) + [wf for wf, _ in check.REQUIRED_SCHEDULE_WORKFLOW.values()]
+    out += [t for ts in check.REQUIRED_RUNS.values() for t in ts]
+    for k in items:
+        for s in check.solutions(k):
+            # 解決策の requires_check に書いた検査とワークフロー（議決 D-0077（起票時の番号は D-0075）、Issue #1216）
+            out += [x for t, wf in (check.required_checks(s)[0] if isinstance(s, dict) else []) for x in (t, wf) if x]
+            for w in (s.get("wired_by") if isinstance(s, dict) and isinstance(s.get("wired_by"), list) else []):
+                out += [check.norm("", w[key]) or w[key] for key in ("workflow", "runs") if isinstance(w, dict) and isinstance(w.get(key), str)]
+    return list(dict.fromkeys(out))
+
+
+class EnforcementScopeTest(unittest.TestCase):
+    """ひな形の enforcement のジョブが、配線先や check.py が呼ぶことを求める検査を変えた PR でも check.py の結果で落ちるか
+    （議決 D-0066（起票時の番号は D-0062）、Issue #1173）。範囲の手順と落とす手順をひな形から取り出して bash で動かす"""
+
+    @classmethod
+    def setUpClass(cls):
+        steps = load(TEMPLATE.read_text(encoding="utf-8"))["jobs"][SCOPE_JOB]["steps"]
+        cls.scope = next(s for s in steps if s.get("id") == "scope")
+        cls.gate = next(s for s in steps if check.KNOWLEDGE_CHECK in (s.get("run") or "") and "CHANGED" in (s.get("env") or {}))
+
+    def changed(self, files: list[str]) -> str:
+        with tempfile.TemporaryDirectory() as d:
+            bin_ = Path(d) / "bin"
+            bin_.mkdir()
+            (Path(d) / "diff.txt").write_text("".join(f"{f}\n" for f in files), encoding="utf-8")
+            git = bin_ / "git"
+            git.write_text(f"#!/bin/sh\ncat '{d}/diff.txt'\n", encoding="utf-8")
+            git.chmod(0o755)
+            out = Path(d) / "out"
+            p = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", self.scope["run"]], cwd=d, capture_output=True, text=True,
+                               env={"PATH": f"{bin_}:/usr/bin:/bin", "PR_BASE": "main", "GITHUB_OUTPUT": str(out)})
+            self.assertEqual(p.returncode, 0, p.stderr)
+            return out.read_text(encoding="utf-8").strip()
+
+    def test_check_pyが呼ぶことを求める検査とwired_byの道を変えたPRは落とす範囲に入る(self):
+        for f in scope_targets(check.load(REPO)):
+            with self.subTest(f):
+                self.assertEqual(self.changed([f]), "changed=true")
+
+    def test_ほかの道だけを変えたPRは落とす範囲に入らない(self):
+        for f in ("apps/backend/src/main.rs", "CHANGELOG.md", "specs/glossary.yaml", "tools/conflict-check-x/a.py", "docs/.github/workflows/a.yml"):
+            with self.subTest(f):
+                self.assertEqual(self.changed([f]), "changed=false")
+        self.assertEqual(self.changed(["CHANGELOG.md", "tools/conflict-check/test_watch.py"]), "changed=true")
+
+    def gate_rc(self, workflow: str, changed: str) -> int:
+        """K-0010 の issue 1034 を wired: true にした一時のリポジトリで、落とす手順を動かした終了コード"""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for rel, body in {
+                check.KNOWLEDGE_CHECK: (HERE / "check.py").read_text(encoding="utf-8"),
+                ".github/workflows/conflict-check.yml": workflow,
+                # wired: true の解決策はどれも enforcement のジョブの check.py の配線を求める（議決 D-0072、Issue #1201）ので、ひな形を写して置く
+                check.KNOWLEDGE_ENFORCEMENT_WORKFLOW: TEMPLATE.read_text(encoding="utf-8"),
+                "tools/conflict-check/test_watch.py": "", "tools/conflict-check/test_engine.py": "",
+                f"{check.ROOT}/K-0010.yaml": yaml.safe_dump({"id": "K-0010", "enforcement": {"level": "deterministic", "solutions": [{
+                    "kind": "ci_check", "issue": 1034, "wired": True, "verified": False,
+                    "wired_by": [{"workflow": ".github/workflows/conflict-check.yml", "job": "conflict-check", "runs": r} for r in check.CONFLICT_TESTS]
+                    + [{"workflow": check.KNOWLEDGE_ENFORCEMENT_WORKFLOW, "job": SCOPE_JOB, "runs": check.KNOWLEDGE_CHECK}]}]}},
+                    allow_unicode=True),
+            }.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(body, encoding="utf-8")
+            # 手順は check.py に --base "origin/$PR_BASE" を渡すので、CI（fetch-depth: 0）と同じく PR の base の版を置く（議決 D-0067、Issue #1178）
+            for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "base"],
+                        ["update-ref", "refs/remotes/origin/main", "HEAD"]):
+                subprocess.run(["git", *cmd], cwd=d, check=True, capture_output=True)
+            p = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-c", self.gate["run"]], cwd=d, capture_output=True, text=True,
+                               env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "CHANGED": changed, "PR_BASE": "main",
+                                    "GITHUB_STEP_SUMMARY": str(root / "summary.md")})
+            return p.returncode
+
+    def test_配線先のジョブからREQUIRED_RUNSの検査を外したPRは落ちる(self):
+        t = CONFLICT_TEMPLATE.read_text(encoding="utf-8")
+        line = "python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v"
+        self.assertIn(line, t)
+        dropped = t.replace(line, "python3 -B tools/conflict-check/test_policy.py -v")
+        self.assertEqual(self.gate_rc(t, "true"), 0)
+        self.assertNotEqual(self.gate_rc(dropped, "true"), 0)
+        self.assertEqual(self.gate_rc(dropped, "false"), 0)   # 範囲の外の PR では結果を残すだけ（対照）
+        self.assertEqual(self.changed([".github/workflows/conflict-check.yml"]), "changed=true")
+
+
+class NoSkipTest(unittest.TestCase):
+    """test_engine.py と test_engine_patch.py が、CI=true か ENGINE_DIR を渡したときは Engine の写しや ENGINE_REF の版がなくても
+    飛ばさずに落ちることを、Engine のない一時の置き場で子のプロセスとして走らせて確かめる（知見 K-0004 の担保。議決 D-0037・D-0055、Issue #1152）。
+    飛ばす条件がゆるめられると、ひな形の skipped を見る手順に頼るだけになり、写しのない手元や別の呼び方では黙って緑になる"""
+
+    MODULES = ("test_engine", "test_engine_patch")
+    FILES = (f"{DIR}/check.py", f"{DIR}/test_engine.py", f"{DIR}/test_engine_patch.py",
+             f"{DIR}/engine/knowledge-enforcement.patch", ".github/workflows/knowledge-check.yml",
+             patch_check.LOCK_REL)   # knowledge-check.yml が ENGINE_REF を読む（Issue #1225）
+    ENV_KEYS = ("CI", "ENGINE_DIR", "ENGINE_PATCH_REF", "GITHUB_ACTIONS")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        root = Path(cls.tmp.name)
+        cls.repo = root / "repo"   # 隣の root/engine は置かないので、ENGINE_DIR を渡さなければ Engine はない
+        for rel in cls.FILES:
+            (cls.repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (cls.repo / rel).write_bytes((REPO / rel).read_bytes())
+        cls.empty = root / "empty"
+        cls.empty.mkdir()
+        # Engine のファイルはあるが ENGINE_REF の版がないチェックアウト
+        cls.other = root / "other"
+        for f in ("core-gates/knowledge_check.py", "definitions/knowledge.yaml", "core-gates/tests/test_knowledge_check.py"):
+            (cls.other / f).parent.mkdir(parents=True, exist_ok=True)
+            (cls.other / f).write_text("# x\n", encoding="utf-8")
+        git = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+        for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(cls.other), *args], env=git, capture_output=True, check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def run_module(self, module: str, **env: str) -> subprocess.CompletedProcess:
+        base = {k: v for k, v in os.environ.items() if k not in self.ENV_KEYS}
+        return subprocess.run([sys.executable, "-B", "-m", "unittest", "-v", module], cwd=self.repo / DIR,
+                              env={**base, **env}, capture_output=True, text=True, timeout=120)
+
+    def test_CIかENGINE_DIRを渡すとEngineがなくても飛ばさずに落ちる(self):
+        cases = {
+            "CI=true（隣の ../engine もない）": {"CI": "true"},
+            "ENGINE_DIR が空のディレクトリ": {"ENGINE_DIR": str(self.empty)},
+            "ENGINE_DIR がないディレクトリ": {"ENGINE_DIR": str(self.repo / "nothing")},
+            "ENGINE_DIR に ENGINE_REF の版がない": {"ENGINE_DIR": str(self.other)},
+            "CI=true と ENGINE_DIR に ENGINE_REF の版がない": {"CI": "true", "ENGINE_DIR": str(self.other)},
+        }
+        for name, env in cases.items():
+            for module in self.MODULES:
+                with self.subTest(name, module=module):
+                    p = self.run_module(module, **env)
+                    out = p.stdout + p.stderr
+                    self.assertNotEqual(p.returncode, 0, out)
+                    self.assertRegex(out, r"(?m)^FAILED \((failures|errors)=[1-9]", out)
+                    self.assertNotIn("skipped", out, out)
+                    self.assertIn("Engine のチェックアウト", out, out)   # 読み込みの誤りなどほかの理由で落ちたのではない
+
+    def test_どちらも渡さずEngineがなければ飛ばす(self):
+        # 上のテストが「飛ばした」を見分けられることと、一時の置き場に本当に Engine がないことを確かめる対照
+        for module in self.MODULES:
+            with self.subTest(module=module):
+                p = self.run_module(module)
+                out = p.stdout + p.stderr
+                self.assertEqual(p.returncode, 0, out)
+                self.assertRegex(out, r"(?m)^OK \(skipped=[1-9][0-9]*\)$", out)
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--log"] and len(sys.argv) == 3:
+        sys.exit(main_log(sys.argv[2]))
     unittest.main()

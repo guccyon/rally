@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "PR 本文の見出しの構造（同じ ## 見出しの重なり、「## 工場の記録」の外の続きの記録、定義の見出しの欠け・順・外の見出しの位置）を決定論で検査し、本文の更新の前に外れたら body_fix に回す。本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る。見出しの正本（template.json）に CLAUDE.md と Engine の rubric の PR-002 が合っているかを照らす（知見 K-0001・K-0005・K-0006・K-0012 の担保）",
+  "description": "PR 本文の見出しの構造（同じ ## 見出しの重なり、「## 工場の記録」の外の続きの記録、定義の見出しの欠け・順・外の見出しの位置、本文の先頭が ## 概要 から始まるか）を決定論で検査し、本文の更新の前に外れたら body_fix に回す。本文の直しのあとの再検査を待たずにマージしていないかをイベント列で見る。見出しの正本（template.json）に CLAUDE.md と Engine の rubric の PR-002 が合っているかを照らす。関所の配線の差分（engine/pr-body-gate.patch）が ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを照らす（知見 K-0001・K-0005・K-0006・K-0012・K-0016 の担保）",
   "scripts": {
     "check": "node check.mjs",
     "test": "node --test"

@@ -1,0 +1,71 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0095
+pr: https://github.com/guccyon/rally/pull/1266
+decided_at: '2026-11-08'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。
+  - '足した項目の kind: ci_check・decided_by: committee:D-0070・issue 1182 は D-0070 の enforcement
+    の 1 つ目の案と対応し、protection.mjs を「同じジョブか定期の CI」のうち定期の pr-body-protection.yml の側にした理由（PR
+    の GITHUB_TOKEN では branch protection を読めない）も書いてあるので、案の範囲に収まっています。'
+  - D-0070 の 2 つ目の案（node --test の実行の結果から (10) が実際に pass と数えられたかを見る test）は入れたと書いておらず、案と記録の取り違えはありません。
+  - 既存の D-0044 の ci_check の項目が REQUIRED_SCHEDULE に足した線を、今回は REQUIRED_PR_WORKFLOW で
+    PR の側にも広げたもので、重複ではなく補う関係です。
+  - 「起票時の番号は D-0067」の注記は、実際の D-0067 が K-0010 の議決であることとの取り違えを防いでおり、必須のチェックを pr-body-engine-test、ジョブを
+    engine-test と書き分けている点も D-0074 の整合の票の指摘と合っています。
+  - 'wired: false・verified: false は what の「まだ配線されておらず効き目は確かめていない」と一致するので K-0001 の
+    confidence は hypothesis のままが妥当で、建設者が配線するときは同じひな形を待つ K-0001 と K-0012 の solutions
+    の wired を同じ変更セットで揃えてください。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0070 を指していて、D-0070 の pr は #1181 で、enforcement
+    の 1 件目の案（ci/pr-body-engine.yml を写して pr-body-engine-test を必須にし、protection.mjs を同じジョブか定期の
+    CI で走らせ、wired_by を書く）にそのまま辿れます。'
+  - what はその案のうちワーカーの権限で入れられる分（check.py の REQUIRED_SCHEDULE・REQUIRED_PR と配線先の照合）だけを入れたと書いていて、D-0070
+    の 2 件目の test の案（tap の結果で実行の数を確かめる）を入れたとは書いていないので、案と記録の取り違えはありません。
+  - check.py と test_check.py の PrBodyEngineWiringTest が通る・落ちるという結果は置き場の外の記録でこの材料では確かめられませんが、担保の記録であって主張の根拠を増やすものではないので採る妨げにはなりません。
+  - 'issue 1182 は D-0070 の本文には書かれていないので、議決の側で Issue の番号を辿れるよう、次に K-0001 を直すときに起票の記録（Issue
+    #1182）との対応を確かめてください。'
+  - 'statement・evidence・confidence は変えておらず、wired: false・verified: false と what の「まだ配線されておらず効き目は確かめていない」が合っているので、K-0001
+    の confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・議決の番号・Issue と PR の番号など工場の識別子だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この変更は K-0001 の enforcement.solutions に D-0070 の ci_check の記録を 1 件足すだけで、担保の中身はすでに
+    check.py の REQUIRED_SCHEDULE・REQUIRED_PR・REQUIRED_PR_WORKFLOW と test_check.py
+    の PrBodyEngineWiringTest という決定論の形になっている。
+  - 'wired: true にするには pr-body-engine.yml の pull_request ジョブと pr-body-protection.yml
+    の schedule ジョブの wired_by が要るよう check.py が照らすので、配線前に担保済みと誤って記す道は機械で塞がれており、新たな決定論の追加は要らない。'
+  - '残る差はワークフローを写すことと必須のチェックへの登録という建設者の作業で、知見の記録の PR の範囲外なので、wired: false と verified:
+    false のまま記すのは妥当である。'
+  - 'K-0001 は ci_check と test の解決策が 10 件になったがすべて wired: false なので、建設者の配線を急がないと enforcement.level
+    の deterministic は名前だけのままになる点に注意したい。'
+  - 確かさは hypothesis のままでよく、配線と本物の続きのジョブでの確認が済むまで上げるべきではない。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0070 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので範囲は広がっていません。
+  - D-0070 の案は protection.mjs を「同じジョブか定期の CI」で走らせるとしていましたが、PR の GITHUB_TOKEN では branch
+    protection を読めないという理由を添えて定期の pr-body-protection.yml の側に絞っており、案から外れたのではなく選択肢の 1
+    つを選んだ記録として読めます。
+  - '反例として、check.py はワークフローのファイルと job の形を照らすだけなので、写しはあってもシークレット PR_BODY_PROTECTION_TOKEN
+    が置かれていない、または pr-body-engine-test が必須のチェックに登録されていない状態でも wired: true にできてしまう恐れがあり、wired
+    を true にするときは本物の CI の実行記録で protection のジョブが通ったことを確かめてください。'
+  - '「Issue #1182 の起票時の番号は D-0067」という但し書きは別の議決 D-0067 と取り違えられやすいので、次に K-0001 を直すときは
+    decided_by の D-0070 だけで辿れるよう整理するとよいです。'
+  - 'wired: false・verified: false と what の「まだ配線されておらず効き目は確かめていない」が合っていて担保を言い過ぎておらず、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement: []

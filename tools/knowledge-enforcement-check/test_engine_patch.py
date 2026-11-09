@@ -28,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 PATCH = HERE / "engine" / "knowledge-enforcement.patch"
 WORKFLOW = REPO / ".github" / "workflows" / "knowledge-check.yml"
+LOCK_REL = ".factory-config/engine.lock"   # knowledge-check.yml が ENGINE_REF を読むファイル（Engine ADR 0041）
 # 差分で Engine に足す関数を探すファイル。どれかがあるのに --reverse --check が通らなければ、一部だけ入ったか入れたあと変わった（Issue #1077）
 MARKER_FILE = "core-gates/knowledge_check.py"
 
@@ -39,11 +40,22 @@ APPLIES, MERGED, STALE, PARTIAL = "applies", "merged", "patch_stale", "patch_par
 
 
 def engine_ref(workflow: Path = WORKFLOW) -> str:
-    """ワークフローの env の ENGINE_REF（40 桁のコミット SHA）。"""
-    m = re.search(r"^\s*ENGINE_REF:\s*['\"]?([0-9a-f]{40})['\"]?\s*$", workflow.read_text(encoding="utf-8"), re.M)
-    if not m:
-        raise ValueError(f"{workflow} に ENGINE_REF（40 桁のコミット SHA）がない")
-    return m.group(1)
+    """ワークフローの ENGINE_REF（40 桁のコミット SHA）。env に ENGINE_REF の行があればその値、なければワークフローが読む
+    .factory-config/engine.lock の版（コメントと空行を除いた最初の行。ワークフローと同じ読み方。Engine ADR 0041。議決 D-0080、Issue #1225）。"""
+    text = workflow.read_text(encoding="utf-8")
+    if re.search(r"^\s*ENGINE_REF:", text, re.M):
+        m = re.search(r"^\s*ENGINE_REF:\s*['\"]?([0-9a-f]{40})['\"]?\s*$", text, re.M)
+        if not m:
+            raise ValueError(f"{workflow} に ENGINE_REF（40 桁のコミット SHA）がない")
+        return m.group(1)
+    if LOCK_REL not in text:
+        raise ValueError(f"{workflow} に ENGINE_REF（40 桁のコミット SHA）も {LOCK_REL} の読み込みもない")
+    lock = workflow.parents[2] / LOCK_REL
+    lines = [l for l in lock.read_text(encoding="utf-8").splitlines() if not re.match(r"^\s*(#|$)", l)] if lock.is_file() else []
+    ref = "".join(lines[0].split()) if lines else ""
+    if not re.fullmatch(r"[0-9a-f]{40}", ref):
+        raise ValueError(f"{workflow} が読む {LOCK_REL} に 40 桁のコミット SHA の 1 行がない")
+    return ref
 
 
 def target_ref() -> tuple[str, str]:
@@ -169,6 +181,28 @@ class PatchStateTest(unittest.TestCase):
         self.assertRegex(engine_ref(), r"^[0-9a-f]{40}$")
         w = Path(self.tmp.name) / "w.yml"
         w.write_text("env:\n  ENGINE_REF: main\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            engine_ref(w)
+
+    def test_ENGINE_REF_の行がなければ_engine_lock_の版を読む(self):
+        root = Path(self.tmp.name) / "r"
+        w = root / ".github" / "workflows" / "knowledge-check.yml"
+        w.parent.mkdir(parents=True)
+        w.write_text(f"run: |\n  lock={LOCK_REL}\n", encoding="utf-8")
+        lock = root / LOCK_REL
+        lock.parent.mkdir(parents=True)
+        for body, want in ((f"# 版\n\n  {'c' * 40}  \n{'d' * 40}\n", "c" * 40), ("# 版\nmain\n", None), ("# 版だけ\n", None), (None, None)):
+            with self.subTest(body):
+                if body is None:
+                    lock.unlink()
+                else:
+                    lock.write_text(body, encoding="utf-8")
+                if want:
+                    self.assertEqual(engine_ref(w), want)
+                else:
+                    with self.assertRaises(ValueError):
+                        engine_ref(w)
+        w.write_text("run: echo\n", encoding="utf-8")   # ENGINE_REF の行も engine.lock の読み込みもない
         with self.assertRaises(ValueError):
             engine_ref(w)
 

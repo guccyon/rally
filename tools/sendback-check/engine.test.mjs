@@ -12,14 +12,14 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { approvalBasis, checkRecord } from "./check.mjs";
-import { BASIS_TESTS, skipLines, todoLines } from "./order.mjs";
+import { BASIS_TESTS, LEGACY_BASIS_NOT_FOUND, NO_ENGINE_CHECKOUT, skipLines, todoLines } from "./order.mjs";
 
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
 const script = fileURLToPath(new URL("./check.mjs", import.meta.url));
 const engineDir = process.env.ENGINE_DIR || fileURLToPath(new URL("../../../engine", import.meta.url));
 const required = Boolean(process.env.ENGINE_DIR) || process.env.CI === "true";
 const skip = required || existsSync(`${engineDir}/orchestrator/dispatcher/supervisor.py`)
-  ? false : `Engine のチェックアウトがない（ENGINE_DIR=${engineDir}）`;
+  ? false : `${NO_ENGINE_CHECKOUT}（ENGINE_DIR=${engineDir}）`;
 
 /** Engine の判定を 1 回動かし、起きた後続と basis を返す（dir を渡せばその Engine の写しで動かす） */
 const engine = (record, dir = engineDir) =>
@@ -112,7 +112,8 @@ test(BASIS_TESTS["(3)"], { skip }, (t) => basisCase(t));
 // その PR に当たるのは ENGINE_REF を直した版に上げる PR。Engine が今の形の basis を書かなくなったのに todo（todoWhileLegacy・t.todo(…) など。
 // order.mjs の todoLines と同じ数え方）が残っていたら、その PR で落とす。todo を消し忘れると order.mjs の engine_test_todo で ci_check を配線できない。
 // 写しを作れないときの legacy_basis_not_found の skip（下の写しのテスト）も、order.mjs の skipLines（todoLines と同じ数え方）で数えて、残っていれば同じく落とす
-// （議決 D-0041、Issue #1093）
+// （議決 D-0041、Issue #1093）。字面で数え漏らす別名や動的な skip は、order.test.mjs がこのファイルを走らせた TAP の SKIP の理由と件数で照らす
+// （order.mjs の skipReportProblems。議決 D-0062、Issue #1168）
 const OWN_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
 
 /** ENGINE_REF を上げる PR で消すもの（todo と skip）の行番号 */
@@ -136,7 +137,6 @@ test("(3) Engine の basis が今の形（adopt の合計だけ）でなくな�
 // それまでに写しを作れなくなったら、黙って通さず t.skip に legacy_basis_not_found を付けて飛ばし（結果に SKIP で出る）、その skip の行が残っていれば
 // 上の「todo を外す」のテストで落とす（議決 D-0041、Issue #1093）。Engine がまだ今の形の basis を書くのに行だけが見つからないときは飛ばさずに落とす
 const SUPERVISOR = "orchestrator/dispatcher/supervisor.py";
-const LEGACY_BASIS_NOT_FOUND = "legacy_basis_not_found";
 const LEGACY_BASIS_LINE = /return True, f"judge が \{len\(verdicts\)\} 件を裁いた（採用 \{n_adopt\}。採用した指摘は続きのジョブか差し戻しで直す）"/;
 const LEGACY_BASIS_SOURCE = 'f"judge が {len(verdicts)} 件を裁いた（採用 {n_adopt}。採用した指摘は続きのジョブか差し戻しで直す）"';
 /** adopt の合計だけを書く別の言い回し（Python の f 文字列。len(verdicts) と n_adopt は inspector_approved の変数） */

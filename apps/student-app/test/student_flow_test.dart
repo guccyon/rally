@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/app.dart';
+import 'package:rally_student_app/device/local_media.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
+import 'support/fake_local_media.dart';
 import 'support/fake_student_api.dart';
 import 'support/pump.dart';
 
 /// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）を画面遷移でたどる。
+/// 今の時刻は端末の時計のまま（見本のスロットの開始時刻より後なので、入室前チェックを開けて入室できる）。端末のカメラ・マイクは作り物。
 void main() {
   Future<void> pumpApp(WidgetTester tester, FakeStudentApi api) =>
       tester.pumpWidget(
         ProviderScope(
-          overrides: [studentApiProvider.overrideWithValue(api)],
+          overrides: [
+            studentApiProvider.overrideWithValue(api),
+            localMediaProvider.overrideWithValue(FakeLocalMedia()),
+          ],
           child: const StudentApp(),
         ),
       );
@@ -65,8 +71,9 @@ void main() {
 
     await registerAndBook(tester);
     await tapText(tester, 'ビデオ通話で受ける');
+    expect(find.text('入室前チェック'), findsOneWidget);
+    await tapText(tester, '入室する');
     expect(find.text('ビデオ通話'), findsOneWidget);
-    await tapText(tester, '通話を開始する');
     await tapText(tester, '通話を終了する');
     await recordAndSubscribe(tester);
 
@@ -145,7 +152,7 @@ void main() {
     expect(find.byTooltip('チャット'), findsNothing);
     await registerAndBook(tester);
     await tapText(tester, 'ビデオ通話で受ける');
-    await tapText(tester, '通話を開始する');
+    await tapText(tester, '入室する');
     await tapText(tester, '通話を終了する');
     await recordAndSubscribe(tester);
     api.calls.clear();

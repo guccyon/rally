@@ -1,0 +1,72 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0103
+pr: https://github.com/guccyon/rally/pull/1278
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0005 に足した解決策は D-0071 の enforcement にある K-0005 の config の案（followers.json に実装役の報告の型を足す）に当たるので、decided_by:
+    committee:D-0071 は議決と合っていて、decision_mismatch の心配もありません。'
+  - 既存の 1 つ目の解決策（issue 1121、CLAUDE.md と rubric の PR-002 を照らす）とは照らす対象が違う implementer-report
+    の追加なので重複はなく、1 つ目が書いていた「実装役の報告の型はまだ照らしていない」という残りに答える形でつながっています。
+  - 'D-0071 の案の残り（ci/pr-body-engine.yml を .github/workflows/ に写して必須のチェックにし、wired_by
+    を書く）を入れていないと書き、wired: false・verified: false にしているので、README の D-0021・D-0034 の決まりとも
+    D-0071 の dissent の票が示した配線の順とも矛盾しません。'
+  - 新しい解決策にも wired・verified が書かれているので、README で K-0005 を「すべての解決策に書いた知見」の一覧に入れていることとも、test_check.py
+    が照らす一覧とも食い違いません。
+  - statement・scope・evidence・related は変えておらず、関連する K-0001・K-0006・K-0011 の扱いは「そのまま」で足り、specs/
+    の用語や業務ルールにも触れていません。
+  - D-0071 の dissent の票が求めた statement の書き直し（正本は 3 つのどれでもない template.json になった）はまだなので、次に
+    K-0005 を直す変更セットで合わせるとよく、配線も本物の記録での確認もないので confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0005 に足した解決策は issue: 1194・at: 2026-11-08・decided_by: committee:D-0071 を持ち、D-0071
+    の enforcement に K-0005 の config の案が実在して中身（followers.json に実装役の報告の型を足し、headings_mismatch
+    で落ちることを確かめる）とも合うので、一次記録に辿れます。'
+  - 照らす対象（tools/pr-body-check/followers.json・followers.mjs・followers.test.mjs、Engine
+    の orchestrator/worker/entrypoint.sh、手元の Engine の 9f8f6b4）を名指ししており、何で確かめたかを追えます。
+  - 'wired: false・verified: false で、.github/workflows/ への配線と wired_by が入っていないことと、その理由（factory:privileged
+    でない、Engine ADR 0041）を本文にも書いており、確かめた範囲を言い過ぎていません。'
+  - 「D-0006 の案の 3 つはそろった」は、D-0006 の案が挙げた実装役の報告の型・PR-002・判定役が参照する決まりと対応しているので、主張として正確です。
+  - '配線も本物の記録での確認もなく、新しい事例記録も足していないので confidence は hypothesis のままが妥当で、Issue #936・#1121・#1194
+    を cases/ か evidence から辿れるようにしてから confirmed に上げてください。'
+  - 差分に残るのは Issue の番号・議決の id・ファイルの道・コミットの短いハッシュだけで、利用者を特定できる氏名・ID・本文の引用はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - K-0005 に足した解決策は、議決 D-0071 の config の案のとおり tools/pr-body-check/followers.json に実装役の報告の型を
+    implementer-report として足したもので、正本 template.json と並べて比べるだけで判定できるので、線が引きやすく作る費用も小さい決定論の担保になっています。
+  - 'followers.test.mjs で、合わせた形が通ること、Issue #1194 の時点の形・順・名前・数の違いが headings_mismatch
+    で落ちること、注釈だけの違いは通ること、読めない形を照らさずに扱うことまで確かめており、外したときの見逃しと誤検出の両方に備えています。'
+  - 残りの配線（ci/pr-body-engine.yml を .github/workflows/ に写して必須のチェックにし、wired_by を書く）は
+    D-0071 の enforcement の案にもう入っているので、この PR で新しい担保の案を重ねて出す必要はありません。
+  - 'wired: false・verified: false と書き、特権のラインでないので配線できないことと、Engine を合わせる前に必須にすると関係のない
+    PR まで止まる順の問題を本文で正直に書いているので、担保の状態の記録として妥当です。'
+  - 'Engine が Issue #1121・#1194 の時点の形のときだけ todo にして、ほかの食い違いや読めない Engine は落とす作りなので、配線したあとも
+    todo が新しい食い違いを隠すことはありません。'
+  - 配線も本物の記録での効き目の確かめもまだなので、K-0005 の confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0005 の enforcement.solutions に解決策を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、知見の範囲は広がっていません。
+  - 照らす対象に実装役の報告の型を足したことで D-0006 の案の 3 つ（報告の型・PR-002・判定役が参照する決まり）がそろったという主張は、followers.json
+    の合わせる側 3 つと D-0006 の proposal に合っており、言い過ぎではありません。
+  - '配線していないこと、.github/workflows/ を変えられない理由、D-0071 の dissent の票が挙げた順の問題を自分で書き、wired:
+    false・verified: false にしているので、効き目を言い過ぎる反例は見当たりません。'
+  - 'Engine の食い違いが Issue #1121・#1194 の時点の形のままなら todo で通るので、Engine が直されないかぎり照合が実際には効かないままになる反例があり、建設者が
+    Engine を合わせて ENGINE_REF を上げたあとに todo を外すことを確かめるべきです。'
+  - 報告の型の取り出しが entrypoint.sh の「最後の出力を次の見出しだけで構成する」という文言に頼っているので、Engine がこの文言を変えると照らせなくなりますが、その場合は読めなかったことにして落ちるので黙って通る反例にはなりません。
+  - D-0071 の dissent の票が指摘した statement の「3 つのうちどれを正にするかを先に決める」と、正本を template.json
+    にしたオーナーの決定とのずれはこの PR でも残っているので、次に K-0005 を直すときに statement を書き直すとよく、配線と確認がまだなので
+    confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
