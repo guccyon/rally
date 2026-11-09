@@ -1,0 +1,68 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0124
+pr: https://github.com/guccyon/rally/pull/1325
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 足したのは K-0004 の enforcement.solutions への 1 項目だけで、statement・scope・evidence・confidence
+    は変えておらず、README の「担保した知見も消さず solutions に残す」の決まりに合っています。
+  - '括弧の中は議決 D-0080 の enforcement の lint の案と文面が同じで、decided_by: committee:D-0080 で辿れ、起票時の番号
+    D-0078 との違いも issue 1225・1226 の項目と同じ書き方で断っています。'
+  - '列挙をやめる一般化が D-0077 の issue 1216 の項目ですでに入っていることを自分で認め、そのうえで書き忘れた解決策が knowledge_gate
+    の配線だけで wired: true にできる残りの穴を埋めると分けて書いているので、issue 1216 の項目との重複ではありません。'
+  - 'issue 1227 の項目はほかの知見にもなく、wired: false・verified: false を書いているので、README で K-0004
+    を「すべての解決策に書いた」側に置く一覧や未配線の表示の決まりとも食い違いません。'
+  - 'requires_check_missing によって wired: true の解決策は requires_check か REQUIRED_SCHEDULE・REQUIRED_RUNS
+    への記載が必須になりますが、README は requires_check を「PR ごとに走らないと止められない検査」に書く任意の欄として説明したままなので、次に
+    README を直す変更セットでこの必須の線と議決 D-0080・Issue #1227 を書き足してください。'
+  - 差し戻しの判定についての K-0004 に知見の置き場の CI の解決策がたまり続けるずれは今回も広がっていますが、D-0080 までと同じ扱いなので採否には響かず、どの解決策も本物の記録で確かめていないので
+    confidence は hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0004 に足した lint の解決策の括弧内の案は、議決 D-0080 の enforcement の 3 つ目の案（solution_kind:
+    lint）と文面が同じで、decided_by: committee:D-0080 と D-0080 の pr（#1222）から機械的に辿れます。'
+  - '起票時の番号 D-0078 は別の議決なので、番号のずれを断り書きしてあるのは辿るうえで妥当ですが、Issue #1227 と D-0080 の結び付きは議決の記録には出てこないので、what
+    の申告が根拠になっています。'
+  - 'check_requires_check_missing と RequiresCheckMissingTest で確かめたという中身は知見の置き場のほかの記録には出てこないので、建設者が配線するときに
+    Issue #1227 の差分とテストの実行記録で確かめてください。'
+  - 'test_check.py が .github/workflows/ からまだ走っていないと断って wired: false・verified: false
+    にしているので、記録より強く言っていません。'
+  - 'K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）・confidence は変わっておらず、どの解決策も本物の記録で効き目を確かめていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・関数とテストの名前・Issue と PR と議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この変更は K-0004 の enforcement.solutions に、議決 D-0080 の lint（check_requires_check_missing）を入れた記録を足すだけで、担保そのものがすでに決定論になっています。
+  - 'requires_check の書き忘れは毎回起こりうる穴で、線（wired: true なのに requires_check がなく、REQUIRED_SCHEDULE・REQUIRED_RUNS
+    にも挙がっていない）も機械で引けるため、lint で担保するのは妥当です。'
+  - '新しい項目は wired: false・verified: false と正直に書いてあり、requires_check に test_check.py
+    と .github/workflows/knowledge-enforcement.yml を挙げているので、配線したときに check.py が wired_by
+    を求める形になっています。'
+  - test_check.py が .github/workflows/ からまだ走っていないという残りの穴は建設者の作業として記録済みのため、この PR で新しい担保の案を足す必要はありません。
+  - 確かさは hypothesis のままでよく、配線して実際の記録で落ちることを確かめてから上げるべきです。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に議決 D-0080 の lint の案を入れた記録を 1 項目足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - '足した項目は wired: false・verified: false のままで、test_check.py が .github/workflows/ からまだ走っていないことを自分で断っているので、記録より強く言っていません。'
+  - '反例として、requires_check に空の列 [] を書いた解決策を「書いた」と数えるなら、wired: true にしても何の検査も求めずに通るので、建設者が配線する前に
+    [] の扱い（落とすか、理由の欄を求めるか）を test_check.py で確かめてください。'
+  - REQUIRED_SCHEDULE・REQUIRED_RUNS に挙げた解決策を見ないので、名前で並べる組の足し忘れの穴はそちらに残っており、D-0116
+    の schema の案（欄への移し替え）を入れるまでは一般化は途中だと扱ってください。
+  - '検査が効くのは wired: true に変えるときだけで、wired: false のまま足した解決策の欄の書き忘れは D-0116 の案（--base
+    で足した解決策に欄を求める）が入るまで止まらないので、効き目の範囲を広く読まないでください。'
+  - 知見の置き場の道具の解決策を supervisor の差し戻しの知見 K-0004 に積み増すずれは今回も広がっていますが D-0053 以降と同じ扱いなので採否には響かず、どの解決策も本物の記録で確かめていないので
+    confidence は hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []
