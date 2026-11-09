@@ -13,12 +13,15 @@ ConflictFilesShapeParityTest は、同じ conflict_files の形の組を schema.
 MechanicalWithoutVerifyTest は、mechanical.verify の検査に落ちる head を機械的に解いた回を落とす rule mechanical_without_verify と、
 同じ PR・同じファイルの機械的な解消が 3 回を超えた件数（知見 K-0015 の担保。議決 D-0078（Issue #1220 の起票時の番号は D-0077）・Issue #1220）を見る。
 RecordOnlySinceTest は、直近の窓の本物のイベント列を定期に照らすジョブ（ci/conflict-schema.yml の conflict-record）が使う --record-only と
---since を見る（議決 D-0076（Issue #1214 の起票時の番号は D-0074）・Issue #1214）
+--since を見る（議決 D-0076（Issue #1214 の起票時の番号は D-0074）・Issue #1214）。
+SinceParityTest は、同じイベント列と --since の時刻の組を schema.py --since と events.py --record-only --since の両方に通して、外すイベントの件数・
+落とす PR の組・終了コードがそろうことを見る（議決 D-0113・Issue #1299）
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -588,6 +591,91 @@ class RecordOnlySinceTest(unittest.TestCase):
         for since in ("2026-11-10", "2026-11-10T00:00:00", "main"):
             self.assertEqual(run(good, "--since", since).returncode, 2, since)
         self.assertEqual(run(good, "--since", "2026-11-10T00:00:00Z").returncode, 0)
+
+
+# --since の組。SINCES はどれも同じ時刻（2026-11-10T00:30:00Z）の書き方違い。WINDOW は 1 本の PR のイベントすべてに付ける occurred_at と、
+# その PR を照らすか（since と同じかより後なら照らす）。壁時計の字面の大小と時差を直した前後が逆になる組を混ぜる
+SINCES = ("2026-11-10T09:30:00+09:00", "2026-11-10T00:30:00Z", "2026-11-09T19:30:00-05:00", "2026-11-10T00:30:00.000+00:00")
+WINDOW = {"ちょうど（Z）": ("2026-11-10T00:30:00Z", True), "ちょうど（-05:00）": ("2026-11-09T19:30:00-05:00", True),
+          "1 秒前（+09:00）": ("2026-11-10T09:29:59+09:00", False), "1 ミリ秒前": ("2026-11-10T00:29:59.999+00:00", False),
+          "後（字面は前の -05:00）": ("2026-11-09T20:00:00-05:00", True), "前（字面は後の +09:00）": ("2026-11-10T09:00:00+09:00", False),
+          "後（日をまたぐ +14:00）": ("2026-11-11T00:00:00+14:00", True), "前（前の日）": ("2026-11-09T23:59:59+00:00", False),
+          "後（前後に空白）": (" 2026-11-10T01:00:00+00:00 ", True)}
+# occurred_at がない・読めない値（--since を渡したら絞れないので終了コード 2）と、--since に渡す読めない値
+UNREADABLE = {"欄がない": ABSENT, "null": None, "数": 1762734600, "空の文字列": "", "日付だけ": "2026-11-10",
+              "時差がない": "2026-11-10T00:30:00", "時刻でない": "きのう"}
+BAD_SINCES = ("2026-11-10", "2026-11-10T00:30:00", "main", "")
+SKIPPED = re.compile(r"より前の (\d+) 件は照らさない")
+
+
+class SinceParityTest(unittest.TestCase):
+    """知見 K-0014: --since の判定（時差つきの時刻の読み方、occurred_at が差分を当てた時刻より前のイベントを外すこと、occurred_at がない・
+    読めなければ終了コード 2）が、schema.py --since（ci/conflict-schema.yml の conflict-schema）と events.py --record-only --since
+    （同じひな形の conflict-record）で同じ入力に同じ結果を返すか（議決 D-0113・Issue #1299）。判定の関数は schema.py の parse_time と before だが、
+    どちらかの入口（main での --since の読み方、before の結果の使い方）だけが直されると 2 つのジョブの窓が食い違うので、
+    関数ではなくコマンドの外すイベントの件数・落とす PR の組・終了コードで照らす"""
+
+    def write(self, evs: list[dict]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        path = Path(t.name) / "events.json"
+        path.write_text(json.dumps([{**e, "id": i} for i, e in enumerate(evs, 1)]), encoding="utf-8")
+        return path
+
+    def both(self, path: Path, *args: str) -> tuple[subprocess.CompletedProcess, subprocess.CompletedProcess]:
+        s = subprocess.run([sys.executable, "-I", "-B", str(HERE / "schema.py"), "--events", str(path), *args], capture_output=True, text=True)
+        return s, run(path, "--record-only", *args)
+
+    def case(self, n: int, occurred_at=ABSENT) -> list[dict]:
+        """衝突したファイルをどこにも載せない 1 回だけの PR（schema.py でも events.py でも落ちる）。全件に occurred_at を付ける（ABSENT なら付けない）"""
+        evs = stream([{}], url=f"https://github.com/guccyon/rally/pull/{2000 + n}")
+        evs = [{**e, "job_id": 2000 + n if e["job_id"] is not None else None} for e in evs]
+        return evs if occurred_at is ABSENT else [{**e, "occurred_at": occurred_at} for e in evs]
+
+    def failed(self, s: subprocess.CompletedProcess, e: subprocess.CompletedProcess) -> tuple[set, set]:
+        return ({x["pr_url"] for x in json.loads(s.stdout)["errors"]},
+                {r["pr_url"] for r in json.loads(e.stdout)["prs"] if r["errors"]})
+
+    def test_同じ列と時刻の組で外すイベントと落とすPRと終了コードがそろう(self):
+        evs = [e for n, (at, _) in enumerate(WINDOW.values()) for e in self.case(n, at)]
+        path = self.write(evs)
+        want = {f"https://github.com/guccyon/rally/pull/{2000 + n}" for n, (_, checked) in enumerate(WINDOW.values()) if checked}
+        n_skipped = sum(len(self.case(n)) for n, (_, checked) in enumerate(WINDOW.values()) if not checked)
+        for since in SINCES:
+            with self.subTest(since):
+                s, e = self.both(path, "--since", since, "--json")
+                self.assertEqual((s.returncode, e.returncode), (1, 1), s.stderr + e.stderr)
+                self.assertEqual(self.failed(s, e), (want, want))
+                s, e = self.both(path, "--since", since)
+                self.assertEqual([SKIPPED.findall(p.stdout) for p in (s, e)], [[str(n_skipped)]] * 2, s.stdout + e.stdout)
+
+    def test_外す窓の外の回だけならどちらも通る(self):
+        evs = [e for n, (at, checked) in enumerate(WINDOW.values()) if not checked for e in self.case(n, at)]
+        for since in SINCES:
+            with self.subTest(since):
+                s, e = self.both(self.write(evs), "--since", since)
+                self.assertEqual((s.returncode, e.returncode), (0, 0), s.stdout + s.stderr + e.stdout + e.stderr)
+                s, e = self.both(self.write(evs))   # --since を渡さなければどちらも前の回まで照らす
+                self.assertEqual((s.returncode, e.returncode), (1, 1))
+
+    def test_occurred_atがないか読めなければどちらも終了コード2(self):
+        ok = self.case(0, "2026-11-10T01:00:00+00:00")
+        for name, value in UNREADABLE.items():
+            with self.subTest(name):
+                evs = ok + self.case(1, value)
+                s, e = self.both(self.write(evs), "--since", SINCES[0])
+                self.assertEqual((s.returncode, e.returncode), (2, 2), s.stdout + e.stdout)
+                s, e = self.both(self.write(evs))   # --since がなければ occurred_at は見ないので、照らして落とす
+                self.assertEqual((s.returncode, e.returncode), (1, 1), s.stderr + e.stderr)
+
+    def test_sinceが時差つきの時刻でなければどちらも終了コード2(self):
+        path = self.write(self.case(0, "2026-11-10T01:00:00+00:00"))
+        for since in BAD_SINCES:
+            with self.subTest(since):
+                s, e = self.both(path, "--since", since)
+                self.assertEqual((s.returncode, e.returncode), (2, 2), s.stdout + e.stdout)
+        s, e = self.both(path, "--since")   # 値がない
+        self.assertEqual((s.returncode, e.returncode), (2, 2))
 
 
 class InputTest(unittest.TestCase):
