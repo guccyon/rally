@@ -457,20 +457,43 @@ const bodyCheckRun = (created_at, action, status = "completed", conclusion = "su
 const BEFORE_FIX = bodyCheckRun("2026-11-06T05:10:00Z", "opened");
 const AFTER_FIX = (status, conclusion) => bodyCheckRun("2026-11-06T05:25:03Z", "edited", status, conclusion);
 
-test("(12) 再検査を待つ supervisor（engine/pr-body-recheck.patch）は、merge_step でマージより前に、本文の直しの終わりと直した本文の pr-body-check を待つ", { skip }, () => {
+/** (12) の各テストが最後まで来たときに TAP の診断に残す印の頭。ci.test.mjs がこの印の数を見張りの一覧の数と照らす。 */
+const RECHECK_ASSERTED = "(12) の確かめの数";
+/**
+ * (12) のテストの中身 body を、確かめ（body に渡す a の assert）の数を t.plan で expected に固定して走らせ、最後まで来たら走った数を
+ * 「# (12) の確かめの数 N: テストの名前」の診断で TAP に残す（知見 K-0012 の担保。議決 D-0106 の test の案、Issue #1283）。
+ * 条件付きの早い return で中身を飛ばすと、走った数が plan に足りず落ち、診断の数も ci.test.mjs の ENGINE_RECHECK_ASSERTS とずれる。
+ * t.assert は strict でない（equal が ==）ので、確かめは strict の assert で行い、1 回ごとに t.assert.ok(true) で plan に数える。
+ */
+function recheckPlanned(t, expected, body) {
+  let ran = 0;
+  const a = new Proxy(assert, {
+    get: (target, key) => (typeof target[key] !== "function" ? target[key] : (...args) => {
+      const r = target[key](...args);
+      ran += 1;
+      t.assert.ok(true);
+      return r;
+    }),
+  });
+  t.plan(expected);
+  body(a);
+  t.diagnostic(`${RECHECK_ASSERTED} ${ran}: ${t.name}`);
+}
+
+test("(12) 再検査を待つ supervisor（engine/pr-body-recheck.patch）は、merge_step でマージより前に、本文の直しの終わりと直した本文の pr-body-check を待つ", { skip }, (t) => recheckPlanned(t, 3, (a) => {
   const r = supervisorRecheck({}, "running");
-  assert.equal(r.order.merge_step, true, "supervisor.py に merge_step がない");
-  assert.equal(r.order.before_merge, true, `merge_step で body_fix_pending と body_recheck_pending を待つ（if …: continue）のがマージより前にない: ${JSON.stringify(r.order)}`);
-  assert.match(readFileSync(join(recheckDir, "definitions/events.yaml"), "utf8"), /^ {2}supervisor\.body_rechecked:$/m, "events.yaml に supervisor.body_rechecked がない");
-});
+  a.equal(r.order.merge_step, true, "supervisor.py に merge_step がない");
+  a.equal(r.order.before_merge, true, `merge_step で body_fix_pending と body_recheck_pending を待つ（if …: continue）のがマージより前にない: ${JSON.stringify(r.order)}`);
+  a.match(readFileSync(join(recheckDir, "definitions/events.yaml"), "utf8"), /^ {2}supervisor\.body_rechecked:$/m, "events.yaml に supervisor.body_rechecked がない");
+}));
 
-test("(12) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ", { skip }, () => {
+test("(12) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ", { skip }, (t) => recheckPlanned(t, 2, (a) => {
   const r = supervisorRecheck({ workflow_runs: [BEFORE_FIX] }, "running");
-  assert.equal(r.fix_pending, true);
-  assert.deepEqual(r.gh, [], "直している間に GitHub を引いた");
-});
+  a.equal(r.fix_pending, true);
+  a.deepEqual(r.gh, [], "直している間に GitHub を引いた");
+}));
 
-test("(12) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）", { skip }, () => {
+test("(12) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）", { skip }, (t) => recheckPlanned(t, 18, (a) => {
   const cases = [
     [{ workflow_runs: [BEFORE_FIX] }, /待ち（直した本文で始まっていない/],
     [{ workflow_runs: [] }, /待ち（直した本文で始まっていない/],
@@ -481,25 +504,25 @@ test("(12) 直しのジョブが終わっても、直しのあとに pr-body-che
   ];
   for (const [over, reason] of cases) {
     const r = supervisorRecheck(over);
-    assert.equal(r.fix_pending, false);
-    assert.match(r.reason ?? "", reason, JSON.stringify(over));
-    assert.deepEqual(r.events, [], `通っていないのに再検査を記録した: ${JSON.stringify(over)}`);
+    a.equal(r.fix_pending, false);
+    a.match(r.reason ?? "", reason, JSON.stringify(over));
+    a.deepEqual(r.events, [], `通っていないのに再検査を記録した: ${JSON.stringify(over)}`);
   }
-});
+}));
 
-test("(12) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る", { skip }, () => {
+test("(12) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る", { skip }, (t) => recheckPlanned(t, 8, (a) => {
   const r = supervisorRecheck({ workflow_runs: [BEFORE_FIX, AFTER_FIX()] });
-  assert.equal(r.reason, null);
-  assert.equal(r.events.length, 1);
+  a.equal(r.reason, null);
+  a.equal(r.events.length, 1);
   const [ev] = r.events;
-  assert.equal(ev.name, "supervisor.body_rechecked");
-  assert.deepEqual({ ...ev.payload, run: undefined },
+  a.equal(ev.name, "supervisor.body_rechecked");
+  a.deepEqual({ ...ev.payload, run: undefined },
     { pr_url: URL_821, head_sha: "s1", gate: "pr-body-check", job_id: 4299, run: undefined, action: "edited", created_at: AFTER_FIX().created_at,
       body_amended_at: "2026-11-06T14:25:04+09:00" });
   // 記録したあとは GitHub を引かずに待たない（同じ直しで 1 回）
   const again = supervisorRecheck({ events: [AMENDED, ev], workflow_runs: [] });
-  assert.equal(again.reason, null);
-  assert.deepEqual(again.gh, []);
+  a.equal(again.reason, null);
+  a.deepEqual(again.gh, []);
   // C-0006 の記録の順に、supervisor が残す再検査を挟んだ列は recheck.mjs に通る（挟まない列が落ちることは recheck.test.mjs が確かめる）
   const pr = { pr_url: URL_821 };
   const events = [
@@ -509,11 +532,11 @@ test("(12) 直した本文の pr-body-check が通ったら待たず、superviso
     { name: "supervisor.inspector_approved", payload: { ...pr, head_sha: "s1" } },
     { name: "supervisor.merged", payload: { ...pr, head_sha: "s1" } },
   ];
-  assert.deepEqual(checkEvents(events).errors, []);
-  assert.deepEqual(checkEvents(events.filter((e) => e.name !== ev.name)).errors.map((e) => e.rule), ["merged_without_body_recheck"]);
-});
+  a.deepEqual(checkEvents(events).errors, []);
+  a.deepEqual(checkEvents(events.filter((e) => e.name !== ev.name)).errors.map((e) => e.rule), ["merged_without_body_recheck"]);
+}));
 
-test("(12) 直しの途中で push が来て直す前の本文で通った実行は、直しのあとに始まっても再検査に数えない（D-0100 の反対票の反例）", { skip }, () => {
+test("(12) 直しの途中で push が来て直す前の本文で通った実行は、直しのあとに始まっても再検査に数えない（D-0100 の反対票の反例）", { skip }, (t) => recheckPlanned(t, 11, (a) => {
   // 直しのジョブ（14:24:41 に積んだ）の最中、本文の書き換えより前に push が来て synchronize で始まった実行は、push のときの本文（直す前）を照らす。
   // 直しの開始より後に始まったので、境目が「直しのジョブの開始」だけだと、書き換えの edited の実行が始まる前にこれを再検査に数えてマージしていた
   const push = bodyCheckRun("2026-11-06T05:24:55Z", "synchronize");
@@ -528,51 +551,51 @@ test("(12) 直しの途中で push が来て直す前の本文で通った実行
     ["直しの前の edited", [editedBefore], [AMENDED]],
   ]) {
     const r = supervisorRecheck({ head_sha: "s2", events, workflow_runs: runs });
-    assert.match(r.reason ?? "", /待ち（直した本文で始まっていない/, `${label} を直した本文の再検査に数えた`);
-    assert.deepEqual(r.events, [], `${label} で再検査を記録した`);
+    a.match(r.reason ?? "", /待ち（直した本文で始まっていない/, `${label} を直した本文の再検査に数えた`);
+    a.deepEqual(r.events, [], `${label} で再検査を記録した`);
   }
   // 書き換えの edited の実行が通れば数える（push のあとの head で走る）
   const fixed = supervisorRecheck({ head_sha: "s2", workflow_runs: [BEFORE_FIX, push, AFTER_FIX()] });
-  assert.equal(fixed.reason, null);
-  assert.deepEqual(fixed.events.map((e) => [e.payload.action, e.payload.created_at]), [["edited", AFTER_FIX().created_at]]);
+  a.equal(fixed.reason, null);
+  a.deepEqual(fixed.events.map((e) => [e.payload.action, e.payload.created_at]), [["edited", AFTER_FIX().created_at]]);
   // 古い本文で通った push の実行より、書き換えの edited の実行が落ちていれば通さない
-  assert.match(supervisorRecheck({ head_sha: "s2", workflow_runs: [push, AFTER_FIX("completed", "failure")] }).reason ?? "", /通らない（failure）/);
-});
+  a.match(supervisorRecheck({ head_sha: "s2", workflow_runs: [push, AFTER_FIX("completed", "failure")] }).reason ?? "", /通らない（failure）/);
+}));
 
-test("(12) 直しのジョブの中の書き換えの edited で始まった実行は、直しの終わり（pr.body_amended）より前に始まっても数え、待ち続けない", { skip }, () => {
+test("(12) 直しのジョブの中の書き換えの edited で始まった実行は、直しの終わり（pr.body_amended）より前に始まっても数え、待ち続けない", { skip }, (t) => recheckPlanned(t, 9, (a) => {
   // 境目を直しの終わり（ジョブの finished_at や pr.body_amended）だけにすると、書き換えの edited の実行（05:25:03Z）は境目（05:25:04Z）より前なので数えず、
   // 本文はもう変わらないので次の実行も来ず、待ち続ける。edited で始まった実行は直しの開始より後なら数えるので、そうならない
-  assert.ok(Date.parse(AFTER_FIX().created_at) < Date.parse(AMENDED.occurred_at), "edited の実行が直しの終わりより前に始まる入力になっていない");
+  a.ok(Date.parse(AFTER_FIX().created_at) < Date.parse(AMENDED.occurred_at), "edited の実行が直しの終わりより前に始まる入力になっていない");
   for (const [label, events] of [["pr.body_amended のあと", [AMENDED]], ["pr.body_amended をまだ記録していない（ジョブは succeeded）", []]]) {
     const r = supervisorRecheck({ events, workflow_runs: [BEFORE_FIX, AFTER_FIX()] });
-    assert.equal(r.reason, null, `${label}: edited で始まった実行で通らない（待ち続ける）: ${r.reason}`);
-    assert.deepEqual(r.events.map((e) => e.name), ["supervisor.body_rechecked"], label);
+    a.equal(r.reason, null, `${label}: edited で始まった実行で通らない（待ち続ける）: ${r.reason}`);
+    a.deepEqual(r.events.map((e) => e.name), ["supervisor.body_rechecked"], label);
   }
   // pr.body_amended より後に始まった実行は、action を問わず数える（直したあとの push・run-name に action のない写しの実行）
   for (const run of [bodyCheckRun("2026-11-06T05:25:10Z", "synchronize"), { ...bodyCheckRun("2026-11-06T05:25:10Z", "x"), display_title: "Fix body" }]) {
     const r = supervisorRecheck({ workflow_runs: [BEFORE_FIX, run] });
-    assert.equal(r.reason, null, `${run.display_title}: ${r.reason}`);
-    assert.equal(r.events[0].payload.created_at, run.created_at);
+    a.equal(r.reason, null, `${run.display_title}: ${r.reason}`);
+    a.equal(r.events[0].payload.created_at, run.created_at);
   }
-});
+}));
 
-test("(12) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）", { skip }, () => {
+test("(12) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）", { skip }, (t) => recheckPlanned(t, 6, (a) => {
   for (const state of ["failed", "cancelled"]) {
     const r = supervisorRecheck({ workflow_runs: [AFTER_FIX()] }, state);
-    assert.match(r.reason ?? "", new RegExp(`${state} で終わった`));
-    assert.deepEqual(r.stoppages, [{ key: `body_recheck:${URL_821}`, category: "human" }]);
-    assert.deepEqual(r.events, []);
+    a.match(r.reason ?? "", new RegExp(`${state} で終わった`));
+    a.deepEqual(r.stoppages, [{ key: `body_recheck:${URL_821}`, category: "human" }]);
+    a.deepEqual(r.events, []);
   }
-});
+}));
 
-test("(12) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）", { skip }, () => {
+test("(12) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）", { skip }, (t) => recheckPlanned(t, 4, (a) => {
   const none = supervisorRecheck({ jobs: [] });
-  assert.deepEqual([none.fix_pending, none.reason, none.gh], [false, null, []]);
+  a.deepEqual([none.fix_pending, none.reason, none.gh], [false, null, []]);
   const other = supervisorRecheck({ workflow: false });
-  assert.equal(other.reason, null);
-  assert.deepEqual(other.events, []);
-  assert.equal(other.gh.length, 1, "ワークフローがないのに pr-body-check の結果を引いた");
-});
+  a.equal(other.reason, null);
+  a.deepEqual(other.events, []);
+  a.equal(other.gh.length, 1, "ワークフローがないのに pr-body-check の結果を引いた");
+}));
 
 // (13)〜(15) 新しい PR の最初の本文の関所（知見 K-0016 の担保。議決 D-0078 の ci_check の案、Issue #1219）。
 // summary.md（SUMMARY）から組んだ最初の本文も、gh pr create の前に同じ関所（gate.mjs）に照らす。入力は事例 C-0008（PR #678）と C-0006（PR #821）の

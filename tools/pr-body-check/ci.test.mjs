@@ -16,7 +16,7 @@
 // patch_stale か patch_partially_applied なら Issue を開くか更新する。議決 D-0068（起票時の番号は D-0066）、Issue #1179）の形と手順の振る舞い、写しとのずれも見る。
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -272,9 +272,9 @@ function exclusionProblems(name, text) {
     if (lines.filter((l) => /\b(const|let|var|function)\s+skip\b|\bskip\s*=[^=]/.test(l)).length !== 1 || !lines.some((l) => ENGINE_SKIP.test(l))) {
       problems.push(`${name}: skip は required のときに false になる 1 つの宣言だけにする（上書きや別の skip で (10) を飛ばせる）`);
     }
-    // skip を使ってよいのは宣言と、テストの { skip } だけ（{ skip: true } などで個別に飛ばさない）
+    // skip を使ってよいのは宣言と、テストの { skip } だけ（{ skip: true } などで個別に飛ばさない。(12) は中身を recheckPlanned に渡す形も認める）
     // (11) の飛ばしは、(11) のテストの直後の行でだけ認める
-    if (lines.some((l, i) => /\bskip\b/.test(l) && !ENGINE_SKIP.test(l) && !/^\s*test\(.*, \{ skip \}, (\(t\)|\(\)) => \{$/.test(l)
+    if (lines.some((l, i) => /\bskip\b/.test(l) && !ENGINE_SKIP.test(l) && !/^\s*test\(.*, \{ skip \}, (\(t\)|\(\)) => (recheckPlanned\(t, \d+, \(a\) => )?\{$/.test(l)
       && !(l === PATCHED_SKIP && (lines[i - 1] ?? "").startsWith(PATCHED_TEST)))) {
       problems.push(`${name}: 共通の skip のほかの飛ばしがある`);
     }
@@ -529,18 +529,22 @@ test("字面の見張りをすり抜ける飛ばし方（別名で呼ぶ t.skip�
 
 // engine.test.mjs の (12)（知見 K-0012 の担保。Engine の supervisor の merge_step がマージの前に本文の直しの終わりと直した本文の pr-body-check を待つ線）も、
 // ひな形の engine-test の node --test で走らせた結果で pass と数えられ、skip・todo が 0 かを見る（議決 D-0100（Issue #1197 の起票時の番号は D-0071。PR #1192）の
-// test の案、Issue #1197）。(12) を消す・名前を変える・飛ばす・todo にする・落ちたままにする書き換えは、ここで外れになる。(12) の名前の一覧は
-// engine.test.mjs の (12) のテストと同じにする（足したらここにも足す。足さないと、新しい (12) が飛ばされても見張れない）。注釈の行は見ない。
-const ENGINE_RECHECK_NAMES = [
-  "(12) 再検査を待つ supervisor（engine/pr-body-recheck.patch）は、merge_step でマージより前に、本文の直しの終わりと直した本文の pr-body-check を待つ",
-  "(12) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ",
-  "(12) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）",
-  "(12) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る",
-  "(12) 直しの途中で push が来て直す前の本文で通った実行は、直しのあとに始まっても再検査に数えない（D-0100 の反対票の反例）",
-  "(12) 直しのジョブの中の書き換えの edited で始まった実行は、直しの終わり（pr.body_amended）より前に始まっても数え、待ち続けない",
-  "(12) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）",
-  "(12) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）",
-];
+// test の案、Issue #1197）。(12) を消す・名前を変える・飛ばす・todo にする・落ちたままにする書き換えは、ここで外れになる。注釈の行は見ない。
+/**
+ * engine.test.mjs の (12) のテストの名前と、それぞれで走る確かめ（recheckPlanned の t.plan の数）。名前と数は engine.test.mjs の (12) と同じにする
+ * （足したらここにも足す。足さないと、新しい (12) が飛ばされても見張れない）。確かめを足し引きしたら数も直す（議決 D-0106 の test の案、Issue #1283）。
+ */
+const ENGINE_RECHECK_ASSERTS = {
+  "(12) 再検査を待つ supervisor（engine/pr-body-recheck.patch）は、merge_step でマージより前に、本文の直しの終わりと直した本文の pr-body-check を待つ": 3,
+  "(12) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ": 2,
+  "(12) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）": 18,
+  "(12) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る": 8,
+  "(12) 直しの途中で push が来て直す前の本文で通った実行は、直しのあとに始まっても再検査に数えない（D-0100 の反対票の反例）": 11,
+  "(12) 直しのジョブの中の書き換えの edited で始まった実行は、直しの終わり（pr.body_amended）より前に始まっても数え、待ち続けない": 9,
+  "(12) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）": 6,
+  "(12) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）": 4,
+};
+const ENGINE_RECHECK_NAMES = Object.keys(ENGINE_RECHECK_ASSERTS);
 
 /** engine.test.mjs のコードの行にある (12) のテストの名前。 */
 const recheckWaitNames = (text) => codeLines(text).map((l) => l.match(/^test\("(\(12\) [^"]*)"/)?.[1]).filter(Boolean);
@@ -576,6 +580,128 @@ test("(12) を消す・名前を変える・飛ばす・todo にする・落ち�
   };
   for (const [name, text] of Object.entries(cases)) {
     assert.notDeepEqual(runReportProblems(ENGINE_TEST, text, ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), [], `${name} が通った`);
+  }
+});
+
+// (12) の中の条件付きの早い return・短絡のように、確かめを飛ばしたまま pass と数えられる書き換えの見張り（知見 K-0012 の担保。議決 D-0106 の test の案、
+// Issue #1283）。engine.test.mjs の (12) は中身を recheckPlanned に渡し、確かめの数を t.plan で固定して、最後まで来たら「# (12) の確かめの数 N: 名前」の
+// 診断を TAP に残す。ここでは、(12) がどれも ENGINE_RECHECK_ASSERTS の数で recheckPlanned を呼び、recheckPlanned が plan と印を外していないこと（字面）と、
+// TAP で走らせた結果でそれぞれの印がちょうどその数で 1 回残ったこと（走らせた結果）を見る。中身を飛ばすと plan で落ちて pass と数えられず、
+// plan を外しても印がないか数がずれて外れになる。
+const RECHECK_ASSERTED = "(12) の確かめの数";
+/** recheckPlanned の中で、plan を固定し、中身を走らせ、走った数の印を残す行（この順にあること）。 */
+const RECHECK_PLANNED_LINES = ["  t.plan(expected);", "  body(a);", "  t.diagnostic(`${RECHECK_ASSERTED} ${ran}: ${t.name}`);"];
+
+/** engine.test.mjs で、(12) のテストが recheckPlanned に渡す確かめの数と recheckPlanned の形の外れ（空なら通る）。名前の過不足は recheckWaitNames で見る。 */
+function recheckPlanProblems(text) {
+  const problems = [];
+  for (const line of codeLines(text)) {
+    const name = line.match(/^test\("(\(12\) [^"]*)"/)?.[1];
+    if (!name || !(name in ENGINE_RECHECK_ASSERTS)) continue;
+    const n = line.match(/, \(t\) => recheckPlanned\(t, (\d+), \(a\) => \{$/)?.[1];
+    if (n === undefined) problems.push(`${ENGINE_TEST}: 「${name}」が recheckPlanned(t, 数, (a) => { … }) で中身を走らせていない`);
+    else if (Number(n) !== ENGINE_RECHECK_ASSERTS[name]) problems.push(`${ENGINE_TEST}: 「${name}」の確かめの数が ${n}（${ENGINE_RECHECK_ASSERTS[name]} のはず）`);
+  }
+  const lines = text.split(/\r?\n/);
+  const start = lines.indexOf("function recheckPlanned(t, expected, body) {");
+  const end = lines.indexOf("}", start);
+  const fn = start < 0 || end < 0 ? [] : lines.slice(start, end);
+  const at = RECHECK_PLANNED_LINES.map((l) => fn.indexOf(l));
+  if (at.some((i) => i < 0) || at.some((i, k) => k > 0 && i < at[k - 1])) {
+    problems.push(`${ENGINE_TEST}: recheckPlanned に ${RECHECK_PLANNED_LINES.map((l) => l.trim()).join("・")} がこの順にない`);
+  }
+  if (!text.includes(`const RECHECK_ASSERTED = "${RECHECK_ASSERTED}";`)) problems.push(`${ENGINE_TEST}: 印の頭（RECHECK_ASSERTED）が「${RECHECK_ASSERTED}」でない`);
+  return problems;
+}
+
+/** TAP の結果で、(12) のそれぞれが最後まで来て、ENGINE_RECHECK_ASSERTS の数だけ確かめが走ったかの外れ（空なら通る）。 */
+function recheckAssertedProblems(tap) {
+  const seen = {};
+  for (const line of tap.split(/\r?\n/)) {
+    const m = line.match(/^# \(12\) の確かめの数 (\d+): (.*)$/);
+    if (m) (seen[m[2]] ??= []).push(Number(m[1]));
+  }
+  return ENGINE_RECHECK_NAMES.flatMap((name) => {
+    const want = ENGINE_RECHECK_ASSERTS[name];
+    const got = seen[name] ?? [];
+    if (got.length === 0) return [`${ENGINE_TEST}: 「${name}」が最後まで来ていない（「# ${RECHECK_ASSERTED}」の印がない）`];
+    if (got.length !== 1 || got[0] !== want) return [`${ENGINE_TEST}: 「${name}」で確かめが ${got.join("・")} 回走った（${want} 回のはず）`];
+    return [];
+  });
+}
+
+test("engine.test.mjs の (12) は、どれも見張りの一覧の数で recheckPlanned に確かめの数を固定させる", () => {
+  assert.deepEqual(recheckPlanProblems(readTest(ENGINE_TEST)), []);
+});
+
+test("engine.test.mjs を TAP で走らせると、(12) がどれも最後まで来て、見張りの一覧の数だけ確かめが走る", { skip: runEngineSkip }, () => {
+  const tap = runEngineTap();
+  assert.deepEqual(recheckAssertedProblems(tap), [], tap);
+});
+
+test("(12) の確かめの数を変える・recheckPlanned を通さない・plan や印を外す書き換えは、字面で外れになる", () => {
+  const engineText = readTest(ENGINE_TEST);
+  const [first] = ENGINE_RECHECK_NAMES;
+  const head = `test("${first}", { skip }, (t) => recheckPlanned(t, ${ENGINE_RECHECK_ASSERTS[first]}, (a) => {`;
+  const cases = {
+    "確かめの数を変える": engineText.replace(head, head.replace(`(t, ${ENGINE_RECHECK_ASSERTS[first]},`, "(t, 1,")),
+    "recheckPlanned を通さない": engineText.replace(head, `test("${first}", { skip }, () => {`),
+    "plan を外す": engineText.replace(RECHECK_PLANNED_LINES[0], "  void expected;"),
+    "印を中身の前に残す": engineText.replace(`${RECHECK_PLANNED_LINES[1]}\n${RECHECK_PLANNED_LINES[2]}`, `${RECHECK_PLANNED_LINES[2]}\n${RECHECK_PLANNED_LINES[1]}`),
+    "印に走った数でなく固定した数を書く": engineText.replace(RECHECK_PLANNED_LINES[2], RECHECK_PLANNED_LINES[2].replace("${ran}", "${expected}")),
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    assert.notEqual(text, engineText, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(recheckPlanProblems(text), [], `${name} が通った`);
+  }
+  // 走らせた結果の照らし方: 印がない・数がずれる・2 回ある、は外れ
+  const marks = (over = {}) => ENGINE_RECHECK_NAMES.map((n) => (n in over ? over[n] : [`# ${RECHECK_ASSERTED} ${ENGINE_RECHECK_ASSERTS[n]}: ${n}`])).flat().join("\n");
+  assert.deepEqual(recheckAssertedProblems(marks()), []);
+  for (const [name, text] of Object.entries({
+    "印がない（最後まで来ていない）": marks({ [first]: [] }),
+    "数が足りない": marks({ [first]: [`# ${RECHECK_ASSERTED} 1: ${first}`] }),
+    "印が 2 回ある": marks({ [first]: [`# ${RECHECK_ASSERTED} 3: ${first}`, `# ${RECHECK_ASSERTED} 3: ${first}`] }),
+  })) assert.notDeepEqual(recheckAssertedProblems(text), [], `${name} が通った`);
+});
+
+test("(12) の中の条件付きの早い return は、名前の見張りをすり抜けても、走らせた結果で外れになる", { skip: runEngineSkip }, () => {
+  // tools/pr-body-check と、そこから読む tools/sendback-check を写し、写しの engine.test.mjs の (12) だけを書き換えて TAP で走らせる
+  const root = mkdtempSync(join(tmpdir(), "pr-body-recheck-plan-"));
+  try {
+    for (const d of ["pr-body-check", "sendback-check"]) {
+      cpSync(fileURLToPath(new URL(`../${d}`, import.meta.url)), join(root, "tools", d), { recursive: true, filter: (src) => !src.includes("node_modules") });
+    }
+    const dir = join(root, "tools", "pr-body-check");
+    const engineText = readTest(ENGINE_TEST);
+    const names = ENGINE_RECHECK_NAMES;
+    const loop = names.find((n) => ENGINE_RECHECK_ASSERTS[n] === 18);
+    const headOf = (n) => `test("${n}", { skip }, (t) => recheckPlanned(t, ${ENGINE_RECHECK_ASSERTS[n]}, (a) => {`;
+    const run = (text) => {
+      writeFileSync(join(dir, ENGINE_TEST), text);
+      const { NODE_TEST_CONTEXT, ...env } = process.env;
+      const r = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "--test-name-pattern=^\\(12\\) ", ENGINE_TEST],
+        { cwd: dir, env: { ...env, ENGINE_DIR: runEngineDir }, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+      return r.stdout ?? "";
+    };
+    // 1 つ目の頭で return、ループの 2 回目から return（plan はそのまま）: 走った数が足りず plan で落ちる
+    const early = engineText
+      .replace(headOf(names[0]), `${headOf(names[0])}\n  if (a) return;`)
+      .replace(`${headOf(loop)}`, `${headOf(loop)}\n  let i = 0;`)
+      .replace("  for (const [over, reason] of cases) {\n", "  for (const [over, reason] of cases) {\n    if (i++ > 0) return;\n");
+    assert.notEqual(early, engineText, "置き換えが効いていない");
+    assert.deepEqual(recheckWaitNames(early), ENGINE_RECHECK_NAMES, "名前の見張りが捕まえた（すり抜けの例になっていない）");
+    assert.deepEqual(recheckPlanProblems(early), [], "字面の数の見張りが捕まえた（すり抜けの例になっていない）");
+    const earlyTap = run(early);
+    const problems = runReportProblems(ENGINE_TEST, earlyTap, ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES);
+    for (const n of [names[0], loop]) assert.ok(problems.includes(`${ENGINE_TEST}: 「${n}」が pass と数えられていない（fail）`), earlyTap);
+    assert.equal(recheckAssertedProblems(earlyTap).length, 2, earlyTap);
+    // plan も外して頭で return: pass と数えられる（Issue #1197 の見張りはすり抜ける）が、印の数がずれて外れになる
+    const unplanned = engineText.replace(RECHECK_PLANNED_LINES[0], "  void expected;").replace(headOf(names[0]), `${headOf(names[0])}\n  if (a) return;`);
+    const unplannedTap = run(unplanned);
+    assert.deepEqual(runReportProblems(ENGINE_TEST, unplannedTap, ENGINE_RECHECK_NAMES, ENGINE_PATCHED_NAMES), [], `plan を外した写しが pass と数えられない: ${unplannedTap}`);
+    assert.deepEqual(recheckAssertedProblems(unplannedTap), [`${ENGINE_TEST}: 「${names[0]}」で確かめが 0 回走った（${ENGINE_RECHECK_ASSERTS[names[0]]} 回のはず）`], unplannedTap);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
