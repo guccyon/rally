@@ -5,13 +5,16 @@
 //
 // イベント列は古い順に並べて渡す（tools/sendback-check の check.mjs --events と同じ形。読み方も parseEvents を使う）。
 // 同じ PR の supervisor.merged ごとに、それより前のイベントを見る:
-//   - pr.body_amended（本文の直しが終わった）のあと、本文の検査（本文を見た gate の gate.evaluated）がないまま supervisor.merged が来た（merged_without_body_recheck。事例 C-0006）
+//   - pr.body_amended（本文の直しが終わった）のあと、本文の検査（本文を見て通った gate の gate.evaluated）がないまま supervisor.merged が来た（merged_without_body_recheck。事例 C-0006）
 //   - 本文の直し（job.enqueued の kind が body_fix）を積んだのに、その終わり（pr.body_amended か pr.body_amend_failed）より前に
 //     supervisor.merged が来た（merged_before_body_fix_finished。事例 C-0005 は、直しの終わりがマージの 7 秒後）
 //   - 本文の直しが失敗で終わり（pr.body_amend_failed）、そのあと直しが成功しないまま supervisor.merged が来た（merged_after_body_fix_failed）
 // 本文の検査は gate.evaluated のうち本文を見た gate だけを数える: pr-body-check を gate: "pr-body-check" で記録したものと、検査役の rubric（gate: "rubric"）で
 // 見た rubric（checked）に本文の rubric（PR-002 など）があるもの。コードの検査（overlay・L1 など）と、本文の rubric を見ていない rubric は数えない
 // （本文と関係のない検査が直しのあとに来ただけでは、直した本文を再検査したことにならない。議決 D-0072、Issue #1206）。
+// そのうえで、本文を見て通ったものだけを数える: 結果（result）があれば "pass" で、欠陥（defects）があれば本文の欠陥がない（pr-body-check は欠陥が 0 件、
+// rubric は PR-002 などの本文の rubric の欠陥がない）もの。結果も欠陥の一覧もない記録は通ったと言えないので数えない
+// （直した本文で本文の検査が落ちたあとにマージしても、再検査に通ったことにはならない。議決 D-0110、Issue #1293）。
 // supervisor が直した本文の pr-body-check が通ったのを確かめて残す supervisor.body_rechecked（engine/pr-body-recheck.patch。議決 D-0050、Issue #1122）も数える。
 // ただし直した本文で始まった実行のものだけ: edited で始まった（action が edited）か、もとのイベントの時刻（created_at）が pr.body_amended の occurred_at 以後のもの。
 // 直しの最中の push や前の実行の再実行で始まり、直す前の本文で通った実行の記録は数えない（議決 D-0100 の反対票の反例。Issue #1268）。
@@ -28,6 +31,8 @@ export const BODY_CHECK_EVENTS = Object.freeze(["gate.evaluated", "supervisor.bo
 export const BODY_CHECK_GATES = Object.freeze(["pr-body-check"]);
 /** 検査役の rubric の gate で、見た rubric（checked）にあれば本文の検査に数える rubric（Engine の core-gates/rubric.yaml。PR-002 は本文の構成）。 */
 export const BODY_RUBRIC_IDS = Object.freeze(["PR-002"]);
+/** gate.evaluated の結果（result）のうち、通ったとみなす値（Engine の definitions/events.yaml の gate.evaluated の result）。 */
+export const BODY_CHECK_PASS = "pass";
 /** 本文の直しの終わり（成功と失敗）。 */
 export const BODY_FIX_FINISHED = Object.freeze(["pr.body_amended", "pr.body_amend_failed"]);
 
@@ -45,14 +50,28 @@ export function rechecksAmended(e, amended) {
   return Number.isFinite(created) && Number.isFinite(at) && created >= at;
 }
 
-/** 本文の検査か。gate.evaluated は本文を見た gate だけ（BODY_CHECK_GATES か、checked に BODY_RUBRIC_IDS がある rubric）。 */
+/**
+ * gate.evaluated の本文の検査が通ったか（Issue #1293）。result があれば BODY_CHECK_PASS で、defects があれば本文の欠陥がない
+ * （rubric は rubric_id が BODY_RUBRIC_IDS の欠陥がない、ほかの gate は欠陥が 0 件）。どちらもなければ通ったとは言えないので false。
+ */
+export function passedBodyCheck(e) {
+  const p = e.payload ?? {};
+  const hasResult = p.result != null;
+  const hasDefects = Array.isArray(p.defects);
+  if (!hasResult && !hasDefects) return false;
+  if (hasResult && p.result !== BODY_CHECK_PASS) return false;
+  if (!hasDefects) return true;
+  return p.gate === "rubric" ? !p.defects.some((d) => BODY_RUBRIC_IDS.includes(d?.rubric_id)) : p.defects.length === 0;
+}
+
+/** 本文の検査に通ったか。gate.evaluated は本文を見た gate（BODY_CHECK_GATES か、checked に BODY_RUBRIC_IDS がある rubric）で、通ったものだけ。 */
 export function isBodyCheck(e) {
   if (e.name === "supervisor.body_rechecked") return true;
   if (e.name !== "gate.evaluated") return false;
   const gate = e.payload?.gate;
-  if (BODY_CHECK_GATES.includes(gate)) return true;
   const checked = e.payload?.checked;
-  return gate === "rubric" && Array.isArray(checked) && checked.some((id) => BODY_RUBRIC_IDS.includes(id));
+  const sawBody = BODY_CHECK_GATES.includes(gate) || (gate === "rubric" && Array.isArray(checked) && checked.some((id) => BODY_RUBRIC_IDS.includes(id)));
+  return sawBody && passedBodyCheck(e);
 }
 
 /**
@@ -93,7 +112,7 @@ export function checkEvents(events, prUrl) {
       if (st.amendedUnchecked) {
         const job = st.amendedUnchecked.job_id != null ? `（job ${st.amendedUnchecked.job_id}）` : "";
         errors.push({ rule: "merged_without_body_recheck", pr_url: pr,
-          message: `pr.body_amended${job}のあと本文の検査（${BODY_CHECK_EVENTS.join("・")}。gate.evaluated は ${[...BODY_CHECK_GATES, `${BODY_RUBRIC_IDS.join("・")} を見た rubric`].join("・")}）がないまま supervisor.merged が来た（直した本文を再検査せずにマージした）` });
+          message: `pr.body_amended${job}のあと本文の検査（${BODY_CHECK_EVENTS.join("・")}。gate.evaluated は ${[...BODY_CHECK_GATES, `${BODY_RUBRIC_IDS.join("・")} を見た rubric`].join("・")} で通ったもの）がないまま supervisor.merged が来た（直した本文を再検査して通らないままマージした）` });
       }
     }
   }

@@ -264,4 +264,24 @@ enforcement:
       decided_by: committee:D-0109
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0110（PR #1292）の test の案を入れた。recheck.mjs の isBodyCheck を、本文を見た gate.evaluated のうち通ったものだけを数える形にした
+        （passedBodyCheck。結果 result があれば "pass"〈BODY_CHECK_PASS。Engine の definitions/events.yaml の gate.evaluated の result〉で、
+        欠陥の一覧 defects があれば本文の欠陥がない〈pr-body-check は 0 件、rubric は rubric_id が BODY_RUBRIC_IDS の欠陥がない〉もの。
+        Engine の検査役の rubric の gate.evaluated は result を持たず defects を持つので、defects で見る。結果も欠陥の一覧もない記録は数えない）。
+        recheck.test.mjs に、C-0006（PR #821）の列の pr.body_amended（14:25:04）のあとに、gate: "pr-body-check" の結果が fail の gate.evaluated と、
+        PR-002 を見て PR-002 の欠陥を挙げた rubric（と result が fail の rubric）の gate.evaluated だけを挟んでから supervisor.merged が来る列が
+        merged_without_body_recheck で落ち、そのあと通った本文の検査が来れば通るテストを足した。結果も欠陥の一覧もない記録・欠陥のある pr-body-check・
+        pass 以外の結果も数えないことを確かめた。C-0003（PR #396）の列の検査（job 560・570）には事例の記録のとおり PR-002 の欠陥を入れたので、
+        issue 1131 の解決策の「job 563 は job 570 で再検査済みなので job 572 の直しがなければ通る」は、今の数え方では「job 570 は PR-002 で落ちたので
+        通らない」になった（記録は書き換えず、今の数え方はこの解決策が正）。isBodyCheck を結果を問わない形に戻す・result を見ない・defects を見ない・
+        結果のない記録を数える・rubric の欠陥を本文の rubric に絞らない書き換えで、このテストが落ちることを確かめた。
+        recheck.mjs はまだどこからも呼んでおらず（issue 1053）、recheck.test.mjs も写しの engine-test がないので PR ごとには走っていない（issue 1131）。
+        配線されておらず効き目は確かめていない
+      issue: 1293
+      at: 2026-11-09
+      decided_by: committee:D-0110
+      wired: false
+      verified: false
 decided_by: committee:D-0033

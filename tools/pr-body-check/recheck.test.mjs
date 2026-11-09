@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { BODY_CHECK_GATES, BODY_RUBRIC_IDS, checkEvents } from "./recheck.mjs";
+import { BODY_CHECK_GATES, BODY_CHECK_PASS, BODY_RUBRIC_IDS, checkEvents } from "./recheck.mjs";
 
 // 事例の記録（.factory-config/knowledge/cases/C-0003.md・C-0005.md・C-0006.md の「出来事」）から組み直したイベント列。
 // イベントそのものは事例の記録にないので、事例に書かれた時刻・job・順を制御プレーンのイベントの形（Engine の dispatcher・supervisor が書く名前と payload）にした。
@@ -15,6 +15,8 @@ const URL_821 = "https://github.com/guccyon/rally/pull/821";
 const URL_396 = "https://github.com/guccyon/rally/pull/396";
 /** 検査役の rubric（shadow_review.py）が見た rubric の id（gate.evaluated の checked）。本文の構成の PR-002 を含む。 */
 const RUBRIC_CHECKED = ["PR-001", "PR-002", "CODE-001"];
+/** 検査役の rubric の欠陥（gate.evaluated の defects の 1 件。Engine の core-gates/shadow_review.py の形）。 */
+const defect = (rubric_id) => ({ rubric_id, gate: "L4", severity: "must", location: "PR 本文", evidence: "", remediation_hint: "" });
 
 /**
  * C-0003（PR #396）: 2 回目の検査（job 570）の 14:21:30 のあと、最後の本文の直し（job 572）を積んで終わり、head_sha が変わらないまま
@@ -24,11 +26,11 @@ const RUBRIC_CHECKED = ["PR-001", "PR-002", "CODE-001"];
 function c0003() {
   const pr = { pr_url: URL_396 };
   return [
-    { name: "gate.evaluated", job_id: 560, payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED }, occurred_at: "2026-11-01T14:15:47+09:00" },
+    { name: "gate.evaluated", job_id: 560, payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED, defects: [defect("PR-002"), defect("CODE-003")] }, occurred_at: "2026-11-01T14:15:47+09:00" },
     { name: "job.enqueued", job_id: 563, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-01T14:16:30+09:00" },
     { name: "job.enqueued", job_id: 564, payload: { ...pr, by: "judge", kind: "implement" }, occurred_at: "2026-11-01T14:16:30+09:00" },
     { name: "pr.body_amended", job_id: 563, payload: { ...pr, defects: 1 }, occurred_at: "2026-11-01T14:18:00+09:00" },
-    { name: "gate.evaluated", job_id: 570, payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED }, occurred_at: "2026-11-01T14:21:30+09:00" },
+    { name: "gate.evaluated", job_id: 570, payload: { ...pr, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED, defects: [defect("PR-002")] }, occurred_at: "2026-11-01T14:21:30+09:00" },
     { name: "job.enqueued", job_id: 572, payload: { ...pr, by: "judge", kind: "body_fix" }, occurred_at: "2026-11-01T14:22:00+09:00" },
     { name: "pr.body_amended", job_id: 572, payload: { ...pr, defects: 1 }, occurred_at: "2026-11-01T14:23:00+09:00" },
     { name: "supervisor.inspector_approved", payload: { ...pr, head_sha: "c1" }, occurred_at: "2026-11-01T14:23:20+09:00" },
@@ -70,8 +72,9 @@ const rules = (r) => r.errors.map((e) => e.rule);
 const without = (events, name) => events.filter((e) => e.name !== name);
 /** name のイベントの直前に足す。 */
 const before = (events, name, add) => events.flatMap((e) => (e.name === name ? [add, e] : [e]));
+/** 本文の検査に通った gate.evaluated。rubric は Engine の検査役の形（result がなく defects が空）、ほかは events.yaml の形（result と defects）。 */
 const recheck = (pr_url, gate = "rubric", checked = RUBRIC_CHECKED) =>
-  ({ name: "gate.evaluated", payload: { pr_url, mode: "shadow", gate, ...(gate === "rubric" ? { checked } : {}) } });
+  ({ name: "gate.evaluated", payload: { pr_url, mode: "shadow", gate, ...(gate === "rubric" ? { checked } : { result: BODY_CHECK_PASS }), defects: [] } });
 
 test("C-0006 の列は、直した本文を再検査せずにマージしたので落ちる", () => {
   const r = checkEvents(c0006());
@@ -95,9 +98,14 @@ test("C-0003 の列は、最後の本文の直し（job 572）のあと検査を
   assert.deepEqual(rules(r), ["merged_without_body_recheck"]);
   assert.equal(r.errors[0].pr_url, URL_396);
   assert.match(r.errors[0].message, /job 572/);
-  // 1 回目の直し（job 563）は 2 回目の検査（job 570）で再検査されているので、job 572 の直しがなければ通る
+  // 1 回目の直し（job 563）は 2 回目の検査（job 570）で再検査されたが PR-002 で落ちたので、job 572 の直しがなくても通らない（Issue #1293）
   const upTo570 = c0003().filter((e) => e.job_id !== 572);
-  assert.deepEqual(checkEvents(upTo570).errors, []);
+  const r570 = checkEvents(upTo570);
+  assert.deepEqual(rules(r570), ["merged_without_body_recheck"]);
+  assert.match(r570.errors[0].message, /job 563/);
+  // job 570 が本文で落ちていなければ（本文の rubric の欠陥がなければ）、job 563 の直しは再検査に通っている
+  const passed570 = upTo570.map((e) => (e.job_id === 570 ? { ...e, payload: { ...e.payload, defects: [defect("CODE-003")] } } : e));
+  assert.deepEqual(checkEvents(passed570).errors, []);
   // job 572 の直しのあとに本文を検査し直してからマージすれば通る
   assert.deepEqual(checkEvents(before(c0003(), "supervisor.merged", recheck(URL_396))).errors, []);
 });
@@ -181,7 +189,7 @@ test("本文の再検査に数える gate は pr-body-check と PR-002 を見た
     recheck(URL_396, "rubric", ["PR-001", "PR-003", "PR-004"]),
     { name: "gate.evaluated", payload: { pr_url: URL_396, result: "pass" } },
   ];
-  // C-0003 の列: 1 回目の直し（job 563）は再検査されているが、最後の直し（job 572）のあとに本文と関係のない検査だけが来てからマージした
+  // C-0003 の列: 最後の直し（job 572）のあとに本文と関係のない検査だけが来てからマージした
   for (const ev of unrelated) {
     const r = checkEvents(before(c0003(), "supervisor.merged", ev));
     assert.deepEqual(rules(r), ["merged_without_body_recheck"], JSON.stringify(ev.payload));
@@ -190,6 +198,43 @@ test("本文の再検査に数える gate は pr-body-check と PR-002 を見た
   const all = unrelated.reduce((events, ev) => before(events, "supervisor.merged", ev), c0003());
   assert.deepEqual(rules(checkEvents(all)), ["merged_without_body_recheck"]);
   assert.deepEqual(checkEvents(before(all, "supervisor.merged", recheck(URL_396, "pr-body-check"))).errors, []);
+});
+
+test("pr.body_amended のあとに本文を見て落ちた検査（結果が fail の pr-body-check と、PR-002 で落ちた rubric）だけが来てからマージしたら、再検査に数えず落ちる（議決 D-0110、Issue #1293）", () => {
+  assert.equal(BODY_CHECK_PASS, "pass");
+  // C-0006 の列で、直しの 14:25:04 とマージの 14:25:06 の間に、直した本文を見て落ちた検査だけを挟む
+  const failedChecks = [
+    { name: "gate.evaluated", payload: { pr_url: URL_821, gate: "pr-body-check", result: "fail", defects: [{ rule: "missing_heading", heading: "## 概要" }] } },
+    { name: "gate.evaluated", payload: { pr_url: URL_821, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED, defects: [defect("PR-002")] } },
+    { name: "gate.evaluated", payload: { pr_url: URL_821, mode: "shadow", gate: "rubric", checked: ["PR-002"], result: "fail", defects: [] } },
+  ];
+  for (const ev of failedChecks) {
+    const r = checkEvents(before(c0006(), "supervisor.merged", ev));
+    assert.deepEqual(rules(r), ["merged_without_body_recheck"], JSON.stringify(ev.payload));
+    assert.match(r.errors[0].message, /job 4299/);
+  }
+  const all = failedChecks.reduce((events, ev) => before(events, "supervisor.merged", ev), c0006());
+  assert.deepEqual(rules(checkEvents(all)), ["merged_without_body_recheck"]);
+  // 結果も欠陥の一覧もない記録、欠陥のある pr-body-check、pass 以外の結果も、通ったとは言えないので数えない
+  const unknown = [
+    { name: "gate.evaluated", payload: { pr_url: URL_821, gate: "pr-body-check" } },
+    { name: "gate.evaluated", payload: { pr_url: URL_821, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED } },
+    { name: "gate.evaluated", payload: { pr_url: URL_821, gate: "pr-body-check", defects: [{ rule: "duplicate_h2" }] } },
+    { name: "gate.evaluated", payload: { pr_url: URL_821, gate: "pr-body-check", result: "error", defects: [] } },
+  ];
+  for (const ev of unknown) {
+    assert.deepEqual(rules(checkEvents(before(c0006(), "supervisor.merged", ev))), ["merged_without_body_recheck"], JSON.stringify(ev.payload));
+  }
+  // 落ちたあとに本文を見て通った検査が来れば通る。rubric は本文の rubric（PR-002）以外の欠陥があっても、本文は通ったものとして数える
+  const passed = [
+    recheck(URL_821, "pr-body-check"),
+    recheck(URL_821, "rubric"),
+    { name: "gate.evaluated", payload: { pr_url: URL_821, mode: "shadow", gate: "rubric", checked: RUBRIC_CHECKED, defects: [defect("CODE-001")] } },
+    { name: "gate.evaluated", payload: { pr_url: URL_821, gate: "pr-body-check", result: "pass" } },
+  ];
+  for (const ev of passed) {
+    assert.deepEqual(checkEvents(before(all, "supervisor.merged", ev)).errors, [], JSON.stringify(ev.payload));
+  }
 });
 
 test("再検査のあとにもう一度本文を直したら、その直しの再検査も要る", () => {
