@@ -8,6 +8,7 @@
 // （議決 D-0045 の ci_check の案、Issue #1109）。recheck.test.mjs（知見 K-0012 の担保）も同じく外れていないことを見る（議決 D-0050 の ci_check の案、Issue #1131）。
 // 字面の照合だけに頼らず、gate.test.mjs と engine.test.mjs を TAP で走らせた結果で、通る側のテストと (10) が pass と数えられたかも見る（議決 D-0070 の test の案、Issue #1183）。
 // engine.test.mjs の (12)（本文の直しのあとの再検査を待つ merge_step の線。知見 K-0012 の担保）も、TAP で走らせた結果で pass と数えられたかを見る（議決 D-0100（Issue #1197 の起票時の番号は D-0071）の test の案、Issue #1197）。
+// engine.test.mjs の (13)〜(15)（新しい PR の最初の本文の関所。知見 K-0016 の担保）も、名前の一覧と同じだけあり、TAP で走らせた結果で pass と数えられたかを見る（議決 D-0117 の ci_check の案、Issue #1307）。
 // (10) と、そこから呼ぶ assertWritesEveryTime に、条件付きの早い return・短絡・三項・try/catch のような飛ばさずに pass になる外し方がないことも見る（議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案、Issue #1187）。
 // ci/pr-body-protection.yml（branch protection を読めるトークンで protection.mjs を既定のブランチへの push と毎日走らせ、外れたら Issue を開くか更新する。
 // 議決 D-0044、Issue #1106）の形と手順の振る舞い、写しとのずれも見る。写しがあれば、写しそのものが schedule と workflow_dispatch で走り、
@@ -25,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { parseTapReport } from "../sendback-check/order.mjs";
 import { jobCheckNames } from "../sendback-check/protection.mjs";
 import { PASSING_REPORTS, REASONS } from "./c0005.mjs";
+import { BROKEN_HEADS } from "./k0016.mjs";
 import { CHECK_NAME, REQUIRED_JOB } from "./protection.mjs";
 
 const template = readFileSync(fileURLToPath(new URL("./ci/pr-body-engine.yml", import.meta.url)), "utf8");
@@ -702,6 +704,69 @@ test("(12) の中の条件付きの早い return は、名前の見張りをす�
     assert.deepEqual(recheckAssertedProblems(unplannedTap), [`${ENGINE_TEST}: 「${names[0]}」で確かめが 0 回走った（${ENGINE_RECHECK_ASSERTS[names[0]]} 回のはず）`], unplannedTap);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// engine.test.mjs の (13)〜(15)（新しい PR の最初の本文の関所。知見 K-0016 の担保）も、ひな形の engine-test の node --test で走らせた結果で
+// pass と数えられ、skip・todo が 0 かを見る（議決 D-0117 の ci_check の案、Issue #1307）。(13) は ENGINE_REF の Engine そのものが gh pr create の前に
+// 関所を呼ぶかを見るので、建設者が engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げたときに通る。(13) を消す・名前を変えると、
+// 関所を呼ばない Engine の版でも engine-test が通ってしまうので、ここで外れにする。(14) の名前は事例の形（k0016.mjs の BROKEN_HEADS）ごとに作る。
+/** engine.test.mjs の (13)〜(15) のテストの名前。名前は engine.test.mjs と同じにする（足したらここにも足す）。 */
+const ENGINE_FIRST_BODY_NAMES = [
+  "(13) ENGINE_REF の Engine は、新しい PR を作る前に、報告から組んだ最初の本文を関所に照らす",
+  ...BROKEN_HEADS.map(([label]) => `(14) 関所を配線した Engine は、${label}から組んだ最初の本文を作る前に関所に照らし、作った PR の body_fix を積ませる`),
+  "(14) 関所を配線した Engine の dispatcher は、続きのジョブでない（新しい PR の）結果の body_gate も拾う",
+  "(15) 関所を配線した Engine は、「## 概要」から始まる最初の本文（未完了の印と Refs の形も）なら関所が 0 を返し、body_gate を残さずに作る（誤って止めない）",
+];
+/** (14) の事例の形を回すループと、その中のテストの頭。 */
+const FIRST_BODY_LOOP = ["for (const [label, , summary] of BROKEN_HEADS) {", "  test(`(14) 関所を配線した Engine は、${label}から組んだ最初の本文を作る前に関所に照らし、作った PR の body_fix を積ませる`, { skip }, () => {"];
+
+/** engine.test.mjs のコードの行にある (13)〜(15) のテストの名前（(14) のループは事例の形ごとに開く）。 */
+function firstBodyNames(text) {
+  const lines = codeLines(text);
+  return lines.flatMap((l, i) => {
+    const name = l.match(/^test\("(\((13|14|15)\) [^"]*)"/)?.[1];
+    if (name) return [name];
+    if (l === FIRST_BODY_LOOP[0] && lines[i + 1] === FIRST_BODY_LOOP[1]) return BROKEN_HEADS.map(([label]) => FIRST_BODY_LOOP[1].match(/`([^`]*)`/)[1].replace("${label}", label));
+    return [];
+  });
+}
+
+test("engine.test.mjs の (13)〜(15) のテストは、見張る名前の一覧と同じだけある", () => {
+  assert.ok(BROKEN_HEADS.length >= 4, "事例の形（k0016.mjs の BROKEN_HEADS）が 4 通りない");
+  assert.deepEqual(firstBodyNames(readTest(ENGINE_TEST)).sort(), [...ENGINE_FIRST_BODY_NAMES].sort());
+});
+
+test("engine.test.mjs を TAP で走らせると、(13)〜(15) の最初の本文の関所の線が pass と数えられ、skip・todo が 0", { skip: runEngineSkip }, () => {
+  const tap = runEngineTap();
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap, ENGINE_FIRST_BODY_NAMES, ENGINE_PATCHED_NAMES), [], tap);
+});
+
+test("(13)〜(15) を消す・名前を変える・飛ばす・todo にする・落ちたままにする書き換えは外れになる", () => {
+  const engineText = readTest(ENGINE_TEST);
+  const [first] = ENGINE_FIRST_BODY_NAMES;
+  const want = [...ENGINE_FIRST_BODY_NAMES].sort();
+  for (const [name, text] of Object.entries({
+    "(13) の名前を変える": engineText.replace(`test("${first}"`, `test("${first.replace("(13) ", "(16) ")}"`),
+    "(13) を消す": engineText.replace(`test("${first}"`, `void (() => ("${first}"`),
+    "(14) のループを外す": engineText.replace(FIRST_BODY_LOOP[0], "for (const [label, , summary] of []) {"),
+    "(14) のループの事例の形を絞る": engineText.replace(FIRST_BODY_LOOP[0], "for (const [label, , summary] of BROKEN_HEADS.slice(0, 1)) {"),
+  })) {
+    assert.notEqual(text, engineText, `${name}: 置き換えが効いていない`);
+    assert.notDeepEqual(firstBodyNames(text).sort(), want, `${name} が通った`);
+  }
+  const esc = (n) => n.replace(/[#\\]/g, "\\$&");
+  const tap = (lines, { skipped = 0, todo = 0 } = {}) =>
+    ["TAP version 13", ...lines.map((l, i) => l.replace("ok -", `ok ${i + 1} -`)), `1..${lines.length}`, `# tests ${lines.length}`, `# skipped ${skipped}`, `# todo ${todo}`].join("\n");
+  const rest = ENGINE_FIRST_BODY_NAMES.slice(1).map((n) => `ok - ${esc(n)}`);
+  assert.deepEqual(runReportProblems(ENGINE_TEST, tap([`ok - ${esc(first)}`, ...rest]), ENGINE_FIRST_BODY_NAMES, ENGINE_PATCHED_NAMES), []);
+  for (const [name, text] of Object.entries({
+    "(13) を SKIP にした": tap([`ok - ${esc(first)} # SKIP まだ`, ...rest], { skipped: 1 }),
+    "(13) を TODO にした": tap([`not ok - ${esc(first)} # TODO まだ`, ...rest], { todo: 1 }),
+    "(13) が落ちた（関所を呼ばない Engine の版）": tap([`not ok - ${esc(first)}`, ...rest]),
+    "(13) が走っていない": tap(rest),
+  })) {
+    assert.notDeepEqual(runReportProblems(ENGINE_TEST, text, ENGINE_FIRST_BODY_NAMES, ENGINE_PATCHED_NAMES), [], `${name} が通った`);
   }
 });
 
