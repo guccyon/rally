@@ -127,10 +127,13 @@ abstract interface class StudentApi {
 
 /// API の失敗。契約の `Error` を返したときは [error] を持ち、通信の失敗などでは null。
 class StudentApiException implements Exception {
-  const StudentApiException({this.statusCode, this.error});
+  const StudentApiException({this.statusCode, this.error, this.clockOffset});
 
   final int? statusCode;
   final ApiError? error;
+
+  /// 失敗の応答の Date から出した、サーバーの時計と端末の時計のずれ（`server_clock.dart`）。応答がない・Date を読めないときは null
+  final Duration? clockOffset;
 
   @override
   String toString() =>

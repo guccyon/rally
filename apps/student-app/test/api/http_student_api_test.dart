@@ -118,33 +118,36 @@ void main() {
     });
   });
 
-  test('getCoachProfile は GET /coaches/{coach_id} へ送り、自己紹介文がなければ null で読む', () async {
-    final profile = await apiReplying(200, {
-      'coach_id': 'c1',
-      'display_name': '佐藤',
-      'bio': 'テニス歴 20 年',
-      'sports': ['tennis', 'soccer'],
-      'is_favorite': true,
-    }).getCoachProfile('c1');
-    expect(sent.single.method, 'GET');
-    expect(sent.single.url.path, '/coaches/c1');
-    expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
-    expect(profile.coachId, 'c1');
-    expect(profile.displayName, '佐藤');
-    expect(profile.bio, 'テニス歴 20 年');
-    expect(profile.sports, [Sport.tennis, Sport.soccer]);
-    expect(profile.isFavorite, isTrue);
+  test(
+    'getCoachProfile は GET /coaches/{coach_id} へ送り、自己紹介文がなければ null で読む',
+    () async {
+      final profile = await apiReplying(200, {
+        'coach_id': 'c1',
+        'display_name': '佐藤',
+        'bio': 'テニス歴 20 年',
+        'sports': ['tennis', 'soccer'],
+        'is_favorite': true,
+      }).getCoachProfile('c1');
+      expect(sent.single.method, 'GET');
+      expect(sent.single.url.path, '/coaches/c1');
+      expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
+      expect(profile.coachId, 'c1');
+      expect(profile.displayName, '佐藤');
+      expect(profile.bio, 'テニス歴 20 年');
+      expect(profile.sports, [Sport.tennis, Sport.soccer]);
+      expect(profile.isFavorite, isTrue);
 
-    final noBio = await apiReplying(200, {
-      'coach_id': 'c2',
-      'display_name': '高橋',
-      'bio': null,
-      'sports': ['tennis'],
-    }).getCoachProfile('c2');
-    expect(noBio.bio, isNull);
-    // is_favorite のない応答（足す前のサーバー）は false で読む
-    expect(noBio.isFavorite, isFalse);
-  });
+      final noBio = await apiReplying(200, {
+        'coach_id': 'c2',
+        'display_name': '高橋',
+        'bio': null,
+        'sports': ['tennis'],
+      }).getCoachProfile('c2');
+      expect(noBio.bio, isNull);
+      // is_favorite のない応答（足す前のサーバー）は false で読む
+      expect(noBio.isFavorite, isFalse);
+    },
+  );
 
   test('操作ごとのパス', () async {
     final booking = {
@@ -874,11 +877,9 @@ void main() {
       {'plans': null},
       {'plans': 'standard'},
     ]) {
-      final error =
-          await apiReplying(200, body).listSubscriptionPlans().then<Object?>(
-            (_) => null,
-            onError: (Object e) => e,
-          );
+      final error = await apiReplying(200, body)
+          .listSubscriptionPlans()
+          .then<Object?>((_) => null, onError: (Object e) => e);
       expect(error, isA<StudentApiException>());
       expect((error as StudentApiException).statusCode, 200);
       expect(error.error, isNull);
@@ -966,5 +967,91 @@ void main() {
 
     expect((error as StudentApiException).error!.code, ErrorCode.unknown);
     expect(errorMessageOf(error), 'エラーが起きました。時間をおいてやり直してください。');
+  });
+
+  group('応答の Date ヘッダーから、サーバーの時計とのずれを出す', () {
+    /// 端末の時計は送った時刻が 10:00:00.000、受け取った時刻が 10:00:01.000（中間は 10:00:00.500）
+    HttpStudentApi apiWithDate(int status, Object body, String? date) {
+      final device = [
+        DateTime.utc(2026, 11, 10, 10),
+        DateTime.utc(2026, 11, 10, 10, 0, 1),
+      ];
+      return HttpStudentApi(
+        baseUrl: Uri.parse('http://api.test'),
+        accessToken: () => 'mock.student.x',
+        deviceNow: () => device.removeAt(0),
+        client: MockClient(
+          (request) async => http.Response(
+            jsonEncode(body),
+            status,
+            headers: {'content-type': 'application/json', 'date': ?date},
+          ),
+        ),
+      );
+    }
+
+    test(
+      'listMyBookings の応答に、Date と送った・受け取った時刻の中間とのずれを添える（端末が 2 分遅れ）',
+      () async {
+        final api = apiWithDate(200, {
+          'bookings': [],
+        }, 'Tue, 10 Nov 2026 10:02:00 GMT');
+
+        final list = await api.listMyBookings();
+
+        expect(
+          list.clockOffset,
+          const Duration(minutes: 2) - const Duration(milliseconds: 500),
+        );
+      },
+    );
+
+    test('端末の時計が進んでいれば、ずれは負', () async {
+      final api = apiWithDate(200, {
+        'bookings': [],
+      }, 'Tue, 10 Nov 2026 09:58:00 GMT');
+
+      final list = await api.listMyBookings();
+
+      expect(
+        list.clockOffset,
+        const Duration(minutes: -2) - const Duration(milliseconds: 500),
+      );
+    });
+
+    test('409 slot_not_started の失敗にも、その応答の Date から出したずれを添える', () async {
+      final api = apiWithDate(409, {
+        'code': 'slot_not_started',
+        'message': 'before the slot starts',
+      }, 'Tue, 10 Nov 2026 10:02:00 GMT');
+
+      final error = await api
+          .startLiveLessonSession(
+            const StartLiveLessonSessionRequest(bookingId: 'b1'),
+          )
+          .then<Object?>((_) => null, onError: (Object e) => e);
+
+      final exception = error as StudentApiException;
+      expect(exception.error!.code, ErrorCode.slotNotStarted);
+      expect(
+        exception.clockOffset,
+        const Duration(minutes: 2) - const Duration(milliseconds: 500),
+      );
+    });
+
+    test('Date がない・読めないときは、ずれを添えない（端末の時計のまま）', () async {
+      expect(
+        (await apiWithDate(200, {
+          'bookings': [],
+        }, null).listMyBookings()).clockOffset,
+        isNull,
+      );
+      expect(
+        (await apiWithDate(200, {
+          'bookings': [],
+        }, 'not a date').listMyBookings()).clockOffset,
+        isNull,
+      );
+    });
   });
 }

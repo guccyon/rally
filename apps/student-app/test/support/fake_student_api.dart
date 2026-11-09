@@ -138,6 +138,10 @@ class FakeStudentApi implements StudentApi {
   final List<String> calls = [];
   final List<Object> requests = [];
 
+  /// 応答の Date ヘッダーの代わり。サーバーの時計 − 端末の時計を入れると、`listMyBookings` の応答と、
+  /// [failures] で投げる失敗（[StudentApiException.clockOffset]）にこのずれを添える。null は Date がない応答（今までどおり）
+  Duration? clockOffset;
+
   Future<T> _answer<T>(
     String operationId,
     T Function() response, [
@@ -146,7 +150,15 @@ class FakeStudentApi implements StudentApi {
     calls.add(operationId);
     if (request != null) requests.add(request);
     final failure = failures[operationId];
-    if (failure != null) throw failure;
+    if (failure != null) {
+      throw clockOffset == null
+          ? failure
+          : StudentApiException(
+              statusCode: failure.statusCode,
+              error: failure.error,
+              clockOffset: clockOffset,
+            );
+    }
     return response();
   }
 
@@ -206,8 +218,10 @@ class FakeStudentApi implements StudentApi {
   );
 
   @override
-  Future<MyBookingList> listMyBookings() =>
-      _answer('listMyBookings', () => MyBookingList(bookings: [...myBookings]));
+  Future<MyBookingList> listMyBookings() => _answer(
+    'listMyBookings',
+    () => MyBookingList(bookings: [...myBookings], clockOffset: clockOffset),
+  );
 
   @override
   Future<Booking> cancelBooking(String bookingId) =>

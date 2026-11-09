@@ -3,19 +3,26 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
+import 'server_clock.dart';
 import 'student_api.dart';
 
 /// [StudentApi] の HTTP 実装。トークンは不透明なものとして `Authorization: Bearer` に載せるだけ。
+/// 応答の Date ヘッダーから出したサーバーの時計とのずれ（[clockOffsetOf]）を、`listMyBookings` の応答と失敗（[StudentApiException]）に添える。
 class HttpStudentApi implements StudentApi {
   HttpStudentApi({
     required this._baseUrl,
     required this._accessToken,
     http.Client? client,
-  }) : _client = client ?? http.Client();
+    DateTime Function()? deviceNow,
+  }) : _client = client ?? http.Client(),
+       _deviceNow = deviceNow ?? DateTime.now;
 
   final Uri _baseUrl;
   final String? Function() _accessToken;
   final http.Client _client;
+
+  /// 端末の時計（送った時刻・受け取った時刻。テストで差し替える）
+  final DateTime Function() _deviceNow;
 
   @override
   Future<RegisterAccountResponse> registerAccount(
@@ -47,8 +54,10 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
-  Future<MyBookingList> listMyBookings() async =>
-      MyBookingList.fromJson(await _send('GET', '/bookings/me'));
+  Future<MyBookingList> listMyBookings() async {
+    final (:json, :clockOffset) = await _sendTimed('GET', '/bookings/me');
+    return MyBookingList.fromJson(json, clockOffset: clockOffset);
+  }
 
   @override
   Future<Booking> cancelBooking(String bookingId) async => Booking.fromJson(
@@ -269,6 +278,21 @@ class HttpStudentApi implements StudentApi {
     Map<String, String>? query,
     Map<String, dynamic>? body,
     bool authorized = true,
+  }) async => (await _sendTimed(
+    method,
+    path,
+    query: query,
+    body: body,
+    authorized: authorized,
+  )).json;
+
+  /// 送って、応答の本体と、応答の Date から出したずれ（Date がない・読めなければ null）を返す。失敗のずれは [StudentApiException.clockOffset]
+  Future<({Map<String, dynamic> json, Duration? clockOffset})> _sendTimed(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, dynamic>? body,
+    bool authorized = true,
   }) async {
     final request = http.Request(
       method,
@@ -287,23 +311,42 @@ class HttpStudentApi implements StudentApi {
       request.body = jsonEncode(body);
     }
 
+    final sentAt = _deviceNow();
+    final http.StreamedResponse streamed;
+    try {
+      streamed = await _client.send(request);
+    } on http.ClientException {
+      throw const StudentApiException();
+    }
+    // 頭が届いた時刻で測る（本体を読み終えるまでの時間はずれに入れない）
+    final clockOffset = clockOffsetOf(
+      streamed.headers['date'],
+      sentAt: sentAt,
+      receivedAt: _deviceNow(),
+    );
     final http.Response response;
     try {
-      response = await http.Response.fromStream(await _client.send(request));
+      response = await http.Response.fromStream(streamed);
     } on http.ClientException {
       throw const StudentApiException();
     }
 
     final decoded = _decode(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      if (decoded is Map<String, dynamic>) return decoded;
-      throw StudentApiException(statusCode: response.statusCode);
+      if (decoded is Map<String, dynamic>) {
+        return (json: decoded, clockOffset: clockOffset);
+      }
+      throw StudentApiException(
+        statusCode: response.statusCode,
+        clockOffset: clockOffset,
+      );
     }
     throw StudentApiException(
       statusCode: response.statusCode,
       error: decoded is Map<String, dynamic> && decoded['code'] is String
           ? ApiError.fromJson(decoded)
           : null,
+      clockOffset: clockOffset,
     );
   }
 
