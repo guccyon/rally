@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { checkEvents } from "./recheck.mjs";
+import { BODY_CHECK_GATES, BODY_RUBRIC_IDS, checkEvents } from "./recheck.mjs";
 
 // 事例の記録（.factory-config/knowledge/cases/C-0003.md・C-0005.md・C-0006.md の「出来事」）から組み直したイベント列。
 // イベントそのものは事例の記録にないので、事例に書かれた時刻・job・順を制御プレーンのイベントの形（Engine の dispatcher・supervisor が書く名前と payload）にした。
@@ -170,6 +170,26 @@ test("pr.body_amended のあとに本文と関係のない gate の gate.evaluat
   for (const body of [recheck(URL_821, "pr-body-check"), recheck(URL_821, "rubric", ["PR-002"])]) {
     assert.deepEqual(checkEvents(before(all, "supervisor.merged", body)).errors, [], JSON.stringify(body.payload));
   }
+});
+
+test("本文の再検査に数える gate は pr-body-check と PR-002 を見た rubric だけで、ほかの PR の rubric や gate のない記録では落ちる（議決 D-0109、Issue #1291）", () => {
+  // 数える線そのもの。広げるなら議決で決めてからこの値を直す
+  assert.deepEqual(BODY_CHECK_GATES, ["pr-body-check"]);
+  assert.deepEqual(BODY_RUBRIC_IDS, ["PR-002"]);
+  // 本文の構成ではない PR の rubric（PR-001 三位一体・PR-003 テスト・PR-004 必須チェック）だけを見た rubric と、gate のない gate.evaluated
+  const unrelated = [
+    recheck(URL_396, "rubric", ["PR-001", "PR-003", "PR-004"]),
+    { name: "gate.evaluated", payload: { pr_url: URL_396, result: "pass" } },
+  ];
+  // C-0003 の列: 1 回目の直し（job 563）は再検査されているが、最後の直し（job 572）のあとに本文と関係のない検査だけが来てからマージした
+  for (const ev of unrelated) {
+    const r = checkEvents(before(c0003(), "supervisor.merged", ev));
+    assert.deepEqual(rules(r), ["merged_without_body_recheck"], JSON.stringify(ev.payload));
+    assert.match(r.errors[0].message, /job 572/);
+  }
+  const all = unrelated.reduce((events, ev) => before(events, "supervisor.merged", ev), c0003());
+  assert.deepEqual(rules(checkEvents(all)), ["merged_without_body_recheck"]);
+  assert.deepEqual(checkEvents(before(all, "supervisor.merged", recheck(URL_396, "pr-body-check"))).errors, []);
 });
 
 test("再検査のあとにもう一度本文を直したら、その直しの再検査も要る", () => {
