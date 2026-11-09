@@ -1,0 +1,67 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0134
+pr: https://github.com/guccyon/rally/pull/1340
+decided_at: '2026-11-09'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この差分は K-0012 の enforcement.solutions に議決 D-0106（PR #1282）の test の案を入れた記録を 1 件足すだけで、statement・scope・evidence・confidence・invalidate_when
+    とトップの decided_by: committee:D-0033 は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。'
+  - 'D-0106 の enforcement の test の案（(12) で t.plan などで確かめの数を固定し、ci.test.mjs で TAP の結果からその数を照らす）と書いた中身が対応しており、案の
+    6 件を Issue #1268 と #1281 で増えた 8 件に広げた理由も書いてあるので、D-0105 の記録（(12) の 8 件）とも矛盾しません。'
+  - D-0106 の整合の票が求めた engine.test.mjs の待ちのテストの番号は、この記録でも (12) と書いていて前の 2 件の記録と揃っています。
+  - 'requires_check に engine.test.mjs と ci.test.mjs を {runs, workflow} の形で .github/workflows/pr-body-engine.yml
+    に書き、wired: false・verified: false と what の「配線されておらず効き目は確かめていない」が一致していて、issue 1197・1205・1281
+    の項目と同じ写しの同じジョブを指すので、別の検査を作る重複はありません。'
+  - invalidate_when のどちらもまだ満たされず本物のイベント列での確かめもないので、K-0012 は active・hypothesis のままが妥当で確かさを変える理由はありません。
+  - 差分は工場の担保の記録だけで製品の用語や業務ルールを定めておらず、specs/ の glossary.yaml・context-map.yaml と重なるところもありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0106 を指し、D-0106 の enforcement にある test
+    の案（(12) を t.plan などで確かめの数を固定し、ci.test.mjs が TAP の結果で数を照らす）とその pr（#1282）に合っているので、議決まで辿れます。'
+  - '案の 6 件を 8 件に広げた理由として Issue #1268 と #1281 を挙げ、#1281 は同じ K-0012 の前の項目（D-0105）で
+    (12) が 8 件と書かれているのと合うので、出どころを辿れます。'
+  - '確かめは手元の Engine（8a34337）に差分を当てた写しの上だけで、recheckPlanned ごと書き換える外し方は見ていないこと、PR ごとには走っていないことを自分で書き、wired:
+    false・verified: false にしているので、効き目を言い過ぎていません。'
+  - 担保の記録を 1 件足しただけで statement・evidence・confidence・invalidate_when は変えておらず、本物のイベント列での確かめもないので、確かさは
+    hypothesis のままが妥当です。
+  - 差分にあるのは議決・Issue・PR の番号、道具の道、テストの番号、コミットの短い id、手元の作業の道だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に議決 D-0106 の 1 つ目の enforcement（test）の案を入れた記録を
+    1 件足すだけで、statement・scope・confidence・invalidate_when は変えていません。
+  - (12) の中身の確かめの数を t.plan で固定し、TAP の印の数を一覧 ENGINE_RECHECK_ASSERTS と照らす線は、走らせた結果だけで機械的に引けて、D-0106
+    で指摘された条件付きの早い return の穴を決定論で塞いでいるので、担保の作りとして妥当です。
+  - '案の 6 件ではなく Issue #1268・#1281 のあとの 8 件すべてに入れ、requires_check に engine.test.mjs
+    と ci.test.mjs の両方を挙げて check.py の照らし合わせに乗せているので、数のずれや配線の言い過ぎも決定論で止まる形になっています。'
+  - recheckPlanned そのものを書き換えて印に偽の数を書く外し方はまだ見ていませんが、見張りそのものを狙う意図的な書き換えで繰り返しは少なく、塞ぐには
+    ci.test.mjs 自身も守る必要があって費用に見合わないので、いま新しい決定論の案は足しません。
+  - いちばん大きな穴は写しの .github/workflows/pr-body-engine.yml がなく PR ごとに走っていないことですが、これは D-0106
+    の 2 つ目の enforcement（ci_check）ですでに建設者への案になっているので、この PR で重ねて出しません。
+  - 'wired: false・verified: false と what の「配線されておらず効き目は確かめていない」が一致し、本物の記録での確かめもないので、確かさは
+    hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0106 の test の案を入れた記録を 1 件足すだけで、statement・scope・confidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。
+  - 'wired: false・verified: false で、what にも「配線されておらず効き目は確かめていない」とあり、本物のイベント列での確かめもないので、確かさは
+    hypothesis のままが妥当です。'
+  - 反例として、recheckPlanned を通したまま中身の本当の assert を消し、a で確かめの数だけ ok(true) を呼ぶ書き換えは t.plan
+    と印の数をそのまま満たしてすり抜けるので、次に K-0012 を直すときは数ではなく待ちの assert の中身（例えば body_recheck_pending
+    を見る assert の字面）を見張るか、届かない範囲として what に書き添えてください。
+  - what は「recheckPlanned ごと書き換えて印に偽の数を書く」書き換えを見ていないと自分で書いており、見張りの届かない範囲を言い過ぎていない点は妥当です。
+  - D-0106 の dissent の票が求めた ci.test.mjs 自身を skip・削除する書き換えへの見張りと、必須チェックの名前（engine-test
+    と pr-body-engine-test）の揃えはこの差分でも手つかずなので、次の変更セットで応えてください。
+  - '案は (12) を 6 件としていたのに Issue #1268 と #1281 で 8 件に増えたのを受けて 8 件すべてに入れたのは、案の文言より広げたのではなく現状に合わせたもので、範囲の広げ過ぎには当たりません。'
+  personal_data: false
+enforcement: []
