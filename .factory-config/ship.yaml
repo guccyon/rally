@@ -65,6 +65,25 @@ touch:
   # 進めた時計は、次に版を出す・戻す・入れ直すときに 0 に戻る
   restart: [backend]
   clock_env: CLOCK_OFFSET_SECONDS
+  # 障害の演習（factory-engine の ADR 0043 の O5）。factoryctl incident drill が触れる環境に 1 回流す。製品のコードは変えず、合成シードのデータだけを書き換える。
+  # 元に戻すのは「シードから入れ直す」（drill-end）。s1_data_leak は、コーチの公開の自己紹介に生徒 1 人の名前・メールアドレス・電話番号を載せ、
+  # どの生徒にも他人の個人情報が見える状態（quality_policy.yaml の s1 の data_leak）を作る
+  drills:
+    - id: s1_data_leak
+      service: postgres
+      command:
+        - psql
+        - -U
+        - rally
+        - -d
+        - rally
+        - -v
+        - ON_ERROR_STOP=1
+        - -c
+        - >-
+          update identity.coaches c set bio = left('連絡メモ: 生徒の ' || s.display_name || ' さん（' || s.email ||
+                 '・090-1234-5678）の振替は来週火曜 18 時に。保護者の方にもこの番号で連絡済み。', 400)
+          from (select display_name, email from identity.accounts where role = 'student' order by created_at, account_id limit 1) s
   reset:
     service: postgres
     command: ["psql", "-U", "rally", "-d", "postgres", "-v", "ON_ERROR_STOP=1",
