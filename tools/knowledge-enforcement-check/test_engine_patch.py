@@ -70,7 +70,7 @@ def has_commit(engine: Path, ref: str) -> bool:
 
 def added_functions(patch: Path = PATCH, file: str = MARKER_FILE) -> tuple[tuple[str, str], ...]:
     """差分が file に足す関数（+def name( の行）を、(file, "def name(") の組で差分に出てくる順に返す。名前を手で書くと、
-    差分に関数を足したときに一覧から漏れて、その関数だけが入った版を patch_stale と取り違える（知見 K-0004 の担保、議決 D-0053、Issue #1149）。"""
+    差分に関数を足したときに一覧から漏れて、その関数だけが入った版を patch_stale と取り違える（知見 K-0004 の担保、議決 D-0054、Issue #1149）。"""
     found, cur = [], None
     for line in patch.read_text(encoding="utf-8").splitlines():
         if line.startswith("diff --git "):   # 中身の行は空白・+・-・\ で始まるので、+++ の行と違って足した行と取り違えない
@@ -209,7 +209,7 @@ class PatchStateTest(unittest.TestCase):
 
 class AddedFunctionsTest(unittest.TestCase):
     """一部だけ入ったことを見る関数の名前を手で書かず、差分の core-gates/knowledge_check.py に足す行（+def ...）から取り出す
-    （知見 K-0004 の担保、議決 D-0053、Issue #1149）。差分に関数を 1 つ足した作った版で、その関数だけが入った Engine が
+    （知見 K-0004 の担保、議決 D-0054、Issue #1149）。差分に関数を 1 つ足した作った版で、その関数だけが入った Engine が
     patch_stale ではなく patch_partially_applied で落ちることを確かめる。Engine は要らない。"""
 
     @classmethod
