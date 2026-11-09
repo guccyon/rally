@@ -1,0 +1,27 @@
+id: K-0020
+theme: 6
+kind: causal
+statement: >-
+  仮決めの escalate で人の判断を待つ PR が衝突の多いファイルに触っているのに、待つ間に同じファイルに触る次の変更の投入を止めず、
+  待ちの停止（stoppage.opened）にも催促の期限や cause・prevention を書かないと、待ちの間に既定ブランチと衝突し、衝突を解く
+  続きのジョブが要る（C-0010 では約 11 時間の待ちの途中で同じ画面のファイルに別の絞り込みが入って衝突し、続きのジョブが 1 回走った）。
+  根拠は 1 件の 1 回の衝突だけで、「待ちが長いほど衝突が増える」は分析役の見込み（推測）。並行した変更がどのチケットだったかは材料にない。
+scope:
+  work: [dev.review.judge, dev.build]
+  roles: [supervisor]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0010
+  - pr: 798
+  - event: "case.analyzed:522932"
+status: draft
+verified_at: 2026-11-09
+review_by: 2026-12-09
+confidentiality: product
+related: [K-0008, K-0010]
+invalidate_when:
+  - "人の判断待ちの停止（category=human）で、触っているファイルが plan.serialized の hot に当たるときに、催促の期限と、同じファイルに触る次のチケットの投入を止める手順が入った"
+  - "判断待ちの間に同じファイルに触る次の変更を止めるようにしたあとも、判断待ちの PR の衝突が減らなかった（衝突の元は並行した変更ではなかった）"
+  - "判断待ちの PR の衝突を集計して、待ちの長さと衝突の回数に関係が見えなかった"
