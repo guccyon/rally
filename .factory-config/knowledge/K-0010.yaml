@@ -212,4 +212,22 @@ enforcement:
       decided_by: committee:D-0066
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0090（Issue #1259 の起票時の番号は D-0089。PR #1255）の test の案を入れた。issue 1173 で広げたひな形 ci/knowledge-enforcement.yml の
+        enforcement のジョブが落とす範囲は、検査の置き場（tools/conflict-check/・tools/sendback-check/・tools/pr-body-check/）を手で並べた正規表現で、
+        EnforcementScopeTest は check.py が挙げた道そのものしか照らしていなかったので、同じ置き場に足した検査や、check.py の名前で並べた一覧を
+        足したときに範囲が追いつかない漂流を見ていなかった。test_ci.py の EnforcementScopeTest に、check.py の REQUIRED_ で始まる一覧
+        （REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW・REQUIRED_RUNS。前の REQUIRED_PR は議決 D-0077 で解決策の requires_check に移ったので、
+        名前で並べ直せばそれも）と K-*.yaml の requires_check が指す検査とワークフローの置き場（ディレクトリ）を導き、範囲の手順を偽の git で動かして、
+        どの置き場でも新しいファイルと下のディレクトリのファイルを変えた PR が範囲に入ることを確かめるテストを足した。導いた置き場が黙って空に
+        ならないことと、REQUIRED_SCHEDULE と REQUIRED_PR に tools/changelog-check/・tools/continue-input-check/ の検査を足した形では範囲の外と
+        見分けることも対照で確かめる。check.py の REQUIRED_SCHEDULE に tools/changelog-check/ の検査を足す改変と、ひな形の範囲から
+        tools/pr-body-check/ を外す改変で落ちることを手元で確かめた。ひな形はまだ .github/workflows/ に写されておらず、test_ci.py を走らせる
+        enforcement のジョブも CI から走っていないので未配線
+      issue: 1259
+      at: 2026-11-09
+      decided_by: committee:D-0090
+      wired: false
+      verified: false
 decided_by: committee:D-0013
