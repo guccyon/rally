@@ -397,13 +397,24 @@ for (const [label, report] of PASSING_REPORTS) {
 // engine_harness.py --body-recheck で merge_step と同じ順に動かす。入力は事例 C-0006（PR #821）の記録の順（本文の直し job 4299 を 14:24:41 に積み、
 // 検査役の承認 14:25:02、pr.body_amended 14:25:04、マージ 14:25:06）。GitHub の pr-body-check のワークフローの実行は、もとのイベントの時刻（created_at）・
 // action（run-name の「pr-body-check (action)」）・結果だけを真似る。直した本文で始まった実行として数えるのは、直しが走り始めた（なければ積んだ）より後に
-// edited で始まった実行か、pr.body_amended より後に始まった実行だけ（議決 D-0100（起票時の番号は D-0071）の反対票の反例を塞ぐ。Issue #1268）
+// edited で始まった実行か、pr.body_amended より後に始まった実行だけ（議決 D-0100（起票時の番号は D-0071）の反対票の反例を塞ぐ。Issue #1268）。
+// Engine に差分が入ったら（supervisor.py に body_recheck_pending がある）、写さずに ENGINE_DIR（CI では ENGINE_REF の版）のチェックアウトそのものに対して走らせる。
+// PR_BODY_RECHECK_ENGINE_ONLY=1 では差分を当てた写しに頼らず、Engine に入っていなければ落とす（check.py が wired: true を照らすときに渡す。議決 D-0105、Issue #1281）
 const RECHECK_PATCH = fileURLToPath(new URL("./engine/pr-body-recheck.patch", import.meta.url));
 const RECHECK_FILES = ["orchestrator/dispatcher/supervisor.py", "definitions/events.yaml"];
 const URL_821 = "https://github.com/guccyon/rally/pull/821";
 
-/** ENGINE_DIR の Engine の写しに engine/pr-body-recheck.patch を当てる（もう当たっていれば写すだけ）。写しの場所を返す。 */
+const RECHECK_ENGINE_ONLY = process.env.PR_BODY_RECHECK_ENGINE_ONLY === "1";
+
+/**
+ * (12) で動かす Engine の場所を返す。Engine に差分が入っていれば ENGINE_DIR そのもの、入っていなければ ENGINE_DIR の Engine の写しに
+ * engine/pr-body-recheck.patch を当てたもの（RECHECK_ENGINE_ONLY では落とす）。
+ */
 function recheckEngine() {
+  const supervisor = join(engineDir, RECHECK_FILES[0]);
+  if (existsSync(supervisor) && readFileSync(supervisor, "utf8").includes("def body_recheck_pending(")) return engineDir;
+  assert.ok(!RECHECK_ENGINE_ONLY, `Engine（${engineDir}）の ${RECHECK_FILES[0]} に body_recheck_pending がない。`
+    + "PR_BODY_RECHECK_ENGINE_ONLY=1 では engine/pr-body-recheck.patch を当てた写しで確かめない（差分を Engine に入れて ENGINE_REF を上げる）");
   const dir = mkdtempSync(join(tmpdir(), "pr-body-recheck-engine-"));
   for (const f of RECHECK_FILES) {
     mkdirSync(dirname(join(dir, f)), { recursive: true });

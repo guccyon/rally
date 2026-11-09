@@ -1,0 +1,85 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0132
+pr: https://github.com/guccyon/rally/pull/1338
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この差分は K-0012 の enforcement.solutions に D-0105 の 1 つ目の test の案を入れた記録を 1 件足すだけで、statement・scope・evidence・confidence・invalidate_when
+    とトップの decided_by: committee:D-0033 は変えていないので、README の「担保した知見も消さず solutions に残す」決まりに合っています。'
+  - what の中身（engine.test.mjs (12) を ENGINE_REF の版の Engine に対して走らせ、REQUIRED_ENGINE_WAIT
+    を構文木の照合に加えてその結果で照らす）は D-0105 の 1 つ目の案と一致し、「job の成功」を check.py の中で同じ版を走らせた結果に代えた点も
+    what に理由とともに書かれているので、議決との矛盾はありません。
+  - 既存の issue 1122・1196・1197 の解決策とは同じ engine.test.mjs と .github/workflows/pr-body-engine.yml
+    を requires_check に挙げて揃えており、別の検査を新しく作ってはいないので重複にもなりません。
+  - (12) が SKIP・TODO なしですべて ok でなければ落とす線は、D-0106 の反対の票が求めた「待ちを確かめる assert が実際に走ったか」の穴にも一部応えており、過去の議決の流れと整合しています。
+  - 'wired: false・verified: false と what の「配線されておらず効き目は確かめていない」が一致し、invalidate_when
+    もまだ満たされないので、K-0012 は active・hypothesis のままが妥当で、確かさを変える理由はありません。'
+  - 待ちの境目（D-0105 の 2 つ目の案）と、D-0105 の整合の票が挙げた 1 つ目の test の what が supervisor.body_rechecked
+    を数える書き方になっていない点はまだ残っているので、Engine に差分を入れて配線する前の変更セットで応えてください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0105 を指し、D-0105 の pr が #1280 で、enforcement
+    の 1 つ目の案（engine.test.mjs (12) を ENGINE_REF の版の Engine に対して走らせ、REQUIRED_ENGINE_WAIT
+    の条件に加える）と what の書き出しが一致するので、議決まで辿れます。'
+  - 案の「その job の成功」を GitHub の実行結果ではなく check.py の中で同じ版の Engine で (12) を走らせる形に変えた点と理由が
+    what に書かれているので、議決からのずれも記録で辿れます。
+  - 'what は test_check.py の PrBodyRecheckWiringTest と手元の Engine（4922e5f）で確かめた範囲だけを書き、Engine
+    に差分が入っておらず写しの engine-test もないとして wired: false・verified: false にしているので、効き目を言い過ぎていません。'
+  - この差分は担保の記録を 1 件足すだけで statement・evidence・confidence・invalidate_when は変えず、本物のイベント列での確かめもまだないので、確かさは
+    hypothesis のままが妥当です。
+  - 前の解決策では手元の Engine を 57069a8・9f8f6b4 と書いていて今回は 4922e5f なので、次に K-0012 を直すときは各解決策で確かめた
+    Engine の版の違いが意図したものかを what に揃えて書いてください。
+  - 差分にあるのは議決・Issue・PR の番号、道具の道、環境変数名、コミットの短い id だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0105 の 1 つ目の test の案を入れた記録を 1 件足すだけで、statement・scope・confidence・invalidate_when
+    は変えていません。
+  - 'check.py の REQUIRED_ENGINE_WAIT が ENGINE_REF の版の Engine を git archive で取り出して
+    engine.test.mjs の (12) を PR_BODY_RECHECK_ENGINE_ONLY=1 で走らせ、SKIP・TODO も落とす形にしたので、何も待たない
+    body_recheck_pending で wired: true にできる穴を人の目に頼らず止められ、決定論の担保として筋が良いです。'
+  - GitHub の実行結果を読まずに同じ版の Engine で同じテストを check.py の中で走らせる代案は、外部の状態に左右されず繰り返して同じ答えになるので、D-0105
+    の案の意図を保ったまま確かさが上がっています。
+  - ただし「(12) のテストがすべて ok」の照合は件数や名前を固定していないので、(12) のテストを消したり減らしたりすると中身のない (12) でも通りうるため、今の
+    8 件の名前を test_check.py か ci.test.mjs で固定すべきです。
+  - D-0105 の 2 つ目の案（body_fix の開始後で pr.body_amended より前に始まった pr-body-check を数える境目の穴）はこの解決策では扱っていないと明記されており、配線する前の変更セットで
+    test として入れてください。
+  - 'Engine への差分の取り込みも写しの engine-test もまだなく wired: false・verified: false と書いているので、K-0012
+    の確かさは hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0105 の 1 つ目の test の案を入れた記録を 1 件足すだけで、statement・scope・confidence・invalidate_when
+    は変えておらず、範囲を広げていません。
+  - 'wired: false・verified: false と、what の「Engine に差分が入っておらず写しの engine-test もまだないので配線されておらず効き目は確かめていない」が合っており、効き目を言い過ぎていないので、確かさは
+    hypothesis のままが妥当です。'
+  - 反例として、照合は「engine.test.mjs にある (12) のテストがすべて ok」なので、(12) のテストを減らしたり消したりすると数が少なくても通りうる形に読めます。次に
+    K-0012 を直すときは、(12) の件数（今は 8 件）が減ったら落とすか、落とさないことを what に書いてください。
+  - もう 1 つの反例として、check.py が照らすのは .github/workflows/pr-body-engine.yml の ENGINE_REF
+    の版なので、ENGINE_REF が実際に動く Engine より古いか新しいとずれが残ります。配線する変更セットでは、ENGINE_REF と本番の Engine
+    の版を揃える根拠を what に書いてください。
+  - D-0105 の 2 つ目の案（body_fix のジョブの開始より後で pr.body_amended より前に始まった pr-body-check を数える境目の穴）は「この解決策では扱っていない」と明記されているので採らない理由にはなりませんが、配線の前に塞いでください。
+  - 差分にあるのは議決・Issue・PR の番号、道具の道、環境変数の名前、コミットの短い id だけで、利用者を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: check.py の REQUIRED_ENGINE_WAIT が走らせる engine.test.mjs の (12) について、今の 8
+    件のテスト名（または件数の下限）を test_check.py か ci.test.mjs で固定し、(12) のテストを消す・減らす・中身を空にする書き換えで
+    engine_wait_failed になることを確かめる。
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: D-0105 の 2 つ目の案として、engine.test.mjs に body_fix のジョブ開始後・pr.body_amended
+    より前に始まった pr-body-check が success で終わる列を足し、merge_step が待ち続けることを確かめ、待ちの境目を本文を直した時刻かその
+    edited で始まった実行に絞る。
