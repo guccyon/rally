@@ -778,7 +778,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0012", 1281): [("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0012", 1283): [("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
-                          ("K-0004", 1304): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0004", 1304): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):

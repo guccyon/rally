@@ -198,4 +198,28 @@ enforcement:
       decided_by: committee:D-0112
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0113（PR #1298）の test の案を入れた。--since の判定は、issue 1214 の解決策ですでに tools/conflict-check/schema.py の parse_time
+        （時差つきの時刻の読み方）と before（occurred_at が差分を当てた時刻より前のイベントを外し、ない・読めなければ EventsError）にまとめてあり、
+        events.py の main はそれを呼んでいるので、関数のまとめは足さず、案のもう 1 つのテストを足した。test_events.py の SinceParityTest が、
+        同じイベント列と --since の時刻の組を schema.py --since（conflict-schema のジョブ）と events.py --record-only --since（conflict-record のジョブ）の
+        両方にコマンドで通し、外すイベントの件数（標準出力の「より前の N 件は照らさない」）・落とす PR の組（--json）・終了コードがそろって期待どおりで
+        あることを確かめる。組は、同じ時刻の書き方違いの --since 4 通りと、時差を直すと字面の大小と前後が逆になる時刻・ちょうど・1 秒前・1 ミリ秒前・
+        前後に空白のある occurred_at の 9 本の PR、occurred_at がない・null・数・空・日付だけ・時差がない・時刻でない列（どちらも終了コード 2。--since が
+        なければどちらも見ずに照らす）、時差つきの時刻でない・値がない --since（どちらも終了コード 2）。関数を共有していても、片方の入口（main での --since の
+        読み方、before の結果の使い方）だけが直されると 2 つのジョブの窓が食い違うので、関数ではなく両方のコマンドの結果で照らす。手元で events.py の外し方を
+        字面の比べ方にする・events.py が読めない --since を黙って捨てる・schema.py が occurred_at のないイベントを外して「ちょうど」も外す・events.py が
+        読めない occurred_at で絞らずに照らす誤りでは、どれもこのテストが落ちることを確かめた。テストは tools/conflict-check/ci/conflict-check.yml の
+        unittest discover で走るので、requires_check にその写しの .github/workflows/conflict-check.yml の test_events.py を書いた。ワーカーは
+        .github/workflows/ を変えられないので、ひな形を写して必須のチェックにし、wired: true にして wired_by を書くのは建設者が行う
+        （tools/conflict-check/README.md の「CI への組み込み」）。まだ配線されておらず、本物のイベント列では確かめていない
+      issue: 1299
+      at: 2026-11-09
+      decided_by: committee:D-0113
+      requires_check:
+        - runs: tools/conflict-check/test_events.py
+          workflow: .github/workflows/conflict-check.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0049
