@@ -19,7 +19,7 @@ evidence:
   - pr: 798
   - issue: 732
   - event: "case.analyzed:522932"
-status: draft
+status: active
 verified_at: 2026-11-09
 review_by: 2026-12-09
 confidentiality: product
@@ -28,3 +28,4 @@ invalidate_when:
   - "実装役への指示に、契約・API の解釈を含む仮決めでは backend で確かめた場所（ファイル名と関数名）を根拠に書き、契約の文がどちらにも読めて確かめられなければ問いとして書く決まりが入った"
   - "backend で確かめた場所を添えた仮決めでも、judge が同じように裁けずに escalate した（原因は根拠の欠けではなく、judge に backend を確かめる手段がないことだった）"
   - "judge が自分で backend の実装やテストを読んで仮決めの解釈を確かめるようになった（実装役の根拠に頼らなくなった）"
+decided_by: committee:D-0144

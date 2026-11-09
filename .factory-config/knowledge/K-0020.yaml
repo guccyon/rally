@@ -18,7 +18,7 @@ evidence:
   - case: C-0010
   - pr: 798
   - event: "case.analyzed:522932"
-status: draft
+status: active
 verified_at: 2026-11-09
 review_by: 2026-12-09
 confidentiality: product
@@ -28,3 +28,4 @@ invalidate_when:
   - "衝突した変更のチケットと投入の時刻を確かめ、escalate より前にすでに投入されていた（待つ間の投入を止めても防げなかった）と分かった"
   - "判断待ちの間に同じファイルに触る次の変更を止めるようにしたあとも、判断待ちの PR の衝突が減らなかった（衝突の元は並行した変更ではなかった）"
   - "判断待ちの PR の衝突を集計して、待ちの長さと衝突の回数に関係が見えなかった"
+decided_by: committee:D-0144
