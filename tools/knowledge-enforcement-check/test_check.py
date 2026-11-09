@@ -136,9 +136,10 @@ PR_DECISION = f"議決 {check.REQUIRES_CHECK_DECISION}"
 
 
 def without_gate(errors: list[str]) -> list[str]:
-    """main の出力から、どの wired: true の解決策にも出る check.py の PR ごとの配線の行（knowledge_gate_unwired）を除く
-    （議決 D-0072（起票時の番号は D-0071）、Issue #1201。その線は KnowledgeGateTest が確かめる）"""
-    return [x for x in errors if f": {check.KNOWLEDGE_GATE_UNWIRED}: " not in x]
+    """main の出力から、どの wired: true の解決策にも出る check.py の PR ごとの配線の行（knowledge_gate_unwired）と、
+    requires_check を書いていない解決策の行（requires_check_missing）を除く（議決 D-0072（起票時の番号は D-0071）、Issue #1201。
+    議決 D-0080（起票時の番号は D-0078）、Issue #1227。それぞれの線は KnowledgeGateTest と RequiresCheckMissingTest が確かめる）"""
+    return [x for x in errors if f": {check.KNOWLEDGE_GATE_UNWIRED}: " not in x and f": {check.REQUIRES_CHECK_MISSING}: " not in x]
 
 
 class WiringTest(unittest.TestCase):
@@ -717,7 +718,8 @@ class RequiresCheckTest(unittest.TestCase):
                  for k in check.load(REPO) for s in check.solutions(k) if isinstance(s, dict) and check.REQUIRES_CHECK in s}
         self.assertEqual({key: v for key, v in found.items() if key not in self.MOVED}, {("K-0004", 1216): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0015", 1220): [("tools/conflict-check/test_events.py", None)],
-                          ("K-0004", 1225): [("tools/knowledge-enforcement-check/test_ci.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0004", 1225): [("tools/knowledge-enforcement-check/test_ci.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0004", 1227): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
@@ -732,6 +734,64 @@ class RequiresCheckTest(unittest.TestCase):
         self.assertEqual(len(errors), 2, errors)
         self.assertIn(f"issue 1）: {PR_UNWIRED}", errors[0])
         self.assertIn(f"issue 2）: {check.REQUIRES_CHECK_INVALID}: ", errors[1])
+
+
+class RequiresCheckMissingTest(unittest.TestCase):
+    """wired: true の解決策は、requires_check を書くか、REQUIRED_SCHEDULE・REQUIRED_RUNS に挙げてあることを求める
+    （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案。requires_check は書いた解決策しか照らさないので、
+    書き忘れると check.py の配線（knowledge_gate）だけで wired: true にできてしまっていた）"""
+
+    RUNS = RequiresCheckTest.RUNS
+    WF = RequiresCheckTest.WF
+
+    def item(self, wired=True, req=None, kid="K-9999", issue=1) -> dict:
+        s = {"kind": "lint", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": self.WF, "job": "x", "runs": self.RUNS}]}
+        if wired is None:
+            del s["wired"]
+        if req is not None:
+            s[check.REQUIRES_CHECK] = req
+        return {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [s]}}
+
+    def test_書いていない_wired_の解決策は知見と_issue_を問わず落とす(self):
+        for kid, issue in (("K-9999", 1), ("K-0004", 986), ("K-0004", 1059), ("K-0005", 936), ("K-0004", 1227)):
+            e = check.check_requires_check_missing(self.item(kid=kid, issue=issue))
+            self.assertEqual(len(e), 1, (kid, issue, e))
+            for part in (f"issue {issue}）: {check.REQUIRES_CHECK_MISSING}: ", f"{check.REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_engine_patch.py",
+                         f"議決 {check.REQUIRES_CHECK_MISSING_DECISION}"):
+                self.assertIn(part, e[0])
+
+    def test_書いた解決策と配線していない解決策は見ない(self):
+        for req in (self.RUNS, [self.RUNS], [{"runs": self.RUNS, "workflow": self.WF}]):
+            self.assertEqual(check.check_requires_check_missing(self.item(req=req)), [], req)
+        for wired in (False, None, "true", 1):
+            self.assertEqual(check.check_requires_check_missing(self.item(wired=wired)), [], wired)
+        # 形の誤りは check_pull_request が requires_check_invalid で落とすので、ここでは重ねて出さない
+        for req in ([], "", 1):
+            self.assertEqual(check.check_requires_check_missing(self.item(req=req)), [], req)
+
+    def test_名前で並べた残りの求めに挙げた解決策は見ない(self):
+        for key in sorted(set(check.REQUIRED_SCHEDULE) | set(check.REQUIRED_RUNS)):
+            self.assertEqual(check.check_requires_check_missing(self.item(kid=key[0], issue=key[1])), [], key)
+        # 同じ知見でも挙げていない issue は落とす
+        self.assertEqual(len(check.check_requires_check_missing(self.item(kid="K-0010", issue=1035))), 1)
+
+    def test_このリポジトリの記録では落ちない(self):
+        self.assertEqual([x for k in check.load(REPO) for x in check.check_requires_check_missing(k)], [])
+
+    def test_main_で落とす(self):
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t)
+            (d / self.RUNS).parent.mkdir(parents=True)
+            (d / self.RUNS).write_text("", encoding="utf-8")
+            MainTest.write(None, d, "K-9999.yaml", "id: K-9999\nenforcement:\n  level: deterministic\n  solutions:\n"
+                           f"    - {{kind: lint, what: x, issue: 1, wired: true, verified: false, wired_by: [{{workflow: {self.WF}, job: x, runs: {self.RUNS}}}]}}\n"
+                           f"    - {{kind: lint, what: x, issue: 2, wired: false, verified: false}}\n")
+            out = d / "out.json"
+            self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+            errors = [x for x in json.loads(out.read_text(encoding="utf-8"))["errors"] if f": {check.REQUIRES_CHECK_MISSING}: " in x]
+            self.assertEqual(len(errors), 1, errors)
+            self.assertIn(f"issue 1）: {check.REQUIRES_CHECK_MISSING}: ", errors[0])
 
 
 class KnowledgeGateTest(unittest.TestCase):
@@ -840,13 +900,15 @@ class KnowledgeGateTest(unittest.TestCase):
                        f"    - {{kind: config, what: x, issue: 936, wired: true, verified: false, wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.CHECK}}}]}}\n")
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
-        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        errors = [x for x in json.loads(out.read_text(encoding="utf-8"))["errors"] if f": {check.REQUIRES_CHECK_MISSING}: " not in x]
         self.assertEqual(len(errors), 2, errors)
         self.assertIn(f"issue 1059）: {check.KNOWLEDGE_GATE_UNWIRED}: wired にするには", errors[0])
         self.assertIn(f"issue 936）: {check.KNOWLEDGE_GATE_UNWIRED}: wired にするには", errors[1])
         d = self.repo(self.template())
+        # 解決策そのものの検査を requires_check に書く（議決 D-0080（起票時の番号は D-0078）、Issue #1227）
         MainTest.write(None, d, "K-0005.yaml", "id: K-0005\nenforcement:\n  level: deterministic\n  solutions:\n"
-                       f"    - {{kind: config, what: x, issue: 936, wired: true, verified: false, wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.CHECK}}}]}}\n")
+                       f"    - {{kind: config, what: x, issue: 936, wired: true, verified: false, requires_check: {self.CHECK},"
+                       f" wired_by: [{{workflow: {self.WF}, job: enforcement, runs: {self.CHECK}}}]}}\n")
         self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 0, json.loads(out.read_text(encoding="utf-8"))["errors"])
 
 

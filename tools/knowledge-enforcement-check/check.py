@@ -92,6 +92,9 @@ wired: true の解決策は、requires_check に挙げた検査ごとに、on.pu
 ジョブからそれを呼ぶ wired_by の項目がないと requires_check_unwired で落とす。requires_check の形の誤りと、挙げた検査がリポジトリにないことは、
 wired を問わず requires_check_invalid で落とす。上で REQUIRED_PR などに挙げたと書いた組は、今はそれぞれの解決策の requires_check に同じ中身で書いてある
 （組を check.py に足し忘れると、その解決策が wired: true でも黙って通っていた。検査の求めを解決策そのものに置き、足す場所を 1 つにする）。
+議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案で、wired: true の解決策は requires_check を書くか、REQUIRED_SCHEDULE・REQUIRED_RUNS に
+挙げてあることを求め、どちらでもなければ requires_check_missing で落とすようにした（requires_check は書いた解決策しか照らさないので、書き忘れると
+KNOWLEDGE_GATE の check.py の配線だけで wired と読ませてしまい、組の足し忘れと同じ穴が欄の書き忘れとして残っていた）。
 
 Engine の merge_step の照合（議決 D-0100（起票時の番号は D-0071）、Issue #1196）: REQUIRED_ENGINE_WAIT の解決策（K-0012 の issue 1122・1196）が
 wired: true なら、.github/workflows/pr-body-engine.yml の ENGINE_REF の版の Engine の orchestrator/dispatcher/supervisor.py で、merge_step が
@@ -203,6 +206,10 @@ REQUIRES_CHECK_KEYS = ("runs", "workflow")
 REQUIRES_CHECK_DECISION = "D-0077"
 REQUIRES_CHECK_INVALID = "requires_check_invalid"
 REQUIRES_CHECK_UNWIRED = "requires_check_unwired"
+# wired: true の解決策は、requires_check を書くか、REQUIRED_SCHEDULE・REQUIRED_RUNS（名前で並べた残りの求め）に挙げてあることを求める
+# （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案。requires_check を書き忘れた解決策が、check.py の配線だけで wired と読ませないように）
+REQUIRES_CHECK_MISSING = "requires_check_missing"
+REQUIRES_CHECK_MISSING_DECISION = "D-0080"
 # wired: true の解決策は、知見と issue を問わずどれも、ひな形 ci/knowledge-enforcement.yml の写しの .github/workflows/knowledge-enforcement.yml の
 # pull_request でも走るジョブから check.py を呼ぶ項目を wired_by に要する（議決 D-0072（起票時の番号は D-0071）の test の案、Issue #1201。
 # 前は K-0004 の issue 986・1059・1129 を REQUIRED_PR に名前で挙げていて、ほかの知見の解決策は組を足し忘れると黙って通っていた。
@@ -597,6 +604,25 @@ def check_pull_request(k: dict, repo: Path) -> list[str]:
             e.append(f"{where}: {REQUIRES_CHECK_UNWIRED}: wired にするには wired_by に、on.pull_request のある {place} で pull_request でも走るジョブから"
                      f" {target} を呼ぶ項目が要る（{REQUIRES_CHECK} に挙げた検査。ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。"
                      f"議決 {REQUIRES_CHECK_DECISION}）")
+    return e
+
+
+def check_requires_check_missing(k: dict) -> list[str]:
+    """wired: true の解決策で、requires_check を書いておらず、REQUIRED_SCHEDULE・REQUIRED_RUNS にも挙げていないなら requires_check_missing で落とす
+    （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案）。
+
+    requires_check は書いた解決策しか照らさないので、書き忘れると、どの解決策にも求める check.py の配線（knowledge_gate）だけで wired: true にできてしまう。
+    名前で組を並べていたころの足し忘れと同じ穴が、欄の書き忘れとして残っていた。形の誤りは check_pull_request が落とす"""
+    f, e = k.get("_file", str(k.get("id"))), []
+    for i, s in enumerate(solutions(k)):
+        if not isinstance(s, dict) or s.get("wired") is not True or REQUIRES_CHECK in s:
+            continue
+        key = (k.get("id"), s.get("issue"))
+        if key in REQUIRED_SCHEDULE or key in REQUIRED_RUNS:
+            continue
+        e.append(f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {REQUIRES_CHECK_MISSING}: wired にするには {REQUIRES_CHECK} に、"
+                 f"pull_request でも走るジョブから呼ぶ検査の道（例: {REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_engine_patch.py）を書く"
+                 f"（書かないと {KNOWLEDGE_CHECK} の配線だけで wired と読ませてしまう。議決 {REQUIRES_CHECK_MISSING_DECISION}）")
     return e
 
 
@@ -1049,7 +1075,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"読めなかった: {e}", file=sys.stderr)
         return 2
     repo, decisions, heads, bases, waits = Path(a.repo), {}, {}, {}, {}
-    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_knowledge_gate(k, repo) + check_mirror_wired(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
+    errors = [line for k in items for line in check_item(k) + check_wiring(k, repo) + check_schedule(k, repo) + check_pull_request(k, repo) + check_requires_check_missing(k) + check_knowledge_gate(k, repo) + check_mirror_wired(k, repo) + check_required_runs(k, repo) + check_verification(k, repo) + check_decision(k, repo, decisions)
               + check_head_record(k, a.head_comments, heads)
               + check_review_by_hold(k, repo, a.base, Path(a.engine) if a.engine else None)
               + check_engine_wait(k, repo, Path(a.engine) if a.engine else None, waits)

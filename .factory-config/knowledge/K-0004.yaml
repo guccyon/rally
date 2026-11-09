@@ -1091,4 +1091,24 @@ enforcement:
       decided_by: committee:D-0054
       wired: false
       verified: false
+    - kind: lint
+      what: >-
+        議決 D-0080（Issue #1227 の起票時の番号は D-0078。PR #1222）の lint の案（REQUIRED_PR の知見と issue の組の列挙をやめ、enforcement.solutions に
+        呼ぶべき検査の道を書く欄を足し、wired: true の項目ではその道を pull_request で走るジョブから呼ぶ wired_by がなければ落とす形に一般化する）を入れた。
+        列挙をやめて requires_check を足す一般化は議決 D-0077 の schema の案（issue 1216）で入っていたが、requires_check は書いた解決策しか照らさないので、
+        書き忘れた解決策はどの解決策にも求める check.py の配線（knowledge_gate）だけで wired: true にできて、組の足し忘れと同じ穴が欄の書き忘れとして残っていた。
+        tools/knowledge-enforcement-check/check.py に check_requires_check_missing を足し、wired: true の解決策で requires_check を書いておらず、
+        REQUIRED_SCHEDULE・REQUIRED_RUNS（名前で並べた残りの求め）にも挙げていないものを requires_check_missing で落とすようにした。
+        test_check.py の RequiresCheckMissingTest で、知見と issue を問わず（架空の知見・K-0004 の issue 986・1059・K-0005・この解決策でも）書いていなければ落ち、
+        書けば落ちないこと、wired が true でない解決策と REQUIRED_SCHEDULE・REQUIRED_RUNS に挙げた解決策は見ないこと、形の誤りは重ねて出さないこと、
+        今の記録（wired: true の解決策はない）では落ちないこと、main から落とすことを確かめた。test_check.py は .github/workflows/ からはまだ走っておらず
+        （ci/knowledge-enforcement.yml の写しは建設者）、この解決策も未配線・未確認
+      issue: 1227
+      at: 2026-11-09
+      decided_by: committee:D-0080
+      requires_check:
+        - runs: tools/knowledge-enforcement-check/test_check.py
+          workflow: .github/workflows/knowledge-enforcement.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0004
