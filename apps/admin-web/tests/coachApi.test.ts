@@ -112,6 +112,35 @@ describe("coachApi", () => {
     });
   });
 
+  test("応答の Date ヘッダーから端末の時計とのずれを添える（成功・失敗とも）", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // 端末は 2 分遅れ
+      vi.setSystemTime(new Date("2026-11-08T02:58:00Z"));
+      const date = { date: "Sun, 08 Nov 2026 03:00:00 GMT" };
+      const ok = new Response(JSON.stringify({ bookings: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json", ...date },
+      });
+      expect(await setup(ok).api.listMyCoachBookings()).toEqual({
+        ok: true,
+        data: { bookings: [] },
+        clockOffsetMs: 120_000,
+      });
+      const conflict = new Response(JSON.stringify({ code: "slot_not_started", message: "x" }), {
+        status: 409,
+        headers: { "content-type": "application/json", ...date },
+      });
+      expect(await setup(conflict).api.startLiveLessonSession({ booking_id: "bk-1" })).toMatchObject({
+        ok: false,
+        code: "slot_not_started",
+        clockOffsetMs: 120_000,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("getMyAccount はトークンを付けて GET /api/me を呼び、本人のアカウントを返す", async () => {
     const account = { account_id: SLOT.coach_id, role: "coach", display_name: "山田コーチ" };
     const { api, fetchMock } = setup(json(200, account));

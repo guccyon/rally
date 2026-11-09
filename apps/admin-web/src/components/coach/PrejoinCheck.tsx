@@ -230,7 +230,7 @@ export function PrejoinCheck({
 }: {
   booking: CoachBooking;
   media: LocalMedia;
-  /** 今の時刻（epoch ミリ秒）。開いたまま開始時刻をまたいだら「入室する」を押せるようにする */
+  /** 今の時刻（epoch ミリ秒。サーバーに合わせた時計）。開いたまま開始時刻をまたいだら「入室する」を押せるようにする */
   now: number;
   /** 入室する。失敗したら表示する文言を、成功したら null を返す（成功したら呼ぶ側がこの画面を閉じる） */
   onJoin: (state: PrejoinMediaState) => Promise<string | null>;
