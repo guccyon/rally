@@ -1,0 +1,89 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0135
+pr: https://github.com/guccyon/rally/pull/1343
+decided_at: '2026-11-10'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0109 の 3 つ目の案（D-0074 の 2 つ目の案）を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence・invalidate_when は変えていないので、過去の議決とも
+    README の決まりとも矛盾しません。
+  - 'D-0109 の pr は #1289 で、what に引いた案の中身は D-0109 の enforcement の 3 つ目の test の proposal
+    と一致しており、項目の形も既存の項目と揃っていて、wired_by を書かずに wired: false・verified: false にしています。'
+  - isBodyCheck の絞り込みと C-0006 の列のテストは issue 1206 の解決策と重なりますが、すでに入っていたことを明記し、この項目で足したのは値の固定と
+    C-0003 の列の最後の直しのテストだけだと書き分けているので、重複の記録にはなっていません。
+  - issue 1053 の解決策の what の「gate は問わず」を書き換えず、今の数え方は issue 1206 とこの解決策が正だと記したのは、ファイルを消さず記録を残す決まりに沿った扱いです。
+  - C-0003 をテストの列に使いながら evidence に足していない点と statement の「根拠の 2 件では」は D-0033 からの持ち越しのままなので、次に
+    K-0012 の statement か evidence を直す変更セットで応えてください。
+  - 配線も本物の記録での確かめもまだないので、K-0012 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した test の項目は decided_by: committee:D-0109 を指し、D-0109 の pr は PR #1289 で、その enforcement
+    の 3 つ目の test の案（D-0074 の 2 つ目の案）と what の中身が合っているので、議決まで辿れます。'
+  - 案の本体（isBodyCheck と C-0006 の列のテスト）はすでに issue 1206 の解決策として入っていたと既存の項目を指して書き分け、この項目で足したのは数える線を値で固めることと
+    C-0003 の列のテストだけだと言い過ぎずに書いています。
+  - C-0003 の列は事例記録の 1 回目の body_fix（job 563）のあと 2 回目の検査（job 570）があり、最後の body_fix（job
+    572）のあと再検査なしでマージされた順と合っているので、テストの列は一次記録に辿れます。
+  - C-0003 は K-0012 の evidence にはまだなくテストの材料として使っただけなので、evidence に足すかどうかは D-0033 からの持ち越しのまま次に
+    statement か evidence を直す変更セットで決めてください。
+  - 'recheck.mjs も recheck.test.mjs も PR ごとに走っておらず wired: false・verified: false と明記しているので、K-0012
+    の確かさは hypothesis のままが妥当です。'
+  - 差分にあるのは議決・Issue・PR・job の番号、ファイルの道、定数とテストの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 足した test の項目は、数える線（BODY_CHECK_GATES は pr-body-check だけ、BODY_RUBRIC_IDS は PR-002
+    だけ）を recheck.test.mjs で値として固めています。BODY_RUBRIC_IDS に PR-001 を足す書き換え、gate のない記録を数える書き換え、checked
+    の PR- で始まる id を数える書き換えでテストが落ちることも確かめているので、数える範囲を広げる直しは決定論で止められます。
+  - 'C-0003（PR #396）の列で、1 回目の直しを再検査していても最後の直しの再検査がなければ落ちる、という線を新しく足しています。これは issue
+    1206 のテストが見ていなかった繰り返しの直しの抜けを塞いでいて、はっきりした追加の担保になっています。'
+  - 'isBodyCheck と issue 1206 のテストはすでに入っていたと書き分けています（PR #1292 の議決 D-0110 と順序が合う）。そのうえで足した分だけを記録しているので、担保を二重に数えていません。'
+  - 値で固めた BODY_RUBRIC_IDS は Engine の core-gates/rubric.yaml を手で写したものです。Engine で本文の
+    rubric の id が変わったり増えたりしても、このテストは古い値を正しいとして通ってしまいます。D-0110 の 2 つ目の案（Engine の rubric.yaml
+    とちょうど一致するかを照らす）はまだ入っていません。
+  - D-0110 で挙がった抜け（結果が fail の pr-body-check や PR-002 の rubric を再検査に数えてしまう）は、この項目でも手つかずです。外したときの痛さは、直した本文が落ちたままマージされることなので、テストで塞ぐべきです。
+  - 'recheck.mjs はどこからも呼ばれておらず、recheck.test.mjs も PR ごとには走っていません。wired: false・verified:
+    false としたのは正しく、K-0012 の確かさは hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に issue 1291 のテストの記録を 1 件足しただけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。
+  - D-0109 の test の案（D-0074 の 2 つ目の案）がすでに issue 1206 の解決策で入っていたことを認め、足したのは数える線を値で固めるテストと
+    C-0003 の列だけだと書き分けており、入れていないものを入れたようには書いていません。
+  - 反例として、C-0003 では検査役が本文の見出しの欠けを OV-001 でも数えていたので、OV-001 だけで本文を見直した再検査は BODY_RUBRIC_IDS
+    が PR-002 だけだと数えられず落ちますが、止める側に倒れる外れなので今回は採ってよく、次に K-0012 を直す変更セットで OV-001 を数えない理由を書いてください。
+  - PR-001・PR-003・PR-004 を「本文の構成ではない」と言い切っていますが、その根拠は Engine の core-gates/rubric.yaml
+    にしかないので、what でその rubric の定義を見たことを示すと、線を固めたテストが正しい線を固めているかを辿れます。
+  - 'recheck.mjs も recheck.test.mjs も PR ごとには走っておらず wired: false・verified: false にしているので効き目を言い過ぎておらず、本物の記録での確かめもないため
+    K-0012 の確かさは hypothesis のままが妥当です。'
+  - 差分にあるのは議決・Issue・PR・job の番号、rubric の id、ファイルの道とテストの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: 'recheck.mjs の isBodyCheck を、本文を見て通った検査（結果が pass）だけを数える形にする。recheck.test.mjs
+    には、C-0006（PR #821）の列の pr.body_amended のあとに、結果が fail の pr-body-check と、PR-002 を見て
+    fail した rubric の gate.evaluated だけを挟んでからマージする列を足し、merged_without_body_recheck
+    で落ちることを確かめる（D-0110 の 1 つ目の案）。'
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: recheck.test.mjs で ENGINE_DIR の Engine の core-gates/rubric.yaml を読み、BODY_RUBRIC_IDS
+    が PR 本文を対象にする rubric の id の一覧とちょうど一致するかを照らす。CI=true では飛ばさない。値で固めた今の照らしは、この照らしに置き換えるか並べて置き、Engine
+    側の id が変わったり増えたりしたら落ちるようにする（D-0110 の 2 つ目の案）。
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が tools/pr-body-check/ci/pr-body-engine.yml を .github/workflows/pr-body-engine.yml
+    に写して pr-body-engine-test を必須のチェックにする。issue 1131 の解決策は wired: true にし、wired_by
+    に recheck.test.mjs を runs にした engine-test の項目を書いて、この値で固めたテストが PR ごとに走るようにする。'
