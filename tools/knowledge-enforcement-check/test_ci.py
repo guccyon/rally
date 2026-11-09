@@ -19,6 +19,8 @@ Engine のチェックアウトや ENGINE_REF の版がなくても飛ばさず�
 拾われないファイルか、その出力にテストが 1 件も（飛ばさずに）走った跡のないファイルがあれば落とす（議決 D-0057（起票時の番号は D-0055）、Issue #1154）。
 ひな形の enforcement のジョブが check.py の結果で落とす範囲が、check.py が呼ぶことを求める検査とワークフロー・K-*.yaml の wired_by を覆うことと、
 配線先のジョブから REQUIRED_RUNS の検査を外した PR でその手順が落ちることを、手順を bash で動かして確かめる（議決 D-0066（起票時の番号は D-0062）、Issue #1173）。
+落とす範囲は、check.py の REQUIRED_* の一覧と K-*.yaml の requires_check が指す検査の置き場（ディレクトリ）から導いた道でも照らし、
+check.py に新しい置き場の検査を足して範囲に足し忘れたら落とす（議決 D-0090（Issue #1259 の起票時の番号は D-0089））。
 
   python3 -m unittest discover -s tools/knowledge-enforcement-check
   python3 tools/knowledge-enforcement-check/test_ci.py --log knowledge-enforcement-unittest.log   # 出力に走った跡があるか
@@ -32,6 +34,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -488,11 +491,45 @@ SCOPE_JOB = "enforcement"
 CONFLICT_TEMPLATE = REPO / "tools/conflict-check/ci/conflict-check.yml"
 
 
+# check.py が名前で並べた、呼ぶことを求める検査とワークフローの一覧の名前の頭。REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW・REQUIRED_RUNS と、
+# いまは解決策の requires_check に移った REQUIRED_PR（議決 D-0077）を、一覧を足しても手で書き足さずに拾う（議決 D-0090（Issue #1259 の起票時の番号は D-0089））
+REQUIRED_PREFIX = "REQUIRED_"
+NAMED_REQUIRED = ("REQUIRED_SCHEDULE", "REQUIRED_SCHEDULE_WORKFLOW", "REQUIRED_RUNS")
+
+
+def path_values(v) -> list[str]:
+    """一覧の値（道の文字列か、その組・列・辞書の入れ子）のうち、リポジトリの根からの道の形の文字列"""
+    if isinstance(v, str):
+        return [v] if "/" in v and not re.search(r"\s", v) and check.norm("", v) == v else []
+    if isinstance(v, dict):
+        v = list(v.values())
+    if isinstance(v, (list, tuple, set, frozenset)):
+        return [p for x in v for p in path_values(x)]
+    return []
+
+
+def required_paths(mod=check) -> dict[str, list[str]]:
+    """check.py の REQUIRED_* の一覧の名前 → その値が指す道（鍵の (知見の id, 解決策の issue) は見ない）"""
+    out = {}
+    for name, v in vars(mod).items():
+        if name.startswith(REQUIRED_PREFIX) and isinstance(v, (dict, list, tuple, set, frozenset)):
+            out[name] = list(dict.fromkeys(path_values(list(v.values()) if isinstance(v, dict) else v)))
+    return out
+
+
+def scope_places(items: list[dict], mod=check) -> list[str]:
+    """check.py の REQUIRED_* と、K-*.yaml の解決策の requires_check（前の REQUIRED_PR）が指す検査とワークフローの置き場（ディレクトリ）"""
+    paths = [p for ps in required_paths(mod).values() for p in ps]
+    for k in items:
+        for s in check.solutions(k):
+            paths += [x for t, wf in (check.required_checks(s)[0] if isinstance(s, dict) else []) for x in (t, wf) if x]
+    return sorted({p.rsplit("/", 1)[0] for p in paths})
+
+
 def scope_targets(items: list[dict]) -> list[str]:
     """enforcement のジョブが落とす範囲に入れる道。check.py が呼ぶことを求める検査とそのワークフロー、K-*.yaml の wired_by の workflow・runs"""
     out = [f"{check.ROOT}/K-0010.yaml", check.KNOWLEDGE_CHECK, ".github/workflows/conflict-check.yml", COPY_REL]
-    out += list(check.REQUIRED_SCHEDULE.values()) + [wf for wf, _ in check.REQUIRED_SCHEDULE_WORKFLOW.values()]
-    out += [t for ts in check.REQUIRED_RUNS.values() for t in ts]
+    out += [p for ps in required_paths().values() for p in ps]
     for k in items:
         for s in check.solutions(k):
             # 解決策の requires_check に書いた検査とワークフロー（議決 D-0077（起票時の番号は D-0075）、Issue #1216）
@@ -536,6 +573,35 @@ class EnforcementScopeTest(unittest.TestCase):
             with self.subTest(f):
                 self.assertEqual(self.changed([f]), "changed=false")
         self.assertEqual(self.changed(["CHANGELOG.md", "tools/conflict-check/test_watch.py"]), "changed=true")
+
+    def test_check_pyのREQUIRED_の検査の置き場はどれも落とす範囲に入る(self):
+        # 挙げた道そのものだけでなく、同じ置き場に足した検査や下のディレクトリを変えた PR も範囲に入る（議決 D-0090（Issue #1259 の起票時の番号は D-0089））。
+        # check.py に新しい置き場の検査を足して、ひな形の範囲に足し忘れるとここで落ちる
+        for place in scope_places(check.load(REPO)):
+            for f in (f"{place}/new_check.py", f"{place}/sub/new_check.mjs"):
+                with self.subTest(place=place, path=f):
+                    self.assertEqual(self.changed([f]), "changed=true")
+
+    def test_REQUIRED_の一覧から置き場を導ける(self):
+        # 名前が変わったり値の形が変わったりして、導いた置き場が黙って空にならないことの対照
+        got = required_paths()
+        for name in NAMED_REQUIRED:
+            with self.subTest(name):
+                self.assertTrue(got.get(name), f"check.py の {name} から道を 1 つも読めない")
+        places = scope_places(check.load(REPO))
+        for place in (".github/workflows", "tools/conflict-check", "tools/sendback-check", "tools/pr-body-check"):
+            self.assertIn(place, places)
+
+    def test_check_pyに足した新しい置き場を範囲に足し忘れると見分ける(self):
+        # 上のテストが足し忘れを落とせることの対照。REQUIRED_SCHEDULE と、もう一度名前で並べた REQUIRED_PR に別の置き場の検査を足した check.py の形
+        fake = types.SimpleNamespace(**{k: v for k, v in vars(check).items() if k.startswith(REQUIRED_PREFIX)})
+        fake.REQUIRED_SCHEDULE = {**check.REQUIRED_SCHEDULE, ("K-0002", 1): "tools/changelog-check/protection.mjs"}
+        fake.REQUIRED_PR = {("K-0009", 1): "tools/continue-input-check/test_check.py"}
+        places = scope_places([], fake)
+        for place in ("tools/changelog-check", "tools/continue-input-check"):
+            with self.subTest(place):
+                self.assertIn(place, places)
+                self.assertEqual(self.changed([f"{place}/new_check.py"]), "changed=false")
 
     def gate_rc(self, workflow: str, changed: str) -> int:
         """K-0010 の issue 1034 を wired: true にした一時のリポジトリで、落とす手順を動かした終了コード"""
