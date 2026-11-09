@@ -21,13 +21,14 @@ dispatcher.py は読み込むと DB・オブジェクトストア・GitHub に�
 
 本文の直しのあとの再検査を待つ supervisor（engine/pr-body-recheck.patch を当てた Engine。知見 K-0012 の担保、議決 D-0050、Issue #1122）では
 orchestrator/dispatcher/supervisor.py の body_fix_pending・body_recheck_pending（と BODY_CHECK・BODY_CHECK_WORKFLOW）を取り出し、merge_step と同じ順
-（body_fix_pending のあと body_recheck_pending）で呼んで、マージを待つかを返す。GitHub（ワークフローの有無と BODY_CHECK のチェックの実行）は入力で真似る。
+（body_fix_pending のあと body_recheck_pending）で呼んで、マージを待つかを返す。GitHub（ワークフローの有無と BODY_CHECK のワークフローの実行）は入力で真似る。
 
   python3 engine_harness.py --body-recheck <Engine のチェックアウト> < recheck.json > result.json
 
 --body-recheck の入力: { "pr_url", "head_sha", "jobs": [{ "id", "kind", "state", "enqueued_at", "started_at" }]（時刻は ISO 8601）,
-  "events": [{ "name", "payload", "dedupe_key" }]（もう記録されたイベント）, "workflow": BODY_CHECK_WORKFLOW があるか（既定 true）,
-  "workflow_error": 読むと返る HTTP の状態（404 以外。省けば読める）, "check_runs": GitHub の check-runs の check_runs }
+  "events": [{ "name", "payload", "dedupe_key", "job_id"?, "occurred_at"? }]（もう記録されたイベント。pr.body_amended は job_id と occurred_at を持たせる）,
+  "workflow": BODY_CHECK_WORKFLOW があるか（既定 true）, "workflow_error": 読むと返る HTTP の状態（404 以外。省けば読める）,
+  "workflow_runs": GitHub の BODY_CHECK_WORKFLOW のワークフローの実行（workflow_runs。display_title は run-name の「pr-body-check (action)」、created_at はもとのイベントの時刻） }
 --body-recheck の出力: { "fix_pending": bool, "reason": 待つ理由 | null, "events": [記録したイベント { name, payload, dedupe_key }],
   "stoppages": [{ "key", "category" }], "gh": [GitHub に問い合わせた道], "order": merge_step で待つ確かめがマージより前にあるか（下の merge_order） }
 """
@@ -127,6 +128,9 @@ class RecheckCursor:
             self._rows = [{k: j.get(k) for k in ("id", "state", "enqueued_at", "started_at")} for j in self._job_rows(params[0], params[1])][:1]
         elif sql == "select 1 from events where dedupe_key=%s":
             self._rows = [{"1": 1} for e in self.events if e.get("dedupe_key") == params[0]][:1]
+        elif sql == "select occurred_at from events where name='pr.body_amended' and job_id=%s order by id desc limit 1":
+            self._rows = [{"occurred_at": e.get("occurred_at")} for e in reversed(self.events)
+                          if e.get("name") == "pr.body_amended" and e.get("job_id") == params[0]][:1]
         else:
             raise sendback.HarnessUnknownQuery(f"engine_harness の偽の cursor が知らない問い合わせ: {sql}")
 
@@ -178,7 +182,7 @@ def run_body_recheck(engine: Path, inp: dict) -> dict:
     """merge_step と同じ順で、本文の直しの終わりと直した本文の BODY_CHECK を待つかを返す"""
     stop = FakeStoppage()
     asked: list[str] = []
-    workflow, workflow_error, runs = inp.get("workflow", True), inp.get("workflow_error"), inp.get("check_runs") or []
+    workflow, workflow_error, runs = inp.get("workflow", True), inp.get("workflow_error"), inp.get("workflow_runs") or []
 
     def gh(method, path, body=None):
         asked.append(path)
@@ -188,12 +192,12 @@ def run_body_recheck(engine: Path, inp: dict) -> dict:
             if workflow_error or not workflow:
                 raise urllib.error.HTTPError(path, workflow_error or 404, "fake", {}, io.BytesIO(b""))
             return {"path": path}
-        if "/check-runs" in path:
-            return {"total_count": len(runs), "check_runs": runs}
+        if "/actions/workflows/" in path:
+            return {"total_count": len(runs), "workflow_runs": runs}
         raise AssertionError(f"知らない GitHub の問い合わせ: {path}")
 
     cur = RecheckCursor([{**j, **{k: datetime.fromisoformat(j[k]) for k in ("enqueued_at", "started_at") if j.get(k)}} for j in inp.get("jobs") or []],
-                        inp.get("events") or [])
+                        [{**e, **({"occurred_at": datetime.fromisoformat(e["occurred_at"])} if e.get("occurred_at") else {})} for e in inp.get("events") or []])
 
     def record(cur_, name, corr, payload, dedupe_key=None):
         if any(e.get("dedupe_key") == dedupe_key for e in cur_.events if dedupe_key):

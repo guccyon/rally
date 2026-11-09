@@ -13,6 +13,8 @@
 // 見た rubric（checked）に本文の rubric（PR-002 など）があるもの。コードの検査（overlay・L1 など）と、本文の rubric を見ていない rubric は数えない
 // （本文と関係のない検査が直しのあとに来ただけでは、直した本文を再検査したことにならない。議決 D-0072、Issue #1206）。
 // supervisor が直した本文の pr-body-check が通ったのを確かめて残す supervisor.body_rechecked（engine/pr-body-recheck.patch。議決 D-0050、Issue #1122）も数える。
+// ただし直した本文で始まった実行のものだけ: edited で始まった（action が edited）か、もとのイベントの時刻（created_at）が pr.body_amended の occurred_at 以後のもの。
+// 直しの最中の push や前の実行の再実行で始まり、直す前の本文で通った実行の記録は数えない（議決 D-0100 の反対票の反例。Issue #1268）。
 // 本文の直しの積みと終わりは job_id で結ぶ。終わりに job_id がなければ同じ PR の古いものから、積んだ側に job_id がなければ job_id のないものと結ぶ。
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -31,6 +33,18 @@ export const BODY_FIX_FINISHED = Object.freeze(["pr.body_amended", "pr.body_amen
 
 const prOf = (e) => e.payload?.pr_url ?? null;
 const isBodyFixEnqueued = (e) => e.name === "job.enqueued" && e.payload?.kind === "body_fix";
+/**
+ * supervisor.body_rechecked が、amended（pr.body_amended）の直した本文で始まった実行のものか（Issue #1268）。
+ * edited で始まったか、もとのイベントの時刻（payload.created_at）が amended の occurred_at 以後なら数える。どちらとも言えなければ数えない。
+ */
+export function rechecksAmended(e, amended) {
+  const p = e.payload ?? {};
+  if (p.action === "edited") return true;
+  const created = Date.parse(p.created_at ?? "");
+  const at = Date.parse(amended?.occurred_at ?? "");
+  return Number.isFinite(created) && Number.isFinite(at) && created >= at;
+}
+
 /** 本文の検査か。gate.evaluated は本文を見た gate だけ（BODY_CHECK_GATES か、checked に BODY_RUBRIC_IDS がある rubric）。 */
 export function isBodyCheck(e) {
   if (e.name === "supervisor.body_rechecked") return true;
@@ -62,6 +76,7 @@ export function checkEvents(events, prUrl) {
       if (i >= 0) st.pendingFixes.splice(i, 1);
       if (e.name === "pr.body_amended") { st.amendedUnchecked = e; st.fixFailed = null; } else st.fixFailed = e;
     } else if (isBodyCheck(e)) {
+      if (e.name === "supervisor.body_rechecked" && st.amendedUnchecked && !rechecksAmended(e, st.amendedUnchecked)) continue;
       st.amendedUnchecked = null;
     } else if (e.name === "supervisor.merged") {
       merges += 1;

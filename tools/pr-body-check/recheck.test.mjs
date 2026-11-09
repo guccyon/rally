@@ -120,13 +120,30 @@ test("直した本文を再検査してからマージすれば通る（検査�
 });
 
 test("supervisor が直した本文の pr-body-check を確かめて残した supervisor.body_rechecked も再検査に数える（議決 D-0050、Issue #1122）", () => {
-  const rechecked = (pr_url) => ({ name: "supervisor.body_rechecked", payload: { pr_url, head_sha: "s1", gate: "pr-body-check", job_id: 4299 } });
+  const rechecked = (pr_url) => ({ name: "supervisor.body_rechecked",
+    payload: { pr_url, head_sha: "s1", gate: "pr-body-check", job_id: 4299, action: "edited", created_at: "2026-11-06T05:25:03Z" } });
   // C-0006 の列で、pr.body_amended のあと supervisor の再検査を挟んでからマージすれば通る
   const waited = before(c0006(), "supervisor.merged", rechecked(URL_821));
   assert.deepEqual(checkEvents(waited).errors, []);
   // 直す前に残した再検査とほかの PR の再検査は数えない
   assert.deepEqual(rules(checkEvents(before(c0006(), "pr.body_amended", rechecked(URL_821)))), ["merged_without_body_recheck"]);
   assert.deepEqual(rules(checkEvents(before(c0006(), "supervisor.merged", rechecked(URL_659)))), ["merged_without_body_recheck"]);
+});
+
+test("supervisor.body_rechecked は、直した本文で始まった実行（edited か、pr.body_amended 以後に始まった）のものだけ数える（D-0100 の反対票の反例、Issue #1268）", () => {
+  const rechecked = (action, created_at) => ({ name: "supervisor.body_rechecked",
+    payload: { pr_url: URL_821, head_sha: "s2", gate: "pr-body-check", job_id: 4299, action, created_at } });
+  const merged = (ev) => rules(checkEvents(before(c0006(), "supervisor.merged", ev)));
+  // C-0006 の直し（14:24:41 に積み、pr.body_amended 14:25:04）の最中に push が来て synchronize で始まり、直す前の本文で通った実行の記録は数えない
+  assert.deepEqual(merged(rechecked("synchronize", "2026-11-06T05:24:55Z")), ["merged_without_body_recheck"]);
+  // 前の実行（PR を開いたとき）の再実行も、もとのイベントの時刻は直す前なので数えない。時刻も action もない記録も数えない
+  assert.deepEqual(merged(rechecked("opened", "2026-11-06T05:10:00Z")), ["merged_without_body_recheck"]);
+  assert.deepEqual(merged(rechecked(undefined, undefined)), ["merged_without_body_recheck"]);
+  // 直しの書き換えの edited で始まった実行は、pr.body_amended より前に始まっていても数える（待ち続けない）
+  assert.deepEqual(merged(rechecked("edited", "2026-11-06T05:25:03Z")), []);
+  // pr.body_amended 以後に始まった実行は action を問わず数える（直したあとの push、run-name に action のない写し）
+  assert.deepEqual(merged(rechecked("synchronize", "2026-11-06T05:25:04Z")), []);
+  assert.deepEqual(merged(rechecked(null, "2026-11-06T05:25:05Z")), []);
 });
 
 test("直す前の検査や、ほかの PR の検査は再検査に数えない", () => {

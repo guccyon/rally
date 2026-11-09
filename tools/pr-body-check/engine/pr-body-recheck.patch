@@ -9,7 +9,7 @@ index 701d283..eaaa1d4 100644
 +  supervisor.body_rechecked:
 +    source: control_plane
 +    required: [pr_url, head_sha, gate, job_id]
-+    note: "本文だけの直し（body_fix の job_id）のあと、直した本文が製品の本文のチェック（gate。rally は pr-body-check）に通った。これがあるまで inspector_approved を出さない（rally の知見 K-0012、Issue #1122）。dedupe は PR と直しのジョブごと"
++    note: "本文だけの直し（body_fix の job_id）のあと、直した本文で始まった製品の本文のチェック（gate。rally は pr-body-check）の実行が通った。数えるのは直しが走り始めたより後に edited で始まった実行か、pr.body_amended より後に始まった実行（action・created_at・body_amended_at。rally の Issue #1268）。これがあるまで inspector_approved を出さない（rally の知見 K-0012、Issue #1122）。dedupe は PR と直しのジョブごと"
    supervisor.inspect_enqueued:
      source: control_plane
      required: [pr_url, head_sha]
@@ -48,7 +48,7 @@ index 456ad40..36ac4ba 100644
          record(cur, "supervisor.inspector_approved", p["corr"], {"pr_url": p["url"], "head_sha": sha, "basis": basis}, f"inspector.approved:{p['url']}@{sha}")
          gh("PUT", f"repos/{p['repo']}/pulls/{p['number']}/merge", {"merge_method": "squash", "sha": sha})
          record(cur, "supervisor.merged", p["corr"], {"pr_url": p["url"], "head_sha": sha, "basis": basis}, f"supervisor.merged:{p['url']}")
-@@ -482,6 +490,57 @@ def body_fix_pending(cur, pr_url: str) -> bool:
+@@ -482,6 +490,70 @@ def body_fix_pending(cur, pr_url: str) -> bool:
      return cur.fetchone() is not None
  
  
@@ -56,8 +56,12 @@ index 456ad40..36ac4ba 100644
 +    """本文だけの直し（body_fix）が終わったあと、直した本文が BODY_CHECK に通るまでマージを待つ。待つ理由を返す（待たなければ None）。
 +    本文だけの直しは head を変えないので、検査役の承認（head ごと）は直した本文を見ていない。直しのジョブが終わってから pr.body_amended を
 +    記録するまでの間にもマージできた（2026-11-06 rally #821: 直しの記録の 2 秒後にマージ。rally の知見 K-0012、Issue #1122）。
-+    そこで直しの終わりはジョブの状態で見て、直しのジョブが走り始めたより後に始まった BODY_CHECK（本文の編集 pull_request edited で走る）が
-+    通ったのを確かめ、supervisor.body_rechecked に残す。直しが成功で終わっていなければ、直していない本文のままマージしないよう人に回す"""
++    そこで直しの終わりはジョブの状態で見て、直した本文で始まった BODY_CHECK のワークフローの実行が通ったのを確かめ、supervisor.body_rechecked に残す。
++    実行はもとのイベントの本文を照らす（再実行でも同じ）ので、直した本文で始まった実行は、もとのイベントの時刻（created_at）で次のどちらかに限る（rally の Issue #1268）:
++      - 直しのジョブが走り始めたより後に edited（本文の書き換え）で始まった。直しの書き換えはジョブの中なので、pr.body_amended より前に始まりうる
++      - 直しが終わった（pr.body_amended）より後に始まった（push の synchronize などでも、本文はもう直してある）
++    直しの最中に push や前の実行の再実行で始まった実行は、直す前の本文で通っても数えない。edited かはワークフローの run-name（BODY_CHECK (action)）で読む。
++    直しが成功で終わっていなければ、直していない本文のままマージしないよう人に回す"""
 +    m = re.match(r"https://github\.com/([^/]+/[^/]+)/pull/(\d+)$", pr_url)
 +    if not m:
 +        return None
@@ -84,22 +88,31 @@ index 456ad40..36ac4ba 100644
 +        return f"{BODY_CHECK_WORKFLOW} を読めない（{e.code}）"
 +    except Exception as e:  # noqa: BLE001  読めなければ待つ（次の周回で読み直す）
 +        return f"{BODY_CHECK_WORKFLOW} を読めない（{e!r}）"
++    workflow = BODY_CHECK_WORKFLOW.rsplit("/", 1)[-1]
 +    try:
-+        runs = (gh("GET", f"repos/{repo}/commits/{sha}/check-runs?check_name={BODY_CHECK}&filter=all&per_page=100") or {}).get("check_runs") or []
++        runs = (gh("GET", f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&event=pull_request&per_page=100") or {}).get("workflow_runs") or []
 +    except Exception as e:  # noqa: BLE001
 +        return f"{BODY_CHECK} の結果を読めない（{e!r}）"
-+    def started(r: dict):
-+        return datetime.fromisoformat(r["started_at"].replace("Z", "+00:00"))
-+    run = max((r for r in runs if r.get("started_at")), key=started, default=None)
++    cur.execute("select occurred_at from events where name='pr.body_amended' and job_id=%s order by id desc limit 1", (job["id"],))
++    amended = (cur.fetchone() or {}).get("occurred_at")   # まだ記録されていなければ、edited で始まった実行だけを数える
 +    since = job["started_at"] or job["enqueued_at"]
-+    if not run or started(run) < since:
-+        return f"直した本文の {BODY_CHECK} 待ち（直しのあとに走っていない）"
++    def created(r: dict):
++        return datetime.fromisoformat(r["created_at"].replace("Z", "+00:00"))
++    def action(r: dict) -> str | None:
++        a = re.fullmatch(rf"{re.escape(BODY_CHECK)} \((\w+)\)", r.get("display_title") or "")
++        return a[1] if a else None
++    def rewritten(r: dict) -> bool:
++        return (action(r) == "edited" and created(r) >= since) or (amended is not None and created(r) >= amended)
++    run = max((r for r in runs if r.get("created_at") and rewritten(r)), key=created, default=None)
++    if not run:
++        return f"直した本文の {BODY_CHECK} 待ち（直した本文で始まっていない。数えるのは直しのあとの edited か、pr.body_amended より後に始まった実行）"
 +    if run.get("status") != "completed":
 +        return f"直した本文の {BODY_CHECK} 待ち（{run.get('status')}）"
 +    if run.get("conclusion") != "success":
 +        return f"直した本文が {BODY_CHECK} に通らない（{run.get('conclusion')}）"
 +    record(cur, "supervisor.body_rechecked", None, {"pr_url": pr_url, "head_sha": sha, "gate": BODY_CHECK, "job_id": job["id"],
-+                                                    "check_run": run.get("html_url"), "started_at": run.get("started_at")}, key)
++                                                    "run": run.get("html_url"), "action": action(run), "created_at": run.get("created_at"),
++                                                    "body_amended_at": amended.isoformat() if amended else None}, key)
 +    return None
 +
 +
