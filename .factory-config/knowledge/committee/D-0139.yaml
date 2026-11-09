@@ -1,0 +1,73 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0139
+pr: https://github.com/guccyon/rally/pull/1346
+decided_at: '2026-11-10'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この変更セットは K-0014 の enforcement.solutions に議決 D-0112（PR #1296）の test の案を入れた記録を
+    1 件足しただけで、statement・scope・evidence・confidence・invalidate_when は変えていないので、既存の知見や
+    D-0049・D-0076・D-0101・D-0111 の議決と矛盾しません。'
+  - D-0112 の案は「関数を 1 つにまとめる」か「両方に通すテストを足す」かのどちらかで、issue 1208 の項目に field_error を使うとすでに書かれているので、まとめを足さずテストだけを足したと断った扱いは重複がなく妥当です。
+  - ConflictFilesShapeParityTest は PR ごとに走らないと止められないテストなので、README の決まりにそろえ、次に K-0014
+    を直すときは D-0135 が conflict-sql について求めたのと合わせて requires_check に test_events.py と conflict-check
+    のジョブを書き添えてください。
+  - D-0101・D-0111・D-0112・D-0135 で繰り返し挙げた、invalidate_when の 1 つ目の conflict.files と欄
+    conflict_files の名前のずれと、issue 1208 の項目の「起票時の番号は D-0073」の注記はまだ残っているので、別の変更セットでそろえてください。
+  - 'specs の glossary・context-map には衝突やイベントの欄の用語がなく製品の規範とぶつからず、wired: false・verified:
+    false で主張の確かめも進んでいないので confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0014 に足した issue 1297 の項目は、議決 D-0112（PR #1296）の enforcement の案（solution_kind:
+    test、ConflictFilesShapeParityTest）に辿れて、decided_by: committee:D-0112 とも合っています。'
+  - 形の判定が schema.py の field_error 1 つにまとめてあるという断りは、同じ K-0014 の issue 1208 の項目の記録（判定は
+    schema.py の field_error を使う）と合っているので、案の 1 つ目を足さなかった理由に根拠があります。
+  - 'テストが誤りを捕まえることを手元で確かめた話は PR の中の作業の記録で、本物のイベント列や事例記録で確かめたものではないと自分で断っており、wired:
+    false・verified: false と書いたのは正直な記録です。'
+  - 担保を足しても記録の欠けが手を打つ時期を遅らせたかという主張の確かめは進んでいないので、confidence は hypothesis のままが妥当です。
+  - 差分にあるのはファイル名・関数名・イベント名・議決と PR と Issue の番号だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は議決 D-0112 の test の案（ConflictFilesShapeParityTest）を入れた記録を K-0014 の enforcement.solutions
+    に 1 件足すだけで、中身は D-0112 の enforcement の案とそろっているので、担保の観点で採ってよいです。
+  - 関数をまとめる案は issue 1208 の解決策で field_error にまとめ済みなので足さず、2 つの入口（schema.check と events._inline_files）の結果を同じ
+    20 件の組で照らすことにした判断は、片方だけ直されて食い違う痛さを決定論で止めるもので筋がよいです。
+  - 誤りを 2 通り入れてテストが落ちることを確かめているので、テストが空振りしていないことも確かめられています。
+  - 'ただしこのテストは PR ごとに走らないと止められないのに、足した issue 1297 の項目に requires_check がなく、D-0135 が
+    issue 1295 の項目で指摘した抜けを繰り返しているので、wired: true が配線のないまま書けてしまわないよう決定論で担保すべきです。'
+  - 'wired: false・verified: false で、担保を足しても記録の欠けが手を打つ時期を遅らせたかは確かめていないので、K-0014 の確かさは
+    hypothesis のままが妥当です。'
+  - 差分にあるのはファイル名・関数名・イベント名・Issue と PR の番号だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0014 の enforcement.solutions に議決 D-0112 の test の案（issue 1297）を入れた記録を
+    1 項目足すだけで、statement・scope・evidence・confidence・invalidate_when は変えていないので、主張の範囲は広がっていません。
+  - D-0112 の案は「関数を 1 つにまとめる」か「両方に通すテスト」のどちらかなので、field_error がすでに共有されていると断ってテストの側だけを入れたのは案の範囲の中で、言い過ぎではありません。
+  - 形の組 20 件を continue.enqueued(reason=conflict) だけに載せていて pr.conflicted・handoff.saved
+    では照らしていませんが、events.py の missing_conflict_files が見るのは continue.enqueued だけなので、食い違いを見るテストとしては反例になりません。
+  - 'wired: false・verified: false とし、ワーカーが .github/workflows/ を変えられず本物のイベント列で確かめていないことを自分で断っているので、効き目を言い過ぎてはいません。'
+  - D-0112 の dissent の票で挙げた、continue.enqueued の conflict_files と worker_log の記録が食い違うときの扱いと、consistency
+    の票で繰り返し求められた invalidate_when の 1 つ目に欄 conflict_files を足す直しはこの PR でも手つかずなので、次に
+    K-0014 を直す変更セットで片づけてください。
+  - テストを足しても記録の欠けが手を打つ時期を遅らせたかの確かめは進んでおらず K-0002 の反例も残るので、確かさは hypothesis のままが妥当で、差分に利用者を特定できる情報はありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0014
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'K-0014 の issue 1297 の解決策（と D-0135 で挙げた issue 1295 の解決策）に requires_check（runs:
+    tools/conflict-check/test_events.py、workflow: .github/workflows/conflict-check.yml）を書き、tools/knowledge-enforcement-check/check.py
+    が、pull_request で走るジョブから unittest discover で test_events.py を呼ぶ wired_by の項目がなければ
+    requires_check_unwired で wired: true を落とすことを test_check.py の組で照らす。あわせて、kind が
+    test か ci_check で PR ごとのひな形（tools/*/ci/*.yml）を配線先とする解決策に requires_check がなければ、--base
+    を渡した check.py が新しく足した項目だけを落とすようにして、同じ抜けの繰り返しを止める。'
