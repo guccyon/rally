@@ -536,6 +536,8 @@ const ENGINE_RECHECK_NAMES = [
   "(12) C-0006 の 14:25:02（本文の直し job 4299 が走っている）では、直しの終わりを待つ",
   "(12) 直しのジョブが終わっても、直しのあとに pr-body-check が走って通るまではマージしない（C-0006 の pr.body_amended の前後の窓）",
   "(12) 直した本文の pr-body-check が通ったら待たず、supervisor.body_rechecked を残し、その列は recheck.mjs にも通る",
+  "(12) 直しの途中で push が来て直す前の本文で通った実行は、直しのあとに始まっても再検査に数えない（D-0100 の反対票の反例）",
+  "(12) 直しのジョブの中の書き換えの edited で始まった実行は、直しの終わり（pr.body_amended）より前に始まっても数え、待ち続けない",
   "(12) 本文の直しが失敗で終わったら、直していない本文のままマージせず人に回す（停止 body_recheck:）",
   "(12) 本文の直しがない PR と、pr-body-check のワークフローを持たない製品では待たない（誤って止めない）",
 ];
@@ -1076,6 +1078,9 @@ function bodyCheckProblems(text) {
   if (!types || BODY_TYPES.some((t) => !types.includes(t))) {
     problems.push(`on は pull_request の types（${BODY_TYPES.join("・")}）だけにする（edited がないと本文だけの直しを照らさない。paths・branches で絞ると報告されない PR が出る）`);
   }
+  if (!lines.includes(`run-name: ${BODY_JOB} (\${{ github.event.action }})`)) {
+    problems.push(`run-name を ${BODY_JOB} (\${{ github.event.action }}) にする（Engine の supervisor が edited で始まった実行を見分ける。Issue #1268）`);
+  }
   if (lines.some((l) => /^\s*(- )?continue-on-error:/.test(l))) problems.push("continue-on-error があると落ちても止めない");
   if (lines.some((l) => /^\s*(- )?if:/.test(l))) problems.push("if: があるとジョブや手順が飛ばされて照らさない");
   const job = jobBody(lines, BODY_JOB);
@@ -1112,6 +1117,8 @@ test("pr-body-check の見張りを外す直しは外れになる", () => {
     ["continue-on-error", (t) => t.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    continue-on-error: true\n")],
     ["if:", (t) => t.replace("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    if: github.event.action != 'edited'\n")],
     ["チェックの名前を変える", (t) => t.replace("    name: pr-body-check\n", "    name: body\n")],
+    ["run-name を外す", (t) => t.replace("run-name: pr-body-check (${{ github.event.action }})\n", "")],
+    ["run-name から action を外す", (t) => t.replace("run-name: pr-body-check (${{ github.event.action }})", "run-name: pr-body-check")],
     ["本文を run に埋める", (t) => t.replace(`run: printf '%s' "$BODY" | node`, "run: printf '%s' '${{ github.event.pull_request.body }}' | node")],
     ["外れを握りつぶす", (t) => t.replace("node tools/pr-body-check/check.mjs\n", "node tools/pr-body-check/check.mjs || true\n")],
     ["本文を渡さない", (t) => t.replace("          BODY: ${{ github.event.pull_request.body }}\n", "          BODY: ''\n")],

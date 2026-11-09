@@ -2,12 +2,15 @@
 # 決定論（LLM を使わない）。K-0006 と K-0012 で同じ 1 つのチェックを使い、別の検査は作らない。
 # 本文だけの直し（body_fix の pr.body_amended）は head_sha を変えないので、opened・synchronize・reopened に加えて edited でも走らせ、
 # 直した本文もマージ前に照らす。本文は github.event.pull_request.body を環境変数で受けて標準入力に渡す（${{ }} で run に直接埋めない）。
-# Engine の supervisor（engine/pr-body-recheck.patch）は、本文の直しのジョブが走り始めたより後に始まったこのチェック（名前 pr-body-check）が
-# 通るまでマージしない。このファイルが .github/workflows/pr-body-check.yml にある製品だけ待つので、写す先の名前とジョブの name: を変えない。
+# Engine の supervisor（engine/pr-body-recheck.patch）は、直した本文で始まったこのワークフロー（名前 pr-body-check）の実行が通るまでマージしない。
+# 数えるのは、本文の直しのジョブが走り始めたより後に edited で始まった実行か、直しの終わり（pr.body_amended）より後に始まった実行だけ（Issue #1268）。
+# edited かは run-name（pr-body-check (action)）で見分けるので、run-name を変えない。
+# このファイルが .github/workflows/pr-body-check.yml にある製品だけ待つので、写す先の名前とジョブの name: を変えない。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/pr-body-check.yml にそのまま写し、
 # pr-body-check をブランチ保護の必須のチェックにする（README の「マージ前の必須チェック（建設者）」）。
 # ci.test.mjs が、このファイルの形と写しとのずれを見る。
 name: pr-body-check
+run-name: pr-body-check (${{ github.event.action }})
 
 on:
   pull_request:
