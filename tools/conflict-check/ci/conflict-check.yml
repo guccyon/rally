@@ -6,6 +6,10 @@
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/conflict-check.yml に写す。
 # 写すときに変えてよいのは ENGINE_REF の行だけ（Engine を上げるときはこの版も上げ、test_engine.py が通ることを確かめる）。
 # ENGINE_REF は 40 桁のコミット SHA に限る（最初の手順で確かめる）。形は test_ci.py が見る。
+# ジョブ conflict-sql は、Postgres のサービスコンテナと psql を用意して DATABASE_URL を渡し、test_schema_ci.py の WindowSqlTest・RecordSqlTest
+# （window-events.sql・record-events.sql を使い捨ての schema で走らせ、窓の中のイベントを引き、窓の外を引かないことを fixture の行で見る）を走らせる
+# （知見 K-0014 の担保。議決 D-0111（PR #1294）、Issue #1295）。CONFLICT_SQL_REQUIRED=true を渡すので、psql か DATABASE_URL がなければ
+# 飛ばさずに落ちる（conflict-check のジョブには Postgres がないので、そこではこの 2 つは飛ぶ）。サービスコンテナの合言葉はこのジョブの中だけの使い捨て。
 name: conflict-check
 
 on:
@@ -53,3 +57,34 @@ jobs:
         run: |
           python3 -m pip install --quiet pyyaml
           python3 -B -m unittest discover -s tools/conflict-check -p 'test_*.py' -v
+
+  conflict-sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: psql と PyYAML を入れる
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          python3 -m pip install --quiet pyyaml
+      - name: 窓のイベントを引く SQL を Postgres で飛ばさずに走らせる（K-0014）
+        env:
+          CONFLICT_SQL_REQUIRED: "true"
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          python3 -B -m unittest discover -s tools/conflict-check -p 'test_schema_ci.py' -k WindowSqlTest -k RecordSqlTest -v

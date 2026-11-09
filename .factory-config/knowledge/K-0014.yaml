@@ -159,4 +159,25 @@ enforcement:
       decided_by: committee:D-0076
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0111（PR #1294）の test の案を入れた。issue 1207 の解決策の window-events.sql を Postgres で走らせる WindowSqlTest は、
+        psql か DATABASE_URL がない環境で飛ばしていて、SQL が誤って行を引けないと schema.py が空の列を照らして緑になるおそれが残っていた。
+        PR ごとの CI のひな形 tools/conflict-check/ci/conflict-check.yml にジョブ conflict-sql を足し、Postgres のサービスコンテナ（postgres:16）と
+        psql（postgresql-client）を用意して DATABASE_URL と CONFLICT_SQL_REQUIRED=true を渡し、test_schema_ci.py の WindowSqlTest と、
+        同じ形の RecordSqlTest（issue 1214 の解決策の record-events.sql）を unittest discover -k で走らせるようにした。test_schema_ci.py は
+        CONFLICT_SQL_REQUIRED=true のとき、psql か DATABASE_URL がなければ 2 つの組を飛ばさずに conflict_sql_unavailable で落とす（SqlRequiredTest）。
+        WindowSqlTest の fixture に、窓の中の handoff.saved と、直近 8 日より前の continue.enqueued・差分を当てた時刻より前の handoff.saved の行を足し、
+        窓の中の pr.conflicted・continue.enqueued・handoff.saved を id で名指してそのとおりに引き、差分を当てた時刻より前・直近 8 日より前・
+        ほかのイベントを引かないことを確かめるようにした。test_ci.py の SqlJobTest がジョブの形（絞り込みなし・サービスコンテナ・psql を入れる手順・
+        DATABASE_URL と CONFLICT_SQL_REQUIRED・-k の名前が今のテストの組の名前であること）と、DATABASE_URL がないとその手順が落ちることを見る。
+        手元の DATABASE_URL の Postgres と psql でその手順を走らせて 4 件が通り、window-events.sql の handoff.saved の名前を変える・continue.enqueued を外す・
+        窓の始まりを since だけにする・不等号を逆にする誤りではどれも WindowSqlTest が落ちることを確かめた。ワーカーは .github/workflows/ を変えられないので、
+        ひな形を .github/workflows/conflict-check.yml に写して conflict-sql を必須のチェックにするのは建設者が行う（tools/conflict-check/README.md の
+        「CI への組み込み」）。まだ配線されておらず、本物のイベント列では確かめていない
+      issue: 1295
+      at: 2026-11-09
+      decided_by: committee:D-0111
+      wired: false
+      verified: false
 decided_by: committee:D-0049

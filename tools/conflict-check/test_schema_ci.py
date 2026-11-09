@@ -5,8 +5,11 @@
 engine/conflict-files.patch を当てた時刻）が空か形が違えば最初の手順で落ち、シークレットがなければ読まずに落ち、window-events.sql で読んだ列を
 schema.py に --since を渡して照らし、外れの終了コードを握りつぶさない形かを見る。.github/workflows/conflict-schema.yml に写してあれば、
 CONFLICT_FILES_SINCE の行のほかがひな形と同じで、その値が時刻であるかも見る（写すときに変えてよいのはその行だけ）。
-WindowSqlTest は window-events.sql を DATABASE_URL の Postgres の使い捨ての schema で走らせ、差分を当てる前・窓の外・ほかのイベントを出さず、
-出した列が schema.py で読めることを見る。psql か DATABASE_URL がなければ飛ばす。
+WindowSqlTest は window-events.sql を DATABASE_URL の Postgres の使い捨ての schema で走らせ、窓の中の pr.conflicted・continue.enqueued・
+handoff.saved を fixture の行どおりに出し、差分を当てる前・直近 8 日より前・ほかのイベントを出さず、出した列が schema.py で読めることを見る
+（SQL の誤りで空の列を照らして緑になることを防ぐ）。psql か DATABASE_URL がなければ飛ばす。ただし CONFLICT_SQL_REQUIRED=true のとき
+（ひな形 ci/conflict-check.yml の conflict-sql のジョブ。Postgres のサービスコンテナと psql を用意する）は飛ばさずに落ちる
+（知見 K-0014 の担保。議決 D-0111（PR #1294）・Issue #1295。SqlRequiredTest がその落ち方を見る）。
 
 RecordTemplateTest・RecordSqlTest は、同じひな形の conflict-record のジョブ（record-events.sql で読んだ列を events.py --record-only で照らす。
 議決 D-0076（Issue #1214 の起票時の番号は D-0074。PR #1203）・Issue #1214）の形・手順の振る舞いと、SQL が窓に積まれた衝突の続きのジョブと
@@ -212,29 +215,44 @@ class RecordSqlNamesTest(unittest.TestCase):
 
 PSQL = shutil.which("psql")
 DB = os.environ.get("DATABASE_URL")
+# ひな形 ci/conflict-check.yml の conflict-sql のジョブが渡す。psql か DATABASE_URL がなければ飛ばさずに落とす（議決 D-0111・Issue #1295）
+SQL_REQUIRED = os.environ.get("CONFLICT_SQL_REQUIRED") == "true"
 
 
 class Psql:
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        if PSQL and DB:
+            return
+        missing = "・".join(n for n, v in (("psql", PSQL), ("DATABASE_URL", DB)) if not v)
+        if SQL_REQUIRED:
+            raise AssertionError(f"conflict_sql_unavailable: {missing} がない（CONFLICT_SQL_REQUIRED=true では飛ばさずに落とす）")
+        raise unittest.SkipTest(f"{missing} がない")
+
     def psql(self, *args: str, sql: str | None = None, search_path: str | None = None) -> subprocess.CompletedProcess:
         env = {**os.environ, **({"PGOPTIONS": f"-c search_path={search_path}"} if search_path else {})}
         return subprocess.run([PSQL, DB, "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", *args], input=sql, env=env,
                               capture_output=True, text=True)
 
 
-@unittest.skipUnless(PSQL and DB, "psql か DATABASE_URL がない")
 class WindowSqlTest(Psql, unittest.TestCase):
     """window-events.sql を、Engine の events と同じ列の表を置いた使い捨ての schema で走らせる"""
 
     def setUp(self):
         self.ns = f"conflict_schema_{uuid.uuid4().hex[:12]}"
         self.addCleanup(lambda: self.psql(sql=f"drop schema if exists {self.ns} cascade;"))
-        # 時刻はどれも now() から決める（走らせる日で結果が変わらないように。since もテストの中で同じく決める）
+        # 時刻はどれも now() から決める（走らせる日で結果が変わらないように。since もテストの中で同じく決める）。
+        # 表は空の schema に作るので、id は行の順に 1 から振られる（ROW で行を名前で指す）
         rows = [
-            ("pr.conflicted", "now() - interval '4 days'", {"pr_url": "u"}),                                    # 窓の中だが since（3 日前）より前
-            ("pr.conflicted", "now() - interval '1 hour'", {"pr_url": "u", "conflict_files": ["CHANGELOG.md"]}),
-            ("continue.enqueued", "now() - interval '2 hours'", {"pr_url": "u", "reason": "conflict"}),            # 窓の中で欄がない
-            ("handoff.saved", "now() - interval '30 days'", {"continue_reason": "conflict"}),                    # 窓の外
-            ("job.started", "now() - interval '1 hour'", {}),                                                     # 照らさないイベント
+            ("pr.conflicted", "now() - interval '4 days'", {"pr_url": "u"}),                                    # 1: 窓の中だが since（3 日前）より前
+            ("pr.conflicted", "now() - interval '1 hour'", {"pr_url": "u", "conflict_files": ["CHANGELOG.md"]}),  # 2: 窓の中
+            ("continue.enqueued", "now() - interval '2 hours'", {"pr_url": "u", "reason": "conflict"}),            # 3: 窓の中で欄がない
+            ("handoff.saved", "now() - interval '30 days'", {"continue_reason": "conflict"}),                    # 4: 窓の外
+            ("job.started", "now() - interval '1 hour'", {}),                                                     # 5: 照らさないイベント
+            ("handoff.saved", "now() - interval '3 hours'", {"continue_reason": "conflict", "conflict_files": ["CHANGELOG.md"]}),  # 6: 窓の中
+            ("continue.enqueued", "now() - interval '9 days'", {"pr_url": "u", "reason": "conflict"}),            # 7: 直近 8 日より前
+            ("handoff.saved", "now() - interval '5 days'", {"continue_reason": "conflict"}),                     # 8: 直近 8 日の中だが since（3 日前）より前
         ]
         values = ",\n".join(f"('{n}', {t}, '{json.dumps(p)}'::jsonb)" for n, t, p in rows)
         p = self.psql(sql=f"""create schema {self.ns};
@@ -252,16 +270,21 @@ insert into {self.ns}.events (name, occurred_at, payload) values {values};""")
 
     def test_窓と差分を当てた時刻より前とほかのイベントを出さない(self):
         since, events = self.window(3)
-        self.assertEqual([e["name"] for e in events], ["pr.conflicted", "continue.enqueued"])
+        # 窓の中の 3 つのイベントをどれも引く（SQL の誤りで空の列や欠けた列を照らして緑にならないように、行を id で名指す）
+        self.assertEqual([(e["id"], e["name"]) for e in events],
+                         [(2, "pr.conflicted"), (3, "continue.enqueued"), (6, "handoff.saved")])
+        self.assertEqual({e["name"] for e in events}, set(schema.load()))
+        self.assertEqual(events[0]["payload"], {"pr_url": "u", "conflict_files": ["CHANGELOG.md"]})   # payload は jsonb のまま出る
         errors = schema.check(schema.load(), events, schema.parse_time(since))   # occurred_at を schema.py が読める
         self.assertEqual([(x["name"], x["rule"]) for x in errors], [("continue.enqueued", "missing_field")])
 
     def test_差分を当てた時刻が窓より前なら窓で絞る(self):
         _, events = self.window(60)
-        self.assertEqual([e["name"] for e in events], ["pr.conflicted", "pr.conflicted", "continue.enqueued"])   # 30 日前の行は出ない
+        # 直近 8 日の中の行は since（60 日前）のあとなのですべて出し、9 日前と 30 日前の行は出さない
+        self.assertEqual([(e["id"], e["name"]) for e in events],
+                         [(1, "pr.conflicted"), (2, "pr.conflicted"), (3, "continue.enqueued"), (6, "handoff.saved"), (8, "handoff.saved")])
 
 
-@unittest.skipUnless(PSQL and DB, "psql か DATABASE_URL がない")
 class RecordSqlTest(Psql, unittest.TestCase):
     """record-events.sql を、Engine の events と同じ列の表を置いた使い捨ての schema で走らせる（議決 D-0076・Issue #1214）"""
 
@@ -311,6 +334,33 @@ insert into {self.ns}.events (name, occurred_at, job_id, payload) values {values
         self.assertEqual([(e["name"], e["job_id"]) for e in evs if e["name"] == "continue.enqueued"],
                          [("continue.enqueued", 1), ("continue.enqueued", 2), ("continue.enqueued", 3)])   # 30 日前の回は出ない
         self.assertIn(("job.started", 1), [(e["name"], e["job_id"]) for e in evs])
+
+
+class SqlRequiredTest(unittest.TestCase):
+    """CONFLICT_SQL_REQUIRED=true のとき、psql か DATABASE_URL がなければ SQL のテストを飛ばさずに落とす（議決 D-0111・Issue #1295）"""
+
+    def run_sql_tests(self, **env: str) -> subprocess.CompletedProcess:
+        base = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "CONFLICT_SQL_REQUIRED")}
+        return subprocess.run([sys.executable, "-B", "-m", "unittest", "-v", "test_schema_ci.WindowSqlTest", "test_schema_ci.RecordSqlTest"],
+                              cwd=HERE, env={**base, **env}, capture_output=True, text=True)
+
+    def test_DATABASE_URLがなければ落ちる(self):
+        p = self.run_sql_tests(CONFLICT_SQL_REQUIRED="true")
+        self.assertNotEqual(p.returncode, 0, p.stderr)
+        self.assertIn("conflict_sql_unavailable", p.stderr)
+        self.assertNotIn("skipped", p.stderr)
+
+    def test_psqlがなければ落ちる(self):
+        with tempfile.TemporaryDirectory() as empty:   # psql の見つからない PATH
+            p = self.run_sql_tests(CONFLICT_SQL_REQUIRED="true", DATABASE_URL="postgresql://localhost/none", PATH=empty)
+        self.assertNotEqual(p.returncode, 0, p.stderr)
+        self.assertIn("conflict_sql_unavailable: psql がない", p.stderr)
+        self.assertNotIn("skipped", p.stderr)
+
+    def test_求めなければ飛ばす(self):
+        p = self.run_sql_tests()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("skipped", p.stderr)
 
 
 class SqlNamesTest(unittest.TestCase):
