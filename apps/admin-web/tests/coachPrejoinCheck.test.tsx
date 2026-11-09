@@ -2,8 +2,8 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { Schemas } from "@/api/client";
-import type { CoachApi } from "@/api/coach";
+import { createApiClient, type Schemas } from "@/api/client";
+import { type CoachApi, coachApi as createCoachApi } from "@/api/coach";
 import { LiveSessionPanel } from "@/components/coach/LiveSessionPanel";
 import type { LocalMedia } from "@/components/coach/localMedia";
 import {
@@ -408,5 +408,111 @@ describe("入室前チェック", () => {
 
     expect(fake.streams).toHaveLength(2);
     expect(fake.live()).toEqual([]);
+  });
+});
+
+describe("サーバーに合わせた時計", () => {
+  /**
+   * 本物の API クライアント（call.ts の Date ヘッダーの読み取りまで通す）。サーバーの時計は端末の時計 + skew()。
+   * skew() が null なら応答に Date を付けない。入室の応答は start で決める（既定は 201）。
+   */
+  function serverApi(skew: () => number | null, start?: () => { status: number; body: unknown }) {
+    const fetchMock = vi.fn(async (input: Request) => {
+      const reply =
+        input.method === "POST" && new URL(input.url).pathname === "/api/live-lesson-sessions"
+          ? (start?.() ?? { status: 201, body: STARTED })
+          : { status: 200, body: { bookings: [BOOKING] } };
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      const current = skew();
+      if (current !== null) headers.Date = new Date(Date.now() + current).toUTCString();
+      return new Response(JSON.stringify(reply.body), { status: reply.status, headers });
+    });
+    const client = createApiClient("mock.coach.abc", {
+      baseUrl: "http://localhost/api",
+      fetch: (input) => fetchMock(input as Request),
+    });
+    return { api: createCoachApi(client), fetchMock };
+  }
+
+  /** 端末の時計を開始の deviceMinutes 分前にして一覧を開き、入室前チェックを開く。 */
+  async function openWithServer(deviceMinutes: number, server: ReturnType<typeof serverApi>) {
+    vi.setSystemTime(startsIn(deviceMinutes));
+    const user = userEvent.setup();
+    render(<LiveSessionPanel api={server.api} media={fakeLocalMedia().media} />);
+    const row = await screen.findByRole("row", { name: /鈴木 一郎/ });
+    await user.click(within(row).getByRole("button", { name: "入室前チェック" }));
+    await screen.findByRole("img", { name: "自分のカメラの映り（左右反転）" });
+    return { user, bar: screen.getByRole("region", { name: "入室" }) };
+  }
+
+  const joinButton = (bar: HTMLElement) => within(bar).getByRole("button", { name: "入室する" });
+  const startCalls = (fetchMock: ReturnType<typeof serverApi>["fetchMock"]) =>
+    fetchMock.mock.calls.filter(([request]) => request.method === "POST");
+
+  test("PC の時計が 2 分遅れていても、サーバーの開始時刻ちょうどに入室でき、残り時間もサーバーの時刻で数える", async () => {
+    // サーバーは開始 3 分前、PC は開始 5 分前
+    const server = serverApi(() => 2 * MINUTE);
+    const { user, bar } = await openWithServer(5, server);
+
+    expect(bar).toHaveTextContent("あと 3:00");
+    advance(3 * MINUTE - 1000);
+    expect(joinButton(bar)).toBeDisabled();
+    advance(1000);
+    expect(joinButton(bar)).toBeEnabled();
+
+    await user.click(joinButton(bar));
+    expect(await screen.findByText("通話中")).toBeInTheDocument();
+  });
+
+  test("PC の時計が 2 分進んでいても、PC の開始時刻では押せず、サーバーの開始時刻ちょうどに押せる", async () => {
+    // サーバーは開始 3 分前、PC は開始 1 分前
+    const server = serverApi(() => -2 * MINUTE);
+    const { bar } = await openWithServer(1, server);
+
+    expect(bar).toHaveTextContent("あと 3:00");
+    advance(MINUTE);
+    expect(joinButton(bar)).toBeDisabled();
+    advance(2 * MINUTE - 1000);
+    expect(joinButton(bar)).toBeDisabled();
+    advance(1000);
+    expect(joinButton(bar)).toBeEnabled();
+    expect(startCalls(server.fetchMock)).toHaveLength(0);
+  });
+
+  test("入室で 409 slot_not_started が返ったら、その応答の Date で合わせ直して残り時間の表示に戻り、入室を繰り返し送らない", async () => {
+    // 一覧の応答に Date がなく PC の時計（開始時刻ちょうど）のまま。サーバーは本当は開始 2 分前で、入室の応答で分かる
+    let skew: number | null = null;
+    const server = serverApi(
+      () => skew,
+      () => {
+        skew = -2 * MINUTE;
+        return { status: 409, body: { code: "slot_not_started", message: "予約したスロットの開始時刻より前" } };
+      },
+    );
+    const fetchMock = server.fetchMock;
+    const { user, bar } = await openWithServer(0, server);
+    expect(joinButton(bar)).toBeEnabled();
+
+    await user.click(joinButton(bar));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("この予約の開始時刻になっていないため");
+    expect(joinButton(bar)).toBeDisabled();
+    expect(bar).toHaveTextContent("あと 2:00");
+    expect(startCalls(fetchMock)).toHaveLength(1);
+
+    advance(2 * MINUTE);
+    expect(joinButton(bar)).toBeEnabled();
+    expect(startCalls(fetchMock)).toHaveLength(1);
+  });
+
+  test("応答に Date がなければ PC の時計のまま判断し、画面は止まらない", async () => {
+    const server = serverApi(() => null);
+    const { bar } = await openWithServer(1, server);
+
+    expect(bar).toHaveTextContent("あと 1:00");
+    advance(MINUTE - 1000);
+    expect(joinButton(bar)).toBeDisabled();
+    advance(1000);
+    expect(joinButton(bar)).toBeEnabled();
   });
 });

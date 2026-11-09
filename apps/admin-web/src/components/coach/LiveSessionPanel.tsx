@@ -78,6 +78,8 @@ const onOff = (on: boolean) => (on ? "入" : "切");
  * 確定した予約の行は開始 5 分前から「入室前チェック」（PrejoinCheck）を開け、開始時刻から入室（セッションの開始）できる。
  * 開始 5 分前より早い行は開ける時刻を出し、開いたまま時刻をまたいだら読み込み直さずにボタンに切り替える。
  * 入室したら同じセッションを終了できる。相手の映像はモックなので出さない。
+ * 時刻の判断は端末の時計ではなくサーバーに合わせた時計で行う。一覧を読んだ応答の Date ヘッダーでずれを決め、入室で 409 slot_not_started が
+ * 返ったらその応答の Date で合わせ直す（入室は繰り返し送らない）。Date が読めなければ端末の時計のまま。
  * media はブラウザーのカメラ・マイク・スピーカー（テストでは作り物に差し替える）。
  */
 export function LiveSessionPanel({
@@ -93,19 +95,27 @@ export function LiveSessionPanel({
   const [busy, setBusy] = useState(false);
   const [prejoin, setPrejoin] = useState<CoachBooking | null>(null);
   const [joinedMedia, setJoinedMedia] = useState<PrejoinMediaState | null>(null);
-  const now = useNow();
+  /** サーバーの時計と端末の時計のずれ（ミリ秒。serverClock.ts）。分かるまでは 0（端末の時計） */
+  const [clockOffset, setClockOffset] = useState(0);
+  const now = useNow() + clockOffset;
 
-  const fetchBookings = useCallback(async (): Promise<ListState> => {
+  const fetchBookings = useCallback(async (): Promise<{ list: ListState; clockOffset?: number }> => {
     const response = await api.listMyCoachBookings();
-    if (!response.ok) return { kind: "failed", message: response.message };
-    return { kind: "loaded", ...splitBookings(response.data.bookings, Date.now()) };
+    if (!response.ok) return { list: { kind: "failed", message: response.message } };
+    const offset = response.clockOffsetMs ?? 0;
+    return {
+      list: { kind: "loaded", ...splitBookings(response.data.bookings, Date.now() + offset) },
+      clockOffset: response.clockOffsetMs,
+    };
   }, [api]);
 
   // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
     void fetchBookings().then((next) => {
-      if (active) setList(next);
+      if (!active) return;
+      setList(next.list);
+      if (next.clockOffset !== undefined) setClockOffset(next.clockOffset);
     });
     return () => {
       active = false;
@@ -115,7 +125,13 @@ export function LiveSessionPanel({
   /** 入室前チェックの「入室する」。成功したらチェックを閉じ（カメラとマイクは止まる）、通話中の表示にする。 */
   async function onJoin(bookingId: string, state: PrejoinMediaState): Promise<string | null> {
     const response = await api.startLiveLessonSession({ booking_id: bookingId });
-    if (!response.ok) return response.message;
+    if (!response.ok) {
+      // 開始時刻の前だとサーバーが言うなら、こちらの時計が進んでいる。応答の時刻に合わせ直して残り時間の表示に戻す
+      if (response.code === "slot_not_started" && response.clockOffsetMs !== undefined) {
+        setClockOffset(response.clockOffsetMs);
+      }
+      return response.message;
+    }
     setSession(response.data);
     setJoinedMedia(state);
     setResult({ ok: true, message: "通話を開始しました。" });
