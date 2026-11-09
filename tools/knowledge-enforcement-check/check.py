@@ -22,6 +22,8 @@ branch protection の必須のチェックを protection.mjs で照らす）を 
 議決 D-0061（Issue #1163。起票時の番号は D-0058）で、schedule でも走るかの読み方を許可リストにした。ジョブと呼ぶ手順の if: は、無いか、
 github.event_name == '<event>' を || でつないだだけで == 'schedule' を含む形（${{ }} で包んでもよい）だけを許し、それ以外の式
 （&& や needs.*・always()・ほかの条件を || でつないだ飛ばし）は走らない側に数える。
+議決 D-0087（Issue #1248 の起票時の番号は D-0086。PR #1244）で、そのジョブか検査を呼ぶ手順に continue-on-error が真（true や式。無い・false・${{ false }} のほか）で
+書かれていれば数えないようにした（schedule で走っても落ちたことが伝わらないため）。
 
 呼ぶ検査の必須（議決 D-0042、Issue #1100）: REQUIRED_RUNS の解決策（K-0010 の issue 1034・1100。衝突の続きのジョブの検査）を wired: true にするときは、
 wired_by に、.github/workflows/ の 1 つのジョブから挙げた検査（tools/conflict-check/test_watch.py・test_engine.py）をすべて呼ぶ項目を必須にする。
@@ -213,6 +215,9 @@ REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "
 # schedule でも走るジョブから呼ぶ項目を要する（議決 D-0086（Issue #1247 の起票時の番号は D-0085）の lint の案。別の issue 番号で足した見張りが、
 # REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に組を足し忘れるとすり抜けないように）
 SENDBACK_PROTECTION_DECISION = "D-0086"
+# REQUIRED_SCHEDULE の検査を schedule で呼ぶジョブと手順は、continue-on-error が真（true や式）なら数えない（議決 D-0087（Issue #1248 の起票時の番号は D-0086）の
+# lint の案。schedule で走っても落ちたことが伝わらず、if: の許可リストをすり抜けるため）
+CONTINUE_ON_ERROR_DECISION = "D-0087"
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
 # 解決策が pull_request でも走るジョブから呼ぶことを求める検査は、その解決策の requires_check に書く（議決 D-0077（起票時の番号は D-0075）の schema の案、Issue #1216）。
 # 前は (知見の id, 解決策の issue) の名前で並べた組（REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO）をここに持っていて、
@@ -408,11 +413,11 @@ def calls(lines: list[str], target: str, cwd: str, env: dict, read, depth: int =
     return False
 
 
-def job_calls(workflow: dict, job_id: str, target: str, read, off=runs_off) -> bool:
-    """ワークフローの job_id のジョブの手順のどれかが target を呼ぶか（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える）"""
+def calling_steps(workflow: dict, job_id: str, target: str, read, off=runs_off):
+    """ワークフローの job_id のジョブで target を呼ぶ手順を順に返す（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える）"""
     job = (workflow.get("jobs") or {}).get(job_id)
     if not isinstance(job, dict) or off(job.get("if")):
-        return False
+        return
     wenv = {**(workflow.get("env") or {}), **(job.get("env") or {})}
     wd = (((job.get("defaults") or {}).get("run") or {}).get("working-directory")) or ""
     for step in job.get("steps") or []:
@@ -421,8 +426,12 @@ def job_calls(workflow: dict, job_id: str, target: str, read, off=runs_off) -> b
         env = {**wenv, **(step.get("env") or {})}
         cwd = norm("", expand(str(step.get("working-directory") or wd), env)) or ""
         if calls(logical_lines(step["run"]), target, cwd, env, read):
-            return True
-    return False
+            yield step
+
+
+def job_calls(workflow: dict, job_id: str, target: str, read, off=runs_off) -> bool:
+    """ワークフローの job_id のジョブの手順のどれかが target を呼ぶか（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える）"""
+    return any(True for _ in calling_steps(workflow, job_id, target, read, off))
 
 
 def repo_reader(repo: Path):
@@ -566,8 +575,22 @@ def check_schedule(k: dict, repo: Path) -> list[str]:
     return e
 
 
+def continues_on_error(v) -> bool:
+    """continue-on-error が真か（無い・false・${{ false }} のほかは、true も式も落ちたことを伝えない側に数える。議決 D-0087（起票時の番号は D-0086）、Issue #1248）"""
+    return v is not None and not runs_off(v)
+
+
+def swallows_failure(workflow: dict, job_id: str, target: str, read) -> bool:
+    """target を呼ぶジョブか、schedule でも走ってそれを呼ぶ手順のどれかに continue-on-error が真で書かれているか"""
+    job = (workflow.get("jobs") or {}).get(job_id)
+    return isinstance(job, dict) and (continues_on_error(job.get("continue-on-error")) or any(
+        continues_on_error(step.get("continue-on-error")) for step in calling_steps(workflow, job_id, target, read, off_schedule)))
+
+
 def schedule_errors(f: str, i: int, s: dict, target: str, workflow: str | None, decision: str, repo: Path, read) -> list[str]:
-    """解決策の wired_by に、on.schedule のある（workflow を書けばその）ワークフローの schedule でも走るジョブから target を呼ぶ項目がなければ落とす"""
+    """解決策の wired_by に、on.schedule のある（workflow を書けばその）ワークフローの schedule でも走るジョブから target を呼ぶ項目がなければ落とす。
+    ジョブか呼ぶ手順に continue-on-error が真で書かれた項目は、schedule で落ちても失敗が伝わらないので数えない（議決 D-0087、Issue #1248）"""
+    swallowed = False
     for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
         if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
             continue
@@ -578,8 +601,13 @@ def schedule_errors(f: str, i: int, s: dict, target: str, workflow: str | None, 
         except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
             continue
         if isinstance(doc, dict) and has_schedule(doc) and job_calls(doc, w["job"], target, read, off_schedule):
-            return []
+            if not swallows_failure(doc, w["job"], target, read):
+                return []
+            swallowed = True
     where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+    if swallowed:
+        return [f"{where}: wired_by の schedule でも走るジョブか {target} を呼ぶ手順に continue-on-error が真（true や式）で書かれていて、"
+                f"落ちても失敗が伝わらない（continue-on-error を外すか false にする。議決 {decision}・{CONTINUE_ON_ERROR_DECISION}）"]
     place = f"on.schedule（cron）のある {workflow} で" if workflow else f"on.schedule（cron）のある {WORKFLOWS}/ のワークフローで"
     return [f"{where}: wired にするには wired_by に、{place} schedule でも走るジョブから"
             f" {target} を呼ぶ項目が要る（手で走らせた記録だけでは wired にできない。議決 {decision}。"

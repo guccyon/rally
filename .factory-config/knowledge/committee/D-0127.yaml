@@ -1,0 +1,76 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0127
+pr: https://github.com/guccyon/rally/pull/1331
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に lint の項目を 1 件足しただけで、statement・scope・evidence・confidence
+    を変えていないので、過去の知見や README の決まり、specs/ の規範と矛盾しません。
+  - '足した項目は knowledge/committee/D-0087.yaml の 1 つめの enforcement の案（check_schedule()
+    で continue-on-error が真なら落とし、ScheduleTest にジョブと手順の場合を足す）と中身が合い、decided_by: committee:D-0087
+    は正しいです。'
+  - 'D-0061 の if: の許可リストの項目（K-0004 の 938 行あたり）を消さず、if: だけでは捕まらない continue-on-error
+    のすり抜けを重ねて塞ぐ形なので、既存の解決策とは重複も衝突もしません。'
+  - D-0087 の enforcement の担当と反対の担当が求めた「この lint で捕まえない外れ方（GitHub が schedule を止める場合）を
+    what に書く」にも応えていて、前の議決と揃っています。
+  - '「Issue #1248 の起票時の番号は D-0086」と書いた D-0086 は PR #1243 の別の議決として実在するので、読み手は decided_by
+    の committee:D-0087 だけを正として読むよう気をつけてください。'
+  - 'wired: false・verified: false で test_check.py もまだ .github/workflows/ から走っていないと本文が書いているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した solution の decided_by の committee:D-0087 は、knowledge/committee/D-0087.yaml
+    の 1 つめの enforcement（check_schedule() で continue-on-error が真なら落とし、ScheduleTest
+    にテストを足す lint の案）と中身が合い、what の PR #1244 も D-0087 の pr と一致するので一次記録に辿れます。'
+  - '「Issue #1248 の起票時の番号は D-0086」という注記は既存の項目と同じ書き方で番号のずれを残していますが、D-0086 は PR #1243
+    の別の議決として実在するので、decided_by の committee:D-0087 を正として読むことになります。'
+  - 'test_check.py での確認と照合を外す改変で落ちることの確認は手元の試験で事例記録ではないので、wired: false・verified: false
+    にして GitHub が schedule を止めた場合は捕まらないと書いたのは、効き目を言い過ぎておらず妥当です。'
+  - この PR は K-0004 の statement・evidence・confidence を変えておらず、本物の記録での確認もまだないので、確かさは hypothesis
+    のままが妥当です。
+  - 差分にあるのは議決と Issue と PR の番号、ツールのパス、関数とテストの名前、式の形だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この PR は D-0087 の lint の案（continue-on-error が真のジョブや手順を wired_by に数えない）を K-0004
+    の enforcement.solutions に 1 件足しただけで、statement・scope・evidence・confidence は変えていないので、担保の観点では採ってよいです。
+  - continue-on-error を「無い・false・${{ false }}」だけ許す許可リストにしていて、true・${{ true }}・式をジョブと手順それぞれで落とすテストと、照合を外すとテストが落ちることの確認まであるので、線がはっきりした確かな決定論の担保です。
+  - D-0087 が挙げたもう 1 つの穴（GitHub が schedule を止める）は、K-0004 にすでにある issue 1162 の ci_check（heartbeat.mjs
+    が 48 時間を超えたら落とす）が受け持つので、この lint で捕まらないと書いたのは正しく、重ねて案を出す必要はありません。
+  - 'ただし D-0087 の反対の票が挙げた、needs: で前のジョブに頼るジョブは前のジョブが落ちたり飛ばされたりすると schedule でも走らないすり抜けがまだ残っていて、if:
+    や continue-on-error と同じ形の穴なので同じ check_schedule() の lint で安く塞げます。'
+  - 'test_check.py が .github/workflows/ からまだ走っておらず wired: false・verified: false と正直に書いているので、confidence
+    は hypothesis のままが妥当で、建設者がひな形を写すまでこの担保は効いていないことに気をつけてください。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の enforcement.solutions に D-0087 の 1 つめの lint の案を入れた記録を 1 件足しただけで、statement・scope・evidence・confidence
+    は変えていないので、範囲は広すぎません。
+  - 式の continue-on-error も真として落とす作りは厳しすぎる側に倒れますが、困るのは REQUIRED_SCHEDULE の組（K-0004
+    の issue 1018・1158 と K-0001 の issue 1106）の wired_by だけで、今の記録はすべて通ると書いているので、ほかを巻き込む反例は見当たりません。
+  - 'D-0087 の反対の票が挙げた needs: で前のジョブに頼るジョブや、run の行に || true を付ける外れ方はこの lint では捕まらないので、次の変更セットで
+    what に書くか test_check.py に場合を足すことを勧めます。'
+  - D-0087 の 2 つめの案（schedule が最後に通った時刻を照らす ci_check）はまだ入っておらず、GitHub が schedule を止めた場合は捕まらないと
+    what 自身が書いているので、効き目を言い過ぎてはいません。
+  - '「Issue #1248 の起票時の番号は D-0086」という注記は、D-0086 が別の議決として実在するので取り違えやすく、decided_by の
+    committee:D-0087 だけを正として読むよう気をつけてください。'
+  - 'wired: false・verified: false で test_check.py もまだ .github/workflows/ から走っていないので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: lint
+  proposal: 'tools/knowledge-enforcement-check/check.py の check_schedule() で、REQUIRED_SCHEDULE
+    の検査を呼ぶジョブが needs: で前のジョブに頼っているとき、頼る先のジョブも schedule で走る形（if: の許可リストに合い、continue-on-error
+    が真でない）でなければ wired_by に数えず、test_check.py の ScheduleTest に needs: 先のジョブの if: が schedule
+    を除く・needs: 先が無い名前を指す場合で落ち、needs: が無いか頼る先も満たすなら通るテストを足す。'
