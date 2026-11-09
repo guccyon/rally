@@ -1077,4 +1077,18 @@ enforcement:
       decided_by: committee:D-0080
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0054（Issue #1149 の起票時の番号は D-0053。PR #1146）の test の案を入れた。tools/knowledge-enforcement-check/test_engine_patch.py が一部だけ入ったこと
+        （patch_partially_applied）を見る関数の名前を手で書いた MARKERS をやめ、added_functions() が engine/knowledge-enforcement.patch の
+        core-gates/knowledge_check.py に足す行（+def ...）から取り出すようにした（差分に関数を足しても一覧から漏れず、その関数だけが入った版を
+        patch_stale と取り違えない）。作った Engine の版で、差分に関数を 1 つ足した作った版の差分から足した関数がすべて（テストのファイルの +def は除いて）
+        取り出されること、その関数だけが入った版が patch_stale ではなく patch_partially_applied で落ちること（名前を手で書いた前の一覧では
+        patch_stale になること）、今の差分から取り出した関数が差分の core-gates/knowledge_check.py の +def の行と一致することを確かめた。
+        test_engine_patch.py は ci/knowledge-enforcement.yml のひな形からしか走らず、.github/workflows/ への写しは建設者が置くので、この解決策も未配線・未確認
+      issue: 1149
+      at: 2026-11-08
+      decided_by: committee:D-0054
+      wired: false
+      verified: false
 decided_by: committee:D-0004

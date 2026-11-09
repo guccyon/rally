@@ -202,6 +202,8 @@ ENGINE_DIR=/path/to/factory-engine python3 -m unittest discover -s tools/knowled
 
 差分で足した関数（`enforcement_label`・`check_wired_by`・`check_verified_by` のどれか）はあるのに `git apply --reverse --check` が通らない版（差分の一部だけが入った・入れたあと変わった）は、もう入っているとは数えずに `patch_partially_applied` で落とす（GitHub Actions では `::error` も出す。議決 `D-0036`、Issue #1077）。関数の名前があるだけでは、一部だけ入った版や名前だけが別の中身で入った版でも通ってしまうため。落ちたら差分を今の Engine に合わせて作り直す（全部入れて `ENGINE_REF` を上げたなら差分を消す）。
 
+見る関数の名前は手で書かず、`added_functions()` が差分の `core-gates/knowledge_check.py` に足す行（`+def ...`）から取り出す（議決 `D-0053`、Issue #1149）。手で書いた一覧では、差分に関数を足したときにそれが漏れ、その関数だけが入った版を `patch_stale` と取り違えるため。差分に関数を 1 つ足した作った版で、その関数だけが入った Engine が `patch_partially_applied` で落ちることもテストで確かめる。
+
 当たるか、もう入っていれば（`git apply --reverse --check` が通るときだけ）通る。チェックアウトに `ENGINE_REF` の版がないときは飛ばすが、`ENGINE_DIR` を渡したときと CI では落とす（`ci/knowledge-enforcement.yml` の `ENGINE_REF` が `knowledge-check.yml` とそろっていないとこれで落ちる）。判定そのものは、作った git の版（当たる・入っている・一部だけ入った・入れたあと変わった・どれでもない）で Engine なしに確かめる。`ci/knowledge-enforcement.yml` の `engine-test` のジョブで `test_engine.py` と一緒に走る。
 
 ## CI のひな形（`ci/knowledge-enforcement.yml`）
