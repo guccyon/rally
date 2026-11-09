@@ -410,6 +410,39 @@ class ScheduleTest(unittest.TestCase):
                 self.assertEqual(len(e), 1, (job_if, step_if))
                 self.assertIn("議決 D-0061", e[0])
 
+    def test_ジョブか手順に_continue_on_error_が真なら落ちる(self):
+        """議決 D-0087（Issue #1248 の起票時の番号は D-0086）の lint の案。schedule で落ちても失敗が伝わらないので数えない"""
+        for v in ("true", "${{ true }}", "${{ github.event_name == 'schedule' }}", "${{ inputs.soft }}"):
+            for job_coe, step_coe in ((f"    continue-on-error: {v}\n", ""), ("", f"continue-on-error: {v}\n        ")):
+                for kid, issue in (("K-0004", 1018), ("K-0004", 1158), ("K-0001", 1106)):
+                    prot = "tools/pr-body-check/protection.mjs" if kid == "K-0001" else self.PROT
+                    d = self.repo(self.wf(self.SCHEDULE, job_coe, step_coe).replace(self.PROT, prot))
+                    (d / prot).parent.mkdir(parents=True, exist_ok=True)
+                    (d / prot).write_text("", encoding="utf-8")
+                    e = self.errors(d, kid=kid, issue=issue, runs=prot)
+                    self.assertEqual(len(e), 1, (v, job_coe, step_coe, kid, issue))
+                    self.assertIn("continue-on-error", e[0])
+                    self.assertIn("D-0087", e[0])
+
+    def test_continue_on_error_が偽か無ければ通る(self):
+        for v in ("false", "${{ false }}"):
+            for job_coe, step_coe in ((f"    continue-on-error: {v}\n", ""), ("", f"continue-on-error: {v}\n        ")):
+                self.assertEqual(self.errors(self.repo(self.wf(self.SCHEDULE, job_coe, step_coe))), [], (job_coe, step_coe))
+
+    def test_検査を呼ばない手順の_continue_on_error_は見ない(self):
+        wf = self.wf(self.SCHEDULE).replace("      - uses: actions/checkout@v4\n", "      - uses: actions/checkout@v4\n        continue-on-error: true\n")
+        self.assertEqual(self.errors(self.repo(wf)), [])
+
+    def test_continue_on_error_のない項目がほかにあれば通る(self):
+        wf = self.wf(self.SCHEDULE) + "  soft:\n    runs-on: ubuntu-latest\n    continue-on-error: true\n    steps:\n      - run: node " + self.PROT + "\n"
+        d = self.repo(wf)
+        item = {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "ci_check", "what": "x", "issue": 1018, "wired": True, "verified": False, "wired_by": [
+                {"workflow": self.WF, "job": "soft", "runs": self.PROT}, {"workflow": self.WF, "job": "protection", "runs": self.PROT}]}]}}
+        self.assertEqual(check.check_schedule(item, d), [])
+        item["enforcement"]["solutions"][0]["wired_by"].pop()
+        self.assertEqual(len(check.check_schedule(item, d)), 1)
+
     def test_許可リストの読み方(self):
         self.assertFalse(check.off_schedule(None))
         for cond in (True, False, 1, "", "${{ }}", "github.event_name == 'schedule' ||", "|| github.event_name == 'schedule'"):
@@ -728,7 +761,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0004", 1225): [("tools/knowledge-enforcement-check/test_ci.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0004", 1227): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0004", 1232): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
-                          ("K-0004", 1247): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0004", 1247): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0004", 1248): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
