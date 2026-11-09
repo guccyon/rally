@@ -1,0 +1,83 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0130
+pr: https://github.com/guccyon/rally/pull/1334
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に 1 件足すだけで、statement・scope・confidence・evidence
+    は変えておらず、README の「担保した知見も消さず solutions に残す」決まりと変更セットの扱いに合っています。
+  - '足した項目の decided_by: committee:D-0093 と PR #1257 は、D-0093 の 1 つめの enforcement の案（REQUIRED_SCHEDULE
+    に issue 1179 と patch.mjs の組を足し、必要なら REQUIRED_SCHEDULE_WORKFLOW に pr-body-patch.yml
+    を足して test_check.py で確かめる）とそのまま対応していて、食い違いはありません。'
+  - '起票時の番号 D-0089 は PR #1250 の別の議決と同じ番号ですが、D-0090 や D-0068 の項目と同じく「起票時の番号は」と書き添えて確定した
+    D-0093 と区別しているので、これまでの書き方と揃っています。'
+  - REQUIRED_SCHEDULE は D-0077・D-0121 で問題にされた名前を並べる形ですが、schedule 側には requires_check
+    に当たる欄がまだなく、D-0093 の案もこの形を求めているので、この PR で規範と矛盾するとは読みません。
+  - D-0093 の 2 つめの案（patch_check_failed が続いても黙って止まらないことを確かめる test）と、D-0068・D-0093 が求めた
+    D-0019・D-0032 の項目への書き添えはまだ入っていないので、重複ではなく残りとして、次に K-0001 を直す変更セットで扱ってください。
+  - 'wired: false・verified: false は what の「配線されておらず、効き目は確かめていない」と合っているので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した解決策の decided_by: committee:D-0093 は PR #1257 の議決で、その enforcement の ci_check
+    の案（REQUIRED_SCHEDULE に issue 1179 と patch.mjs の組を足し、必要なら REQUIRED_SCHEDULE_WORKFLOW
+    に pr-body-patch.yml を足して test_check.py で確かめる）とそのまま対応しているので、一次記録に辿れます。'
+  - 'what に書いた「Issue #1262 の起票時の番号は D-0089」は、D-0089 が PR #1250 の別の議決であることと合っていて、番号のずれを書き添えるこれまでの書き方と同じなので、取り違えずに辿れます。'
+  - statement・scope・evidence・confidence は変えず、担保の記録を 1 件足すだけなので、主張の根拠を言い過ぎていません。
+  - 'wired: false・verified: false は what の「PR ごとの写しから走るまで配線されておらず、効き目は確かめていない」と一致し、確かめた本物の記録もないので、confidence
+    は hypothesis のままが妥当です。'
+  - D-0093 のもう 1 つの案（patch_check_failed が続いたときに黙って止まらないことを確かめる test）はこの項目に入っておらず、次の変更セットで別の
+    Issue として記録されるべきです。
+  - 差分にはファイルの道・Issue と PR の番号・議決の番号しかなく、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0093 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence
+    は変えていないので、担保の観点では採ってよいです。
+  - 'D-0093 の担保の票が挙げた「issue 1179 の解決策が REQUIRED_SCHEDULE になく、schedule のジョブから patch.mjs
+    を呼ばなくても wired: true にできる穴」に、check.py の REQUIRED_SCHEDULE と REQUIRED_SCHEDULE_WORKFLOW
+    への追加と PrBodyPatchScheduleTest でそのまま応えています。'
+  - ただし REQUIRED_SCHEDULE は今も check.py に知見と issue の名前で手で並べる一覧なので、D-0077 が pull_request
+    の側で塞いだ「足し忘れると黙って通る」穴が schedule の側に残っており、issue 1179 で実際に足し忘れが起きたことから繰り返す恐れがあります。
+  - D-0093 の担保と反対の票が挙げた patch_check_failed で Issue を開かず定期の照合が黙って止まる外れ方は、この項目の範囲外でまだ塞がれていないので、別の
+    Issue で test として扱うべきです。
+  - 'この検査は PR ごとの knowledge-enforcement の写しから走るまで配線されておらず効き目も確かめていないので、wired: false・verified:
+    false と confidence: hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0001 の enforcement.solutions に D-0093 の ci_check の案を入れた記録を 1 件足すだけで、statement・scope・confidence・evidence・invalidate_when
+    は変えていないので、主張の範囲は広がっていません。
+  - 足した what は D-0093 の 1 つめの案（REQUIRED_SCHEDULE に issue 1179 と patch.mjs の組を足し、必要なら
+    REQUIRED_SCHEDULE_WORKFLOW に pr-body-patch.yml を足す）と対応しています。continue-on-error
+    が真の写しも落とす点は案より厳しい側に寄せた足し方で、言い過ぎではありません。
+  - 反例として、REQUIRED_SCHEDULE は知見と issue の名前で組を並べる形のままなので、D-0077 が PR の側で塞いだのと同じく、次の
+    schedule の解決策で足し忘れると黙って通る穴が残ります。D-0128 で話に出ている requires_check の欄への移し替えを進めるときに、この組も移してください。
+  - D-0093 の 2 つめの案（ENGINE_REF の版が取れず patch_check_failed が続いても黙って止まらないことを確かめる test）はこの項目にまだ入っていないので、別の
+    Issue で記録されるべきで、この項目の what はそれを入れたと言っていない点で正直です。
+  - '検査そのものが knowledge-enforcement の写しから走るまで配線されていないと明記し、wired: false・verified: false
+    としているので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: schema
+  proposal: 'requires_check と同じように、enforcement.solutions の項目に requires_schedule（{runs,
+    workflow} の列）を書けるようにして、check.py が wired: true のときに schedule でも走り continue-on-error
+    が真でないジョブからそれを呼ぶ wired_by を求めるようにし、check.py の手書きの REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW
+    をその欄へ移す。test_check.py で、欄を書いた解決策が schedule の wired_by なしで wired: true にすると落ちることと、今の
+    (K-0001, 1106)・(K-0001, 1179) などの組が欄に移って同じ結果になることを確かめる。'
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: tools/pr-body-check の patch.mjs の照合で、ENGINE_REF の版が取れないなどの patch_check_failed
+    になったときも Issue を開くか通知することを確かめるテストを足し、定期のジョブが赤のまま黙って止まる外れ方を落とす（D-0093 の担保・反対の票の残り）。
