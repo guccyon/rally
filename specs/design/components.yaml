@@ -110,9 +110,7 @@ components:
       empty: {mark: 空の欄, text: 開始日か終了日が空いています。両方を選んでください。}
       end_before_start: {mark: 終了日, text: 終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。}
       too_long: {mark: 両方, text: "選んだ期間は {days} 日です。期間は {max} 日までにしてください。", note: days は両端を含めて数える。max は契約の上限（今は 31）}
-    behavior: >-
-      期間は 2 つの欄をそろえてから「この期間で見る」で読み直す（patterns の search_filter の「選んだらすぐ読み直す」の例外）。
-      誤りは送るときに確かめ、欄を変えたら消す。誤りの最初の欄へフォーカス。422 は notice で出し、日付を消さない
+    behavior: 2 つの欄をそろえてから「この期間で見る」で読み直す（search_filter の「すぐ読み直す」の例外）。誤りは送るときに確かめ、欄を変えたら消す。誤りの最初の欄へフォーカス。422 は notice で出し、日付を消さない
     wording: legend「期間」、ラベル「開始日」「終了日」、helper「31 日まで選べます」、ボタン「この期間で見る」（ほかの絞り込みと一緒なら「この条件で見る」）
     a11y: range は fieldset と legend で読む。各欄に label（text_field の must が効く）。error_text を aria-describedby で印の欄に結び、aria-invalid を付ける
     rules:
@@ -132,16 +130,12 @@ components:
         html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf"><label class="type-small">終了日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div></div><div class="help type-small"><span>31 日まで選べます</span></div></fieldset></div>'
       - label: "誤り（終わりが始まりより前）"
         html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf err"><label class="type-small">終了日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div></div><div class="etext type-small" role="alert"><i class="ic">!</i>終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。</div></fieldset></div>'
-      - label: "読み込み中（既定の期間を読む）"
-        html: '<div class="pv df"><fieldset class="dr" aria-busy="true"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf off"><label class="type-small">開始日</label><div class="field type-body"><i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf off"><label class="type-small">終了日</label><div class="field type-body"><i class="cal"></i></div></div></div><div class="help type-small" role="status"><span>期間を読み込んでいます…</span></div></fieldset></div>'
 
   - id: select
     ja: 選択欄
     lifecycle: trial   # 0.6.0 で足した（#992）
     use: 決まった選択肢から 1 つを選ぶ。admin-web の絞り込み（コーチ・レッスンメニュー・スポーツ・キャンセルした人）、本部からのお知らせの対象、コーチのスロットの公開とレッスンメニューの欄（スポーツ・レッスンメニュー・定員）
-    not_for: >-
-      自由な文字 → text_field。日付と期間 → date_field。いくつも選ぶ → checkbox（requests で保留）。
-      選択肢が 2〜3 個で並べて見せたい → ラジオかチップ（未定義）。student-app では今は使わない（絞り込みは patterns の search_filter のチップ）
+    not_for: 自由な文字 → text_field。日付と期間 → date_field。いくつも選ぶ → checkbox（requests で保留）。2〜3 個を並べて見せる → ラジオかチップ（未定義）。student-app は今は使わない（絞り込みはチップ）
     parts: [label, field（素の select 要素）, value, chevron, helper, error_text]
     style:
       field: text_field の field と同じ（background・border_strong 1px・radius md・高さ 48px 以上・左 md 16px）。右は chevron の分 xl 40px
@@ -166,13 +160,9 @@ components:
     errors:
       load_failed: {text: "{名前}の一覧を読めませんでした。画面を更新すると、もう一度読み込めます。", note: 画面の上の notice に同じ文を重ねない}
       not_selected: {text: "{名前}が選ばれていません。一覧から 1 つ選んでください。"}
-    behavior: >-
-      絞り込みでは選んだらすぐ一覧を読み直す（patterns の search_filter）。date_field と同じ絞り込みにあるときは、ほかの欄とそろえて「この条件で見る」で読み直す。
-      端末の select 要素をそのまま使う（キーボードと読み上げが端末のとおりに動く）。誤りは欄を変えたら消す
+    behavior: 絞り込みは選んだらすぐ読み直す（search_filter）。date_field と並ぶときは「この条件で見る」で読み直す。端末の select 要素をそのまま使う（キーボードと読み上げが端末のとおり）。誤りは欄を変えたら消す
     wording: ラベルは名詞（「コーチ」「レッスンメニュー」「スポーツ」「キャンセルした人」「対象」）。「選択してください」「--」を使わない
-    a11y: >-
-      label を field に結び付ける（text_field の must が効く。placeholder で代えない）。helper と error_text を aria-describedby で結び、error のときは aria-invalid。
-      loading は aria-busy、chevron は aria-hidden。押せる高さは 48px 以上
+    a11y: label を field に結ぶ（text_field の must。placeholder で代えない）。helper と error_text は aria-describedby、error は aria-invalid、loading は aria-busy、chevron は aria-hidden。高さ 48px 以上
     rules:
       - level: should
         statement: 決まった選択肢の欄は select の部品で描き、画面に素の select 要素を直に書かない
@@ -188,8 +178,6 @@ components:
     preview:
       - label: "通常"
         html: '<div class="pv tf sl"><label class="type-small">コーチ</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div></div>'
-      - label: "読み込み中（選択肢を読む）"
-        html: '<div class="pv tf sl off" aria-busy="true"><label class="type-small">コーチ</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div><div class="help type-small" role="status"><span>コーチの一覧を読み込んでいます…</span></div></div>'
       - label: "失敗（選択肢を読めない）"
         html: '<div class="pv tf sl off"><label class="type-small">レッスンメニュー</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div><div class="etext type-small" role="alert"><i class="ic">!</i>レッスンメニューの一覧を読めませんでした。画面を更新すると、もう一度読み込めます。</div></div>'
       - label: "誤り（必須の欄を選んでいない）"
@@ -219,8 +207,6 @@ components:
     preview:
       - label: "予約（次のレッスン）"
         html: '<div class="pv card bk"><div class="koma next"><span class="type-caption">10月</span><span class="type-figure">28</span><span class="type-caption">水</span></div><div class="bd"><div class="type-figure-sm">12:00〜12:30</div><div class="type-small muted">テニス・コーチ: 山田</div><span class="tag type-small"><i class="d d-success"></i>確定済み</span></div></div>'
-      - label: "予約（確定待ち）"
-        html: '<div class="pv card bk"><div class="koma"><span class="type-caption">11月</span><span class="type-figure">4</span><span class="type-caption">水</span></div><div class="bd"><div class="type-figure-sm">18:00〜18:30</div><div class="type-small muted">野球・コーチ: 佐藤</div><span class="tag type-small"><i class="d d-warning"></i>確定待ち</span></div></div>'
       - label: "plain（コーチ）"
         html: '<div class="pv card"><div class="type-title">山田 花子</div><div class="type-small muted">テニス・評価 4.8（12 件）</div></div>'
 
@@ -294,9 +280,83 @@ components:
       bad: 見出しが「レッスンメ/ニュー」と割れ、ページ全体が横に動く
     preview:
       - label: "PC 幅（wide）と急ぎの行"
-        html: '<div class="pv tblw"><div class="tbl-wrap"><table class="tbl type-small" aria-label="10/28（水）の予約"><thead><tr><th scope="col">開始</th><th scope="col">状態</th><th scope="col">コーチ</th><th scope="col">生徒</th><th scope="col">レッスンメニュー</th><th scope="col">種類</th></tr></thead><tbody><tr class="hl"><td><span class="lnk">9:00</span></td><td><span class="tag"><i class="d d-warning"></i>確定待ち</span> <span class="tag tag-urgent"><i class="d d-danger"></i>開始まで 24 時間以内</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td><td>体験予約</td></tr><tr><td><span class="lnk">12:00</span></td><td><span class="tag"><i class="d d-success"></i>確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td><td>—</td></tr></tbody></table></div></div>'
+        html: '<div class="pv tblw"><div class="tbl-wrap"><table class="tbl type-small" aria-label="10/28（水）の予約"><thead><tr><th scope="col">開始</th><th scope="col">状態</th><th scope="col">コーチ</th><th scope="col">生徒</th><th scope="col">レッスンメニュー</th></tr></thead><tbody><tr class="hl"><td><span class="lnk">9:00</span></td><td><span class="tag"><i class="d d-warning"></i>確定待ち</span> <span class="tag tag-urgent"><i class="d d-danger"></i>開始まで 24 時間以内</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td></tr><tr><td><span class="lnk">12:00</span></td><td><span class="tag"><i class="d d-success"></i>確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td></tr></tbody></table></div></div>'
       - label: "狭い幅・数字の列"
-        html: '<div class="pv w"><div class="tbl-wrap" role="region" aria-label="コーチごとの予約枠の需給" tabindex="0"><table class="tbl type-small"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">公開した枠</th><th scope="col" class="num">予約された枠</th><th scope="col" class="num">埋まった割合</th></tr></thead><tbody><tr><td>山田 花子</td><td class="num">12 件</td><td class="num">9 件</td><td class="num">75%</td></tr><tr><td>佐藤 健</td><td class="num">8 件</td><td class="num">2 件</td><td class="num">25%</td></tr></tbody></table></div></div>'
+        html: '<div class="pv w"><div class="tbl-wrap" role="region" aria-label="コーチごとの予約枠の需給" tabindex="0"><table class="tbl type-small"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">公開した枠</th><th scope="col" class="num">予約された枠</th><th scope="col" class="num">埋まった割合</th></tr></thead><tbody><tr><td>山田 花子</td><td class="num">12 件</td><td class="num">9 件</td><td class="num">75%</td></tr></tbody></table></div></div>'
+
+  - id: description_list
+    ja: ラベルと値の並び
+    lifecycle: trial   # 0.8.0（#1030）
+    use: 1 件の項目をラベルと値の組で縦に並べる（予約の詳細・コーチの様子・生徒の様子・送る前の確認の中身）。patterns の detail の中身の欄
+    not_for: 何件も列で見比べる → data_table。押して移る行 → list_row。時刻つきの出来事 → timeline。入れる欄 → form
+    parts: [list（dl）, item, term（dt）, value（dd）, value_extra（status_tag・リンク。任意）]
+    variants:
+      inline: {columns: "term 10em（160px）・value の残り", gap_x: md 16px, align: baseline, note: 既定}
+      stacked: {columns: 1, gap_y: xs 4px, note: 画面の幅 600px 未満と、値に複数行の文（本文・理由）がある並び}
+    style: {term: small 700 text_muted（10em に収まらなければ term の中で折る）, value: body text・tnum・文節で折る（複数行は改行を残す）, item: 上下 sm 8px・あいだに border の 1px, container: background。面と枠で囲わない}
+    states:
+      default: 全部の項目に値がある
+      pressed: 押せない部品。value の中のリンクだけ押せる
+      disabled: 使わない。値がない項目も消さず「—」、名前がないときは「（名前を表示できません）」
+      loading: 全体は section_text。別の API を待つ項目だけ value に「読み込み中…」（small text_muted・role=status）
+      error: 全体は notice の inline（danger）。1 項目だけ読めないときはその value に error_text、ほかは出す
+    wording: term は glossary の名詞で短く（「今の状態」）。「：」を付けない。単位は半角スペースで（「3 件」）
+    a11y: dl・dt・dd で書き table で代えない（Flutter は項目ごとの Semantics）。画面に 2 つ以上なら aria-label
+    rules:
+      - level: should
+        statement: 詳細の項目の並びは description_list で描き、画面に dl を直に書かない
+        why: ラベルの幅と行のあいだが画面ごとにずれると、本部が詳細を見比べにくい（#1030。admin-web の 7 か所）
+        check: deterministic
+      - level: should
+        statement: 画面の幅 600px 未満と、値に複数行の文がある並びは stacked にする
+        why: 狭い幅でラベルの列が値を細い縦の列に押しつぶさない
+        check: design_inspector
+    examples: {good: ラベルの列が 10em でそろい、狭い幅では上下に積む, bad: ラベルの列が中身で伸び縮みし、360px で値が 3 字ずつ折れる}
+    preview:
+      - label: "通常（inline・予約の詳細）"
+        html: '<div class="pv dlw"><dl class="dl" aria-label="予約の詳細"><div class="it"><dt class="type-small">レッスンメニュー</dt><dd class="type-body">フォアハンドの基礎（30 分）</dd></div><div class="it"><dt class="type-small">枠の時刻</dt><dd class="type-body">10/28（水）12:00〜12:30</dd></div><div class="it"><dt class="type-small">種類</dt><dd class="type-body">—</dd></div><div class="it"><dt class="type-small">今の状態</dt><dd class="type-body"><span class="tag type-small"><i class="d d-success"></i>確定済み</span></dd></div></dl></div>'
+      - label: "狭い幅（stacked・600px 未満）"
+        html: '<div class="pv w"><dl class="dl st"><div class="it"><dt class="type-small">コーチ</dt><dd class="type-body">山田 花子</dd></div><div class="it"><dt class="type-small">点の平均（1〜5）</dt><dd class="type-body">4.8 <a class="lnk type-small">コーチの評価を見る</a></dd></div><div class="it"><dt class="type-small">本文</dt><dd class="type-body">11/3（火）は設備の点検のため、ビデオ通話を使えません。</dd></div></dl></div>'
+      - label: "読み込み中・失敗（項目ごと）"
+        html: '<div class="pv dlw"><dl class="dl"><div class="it"><dt class="type-small">表示名</dt><dd class="type-body">鈴木 一郎</dd></div><div class="it"><dt class="type-small">スポーツ</dt><dd class="type-small muted" role="status">読み込み中…</dd></div><div class="it"><dt class="type-small">返却待ち</dt><dd class="type-small etx" role="alert"><i class="ic">!</i>件数を読めませんでした。画面を更新すると、もう一度読み込めます。</dd></div></dl></div>'
+
+  - id: timeline
+    ja: 経緯の並び
+    lifecycle: trial   # 0.8.0（#1030）
+    use: 1 件に起きた出来事を古い順に縦に並べ、点と線でつなぐ（予約の状態が変わった記録・お知らせの取り下げ・メニューの非公開）
+    not_for: 11 件以上か期間で絞る記録（受付を止めた記録）→ data_table。出来事が 1 つ → description_list
+    parts: [list（ol）, event, rail（dot・line）, time, label, meta（任意）]
+    style:
+      rail: 幅 md 16px。dot 8px、line は border の 2px で次の dot へ
+      dot: 状態は booking_state・slot_state の対応の fg、ほかは border_strong
+      text: time と meta は small text_muted（time は tnum）。label は status_tag の字か body 700 の「〜した」
+      gap: rail と中身 sm 8px、出来事のあいだ md 16px
+    states:
+      default: 最後が今の状態
+      pressed: 押せない部品
+      disabled: 使わない
+      loading: ol を出さず section_text
+      error: ol を出さず notice の inline（danger）。ほかの欄は出す
+      empty: 「状態が変わった記録はありません」を body で
+    behavior: API の順のまま。動きは付けない
+    a11y: "ol に aria-label。rail は aria-hidden。出来事は「10/27（火）9:12、確定済み、本部: 鈴木」と 1 つの文で読む"
+    rules:
+      - level: should
+        statement: 出来事は時刻の古い順（API の順）で並べ、11 件以上か絞り込む記録は data_table にする
+        why: 2〜3 件の経緯は上から読めば順が分かり、多い記録は列で見比べるほうが速い
+        check: design_inspector
+      - level: should
+        statement: 点の色は booking_state・slot_state の対応からだけ選び、対応のない出来事は border_strong にする
+        why: 同じ色が一覧と経緯で別の意味にならない
+        check: deterministic
+    examples: {good: 「確定待ち」→「確定済み」を古い順に点と線でつなぐ, bad: 画面ごとに並びの順が違い、状態が点の色だけ}
+    preview:
+      - label: "通常（予約の状態が変わった記録）"
+        html: '<div class="pv w"><ol class="tl" aria-label="状態が変わった記録"><li><i class="d d-warning"></i><div><p class="type-small muted">10/20（火）9:12</p><span class="tag type-small">確定待ち</span></div></li><li><i class="d d-success"></i><div><p class="type-small muted">10/21（水）8:30</p><span class="tag type-small">確定済み</span></div></li><li><i class="d d-neutral"></i><div><p class="type-small muted">10/27（火）18:04</p><span class="tag type-small muted">キャンセル済み</span><p class="type-small muted">理由: コーチのお休み</p></div></li></ol></div>'
+      - label: "対応のない出来事（お知らせの取り下げ）"
+        html: '<div class="pv w"><ol class="tl" aria-label="お知らせの経緯"><li><i class="d d-neutral"></i><div><p class="type-small muted">11/2（月）10:00</p><p class="type-body b">送った</p></div></li><li><i class="d d-neutral"></i><div><p class="type-small muted">11/2（月）10:25</p><p class="type-body b">取り下げた</p></div></li></ol></div>'
+      - label: "失敗"
+        html: '<div class="pv w notice n-danger type-body" role="alert"><i class="ic">!</i><p>状態が変わった記録を読めませんでした。画面を更新すると、もう一度読み込めます。</p></div>'
 
   - id: badge
     ja: しるし
@@ -337,8 +397,6 @@ components:
     preview:
       - label: "確定待ち（warning）"
         html: '<div class="pv"><span class="tag type-small"><i class="d d-warning"></i>確定待ち</span></div>'
-      - label: "確定済み（success）"
-        html: '<div class="pv"><span class="tag type-small"><i class="d d-success"></i>確定済み</span></div>'
       - label: "キャンセル済み（neutral）"
         html: '<div class="pv"><span class="tag type-small muted"><i class="d d-neutral"></i>キャンセル済み</span></div>'
       - label: "スロットの状態（slot_state: open・booked・closed）"
@@ -367,8 +425,6 @@ components:
     preview:
       - label: "残りの回数"
         html: '<div class="pv w panel dark" aria-label="今月のビデオ通話、残り 2 回、月 2 回のうち"><i class="band"></i><div class="eb type-small">今月のビデオ通話</div><div class="numrow"><span class="type-small">残り</span><span class="num type-display">2</span><span class="type-title">回</span></div><div class="note note-d type-small">月 2 回のうち（プラン: スタンダード）</div></div>'
-      - label: "空のホーム（on_dark のボタン）"
-        html: '<div class="pv w panel dark"><i class="band"></i><div class="eb type-small">はじめての練習</div><div class="type-headline">まずは体験予約</div><span class="btn btn-on-dark" style="align-self:flex-start">コーチを探す</span></div>'
 
   - id: notice
     ja: 知らせ
@@ -392,8 +448,6 @@ components:
         html: '<div class="pv notice n-success type-body" role="status"><i class="mark">✓</i><p>予約が確定しました</p></div>'
       - label: "失敗（inline）"
         html: '<div class="pv notice n-danger type-body" role="alert"><i class="ic">!</i><p>予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。</p></div>'
-      - label: "注意（inline）"
-        html: '<div class="pv notice n-warning type-body"><i class="ic">!</i><p>今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p></div>'
 
   - id: empty_state
     ja: 空の表示
@@ -461,8 +515,6 @@ components:
     preview:
       - label: "取り消せない操作（danger）"
         html: '<div class="pv w scrim"><div class="dlg" role="dialog"><h4 class="type-title">予約をキャンセルしますか？</h4><p class="type-body">10/28（水）12:00〜12:30 のテニスの予約をキャンセルします。今キャンセルすると、今月のビデオ通話の枠を 1 回使います。</p><div class="acts"><span class="btn btn-secondary">やめる</span><span class="btn btn-danger">キャンセルする</span></div></div></div>'
-      - label: "送る前の確認（primary）"
-        html: '<div class="pv w scrim"><div class="dlg" role="dialog"><h4 class="type-title">体験予約を申し込みますか？</h4><p class="type-body">11/4（水）18:00〜18:30 の野球の体験予約を申し込みます。コーチが確定すると、チャットが開きます。</p><div class="acts"><span class="btn btn-secondary">やめる</span><span class="btn btn-primary">申し込む</span></div></div></div>'
 
   - id: media_toggle
     ja: 入・切の切り替えボタン
@@ -488,8 +540,6 @@ components:
         check: design_inspector
     examples: {good: 「マイクを切る」と「カメラを切る」を等分に並べる, bad: 切のとき面を赤くし文言は「マイク」のまま}
     preview:
-      - label: "入（マイクとカメラ）"
-        html: '<div class="pv w mt2"><span class="btn btn-secondary"><i class="mi mic"></i>マイクを切る</span><span class="btn btn-secondary"><i class="mi vc"></i>カメラを切る</span></div>'
       - label: "切・押下"
         html: '<div class="pv w mt2"><span class="btn btn-secondary"><i class="mi mic"><b></b></i>マイクを入れる</span><span class="btn btn-secondary is-pressed"><i class="mi vc"><b></b></i>カメラを入れる</span></div>'
       - label: "読み込み中・無効"
@@ -526,8 +576,6 @@ components:
     preview:
       - label: "通常（映っている。左右反転）"
         html: '<div class="pv cpw"><div class="cam" role="img" aria-label="自分のカメラの映り（左右反転）"><i class="vid"></i></div><p class="type-small muted">映像はこの端末の中だけで映し、送りも残しもしません</p></div>'
-      - label: "読み込み中（許可待ち）"
-        html: '<div class="pv cpw"><div class="cam"><p class="type-title">カメラの許可を待っています</p><p class="type-small s">端末の確認で「許可」を選ぶと、ここに映ります</p></div></div>'
       - label: "無効（切）"
         html: '<div class="pv cpw"><div class="cam off"><i class="mi lg vc"><b></b></i><p class="type-title">カメラを切っています</p><p class="type-small s">入室したあとも切ったままです</p></div></div>'
       - label: "失敗（admin-web 16:9・使えない）"
@@ -588,8 +636,6 @@ components:
     preview:
       - label: "無効（開始時刻の前）"
         html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="cd"><span class="type-small b">あと</span> <span class="type-figure-sm">2:48</span></span></div><p class="type-small muted">開始時刻になると入室できます</p><span class="btn btn-disabled" aria-disabled="true">入室する</span></div>'
-      - label: "通常（開始時刻を過ぎた）"
-        html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span></div><p class="type-small muted">カメラとマイクの入・切は、そのまま通話に引き継ぎます</p><span class="btn btn-primary">入室する</span></div>'
       - label: "失敗"
         html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span></div><div class="notice n-danger type-small" role="alert"><i class="ic">!</i><p>この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。</p></div><span class="btn btn-primary">入室する</span></div>'
       - label: "admin-web（768px・読み込み中）"
@@ -608,7 +654,6 @@ preview_css: |
   .btn-secondary{background:var(--color-primary-container)}
   .btn-text{color:var(--color-primary);padding:0 var(--space-sm);text-decoration:underline 2px;text-underline-offset:4px}
   .btn-danger{background:var(--color-danger-fg);color:var(--color-on-primary)}
-  .btn-on-dark{background:var(--color-secondary);color:var(--color-on-secondary)}
   .btn-disabled{background:var(--color-surface);color:var(--color-text-muted)}
   .spin{width:16px;height:16px;border-radius:var(--radius-pill);border:2px solid currentColor;border-right-color:transparent}
   .hint,.muted,.tf .help,.panel .eb,.note-d{color:var(--color-text-muted)}
@@ -645,9 +690,8 @@ preview_css: |
   .panel .eb,.panel .note{position:relative}
   .notice{display:flex;gap:var(--space-sm);align-items:flex-start;padding:var(--space-md);border-radius:var(--radius-md)}
   .notice .ic,.notice .mark{margin-top:var(--space-xs)}
-  .n-danger,.n-warning{border:1px solid var(--color-border);border-left:4px solid var(--color-danger-fg)}
-  .n-warning{border-left-color:var(--color-warning-fg)}
-  .n-danger .ic{color:var(--color-danger-fg)}.n-warning .ic{color:var(--color-warning-fg)}
+  .n-danger{border:1px solid var(--color-border);border-left:4px solid var(--color-danger-fg)}
+  .n-danger .ic{color:var(--color-danger-fg)}
   .n-success{font-weight:700}
   .empty{border-radius:var(--radius-md);padding:var(--space-lg);display:flex;flex-direction:column;gap:var(--space-md);align-items:flex-start}
   .empty-screen{background:var(--color-surface)}
@@ -710,3 +754,13 @@ preview_css: |
   .pv.jb{width:360px;border-top:1px solid var(--color-border);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
   .jb .tr{display:flex;align-items:baseline;gap:var(--space-sm)}.jb .b{font-weight:700}.jb .cd{margin-left:auto}
   .jb > .btn{width:100%}.pv.jba{width:768px;padding:var(--space-md) 0}
+  .pv.dlw{width:560px}.dl{margin:0}
+  .dl .it{display:grid;grid-template-columns:10em 1fr;column-gap:var(--space-md);align-items:baseline;padding:var(--space-sm) 0;border-top:1px solid var(--color-border)}
+  .dl .it:first-child{border-top:0}.dl.st .it{grid-template-columns:1fr;row-gap:var(--space-xs)}
+  .dl dt{font-weight:700;color:var(--color-text-muted)}.dl dt,.dl dd{word-break:auto-phrase}
+  .dl dd{margin:0;font-variant-numeric:tabular-nums}.dl .lnk{margin-left:var(--space-md)}
+  .etx{display:flex;gap:var(--space-xs);align-items:flex-start;color:var(--color-danger-fg)}
+  .tl{list-style:none;margin:0;padding:0}.tl .b{font-weight:700}
+  .tl li{position:relative;display:flex;gap:var(--space-sm);padding-bottom:var(--space-md)}.tl li:last-child{padding-bottom:0}
+  .tl li>.d{margin:var(--space-sm) var(--space-xs) 0}.tl li>div{display:flex;flex-direction:column;gap:var(--space-xs)}
+  .tl li:not(:last-child)::before{content:"";position:absolute;left:calc(var(--space-sm) - 1px);top:var(--space-md);bottom:calc(-1 * var(--space-sm));width:2px;background:var(--color-border)}

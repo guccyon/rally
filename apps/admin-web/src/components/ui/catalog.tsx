@@ -8,6 +8,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DataTable, type DataTableColumn } from "./DataTable";
 import { DateField, DateRangeField } from "./DateField";
 import { dateRangeError, type DateRange } from "./dateRange";
+import { DescriptionList, type DescriptionItem } from "./DescriptionList";
 import { EmptyState } from "./EmptyState";
 import { JoinBar } from "./JoinBar";
 import { LevelMeter } from "./LevelMeter";
@@ -18,6 +19,7 @@ import { Notice } from "./Notice";
 import { Select, selectNotSelected } from "./Select";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
+import { Timeline, type TimelineEvent } from "./Timeline";
 import { SLOT_STATE_STATUS, type Status } from "./status";
 
 /**
@@ -250,6 +252,50 @@ function TableFrame({ children, narrow = false }: { children: ReactNode; narrow?
 function DialogFrame({ children }: { children: ReactNode }) {
   return <div className="relative h-72 overflow-hidden rounded-md border [transform:translateZ(0)]">{children}</div>;
 }
+
+/** ラベルと値の並びの見本（予約の詳細）。値がない項目も消さず「—」。 */
+const BOOKING_DETAIL_ITEMS: DescriptionItem[] = [
+  { term: "レッスンメニュー", value: "フォアハンドの基礎（30 分）" },
+  { term: "枠の時刻", value: "10/28（水）12:00〜12:30" },
+  { term: "種類", value: null },
+  { term: "今の状態", value: <StatusTag label="確定済み" status="success" /> },
+];
+
+/** 狭い幅と複数行の文の見本（stacked）。 */
+const ANNOUNCEMENT_ITEMS: DescriptionItem[] = [
+  { term: "コーチ", value: "山田 花子" },
+  {
+    term: "点の平均（1〜5）",
+    value: (
+      <>
+        4.8{" "}
+        <a href="#coach-reviews" className="ml-4 text-sm text-primary underline">
+          コーチの評価を見る
+        </a>
+      </>
+    ),
+  },
+  { term: "本文", value: "11/3（火）は設備の点検のため、ビデオ通話を使えません。\n代わりの日は追ってお知らせします。" },
+];
+
+/** 経緯の見本（予約の状態が変わった記録。booking_state の対応の色）。 */
+const BOOKING_HISTORY: TimelineEvent[] = [
+  { key: "pending", time: "10/20（火）9:12", label: "確定待ち", status: "warning" },
+  { key: "confirmed", time: "10/21（水）8:30", label: "確定済み", status: "success", meta: "コーチ: 山田" },
+  {
+    key: "cancelled",
+    time: "10/27（火）18:04",
+    label: "キャンセル済み",
+    status: "neutral",
+    meta: "本部: 鈴木・理由: コーチのお休み",
+  },
+];
+
+/** 対応のない出来事（お知らせの取り下げ）。点は border-strong。 */
+const ANNOUNCEMENT_HISTORY: TimelineEvent[] = [
+  { key: "sent", time: "11/2（月）10:00", label: "送った", meta: "本部: 鈴木" },
+  { key: "withdrawn", time: "11/2（月）10:25", label: "取り下げた", meta: "本部: 鈴木" },
+];
 
 /** 入・切の切り替えの見本。状態（components.yaml の media_toggle.states）ごとに、入と切の 2 つを並べる。 */
 const MEDIA_TOGGLE_STATES = ["default", "disabled", "loading"] as const;
@@ -618,6 +664,92 @@ export const CATALOG: CatalogEntry[] = [
         />
       </TableFrame>
     ),
+  },
+  {
+    component: "description_list",
+    variant: "inline",
+    state: "default",
+    render: () => <DescriptionList label="予約の詳細" items={BOOKING_DETAIL_ITEMS} />,
+  },
+  {
+    component: "description_list",
+    variant: "stacked",
+    state: "default",
+    render: () => (
+      <TableFrame narrow>
+        <DescriptionList variant="stacked" label="お知らせの中身" items={ANNOUNCEMENT_ITEMS} />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "description_list",
+    variant: "inline",
+    state: "loading",
+    example: "項目ごと",
+    render: () => (
+      <DescriptionList
+        label="生徒の様子"
+        items={[
+          { term: "表示名", value: "鈴木 一郎" },
+          { term: "スポーツ", loading: true },
+          { term: "返却待ち", error: "件数を読めませんでした。画面を更新すると、もう一度読み込めます。" },
+        ]}
+      />
+    ),
+  },
+  {
+    component: "description_list",
+    variant: "inline",
+    state: "loading",
+    render: () => <DescriptionList items={[]} loading="予約を読み込んでいます…" />,
+  },
+  {
+    component: "description_list",
+    variant: "inline",
+    state: "error",
+    render: () => (
+      <DescriptionList items={[]} error="予約を読み込めませんでした。画面を更新すると、もう一度読み込めます。" />
+    ),
+  },
+  {
+    component: "timeline",
+    state: "default",
+    render: () => <Timeline label="状態が変わった記録" events={BOOKING_HISTORY} empty="状態が変わった記録はありません" />,
+  },
+  {
+    component: "timeline",
+    state: "default",
+    example: "対応のない出来事",
+    render: () => <Timeline label="お知らせの経緯" events={ANNOUNCEMENT_HISTORY} empty="経緯はありません" />,
+  },
+  {
+    component: "timeline",
+    state: "loading",
+    render: () => (
+      <Timeline
+        label="状態が変わった記録"
+        events={[]}
+        empty="状態が変わった記録はありません"
+        loading="状態が変わった記録を読み込んでいます…"
+      />
+    ),
+  },
+  {
+    component: "timeline",
+    state: "error",
+    render: () => (
+      <Timeline
+        label="状態が変わった記録"
+        events={[]}
+        empty="状態が変わった記録はありません"
+        error="状態が変わった記録を読めませんでした。画面を更新すると、もう一度読み込めます。"
+      />
+    ),
+  },
+  {
+    component: "timeline",
+    state: "empty",
+    render: () => <Timeline label="状態が変わった記録" events={[]} empty="状態が変わった記録はありません" />,
   },
   ...([false, true] as const).map((danger) => ({
     component: "confirm_dialog",

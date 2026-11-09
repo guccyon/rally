@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'components/booking_card.dart';
 import 'components/confirm_dialog.dart';
+import 'components/description_list.dart';
 import 'components/empty_state.dart';
 import 'components/join_bar.dart';
 import 'components/level_meter.dart';
@@ -14,6 +15,7 @@ import 'components/rally_card.dart';
 import 'components/score_panel.dart';
 import 'components/section_loading.dart';
 import 'components/status_tag.dart';
+import 'components/timeline.dart';
 import 'theme/rally_tokens.dart';
 
 /// カタログの 1 枠。[component]・[variant]・[state] は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
@@ -183,6 +185,41 @@ const _joinBarExamples = <String, JoinBar>{
     onJoin: _noop,
   ),
 };
+
+/// ラベルと値の並びの見本（予約の詳細）。値がない項目も消さず「—」
+final _bookingDetailItems = [
+  const DescriptionItem('レッスンメニュー', text: 'フォアハンドの基礎（30 分）'),
+  const DescriptionItem('枠の時刻', text: '10/28（水）12:00〜12:30'),
+  const DescriptionItem('種類'),
+  DescriptionItem(
+    '今の状態',
+    value: StatusTag(
+      label: '確定済み',
+      status: RallyBookingState.confirmed.status,
+    ),
+  ),
+];
+
+/// 経緯の見本（予約の状態が変わった記録。booking_state の対応の色）
+final _bookingHistory = [
+  TimelineEvent(
+    time: '10/20（火）9:12',
+    label: '確定待ち',
+    status: RallyBookingState.pending.status,
+  ),
+  TimelineEvent(
+    time: '10/21（水）8:30',
+    label: '確定済み',
+    status: RallyBookingState.confirmed.status,
+    meta: 'コーチ: 山田',
+  ),
+  TimelineEvent(
+    time: '10/27（火）18:04',
+    label: 'キャンセル済み',
+    status: RallyBookingState.cancelled.status,
+    meta: '理由: コーチのお休み',
+  ),
+];
 
 /// 部品 × 種類 × 状態の見本。components.yaml に部品や種類を足したら、ここにも足す。
 final designCatalog = <CatalogEntry>[
@@ -398,6 +435,113 @@ final designCatalog = <CatalogEntry>[
       child: CircularProgressIndicator(strokeWidth: 2, value: 0.7),
     ),
     variant: 'spinner',
+  ),
+  // 画面の幅 600px 未満では inline も上下に積むので、スマホのカタログでは inline と stacked が同じ形になる
+  CatalogEntry(
+    'description_list',
+    (_) => DescriptionList(
+      semanticsLabel: '予約の詳細',
+      items: _bookingDetailItems,
+    ),
+    variant: 'inline',
+    state: 'default',
+  ),
+  CatalogEntry(
+    'description_list',
+    (_) => const DescriptionList(
+      variant: DescriptionListVariant.stacked,
+      items: [
+        DescriptionItem('コーチ', text: '山田 花子'),
+        DescriptionItem(
+          '本文',
+          text: '11/3（火）は設備の点検のため、ビデオ通話を使えません。\n代わりの日は追ってお知らせします。',
+        ),
+      ],
+    ),
+    variant: 'stacked',
+    state: 'default',
+  ),
+  CatalogEntry(
+    'description_list',
+    (_) => const DescriptionList(
+      items: [
+        DescriptionItem('表示名', text: '鈴木 一郎'),
+        DescriptionItem('スポーツ', loading: true),
+        DescriptionItem(
+          '残りの回数',
+          error: '回数を読めませんでした。画面を更新すると、もう一度読み込めます。',
+        ),
+      ],
+    ),
+    variant: 'inline',
+    state: 'loading',
+    example: '項目ごと',
+  ),
+  CatalogEntry(
+    'description_list',
+    (_) => const DescriptionList(items: [], loading: '予約を読み込んでいます…'),
+    variant: 'inline',
+    state: 'loading',
+  ),
+  CatalogEntry(
+    'description_list',
+    (_) => const DescriptionList(
+      items: [],
+      error: '予約を読み込めませんでした。画面を更新すると、もう一度読み込めます。',
+    ),
+    variant: 'inline',
+    state: 'error',
+  ),
+  CatalogEntry(
+    'timeline',
+    (_) => Timeline(
+      semanticsLabel: '状態が変わった記録',
+      events: _bookingHistory,
+      empty: '状態が変わった記録はありません',
+    ),
+    state: 'default',
+  ),
+  CatalogEntry(
+    'timeline',
+    (_) => const Timeline(
+      semanticsLabel: 'お知らせの経緯',
+      events: [
+        TimelineEvent(time: '11/2（月）10:00', label: '送った'),
+        TimelineEvent(time: '11/2（月）10:25', label: '取り下げた'),
+      ],
+      empty: '経緯はありません',
+    ),
+    state: 'default',
+    example: '対応のない出来事',
+  ),
+  CatalogEntry(
+    'timeline',
+    (_) => const Timeline(
+      semanticsLabel: '状態が変わった記録',
+      events: [],
+      empty: '状態が変わった記録はありません',
+      loading: '状態が変わった記録を読み込んでいます…',
+    ),
+    state: 'loading',
+  ),
+  CatalogEntry(
+    'timeline',
+    (_) => const Timeline(
+      semanticsLabel: '状態が変わった記録',
+      events: [],
+      empty: '状態が変わった記録はありません',
+      error: '状態が変わった記録を読めませんでした。画面を更新すると、もう一度読み込めます。',
+    ),
+    state: 'error',
+  ),
+  CatalogEntry(
+    'timeline',
+    (_) => const Timeline(
+      semanticsLabel: '状態が変わった記録',
+      events: [],
+      empty: '状態が変わった記録はありません',
+    ),
+    state: 'empty',
   ),
   // 確認のダイアログは開く関数（showConfirmDialog）なので、開くボタンを置く
   CatalogEntry(

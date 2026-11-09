@@ -57,3 +57,10 @@
 - 理由: #1040 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025）。トークンは足していない（`camera_preview` の icon は段にない 40px をやめ 24px）。既存の名前と値は消していない
 - 効く画面: 入室前チェックの画面（student-app・admin-web のコーチの画面。id は #1040 で足す）と両アプリの `design-catalog`。この版で画面が変わるのは両アプリの `design-catalog` だけ
 - 承認: 人（`camera_preview` の must の追加。マージの前に要る）、工場（部品・should・lint・文言）
+
+## 0.8.0（2026-11-09）
+
+- 変えたもの: `components.yaml` に `description_list`（ラベルと値の並び。種類は `inline`（term 10em・value の残り、あいだ md 16px）と `stacked`（画面の幅 600px 未満と値に複数行の文がある並び）。状態は通常・押下（value の中のリンクだけ）・無効（使わない。値がなければ「—」）・読み込み中（全体は section_text、項目ごとは「読み込み中…」）・失敗（全体は notice の inline、項目ごとは error_text））と `timeline`（経緯の並び。rail 16px・点 8px・border の 2px の線、点の色は booking_state・slot_state の対応だけで対応のない出来事は border_strong、状態は通常・押下・無効（使わない）・読み込み中・失敗・空）と `preview_css` を足した。字数の上限のため既存の見本を 10 個絞った（部品の定めは同じ）。`governance.yaml` の lint に `description-list-only` を足し、`state-color-map` を timeline に広げ、`requests` に `patterns-detail-items`（patterns の detail の structure に 2 つの部品を書き足す。次の版）を足した。admin-web に `DescriptionList`・`Timeline`（`src/components/ui/`）、student-app に `DescriptionList`・`Timeline`（`lib/ui/components/`）を足し、両アプリのカタログに見本を置き、`catalog/catalog.html` を組み立て直した
+- 理由: #1030 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025）。admin-web の 7 か所の dl に、ラベルの幅と狭い幅の形がなかった。経緯はお知らせの取り下げなどでも要る。トークンと既存の名前・値は変えていない。must の追加はない
+- 効く画面: 正本の上では admin-web の dl のある画面（`hq-booking-detail`・`hq-coach-overview`・`hq-coach-reviews*`・`hq-student-activity`・`hq-coach-leave*`・`hq-announcement-confirm`・`coach-live`）と `design-catalog`。この版で画面が変わるのは両アプリの `design-catalog` だけ。7 か所の dl の `DescriptionList` への置き換えと、予約の詳細の「状態が変わった記録」の `Timeline` への置き換えは別のタスク
+- 承認: 工場（部品・should・lint の追加。must はない）

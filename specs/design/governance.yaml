@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.7.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.8.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -65,7 +65,10 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
     target: 入室前チェックの画面と camera_preview・level_meter の実装
     detect: MediaRecorder・captureStream・canvas の toBlob と toDataURL、getUserMedia の stream を fetch・WebSocket・RTCPeerConnection に渡すコード（0.7.0。must なので最初からマージを止める）
   - id: state-color-map
-    detect: status_tag の色が booking_state・slot_state の対応と違う
+    detect: status_tag と timeline の点の色が booking_state・slot_state の対応と違う（timeline は 0.8.0 から）
+  - id: description-list-only
+    target: admin-web の src/（src/components/ui/DescriptionList.tsx を除く）
+    detect: dl 要素を直に書いている要素（0.8.0）
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
 
 requests:   # 画面のタスクから来た部品の求めのうち、まだ足していないもの
@@ -73,17 +76,21 @@ requests:   # 画面のタスクから来た部品の求めのうち、まだ足
     from: "#455（プロダクトデザイナー役、ADR 0025）"
     stage: 保留
     note: 案 b（予約ごとに選ぶ）でだけ使うので 0.4.0 では足さない。案 b を選んだら checkbox と「すべて選ぶ」を足すタスクを切る
+  - id: patterns-detail-items
+    from: "#1030"
+    stage: 次の版
+    note: patterns の detail の structure に description_list と timeline を書き足す（0.8.0 は字数の上限で components にだけ書いた）
 
 changelog:
   file: specs/design/CHANGELOG.md
   format: 版・日付・変えたもの・理由・効く画面（screens.ts と capture_test.dart の画面の id）・承認（工場か人）
-  entries:   # 直近の版だけ（0.7.0 で縮めた）。0.1.0 からの全文は specs/design/CHANGELOG.md
-    - version: 0.7.0
-      date: "2026-11-08"
+  entries:   # 直近の版だけ。全文は specs/design/CHANGELOG.md
+    - version: 0.8.0
+      date: "2026-11-09"
       change: >-
-        入室前チェックの部品 media_toggle・camera_preview・level_meter・join_bar を足した。content に datetime.countdown・動詞・errors.prejoin・prejoin_check、lint に media-no-record を足した。
-        見本を select 7→5・date_field 4→3 に絞り、entries を直近の版だけにした（spec の字数の上限。全文は CHANGELOG.md）
+        description_list（inline・stacked）と timeline を足した。lint に description-list-only を足し、state-color-map を timeline に広げた。
+        既存の見本を 10 個絞った（字数の上限。部品の定めは同じ）
       reason: >-
-        #1040 の画面の設計で部品が足りなかった（ADR 0025）。トークンは足していない（camera_preview の icon は段にない 40px をやめ 24px）。既存の名前と値は消していない
-      affects: 入室前チェックの画面（student-app・admin-web のコーチの画面。id は #1040 で足す）と両アプリの design-catalog
-      approved_by: 人（camera_preview の must の追加。マージの前に要る）、工場（部品・should・lint・文言）
+        #1030 の画面の設計で部品が足りなかった（ADR 0025）。admin-web の 7 か所の dl に、ラベルの幅と狭い幅の形がなかった。経緯はお知らせの取り下げなどでも要る。トークンと既存の名前・値は変えていない
+      affects: admin-web の dl のある画面（hq-booking-detail・hq-coach-overview・hq-coach-reviews*・hq-student-activity・hq-coach-leave*・hq-announcement-confirm・coach-live）と design-catalog。今変わるのは design-catalog だけ
+      approved_by: 工場（部品・should・lint の追加。must はない）
