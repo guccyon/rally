@@ -280,4 +280,20 @@ enforcement:
       decided_by: committee:D-0099
       wired: false
       verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0093（Issue #1262 の起票時の番号は D-0089。PR #1257）の ci_check の案（tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE に
+        issue 1179 の解決策と patch.mjs の組を足し、schedule のジョブから tools/pr-body-check/patch.mjs を呼ぶ wired_by がないと wired: true にできないようにする）を入れた。
+        check.py の REQUIRED_SCHEDULE に (K-0001, 1179) と tools/pr-body-check/patch.mjs の組を、REQUIRED_SCHEDULE_WORKFLOW に .github/workflows/pr-body-patch.yml を足したので、
+        issue 1179 の解決策は、その写しの schedule でも走るジョブから patch.mjs を呼ぶ（ジョブと手順に continue-on-error が真で書かれていない）wired_by がないと wired: true にできない
+        （ほかのワークフローの schedule のジョブや手で走らせた記録だけでは、ひな形 ci/pr-body-patch.yml を写して定期に照らしているとは読めないため）。
+        test_check.py の PrBodyPatchScheduleTest が、ひな形をそのまま写した patch のジョブ（working-directory: tools/pr-body-check で node patch.mjs を呼ぶ）で通り、
+        別の名前のワークフロー・schedule を外した写し・patch.mjs を呼ばない写し・ほかの検査を指す項目・照らす手順に continue-on-error: true を足した写しで落ちることを確かめる。
+        ひな形を .github/workflows/ に写して issue 1179 の解決策を wired: true にするのは建設者なので（tools/pr-body-check/README.md の「差分の当たりの照合」）、
+        この検査そのものは PR ごとの knowledge-enforcement の写しから走るまで配線されておらず、効き目は確かめていない
+      issue: 1262
+      at: 2026-11-09
+      decided_by: committee:D-0093
+      wired: false
+      verified: false
 decided_by: committee:D-0001

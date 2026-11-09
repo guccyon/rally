@@ -92,6 +92,10 @@ schedule でも走るジョブから tools/conflict-check/events.py を呼ぶ項
 Engine の handoff.saved の形で確かめた schema の解決策。照らすのは同じ schema.py）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
 .github/workflows/conflict-schema.yml の schedule でも走るジョブから tools/conflict-check/schema.py を呼ぶ項目がないと wired にできないようにした
 （issue 1136・1207 と同じ conflict-schema のジョブで満たす）。
+議決 D-0093（Issue #1262 の起票時の番号は D-0089。PR #1257）の ci_check の案で、K-0001 の issue 1179 の解決策（engine/pr-body-gate.patch が
+ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で定期に照らす）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
+.github/workflows/pr-body-patch.yml の schedule でも走るジョブから tools/pr-body-check/patch.mjs を呼ぶ項目がないと wired にできないようにした
+（tools/pr-body-check/ci/pr-body-patch.yml を写した patch のジョブで満たす）。
 
 呼ぶ検査を解決策に書く（議決 D-0077（Issue #1216。起票時の番号は D-0075）の schema の案）: 上で REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO に
 (知見の id, 解決策の issue) の名前で並べていた組をやめ、解決策の requires_check（検査の道か、道か {runs, workflow} の列）に書く形に一般化した。
@@ -186,12 +190,14 @@ EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
 # K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs。
 # K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）。requires_check にも書く。
 # K-0014 の issue 1136・1207 は議決 D-0101（起票時の番号は D-0073）、Issue #1207。衝突したファイルの列を直近の窓のイベント列で照らす schema.py。
-# K-0014 の issue 1214 は議決 D-0076（起票時の番号は D-0074）、Issue #1214。直近の窓に積まれた衝突の続きのジョブを照らす events.py）
+# K-0014 の issue 1214 は議決 D-0076（起票時の番号は D-0074）、Issue #1214。直近の窓に積まれた衝突の続きのジョブを照らす events.py。
+# K-0001 の issue 1179 は議決 D-0093（起票時の番号は D-0089）、Issue #1262。engine/pr-body-gate.patch が Engine に当たるかを照らす patch.mjs）
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
 PR_BODY_PROTECTION = "tools/pr-body-check/protection.mjs"
 SENDBACK_HEARTBEAT = "tools/sendback-check/heartbeat.mjs"
 CONFLICT_SCHEMA = "tools/conflict-check/schema.py"
 CONFLICT_EVENTS = "tools/conflict-check/events.py"
+PR_BODY_PATCH = "tools/pr-body-check/patch.mjs"
 REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
                      ("K-0001", 1106): PR_BODY_PROTECTION,
                      ("K-0001", 1182): PR_BODY_PROTECTION,
@@ -201,7 +207,8 @@ REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
                      ("K-0014", 1136): CONFLICT_SCHEMA,
                      ("K-0014", 1207): CONFLICT_SCHEMA,
                      ("K-0014", 1213): CONFLICT_SCHEMA,
-                     ("K-0014", 1214): CONFLICT_EVENTS}
+                     ("K-0014", 1214): CONFLICT_EVENTS,
+                     ("K-0001", 1179): PR_BODY_PATCH}
 # (知見の id, 解決策の issue) → (REQUIRED_SCHEDULE の検査を呼ぶジョブがあることを求めるワークフロー, 落ちたときに挙げる議決)（議決 D-0060、Issue #1160）
 SENDBACK_PROTECTION_WORKFLOW = f"{WORKFLOWS}/sendback-protection.yml"
 REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
@@ -210,7 +217,8 @@ REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "
                               ("K-0014", 1136): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
                               ("K-0014", 1207): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
                               ("K-0014", 1213): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076"),
-                              ("K-0014", 1214): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076")}
+                              ("K-0014", 1214): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076"),
+                              ("K-0001", 1179): (f"{WORKFLOWS}/pr-body-patch.yml", "D-0093")}
 # wired_by に SENDBACK_PROTECTION を呼ぶ項目を持つ wired: true の解決策は、知見と issue を問わずどれも、SENDBACK_PROTECTION_WORKFLOW の
 # schedule でも走るジョブから呼ぶ項目を要する（議決 D-0086（Issue #1247 の起票時の番号は D-0085）の lint の案。別の issue 番号で足した見張りが、
 # REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に組を足し忘れるとすり抜けないように）
