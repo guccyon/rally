@@ -1131,4 +1131,24 @@ enforcement:
           workflow: .github/workflows/knowledge-enforcement.yml
       wired: false
       verified: false
+    - kind: lint
+      what: >-
+        議決 D-0086（Issue #1247 の起票時の番号は D-0085。PR #1243）の lint の案（check.py で、issue 番号ではなく wired_by に
+        tools/sendback-check/protection.mjs を呼ぶ項目を持つ解決策をすべて対象にし、wired: true にするなら sendback-protection.yml の schedule のジョブを必須にして、
+        別の issue 番号で足した見張りがすり抜けないようにする）を入れた。前は REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に組を足した issue 1087・1018 しか
+        .github/workflows/sendback-protection.yml を求めず、組を足し忘れた解決策はほかのワークフローの schedule のジョブや protection-pr（PR のジョブ）を指す wired_by で wired にできた。
+        tools/knowledge-enforcement-check/check.py の check_schedule() を、表の組の求めに、wired_by に protection.mjs を呼ぶ項目を持つ解決策（知見と issue を問わない）への
+        sendback-protection.yml の schedule でも走るジョブの求めを重ねる形にした（表にワークフローを書いた組は表の議決のまま 1 件だけ出し、issue 1158 もワークフローの名前を問うようになった）。
+        test_check.py の SendbackProtectionAnyIssueTest で、組に挙げていない解決策（K-0004 の issue 1247・1159、ほかの知見）でもひな形をそのまま写した protection のジョブなら通り、
+        ほかのワークフロー・protection-pr のジョブ・schedule を外した写しを指すと落ちること、protection.mjs を呼ばない解決策と tools/pr-body-check/protection.mjs は見ないこと、
+        main から落とすことを確かめ、新しい求めを外す改変と表に組のある issue 1158 を上書きしない改変でテストが落ちることを手元で確かめた。今の記録はすべて通る。
+        test_check.py は .github/workflows/ からはまだ走っておらず（ci/knowledge-enforcement.yml の写しは建設者）、この解決策も未配線・未確認
+      issue: 1247
+      at: 2026-11-09
+      decided_by: committee:D-0086
+      requires_check:
+        - runs: tools/knowledge-enforcement-check/test_check.py
+          workflow: .github/workflows/knowledge-enforcement.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0004
