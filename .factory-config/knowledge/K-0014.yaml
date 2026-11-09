@@ -180,4 +180,22 @@ enforcement:
       decided_by: committee:D-0111
       wired: false
       verified: false
+    - kind: test
+      what: >-
+        議決 D-0112（PR #1296）の test の案を入れた。conflict_files の形の判定は、issue 1208 の解決策ですでに tools/conflict-check/schema.py の
+        field_error 1 つにまとめてあり、events.py の missing_conflict_files（_inline_files）はそれを呼んでいるので、関数のまとめは足さず、案のもう 1 つの
+        テストを足した。test_events.py の ConflictFilesShapeParityTest が、conflict_files の形の組 20 件（通る: 空でない文字列の列で 1 件以上。
+        落ちる: 欄がない・null・空の列・空の文字列や空白だけの要素・文字列でない要素・文字列や真偽や数やオブジェクトの値）を、continue.enqueued(reason=conflict) に
+        載せてほかの記録を置かない列で schema.py の check（bad_field・missing_field）と events.py の record_check（missing_conflict_files）の両方に通し、
+        通る・落ちるがそろって期待どおりであることを、関数の呼び出しとコマンド（schema.py --json と events.py --record-only --json が落とす PR の組）の両方で
+        確かめる。field_error を共有していても、片方の入口（schema.check の null の扱い、events._inline_files の読み方）だけが直されると 2 つの解決策が
+        食い違うので、関数ではなく両方の検査の結果で照らす。手元で events._inline_files を空でない列なら通すように変える・field_error の空白だけの判定を
+        外す誤りでは、どちらもこのテストが落ちることを確かめた。テストは tools/conflict-check/ci/conflict-check.yml の unittest discover で走るが、
+        ワーカーは .github/workflows/ を変えられないので、ひな形を .github/workflows/conflict-check.yml に写して必須のチェックにするのは建設者が行う
+        （tools/conflict-check/README.md の「CI への組み込み」）。まだ配線されておらず、本物のイベント列では確かめていない
+      issue: 1297
+      at: 2026-11-09
+      decided_by: committee:D-0112
+      wired: false
+      verified: false
 decided_by: committee:D-0049

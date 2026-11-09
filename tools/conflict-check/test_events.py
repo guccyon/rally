@@ -9,6 +9,7 @@ todo は照らせない件数を理由に添えて test_engine.py の todo で�
 
 MissingConflictFilesTest は、衝突したファイルがその場で記録されなかった回を落とす rule missing_conflict_files（知見 K-0014 の担保。議決 D-0049・Issue #1135）を見る。
 continue.enqueued の payload の conflict_files（schema.py の定義の欄）をその場の記録として読むことも見る（議決 D-0101・Issue #1208）。
+ConflictFilesShapeParityTest は、同じ conflict_files の形の組を schema.py と events.py の missing_conflict_files の両方に通して、通る・落ちるがそろうことを見る（議決 D-0112・Issue #1297）。
 MechanicalWithoutVerifyTest は、mechanical.verify の検査に落ちる head を機械的に解いた回を落とす rule mechanical_without_verify と、
 同じ PR・同じファイルの機械的な解消が 3 回を超えた件数（知見 K-0015 の担保。議決 D-0078（Issue #1220 の起票時の番号は D-0077）・Issue #1220）を見る。
 RecordOnlySinceTest は、直近の窓の本物のイベント列を定期に照らすジョブ（ci/conflict-schema.yml の conflict-record）が使う --record-only と
@@ -355,6 +356,54 @@ class MissingConflictFilesTest(unittest.TestCase):
         evs = stream([{"inline": ["CHANGELOG.md"], "cost": 1.2}])
         self.assertEqual(rules(evs), Counter({"agent_for_mechanical": 1}))
         self.assertEqual(events.records_from_events(evs)[URL]["attempts"][0]["files"], ["CHANGELOG.md"])
+
+
+# conflict_files の形の組。ABSENT は欄そのものを載せない回。通るのは空でない文字列の列で 1 件以上のときだけ
+ABSENT = object()
+SHAPES = {"1 件": (["CHANGELOG.md"], True), "2 件": (["CHANGELOG.md", "changelog.d/700.md"], True), "前後に空白": ([" a.ts "], True),
+          "欄がない": (ABSENT, False), "null": (None, False), "空の列": ([], False), "空の文字列だけ": ([""], False),
+          "空白だけ": (["  "], False), "改行とタブだけ": (["\t\n"], False), "空の文字列が混じる": (["a.ts", ""], False),
+          "文字列": ("CHANGELOG.md", False), "空の文字列": ("", False), "数の要素": ([1], False), "数が混じる": (["a.ts", 2], False),
+          "null の要素": ([None], False), "列の要素": ([["a.ts"]], False), "オブジェクト": ({"a.ts": 1}, False), "真偽": (True, False),
+          "偽": (False, False), "0": (0, False)}
+
+
+class ConflictFilesShapeParityTest(unittest.TestCase):
+    """知見 K-0014: continue.enqueued(reason=conflict) の conflict_files の形の判定が、schema.py（issue 1136 の解決策。bad_field・missing_field）と
+    events.py の missing_conflict_files（issue 1208 の解決策）で同じ入力に同じ通る・落ちるを返すか（議決 D-0112・Issue #1297）。
+    events.py は schema.field_error を呼ぶが、どちらかの入口（schema.check の null の扱い、events._inline_files の読み方）だけが直されると
+    2 つの解決策が食い違うので、関数ではなく両方の検査の結果で照らす"""
+
+    def case(self, value, n: int = 1) -> list[dict]:
+        """value を continue.enqueued の conflict_files に載せた 1 回だけの列（ほかに衝突したファイルの記録はない）。PR と job_id は n ごとに分ける"""
+        evs = stream([{} if value is ABSENT else {"inline": value}], url=f"https://github.com/guccyon/rally/pull/{1000 + n}")
+        return [{**e, "job_id": 1000 + n if e["job_id"] is not None else None} for e in evs]
+
+    def test_同じ形の組で両方の検査の通る落ちるがそろう(self):
+        defs = schema.load()
+        for name, (value, ok) in SHAPES.items():
+            with self.subTest(name):
+                evs = self.case(value)
+                by_schema = [e for e in schema.check(defs, evs) if e["name"] == "continue.enqueued"]
+                by_events = recorded(evs)
+                self.assertEqual(not by_schema, ok, by_schema)
+                self.assertEqual(not by_events, ok, by_events)
+
+    def test_コマンドでも両方の検査が同じPRを落とす(self):
+        evs = [e for n, (value, _) in enumerate(SHAPES.values()) for e in self.case(value, n)]
+        evs = [{**e, "id": i} for i, e in enumerate(evs, 1)]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.json"
+            path.write_text(json.dumps(evs), encoding="utf-8")
+            s = subprocess.run([sys.executable, "-I", "-B", str(HERE / "schema.py"), "--events", str(path), "--json"], capture_output=True, text=True)
+            self.assertEqual(s.returncode, 1, s.stderr)
+            e = run(path, "--record-only", "--json")
+            self.assertEqual(e.returncode, 1, e.stderr)
+        by_schema = {x["pr_url"] for x in json.loads(s.stdout)["errors"] if x["name"] == "continue.enqueued"}
+        by_events = {r["pr_url"] for r in json.loads(e.stdout)["prs"] if r["errors"]}
+        want = {f"https://github.com/guccyon/rally/pull/{1000 + n}" for n, (_, ok) in enumerate(SHAPES.values()) if not ok}
+        self.assertEqual(by_schema, want)
+        self.assertEqual(by_events, want)
 
 
 # 「記録がない項目は照らさずに件数を出す」は、Engine が今の形（job.finished に agent_resumed と解き方の tier を出さない版）のときだけの扱い。
