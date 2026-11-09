@@ -1,0 +1,70 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0142
+pr: https://github.com/guccyon/rally/pull/1352
+decided_at: '2026-11-10'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0016 の issue 1219 の解決策に足した requires_check（.github/workflows/pr-body-engine.yml
+    の gate.test.mjs と engine.test.mjs）は、議決 D-0117 の enforcement にある schema の案と道も workflow
+    も一致しています。
+  - 'requires_check を {runs, workflow} の列で書き、kind: ci_check の解決策に欄を置いたのは README.md
+    の決まり（D-0077・D-0116）と合っており、K-0001・K-0012 の同じ検査の項目ともそろいました。'
+  - '足した kind: schema の項目は issue: 1306・decided_by: committee:D-0117・wired: false・verified:
+    false を書いていて、kind が schema なので requires_check がなくても D-0116 の決まりに反しません。'
+  - D-0117 の整合の票が求めた related への K-0001 の追加はまだ入っていないので、次に K-0016 の statement か related
+    を直す変更セットで K-0001 の扱いと一緒に足してください。
+  - 今回の変更は担保の記録だけで statement・scope・evidence を変えておらず、D-0119 で足した C-0009 とも食い違わず、specs/
+    の用語や業務ルールを新しく定めるものもありません。
+  - 配線も効き目の確認もまだで、欠けた場所も確かめられていないので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した schema の解決策は decided_by: committee:D-0117 を指していて、D-0117 は PR #1305 の議決であり、その
+    enforcement の案（issue 1219 の解決策に gate.test.mjs と engine.test.mjs を workflow: .github/workflows/pr-body-engine.yml
+    で requires_check に足す）と、差分で足した requires_check の中身が一致しているので議決の記録まで辿れます。'
+  - 「前は K-0001・K-0012 の同じ検査の項目と違って requires_check がなかった」という書き添えは、K-0001・K-0012 の項目に同じ
+    workflow の requires_check があることと D-0117 の担保の票の理由とで確かめられます。
+  - 'issue: 1306 は手元の committee/ や cases/ のどこにも出てこず確かめられないので、議決 D-0117 か次の議決に Issue
+    #1306 のリンクを残すと辿りやすくなります。'
+  - 'どちらの解決策も wired: false・verified: false のままで、テストの組を記録しただけで本物の記録では効き目を確かめていないので、未配線・未確認と書いたのは正直で妥当です。'
+  - statement・evidence・confidence は変えておらず、欠けた場所も確かめられていないので、確かさは hypothesis のままが妥当で上げる材料はありません。
+  - 差分に出てくるのは議決・PR・Issue の番号と道の名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0117 の schema の案（K-0016 の issue 1219 の解決策に requires_check として tools/pr-body-check/gate.test.mjs
+    と tools/pr-body-check/engine.test.mjs を .github/workflows/pr-body-engine.yml と組で書く）をそのまま入れたもので、担保の観点で採ってよいです。
+  - 'requires_check を書いたことで、pull_request で走るジョブからこれらを呼ぶ wired_by がないまま wired: true
+    にすると check.py が requires_check_unwired で落とすので、手で配線を言い張る穴が決定論で塞がり、K-0001・K-0012
+    の同じ検査の項目ともそろいました。'
+  - 足した解決策の kind は schema なので、README.md の決まり（D-0116）で requires_check が必須なのは ci_check・test
+    だけであり、この項目に requires_check がないことは決まりに反しません。
+  - 'ただし、この schema の担保を照らす check.py と test_check.py の RequiresCheckTest はまだ PR ごとに走っていないので、ci/knowledge-enforcement.yml
+    の写しが配線されるまで効き目は出ず、wired: false・verified: false と書いたのは正直で妥当です。'
+  - 新しい決定論の担保は今回の変更で足りており、これ以上の lint やテストを求める必要はありません。
+  - 配線も本物の記録での確認もまだで、欠けた場所も確かめられていないので、確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0117 の schema の案どおり、K-0016 の issue 1219 の解決策に requires_check を足し、その記録の項目を
+    1 つ足しただけで、statement・scope・confidence・status は変えていないので、範囲は広がっていません。
+  - requires_check の組（gate.test.mjs と engine.test.mjs、workflow は .github/workflows/pr-body-engine.yml）は
+    K-0001・K-0012 の同じ検査の項目と同じ形で、反例になる食い違いは見つかりません。
+  - head_not_first_heading の規則そのものは check.mjs にありますが、gate.test.mjs が k0016.mjs の形でそれを照らしているので、check.mjs
+    と pr-body-check.yml を requires_check に足さなくても、この解決策で抜ける場所はありません。
+  - 'check.py を PR ごとに走らせる配線（ci/knowledge-enforcement.yml の写し）がまだなく、この schema の担保も実際にはまだ効かないことを
+    wired: false・verified: false と正直に書いているので、効き目を言い過ぎてはいません。'
+  - 足した項目は issue 1219 の解決策を締めるための記録の上の担保で、K-0016 の主張を新しく担保するものではないため、数を数えるときに担保が 2
+    つあると読み違えないよう、次に K-0016 を直す変更セットでその旨を what に添えるのが望ましいです。
+  - D-0078・D-0117 の票が求めた related への K-0001 の追加と roles の絞り込みは今回も入っておらず、事例 2 件で欠けた場所も確かめていないので、確かさは
+    hypothesis のままが妥当です。
+  personal_data: false
+enforcement: []

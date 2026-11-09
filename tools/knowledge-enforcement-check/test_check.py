@@ -779,6 +779,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0012", 1283): [("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0004", 1304): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0016", 1219): [("tools/pr-body-check/gate.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
+                                             ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0014", 1207): [],   # 定期のジョブ（REQUIRED_SCHEDULE）で照らし、PR ごとに走らなくてよい
                           ("K-0014", 1208): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1295): [("tools/conflict-check/test_schema_ci.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
