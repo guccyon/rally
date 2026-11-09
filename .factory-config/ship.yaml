@@ -69,6 +69,13 @@ touch:
     service: postgres
     command: ["psql", "-U", "rally", "-d", "postgres", "-v", "ON_ERROR_STOP=1",
               "-c", "drop database if exists rally with (force)", "-c", "create database rally owner rally"]
+# PR ごとの使い捨て環境（factory-engine の ADR 0043 の O7 ephemeral_env）。shipper が PR の head を rally-pr-<番号> の compose で立てる。
+# 値は base の環境（staging）のものを使い、*_PORT だけ枠の番号 × port_step をずらす（枠 1 は 19080・14000・14100、枠 2 は 20080・15000・15100）。
+# 合成シード（seed）・入口（touch.entries）・ログインの手がかり（touch.accounts）は上と同じものを使う
+ephemeral:
+  base: staging
+  port_step: 1000
+  port_envs: [BACKEND_PORT, ADMIN_WEB_PORT, STUDENT_WEB_PORT]
 verify:
   service: backend
   url: http://127.0.0.1:8080/version   # {"app_version": "..."} が出した版と一致すること
