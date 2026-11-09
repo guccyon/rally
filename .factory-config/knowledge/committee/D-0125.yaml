@@ -1,0 +1,75 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0125
+pr: https://github.com/guccyon/rally/pull/1327
+decided_at: '2026-11-09'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は K-0004 の statement・scope・evidence・confidence を変えず、enforcement.solutions
+    に D-0122 の lint の案を入れた記録を 1 件足しただけで、README の「担保した知見も消さず solutions に残す」の決まりに合っています。
+  - 'decided_by: committee:D-0122 は実在し、D-0122 の pr は what に書いた PR #1228 と一致し、その enforcement
+    に K-0004 の lint の案があって、what の括弧の中の文面とも合っています。'
+  - what に書いた起票時の番号 D-0080 にも K-0004 の lint の案（REQUIRED_PR の一般化、issue 1227 の項目）が実在するので、取り違えても今までの照合では通っていたという説明は過去の議決と食い違いません。
+  - 既存の issue 1094（D-0041）の check_decision の項目は議決の実在と案の照合で、今回は what の議決の番号と PR の番号を
+    decided_by と照らす照合を足すもので、役目が分かれていて重複ではありません。
+  - 'wired: false・verified: false と requires_check を書いていて、README の K-0004 を「すべての解決策に書いた」側に置く一覧と食い違わず、効き目を確かめていないので
+    confidence は hypothesis のままが妥当です。'
+  - 差し戻しの判定についての K-0004 に知見の置き場の検査ツールの解決策が積み重なるずれは D-0053・D-0072・D-0079・D-0122 で指摘済みで今回も広がっているので、別の知見に分けるかを委員会か人が引き続き見直してください。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した lint の解決策は issue 1232 と committee:D-0122 を指しており、括弧内の案は D-0122 の enforcement
+    の lint の案（solution_kind: lint、K-0004）と文面が同じなので、一次記録に辿れます。'
+  - 'what に書いた PR #1228 は committee/D-0122.yaml の pr と一致し、起票時の番号 D-0080 にも K-0004
+    の lint の案（REQUIRED_PR の一般化）が実在することも確かめられたので、番号のずれの断り書きは記録と合っています。'
+  - '前からの照合が D-0041（issue 1094）の check_decision だという記述は、D-0041 の lint の案と K-0004 の
+    issue 1094 の項目（decided_by: committee:D-0041）で裏付けられます。'
+  - 'DecisionNumberTest の 2 通りの場合や改変で落ちることを手元で確かめたという中身は what の申告だけが根拠なので、建設者が配線するときに
+    Issue #1232 の差分とテストの実行記録で確かめてください。'
+  - 'test_check.py が .github/workflows/ からまだ走っていないと断って wired: false・verified: false
+    にしており、K-0004 の statement・evidence（C-0002・PR #395・case.analyzed:40376）も変えていないので、confidence
+    は hypothesis のままが妥当です。'
+  - 差分にあるのは議決の id、Issue と PR の番号、ツールのパス、検査やテストの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - 'この PR は K-0004 の enforcement.solutions に D-0122 の lint の案を入れた記録を 1 件足しただけで、decided_by:
+    committee:D-0122 は実在し、その議決の pr（PR #1228）と K-0004 の lint の案とも合っているので、担保の観点では採ってよいです。'
+  - decided_by の取り違えは起票時の番号のずれで何度も起きていて、議決の実在・案の有無・pr の一致を check.py で照らすのは答えが毎回同じで作る費用も小さく、決定論の担保として筋がよいです。
+  - ただし起票時の番号や PR の番号を what の自由文の最初の「議決 D-NNNN」とその直後の括弧から読み取っていて、書き方が少し変わるだけで照合が黙って外れるので、構造化した欄に移すべきです。
+  - 'test_check.py はまだ .github/workflows/ から走っておらず PR ごとには止められないので、wired: false・verified:
+    false と confidence: hypothesis のままにしてください。'
+  - D-0122 の 1 つめの ci_check の案（ENGINE_REF の版を取れないときに飛ばさず落とす）はまだ入っていないので、次に K-0004
+    を直す変更セットで入れてください。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0004 の statement・scope・evidence・confidence を変えず、D-0122 の lint の案を入れた記録を
+    enforcement.solutions に 1 件足しただけで、案の中身とも PR #1228 の番号とも合っているので、範囲は広すぎません。'
+  - 'wired: false・verified: false で、test_check.py が .github/workflows/ からまだ走らないことを
+    what に書いていて言い過ぎていないので、confidence は hypothesis のままにしてください。'
+  - 反例として、what の最初の「議決 D-NNNN」を決めた議決とみなす照合は、前の議決を背景として先に書いた記録（例:「議決 D-0041 の検査を受けて…」）を
+    decision_mismatch で誤って落とすので、今後の記録の書き方の決まりにするか、照らす語の形をもっと狭めるかを記録に書いてください。
+  - 反例として、括弧の外に書いた PR の番号や「議決」を付けずに書いた D-NNNN は照らさないので、取り違えがその形で書かれると通ってしまう穴が残ることを記録に添えてください。
+  - 差し戻しの判定という主張と関係の薄い知見の置き場の検査ツールの解決策が K-0004 に積み続けられており、D-0122 までの議決でも指摘済みなので、別の知見に分けるかを引き続き人が決めてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: schema
+  proposal: enforcement.solutions の項目に filed_as（起票時の議決番号、任意）と decision_pr（議決の PR の番号）の欄を足し、check.py
+    の check_decision は what の自由文ではなくこの欄を committee/D-NNNN.yaml の pr と照らすようにして、欄がなく
+    what に「議決 D-NNNN」がある項目は solution_fields_missing と同じく --base 付きで落とす。
+- knowledge: K-0004
+  level: deterministic
+  solution_kind: ci_check
+  proposal: '建設者が ci/knowledge-enforcement.yml を .github/workflows/knowledge-enforcement.yml
+    に写し、pull_request で test_check.py を呼ぶ job を置いてから、最初の PR の実行で decision_mismatch
+    の検査が走ったことを事例記録に残し、issue 1232 の解決策を wired: true・verified: true にする。'

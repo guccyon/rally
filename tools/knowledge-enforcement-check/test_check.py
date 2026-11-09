@@ -719,7 +719,8 @@ class RequiresCheckTest(unittest.TestCase):
         self.assertEqual({key: v for key, v in found.items() if key not in self.MOVED}, {("K-0004", 1216): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0015", 1220): [("tools/conflict-check/test_events.py", None)],
                           ("K-0004", 1225): [("tools/knowledge-enforcement-check/test_ci.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
-                          ("K-0004", 1227): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0004", 1227): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0004", 1232): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
@@ -1884,6 +1885,62 @@ class DecisionTest(unittest.TestCase):
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 2）: decision_mismatch: 議決 D-0001 の enforcement に K-0001 の lint の案がない", errors[0])
+
+
+class DecisionNumberTest(unittest.TestCase):
+    """what に書いた議決と PR の番号を decided_by と議決の pr に照らす（議決 D-0122（Issue #1232 の起票時の番号は D-0080。PR #1228））"""
+
+    # 起票時の番号の D-0001 にも、実の議決の D-0002 にも K-9999 の test の案がある（D-0041 の照合だけでは取り違えが通る）
+    PLAN = "id: {did}\npr: https://github.com/o/r/pull/{pr}\nenforcement:\n- {{knowledge: K-9999, level: deterministic, solution_kind: test, proposal: x}}\n"
+
+    def repo(self) -> Path:
+        return DecisionTest.repo(self, D_0001=self.PLAN.format(did="D-0001", pr=10), D_0002=self.PLAN.format(did="D-0002", pr=20))
+
+    def errors(self, what: str, dec: str = "committee:D-0002") -> list[str]:
+        return check.check_decision(k("deterministic", sol(what=what, decided_by=dec)), self.repo())
+
+    def test_what_と_decided_by_と議決の_pr_がそろえば通る(self):
+        self.assertEqual(self.errors("議決 D-0002（Issue #1 の起票時の番号は D-0001。PR #20）の test の案を入れた。議決 D-0001 の案も見た"), [])
+        self.assertEqual(self.errors("議決 D-0002 の test の案を入れた"), [])
+        self.assertEqual(self.errors("議決 D-0002（Issue #1）の案。PR #10 の書きぶりに合わせた"), [], "括弧の外の PR は照らさない")
+
+    def test_what_に議決を書いていなければ番号は照らさない(self):
+        self.assertEqual(self.errors("PR #10 の記録を照らすテストを足した"), [])
+        self.assertEqual(check.check_decision(k("deterministic", sol(what=None, decided_by="committee:D-0002")), self.repo()), [])
+
+    def test_起票時の番号を_decided_by_に写した記録は落ちる(self):
+        """議決 D-0002 を入れたと書きながら decided_by に起票時の番号 D-0001 を写した（D-0001 にも同じ知見と種類の案がある）"""
+        e = self.errors("議決 D-0002（Issue #1 の起票時の番号は D-0001。PR #20）の test の案を入れた", "committee:D-0001")
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("decision_mismatch: what は議決 D-0002 を挙げるが decided_by は committee:D-0001（議決の番号の取り違え）", e[0])
+
+    def test_what_と_decided_by_の両方に起票時の番号を写した記録は_PR_で落ちる(self):
+        """PR #20 で決まった議決を、起票時の番号 D-0001（PR #10 の議決）として書いた"""
+        e = self.errors("議決 D-0001（Issue #1。PR #20）の test の案を入れた", "committee:D-0001")
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("decision_mismatch: what は議決 D-0001 を PR #20 の議決と書くが、議決 D-0001 の pr は 'https://github.com/o/r/pull/10'", e[0])
+
+    def test_議決に_pr_がなければ_PR_を書いた記録は落ちる(self):
+        d = DecisionTest.repo(self, D_0002=DecisionTest.PLAN.replace("D-0001", "D-0002"))
+        e = check.check_decision(k("deterministic", sol(what="議決 D-0002（PR #20）の案", decided_by="committee:D-0002")), d)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("議決 D-0002 の pr は None", e[0])
+
+    def test_議決がない_案がないときは前の照合の誤りだけを出す(self):
+        e = self.errors("議決 D-0003（PR #30）の案", "committee:D-0003")
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("議決 D-0003 が .factory-config/knowledge/committee/ にない", e[0])
+
+    def test_main_で落とす(self):
+        d = self.repo()
+        MainTest.write(None, d, "K-9999.yaml", "id: K-9999\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       "    - {kind: test, what: '議決 D-0002（PR #20）の案', issue: 1, wired: false, verified: false, decided_by: 'committee:D-0002'}\n"
+                       "    - {kind: test, what: '議決 D-0002（PR #20）の案', issue: 2, wired: false, verified: false, decided_by: 'committee:D-0001'}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("issue 2）: decision_mismatch: what は議決 D-0002 を挙げるが decided_by は committee:D-0001", errors[0])
 
 
 class RequiredRunsTest(unittest.TestCase):
