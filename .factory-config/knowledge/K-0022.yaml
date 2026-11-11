@@ -1,0 +1,29 @@
+id: K-0022
+theme: 6
+kind: causal
+statement: >-
+  衝突を解く続きのジョブ（reason: conflict）を、衝突の中身にかかわらず実装と同じ tier-large で走らせると、解消の 1 回の費用が元の実装の
+  費用を上回る（C-0011 では #336 の実装ジョブが 3.30 ドル、衝突解消のジョブが 3.88 ドル）。K-0010 の担保の線は CHANGELOG.md と changelog.d/ だけの衝突を
+  機械的に解くので、この主張は、それ以外のファイル（server/src/lib.rs・README・openapi.yaml）を含む衝突の tier に限る。
+  ただし、それらの衝突が機械的に解けるものかは材料で確かめていない（衝突の中身は分析役の推測）。「tier-small で足りる」「1 ドル前後に下がる」も
+  分析役の見込み（推測）で、解消後にビルドやテストが落ちる割合は材料にない。C-0011 の 4 ファイルのうち CHANGELOG.md は K-0010 の線で機械的に解ける分で、
+  ジョブ 433 の 3.88 ドルのうち lib.rs などの分がいくらかは分けられない。根拠はこの 1 つの束の 1 つのチケットだけ。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  roles: [supervisor]
+  request_form: [ticket]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0011
+  - pr: 345
+  - event: "case.analyzed:523039"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0010, K-0015, K-0002]
+invalidate_when:
+  - "CHANGELOG.md・changelog.d/ 以外を含む conflict の続きのジョブも、衝突の大きさに合わせた tier（tier-small など）で走るようになった"
+  - "tier-small で解いた衝突の解消が、ビルドやテストの失敗で tier-large にやり直しになる割合が高いと分かった（機械的に解ける衝突が少なかった）"

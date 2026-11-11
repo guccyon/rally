@@ -1,0 +1,28 @@
+id: K-0023
+theme: 6
+kind: causal
+statement: >-
+  実装ジョブが PR を開く（push の）前に、最新の既定ブランチへ追従する段（fetch して rebase し、衝突は worker の中で解いてビルドを通す）がないと、
+  実装している間に既定ブランチが進んだぶんだけ、PR を開いた直後に衝突が見つかり、続きのジョブが 1 本増える（C-0011 では #336 の実装ジョブ 429 の 13 分の間に
+  main が進み、PR #345 は開いた直後に衝突した）。ただし、追従の段があっても、追従したあとから PR を開くまでの間に main が進めば衝突は起きる。
+  「続きのジョブ 15 件の半分以上が要らなくなる」は分析役の見込み（推測）で、衝突が機械的に解ける割合も、worker の中で解いた衝突の質が
+  続きのジョブより落ちるかも材料で確かめていない。根拠はこの 1 つの束だけ。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  roles: [implement]
+  request_form: [ticket]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0011
+  - pr: 345
+  - event: "case.analyzed:523039"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0022, K-0010, K-0024]
+invalidate_when:
+  - "実装ジョブの終わりに、既定ブランチへの追従（rebase）と衝突の解消の段が入った"
+  - "追従の段が入っても、PR を開いた直後の衝突が減らなかった（衝突の原因が実装中の main の進みではなかった）"

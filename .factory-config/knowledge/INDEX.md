@@ -14,6 +14,7 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0016 | 4 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 実装役の報告（handoff の summary.md）から PR 本文を組み立てる受け渡しで、本文の頭（## 概要 と ## 対応内容）が欠けたり、 ## 概 |
 | K-0019 | 4 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | 実装役が契約や API の振る舞いの意味を解釈して仮決めしたときに、backend の実装・テストでその振る舞いを確かめた場所（ファイル名と関数名）を 根拠に添 |
 | K-0021 | 4 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | Issue が「いまの絞り込み」「ほかの期間の欄」のように今の画面を前提にした言葉で書かれているのに、指示役が前提にしている既存の欄や 手本の画面をファイル名で |
+| K-0025 | 4 | causal | hypothesis | draft | context | 2026-11-11 | 2026-12-11 | 衝突を解く続きのジョブへの指示（continue.enqueued）が、branch・reason: conflict・pr_number だけで、どのファイル |
 | K-0002 | 6 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、  |
 | K-0004 | 6 | causal | hypothesis | active | deterministic | 2026-11-01 | 2026-12-01 | supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」では |
 | K-0006 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、 見出しの順と階層が崩れて新しい差し戻しを生む。同じ |
@@ -25,3 +26,6 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0017 | 6 | causal | hypothesis | active | context | 2026-11-08 | 2026-12-08 | チケットの大きさ（触る領域の数・契約や schema の差分・予想の行数）を投入の前に測り、1 ジョブのターン予算の近くの大きさのものを 領域ごとの子チケットに |
 | K-0018 | 6 | causal | hypothesis | active | context | 2026-11-08 | 2026-12-08 | 契約（specs/contracts）の変更と 2 つ以上のアプリ（apps/*）をまたぐ機能のチケットを起こすときに、契約の変更を先行の子チケットにし、 各ア |
 | K-0020 | 6 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | 仮決めの escalate で人の判断を待つ PR が衝突の多いファイルに触っているのに、待つ間に同じファイルに触る次の変更の投入を止めないと、 待ちの間に既定 |
+| K-0022 | 6 | causal | hypothesis | draft | context | 2026-11-11 | 2026-12-11 | 衝突を解く続きのジョブ（reason: conflict）を、衝突の中身にかかわらず実装と同じ tier-large で走らせると、解消の 1 回の費用が元の実 |
+| K-0023 | 6 | causal | hypothesis | draft | context | 2026-11-11 | 2026-12-11 | 実装ジョブが PR を開く（push の）前に、最新の既定ブランチへ追従する段（fetch して rebase し、衝突は worker の中で解いてビルドを通 |
+| K-0024 | 6 | causal | hypothesis | draft | context | 2026-11-11 | 2026-12-11 | 同じ共有ファイル（server/src/lib.rs・CHANGELOG.md・openapi.yaml など、過去の衝突の束に出たファイル）を触るチケットを、 |

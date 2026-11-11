@@ -1,0 +1,29 @@
+id: K-0024
+theme: 6
+kind: causal
+statement: >-
+  同じ共有ファイル（server/src/lib.rs・CHANGELOG.md・openapi.yaml など、過去の衝突の束に出たファイル）を触るチケットを、依存なし（deps: []）で同時に
+  投入すると、先にマージされたものが残りの全部の土台を古くし、衝突を解く続きのジョブが何件も要る（C-0011 では 9 チケットで 15 件、51.26 ドル。前の窓は 0 件）。
+  ただし、lib.rs が「ルートの登録」の集約点であることはファイル名と contract_diff からの推測で、衝突した中身は確かめていない。
+  同時の数を絞ると待ちが増えるので、15 件が 5 件前後に減る見込みは分析役の推測にとどまり、待ちの増えた費用は材料にない。
+  CHANGELOG.md の衝突は K-0002 の断片方式で減らす別の主張で、この知見は CHANGELOG.md 以外の共有ファイル（lib.rs・openapi.yaml）の並べ方に限る。
+  根拠はこの 1 つの束だけ。
+scope:
+  work: [plan.route, dev.build]
+  artifacts: [Ticket]
+  roles: [supervisor]
+  request_form: [ticket]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0011
+  - pr: 345
+  - event: "case.analyzed:523039"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0017, K-0020, K-0013, K-0002]
+invalidate_when:
+  - "supervisor が、チケットの触るファイルを見て、同じ共有ファイルを触るものの同時投入を絞る、または前のチケットのマージを待つ deps を付けるようになった"
+  - "共有ファイルを触るチケットを順に並べても、衝突の続きのジョブがほとんど減らなかった（衝突の原因が並べ方ではなく、窓の長い実装だった）"
