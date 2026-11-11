@@ -20,7 +20,7 @@ confidence: hypothesis
 evidence:
   - case: C-0014
   - event: "case.analyzed:775818"
-status: draft
+status: active
 verified_at: 2026-11-11
 review_by: 2026-12-11
 confidentiality: product
@@ -29,3 +29,4 @@ invalidate_when:
   - "supervisor がよく衝突するファイルに触る PR を 1 本ずつマージし、マージの直前に既定ブランチを取り込むようになった（merge queue）"
   - "同じ秒に複数の PR が衝突する重なりが、よく衝突するファイルに触らない PR でも同じ割合で起きていると分かった（原因はファイルではなかった）"
   - "job 759 と 761 の衝突が、同じ 1 回のマージによるものではなかったと分かった"
+decided_by: committee:D-0158

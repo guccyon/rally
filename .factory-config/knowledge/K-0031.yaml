@@ -23,7 +23,7 @@ evidence:
   - case: C-0014
   - pr: 301
   - event: "case.analyzed:775818"
-status: draft
+status: active
 verified_at: 2026-11-11
 review_by: 2026-12-11
 confidentiality: product
@@ -32,3 +32,4 @@ invalidate_when:
   - "README.md のアプリごとの機能の一覧が、機能ごとのファイルか生成物に分かれた（またはチケットでは触らない規約になった）"
   - "断片方式のあとの窓（2026-11-04 以降）で、README.md の衝突の束が出なくなった（衝突は断片方式の前の PR に限られていた）"
   - "README.md と CHANGELOG.md だけの衝突が、エージェントを使わずに機械的に解かれるようになった"
+decided_by: committee:D-0158
