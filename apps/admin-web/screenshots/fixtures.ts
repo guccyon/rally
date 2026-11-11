@@ -169,6 +169,70 @@ const HQ_BOOKINGS: Schemas["HeadquartersBooking"][] = [
   },
 ];
 
+/**
+ * 本部の予約の詳細の状態ごとの記録（確定のあとに続く記録）。枠の開始は startsAt（なければ at(48)）。
+ * 確定だけ・生徒のキャンセル（枠を使った）・コーチのお休みのキャンセル・記録のない古いキャンセル。
+ */
+export const HQ_BOOKING_DETAIL_STATES: {
+  bookingId: string;
+  startsAt?: string;
+  statusChanges: Schemas["BookingStatusChange"][];
+}[] = [
+  { bookingId: id("4444", 30), statusChanges: [] },
+  {
+    bookingId: id("4444", 31),
+    startsAt: at(15),
+    statusChanges: [
+      {
+        status: "cancelled",
+        changed_at: at(-2),
+        cancelled_by: "student",
+        consumes_quota: true,
+        hours_before_start: 17,
+        cancel_reason: null,
+        coach_leave: null,
+      },
+    ],
+  },
+  {
+    bookingId: id("4444", 32),
+    statusChanges: [
+      {
+        status: "cancelled",
+        changed_at: at(-2),
+        cancelled_by: "headquarters",
+        consumes_quota: false,
+        hours_before_start: 50,
+        cancel_reason: "coach_leave",
+        coach_leave: {
+          coach_leave_id: id("7777", 1),
+          coach_id: COACH_ID,
+          from: "2026-10-28",
+          to: "2026-11-03",
+          note: "体調を崩したため、この期間のレッスンをお休みします。ほかのコーチでの予約をお願いします。",
+          created_by: HEADQUARTERS_ID,
+          created_by_display_name: "佐々木 陽子",
+          created_at: at(-2),
+        },
+      },
+    ],
+  },
+  {
+    bookingId: id("4444", 33),
+    statusChanges: [
+      {
+        status: "cancelled",
+        changed_at: at(-2),
+        cancelled_by: null,
+        consumes_quota: null,
+        hours_before_start: 50,
+        cancel_reason: null,
+        coach_leave: null,
+      },
+    ],
+  },
+];
+
 const VIDEOS: Schemas["CoachVideo"][] = [
   {
     video_id: id("6666", 1),
@@ -1448,6 +1512,31 @@ export const FIXTURES: Fixture[] = [
       ],
     } satisfies Schemas["CancelledBookingList"],
   },
+  // 予約の詳細の状態が変わった記録の状態ごと（hq-booking-detail-*。specs/ux/issue-1030.yaml）。ID ごとの応答なので、
+  // `/bookings/{booking_id}` より前に置く。
+  ...HQ_BOOKING_DETAIL_STATES.map(({ bookingId, startsAt = at(48), statusChanges }) => ({
+    method: "GET" as const,
+    path: `/bookings/${bookingId}`,
+    body: {
+      booking: {
+        ...HQ_BOOKINGS[3]!.booking,
+        booking_id: bookingId,
+        status: statusChanges.length === 0 ? ("confirmed" as const) : ("cancelled" as const),
+        starts_at: startsAt,
+        confirmed_at: at(-24 * 2),
+        cancelled_at: statusChanges.length === 0 ? null : at(-2),
+      },
+      slot: {
+        ...BOOKINGS[1]!.slot,
+        starts_at: startsAt,
+        ends_at: new Date(Date.parse(startsAt) + 3_600_000).toISOString(),
+        status: "open",
+      },
+      status_changes: [{ status: "confirmed", changed_at: at(-24 * 2) }, ...statusChanges],
+      coach_display_name: HQ_BOOKINGS[3]!.coach_display_name,
+      student_display_name: HQ_BOOKINGS[3]!.student_display_name,
+    } satisfies Schemas["HeadquartersBookingDetail"],
+  })),
   {
     // 予約の詳細は、一覧のキャンセル済みの予約（確定待ちのままキャンセル）を返す。
     method: "GET",

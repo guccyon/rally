@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 
 import type { Role } from "@/session/session";
 
-import { PREJOIN_STARTS_AT } from "./fixtures";
+import { HQ_BOOKING_DETAIL_STATES, PREJOIN_STARTS_AT } from "./fixtures";
 
 // キャプチャする画面の一覧。画面を足したり、たどり方（押す文言）を変えたりしたらここを直す。
 // id はファイル名と、前後の比較の突き合わせに使うので変えない（変えると「消えた画面」と「新しい画面」になる）。
@@ -30,6 +30,11 @@ const slotSupplyPeriod = (from: string, to: string, shown: string) => async (pag
   await page.getByLabel("終了日").fill(to);
   await page.getByRole("button", { name: "この条件で見る" }).click();
   await page.getByText(shown).waitFor();
+};
+
+// 予約の詳細を読み終わるまで待つ（「予約の詳細を読み込んでいます…」は撮る側の「読み込み中」の待ちに当たらない）。
+const bookingDetailLoaded = async (page: Page) => {
+  await page.getByText("状態が変わった記録").waitFor();
 };
 
 type FakeMedia = {
@@ -814,7 +819,22 @@ export const SCREENS: Screen[] = [
     title: "本部: 予約の詳細",
     role: "headquarters",
     path: "/headquarters/bookings/detail?booking_id=44440010-0000-4000-8000-000000000000",
+    open: bookingDetailLoaded,
   },
+  ...(
+    [
+      ["confirmed", "確定だけ"],
+      ["student", "生徒のキャンセル"],
+      ["coach-leave", "コーチのお休みのキャンセル"],
+      ["legacy", "記録のない古いキャンセル"],
+    ] as const
+  ).map(([state, label], index) => ({
+    id: `hq-booking-detail-${state}`,
+    title: `本部: 予約の詳細（${label}）`,
+    role: "headquarters" as const,
+    path: `/headquarters/bookings/detail?booking_id=${HQ_BOOKING_DETAIL_STATES[index]!.bookingId}`,
+    open: bookingDetailLoaded,
+  })),
   {
     id: "hq-incomplete-coach-profiles",
     title: "本部: 自己紹介の足りないコーチ",

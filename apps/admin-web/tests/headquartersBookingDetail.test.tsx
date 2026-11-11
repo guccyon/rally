@@ -1,5 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { Schemas } from "@/api/client";
 import type { HeadquartersApi } from "@/api/headquarters";
@@ -14,6 +14,13 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace }
 
 beforeEach(() => {
   replace.mockReset();
+  // 記録の日時は今年なら年を省くので、今日を固定する（Date だけ。タイマーは本物のまま）。
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-08T03:00:00Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const BOOKING_ID = "bbbbbbbb-bbbb-4bbb-8bbb-000000000001";
@@ -46,13 +53,56 @@ const SLOT: Schemas["Slot"] = {
   remaining_seats: 1,
 };
 
+const CONFIRMED: Schemas["BookingStatusChange"] = { status: "confirmed", changed_at: "2026-10-20T01:00:00Z" };
+
+/** 生徒が開始の 17 時間前に自分でキャンセルし、枠を 1 回使った記録。 */
+const STUDENT_CANCEL: Schemas["BookingStatusChange"] = {
+  status: "cancelled",
+  changed_at: "2026-10-26T08:00:00Z",
+  cancelled_by: "student",
+  consumes_quota: true,
+  hours_before_start: 17,
+  cancel_reason: null,
+  coach_leave: null,
+};
+
+const COACH_LEAVE: Schemas["CoachLeave"] = {
+  coach_leave_id: "77777777-7777-4777-8777-000000000001",
+  coach_id: COACH_ID,
+  from: "2026-11-10",
+  to: "2026-11-16",
+  note: "体調を崩したため、この期間のレッスンをお休みします。\nほかのコーチでの予約をお願いします。",
+  created_by: "44444444-4444-4444-8444-000000000001",
+  created_by_display_name: "佐々木 陽子",
+  created_at: "2026-11-05T01:32:00Z",
+};
+
+/** 本部がコーチのお休みでキャンセルした記録。 */
+const LEAVE_CANCEL: Schemas["BookingStatusChange"] = {
+  status: "cancelled",
+  changed_at: "2026-11-05T01:32:00Z",
+  cancelled_by: "headquarters",
+  consumes_quota: false,
+  hours_before_start: 175,
+  cancel_reason: "coach_leave",
+  coach_leave: COACH_LEAVE,
+};
+
+/** 経緯を残し始める前のキャンセル（時間だけがある）。 */
+const LEGACY_CANCEL: Schemas["BookingStatusChange"] = {
+  status: "cancelled",
+  changed_at: "2026-10-22T09:30:00Z",
+  cancelled_by: null,
+  consumes_quota: null,
+  hours_before_start: 103,
+  cancel_reason: null,
+  coach_leave: null,
+};
+
 const DETAIL: Schemas["HeadquartersBookingDetail"] = {
   booking: BOOKING,
   slot: SLOT,
-  status_changes: [
-    { status: "confirmed", changed_at: "2026-10-20T01:00:00Z" },
-    { status: "cancelled", changed_at: "2026-10-22T09:30:00Z" },
-  ],
+  status_changes: [CONFIRMED, STUDENT_CANCEL],
   coach_display_name: "鈴木 コーチ",
   student_display_name: "山田 花子",
 };
@@ -61,18 +111,28 @@ function detailOf(detail: Schemas["HeadquartersBookingDetail"]) {
   return vi.fn<HeadquartersApi["getBooking"]>(async () => ({ ok: true, data: detail }));
 }
 
-/** 説明の並び（dt と dd）を [見出し, 値] の組にする。 */
+/** 説明の並び（dt と dd）を [見出し, 値] の組にする。記録のカードの中の並びは除く（上の予約の項目だけ）。 */
 function termsOf() {
-  const terms = screen.getAllByRole("term").map((term) => term.textContent);
-  const values = screen.getAllByRole("definition").map((value) => value.textContent);
+  const outside = (element: HTMLElement) => element.closest("article") === null;
+  const terms = screen.getAllByRole("term").filter(outside).map((term) => term.textContent);
+  const values = screen.getAllByRole("definition").filter(outside).map((value) => value.textContent);
   return terms.map((term, index) => [term, values[index]]);
 }
 
-function rowsOf(name: string) {
-  return within(screen.getByRole("table", { name }))
-    .getAllByRole("row")
-    .slice(1)
-    .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
+/** 記録のカードの aria-label の並び。 */
+function cardsOf() {
+  return screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"));
+}
+
+/** カードの中の、名前（aria-label）の付いたラベルと値の並びを [見出し, 値] の組にする。 */
+function listOf(card: HTMLElement, name: string) {
+  const list = card.querySelector(`dl[aria-label="${name}"]`);
+  if (!list) return undefined;
+  return Array.from(list.querySelectorAll("dt")).map((term) => [term.textContent, term.nextElementSibling?.textContent]);
+}
+
+function cardNamed(name: string) {
+  return screen.getByRole("article", { name });
 }
 
 describe("本部の予約の詳細", () => {
@@ -80,9 +140,9 @@ describe("本部の予約の詳細", () => {
     const getBooking = detailOf(DETAIL);
     render(<BookingDetail api={{ getBooking }} bookingId={BOOKING_ID} />);
 
-    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
-    await screen.findByRole("table", { name: "状態が変わった記録" });
-    expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("予約の詳細を読み込んでいます…");
+    await screen.findAllByRole("article");
+    expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument();
     expect(getBooking).toHaveBeenCalledWith(BOOKING_ID);
     expect(getBooking).toHaveBeenCalledTimes(1);
 
@@ -95,20 +155,171 @@ describe("本部の予約の詳細", () => {
       ["今の状態", "キャンセル済み"],
       ["予約した日時", "2026/10/20 9:00:00"],
     ]);
-    expect(rowsOf("状態が変わった記録")).toEqual([
-      ["2026/10/20 10:00:00", "確定済み"],
-      ["2026/10/22 18:30:00", "キャンセル済み"],
-    ]);
+    expect(cardsOf()).toEqual(["10/20（火）10:00 確定済み", "10/26（月）17:00 キャンセル済み"]);
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   test("今の状態と記録の状態は、予約の一覧と同じ状態のタグ（色の点と字）で出す", async () => {
     render(<BookingDetail api={{ getBooking: detailOf(DETAIL) }} bookingId={BOOKING_ID} />);
 
-    const table = await screen.findByRole("table", { name: "状態が変わった記録" });
+    await screen.findAllByRole("article");
     const current = screen.getAllByRole("definition")[5]!;
     expect(within(within(current).getByText("キャンセル済み")).getByTestId("status-dot")).toHaveClass("bg-border-strong");
-    expect(within(within(table).getByText("確定済み")).getByTestId("status-dot")).toHaveClass("bg-success");
-    expect(within(within(table).getByText("キャンセル済み")).getByTestId("status-dot")).toHaveClass("bg-border-strong");
+    const confirmed = cardNamed("10/20（火）10:00 確定済み");
+    expect(within(within(confirmed).getByText("確定済み")).getByTestId("status-dot")).toHaveClass("bg-success");
+    const cancelled = cardNamed("10/26（月）17:00 キャンセル済み");
+    expect(within(within(cancelled).getByText("キャンセル済み")).getByTestId("status-dot")).toHaveClass("bg-border-strong");
+  });
+
+  test("確定だけの予約は、確定のカード 1 枚に「予約が確定しました。」を出し、経緯の並びを出さない", async () => {
+    render(
+      <BookingDetail
+        api={{ getBooking: detailOf({ ...DETAIL, booking: { ...BOOKING, status: "confirmed" }, status_changes: [CONFIRMED] }) }}
+        bookingId={BOOKING_ID}
+      />,
+    );
+
+    const card = await screen.findByRole("article", { name: "10/20（火）10:00 確定済み" });
+    expect(cardsOf()).toHaveLength(1);
+    expect(card).toHaveTextContent("予約が確定しました。");
+    expect(listOf(card, "キャンセルの経緯")).toBeUndefined();
+  });
+
+  test("生徒のキャンセル（枠を使った）は、キャンセルした人・開始まで・ビデオ通話の枠を文で出し、理由の行を出さない", async () => {
+    render(<BookingDetail api={{ getBooking: detailOf(DETAIL) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "10/26（月）17:00 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "生徒（自分でキャンセル）"],
+      ["開始まで", "開始の 17 時間前"],
+      ["ビデオ通話の枠", "1 回使いました（キャンセル規定: 開始 24 時間前より後のキャンセル）"],
+    ]);
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument();
+    expect(card).not.toHaveTextContent(/student|true|false|null/);
+  });
+
+  test("生徒の 24 時間前より前のキャンセルは、枠を使っていないと出し、日と時間を添える", async () => {
+    const change = { ...STUDENT_CANCEL, consumes_quota: false, hours_before_start: 50 };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [CONFIRMED, change] }) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "10/26（月）17:00 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "生徒（自分でキャンセル）"],
+      ["開始まで", "開始の 50 時間前（2 日 2 時間前）"],
+      ["ビデオ通話の枠", "使っていません（開始 24 時間前までのキャンセル）"],
+    ]);
+  });
+
+  test("コーチのお休みのキャンセルは、理由と、もとになったお休みの期間・生徒への一言・お休みにした本部と時刻を出す", async () => {
+    render(
+      <BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [CONFIRMED, LEAVE_CANCEL] }) }} bookingId={BOOKING_ID} />,
+    );
+
+    const card = await screen.findByRole("article", { name: "11/5（木）10:32 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "本部（コーチのお休み）"],
+      ["開始まで", "開始の 175 時間前（7 日 7 時間前）"],
+      ["ビデオ通話の枠", "使っていません（コーチのお休みのキャンセルは回数に数えません）"],
+      ["理由", "コーチのお休み"],
+    ]);
+    expect(within(card).getByText("もとになったコーチのお休み", { selector: "p" })).toBeInTheDocument();
+    expect(listOf(card, "もとになったコーチのお休み")).toEqual([
+      ["お休みの期間", "11/10（火）〜11/16（月）"],
+      ["生徒への一言", COACH_LEAVE.note],
+      ["お休みにした本部", "佐々木 陽子・11/5（木）10:32"],
+    ]);
+    // ID・コードは出さない
+    expect(card).not.toHaveTextContent(COACH_LEAVE.created_by);
+    expect(card).not.toHaveTextContent("coach_leave");
+  });
+
+  test("お休みの一言がない・本部の名前が引けないときは、それぞれの言葉で出す", async () => {
+    const change = { ...LEAVE_CANCEL, coach_leave: { ...COACH_LEAVE, note: "", created_by_display_name: undefined } };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "11/5（木）10:32 キャンセル済み" });
+    expect(listOf(card, "もとになったコーチのお休み")).toEqual([
+      ["お休みの期間", "11/10（火）〜11/16（月）"],
+      ["生徒への一言", "（一言はありません）"],
+      ["お休みにした本部", "（名前を表示できません）・11/5（木）10:32"],
+    ]);
+  });
+
+  test("理由がお休みなのにお休みの記録がないときは、理由だけ出し、お休みの区切りの代わりに 1 行の注意を出す", async () => {
+    const change = { ...LEAVE_CANCEL, coach_leave: null };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "11/5（木）10:32 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toContainEqual(["理由", "コーチのお休み"]);
+    expect(listOf(card, "もとになったコーチのお休み")).toBeUndefined();
+    expect(card).toHaveTextContent("お休みの記録を読み込めませんでした。開発の担当に知らせてください。");
+  });
+
+  test("本部の理由のないキャンセル・コーチのキャンセルは、理由の決まりに合わせて書き分ける", async () => {
+    const hq = { ...STUDENT_CANCEL, cancelled_by: "headquarters" as const, consumes_quota: false, hours_before_start: 0 };
+    const coach = { ...STUDENT_CANCEL, changed_at: "2026-10-27T03:00:00Z", cancelled_by: "coach" as const, consumes_quota: false, hours_before_start: -2 };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [hq, coach] }) }} bookingId={BOOKING_ID} />);
+
+    const hqCard = await screen.findByRole("article", { name: "10/26（月）17:00 キャンセル済み" });
+    expect(listOf(hqCard, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "本部"],
+      ["開始まで", "開始の 1 時間以内"],
+      ["ビデオ通話の枠", "使っていません"],
+      ["理由", "記録がありません（本部のキャンセルで、理由が残っていません）"],
+    ]);
+    expect(listOf(cardNamed("10/27（火）12:00 キャンセル済み"), "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "コーチ"],
+      ["開始まで", "開始の 2 時間後"],
+      ["ビデオ通話の枠", "使っていません"],
+    ]);
+  });
+
+  test("記録のない古いキャンセルは、値ごとに「記録がありません」と書き、カードの中に知らせを 1 つ出す", async () => {
+    render(
+      <BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [CONFIRMED, LEGACY_CANCEL] }) }} bookingId={BOOKING_ID} />,
+    );
+
+    const card = await screen.findByRole("article", { name: "10/22（木）18:30 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "記録がありません"],
+      ["開始まで", "開始の 103 時間前（4 日 7 時間前）"],
+      ["ビデオ通話の枠", "記録がありません"],
+      ["理由", "記録がありません"],
+    ]);
+    expect(within(card).getByRole("status")).toHaveTextContent(
+      "この予約は、キャンセルの経緯を残し始める前にキャンセルされました。",
+    );
+    expect(within(cardNamed("10/20（火）10:00 確定済み")).queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  test("経緯の欄が載っていないキャンセル（欄ごと省いた）も、記録のない古いキャンセルと同じに出す", async () => {
+    const change: Schemas["BookingStatusChange"] = { status: "cancelled", changed_at: "2026-10-22T09:30:00Z" };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "10/22（木）18:30 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "記録がありません"],
+      ["開始まで", "記録がありません"],
+      ["ビデオ通話の枠", "記録がありません"],
+      ["理由", "記録がありません"],
+    ]);
+    expect(within(card).getByRole("status")).toBeInTheDocument();
+  });
+
+  test("片方だけ記録がないキャンセルは、その行を「記録がありません」にし、知らせは出さない", async () => {
+    const change = { ...STUDENT_CANCEL, consumes_quota: null };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "10/26（月）17:00 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toContainEqual(["ビデオ通話の枠", "記録がありません"]);
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  test("今年でない記録の日時には年を足す", async () => {
+    const change = { ...CONFIRMED, changed_at: "2025-12-01T00:00:00Z" };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);
+
+    expect(await screen.findByRole("article", { name: "2025/12/1（月）9:00 確定済み" })).toBeInTheDocument();
   });
 
   test("名前が引けない・メニューがない・体験予約でない・日をまたぐ枠は、それぞれの形で出す", async () => {
@@ -125,7 +336,7 @@ describe("本部の予約の詳細", () => {
       />,
     );
 
-    await screen.findByText("状態が変わった記録はありません");
+    await screen.findByText("まだ確定もキャンセルもしていない予約です。コーチが確定すると、ここに記録が出ます。");
     expect(termsOf()).toEqual([
       ["生徒", "（名前を表示できません）"],
       ["コーチ", "（名前を表示できません）"],
@@ -135,7 +346,7 @@ describe("本部の予約の詳細", () => {
       ["今の状態", "確定待ち"],
       ["予約した日時", "2026/10/20 9:00:00"],
     ]);
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
   });
 
   test("API が 404 なら「見つからない」を出す", async () => {
@@ -170,8 +381,8 @@ describe("本部の予約の詳細", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByText("この予約は見つかりません。", { exact: false })).not.toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument());
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument());
   });
 });
 

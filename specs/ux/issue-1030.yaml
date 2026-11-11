@@ -1,0 +1,398 @@
+prd:
+  goal: CS（本部の担当者）として、生徒から「予約が消えた」と問い合わせを受けたときに、その予約が、いつ・誰の操作で・なぜキャンセルされたか、 ビデオ通話の枠を使ったかを本部の画面で読み、その場で生徒に説明したい（今は
+    DB を見ないと分からない）。
+  scope:
+    in:
+    - 予約の詳細の「状態が変わった記録」の見え方（記録ごとのカード。確定・キャンセルの経緯・もとになったコーチのお休み）
+    - 状態ごとの見え方（生徒のキャンセル・お休みのキャンセル・本部の理由のないキャンセル・記録のない古いキャンセル・確定だけ・記録なし・読み込み中・失敗）
+    - お休みの画面・コーチの様子へのリンクを置くかの決定（置かない。理由は rationale と judgments）
+    - 本部の人の表示名を出すのに要る契約の足し（contract_needs。#1029 の契約にはアカウントの ID しかない）
+    out:
+    - 予約の詳細の画面を新しく作ること（今ある画面を直す）
+    - 予約の詳細のほかの項目（生徒・コーチ・レッスンメニュー・枠の時刻・種類・今の状態・予約した日時）の見た目と書式の変更
+    - お休みの手続きの画面（#455。/headquarters/coaches/leave）の変更
+    - 支払いの失敗・返金の表示（getBooking は決済の情報を返さない）
+    - バックエンドで経緯の欄を埋める実装（#1029 の残り）
+  source: 'Issue guccyon/rally#1030（窓口の相談 1、依頼者 builder。タスクのまとまりの t3、依存 #1029）。ユーザーストーリー
+    specs/stories/cs-traces-vanished-booking.yaml の step 3 と must_not（状態のコードを出さない）と
+    known_gaps。契約は specs/contracts/api/admin-web/openapi.yaml の getBooking・BookingStatusChange・
+    BookingCanceller・BookingCancelReason・CoachLeave。お休みの決まりは specs/ux/issue-455.yaml
+    と glossary の coach_leave。PRD の文書は specs/ にない。'
+  success: CS が予約の一覧から予約の詳細を開き、「状態が変わった記録」だけを読んで、確定した日時・キャンセルした日時・キャンセルした人・開始の何時間前か・
+    ビデオ通話の枠を使ったか、コーチのお休みならその期間・生徒への一言・お休みにした本部の人と時刻を、状態のコードを見ずに生徒に説明できる。 記録が残っていない古いキャンセルは「記録がありません」と分かり、推測の値を出さない（story
+    cs-traces-vanished-booking の step 3 と exit）。
+notes:
+- 案は admin-web（PC の管理画面）なので desktop の 1280 幅で、縦に長いので撮る高さを 1100 にした。中身は今の画面と同じ reading
+  幅（768px）の 1 段
+- 動くプロトタイプの入口は a.html。上の「モックの注記」（点線の枠。製品には出さない）のリンクで、状態のコマ（a-student・a-studentfree・a-legacy・a-hqnone・a-confirmed・a-empty・a-loading・a-failed）と
+  代表の a.html を行き来できる。画面の中の操作は「予約の一覧へ戻る」だけ（画面の外へ出るので、モックではリンク先を置いていない）
+- お休みのキャンセルのコマは案 a の代表（a.html）。受け入れ条件の 4 つの状態は a.html・a-student・a-legacy・a-confirmed
+  で見られる
+- モックの左の灰の線は、この Issue で変わる範囲（「状態が変わった記録」の欄）を示す目印で、製品には出さない
+- 案 b・c の代表も、比べやすいように案 a と同じお休みのキャンセルの予約を描いた
+- サンプルの名前・日時は架空（2026-11-08 を今日とした）
+- 実装役へ: specs/ux/issue-1030.yaml にこの UXSpec を残し、apps/admin-web/screenshots/screens.ts
+    の hq-booking-detail に状態ごとの撮影（生徒・お休み・記録なし・確定だけ）を足す
+states:
+- 'hqBookingDetail 読み込み中: 「予約の詳細を読み込んでいます…」（frame loading。今は「読み込み中…」で、文を content の形にそろえる）'
+- 'hqBookingDetail 見つからない（booking_id なし・404）: 今のまま「この予約は見つかりません。予約の一覧から選び直してください。」'
+- 'hqBookingDetail 読み込みの失敗（404 以外）: サーバーの文言を notice danger（frame failed）'
+- 'hqBookingDetail 記録なし（status_changes が空。作ったばかりの確定待ち）: empty_state section（frame
+  empty）'
+- 'hqBookingDetail 確定だけ: 確定のカード 1 枚（frame confirmed）'
+- 'hqBookingDetail 確定せずにキャンセル: キャンセルのカード 1 枚だけ（確定のカードがない。カードの並びは frame student と同じ形）'
+- 'hqBookingDetail 生徒のキャンセル（枠を使った）: キャンセルした人「生徒（自分でキャンセル）」・ビデオ通話の枠「1 回使いました」（frame
+  student）'
+- 'hqBookingDetail 生徒のキャンセル（24 時間前より前）: ビデオ通話の枠「使っていません（開始 24 時間前までのキャンセル）」（frame
+  studentfree）'
+- 'hqBookingDetail コーチのお休みのキャンセル: 理由「コーチのお休み」と、もとになったコーチのお休みの区切り（案 a の代表 a.html）'
+- 'hqBookingDetail コーチのキャンセル: キャンセルした人「コーチ」。理由の行は出さない（コマなし。生徒のキャンセルと同じ形）'
+- 'hqBookingDetail 本部のキャンセル（理由の記録なし）: 理由「記録がありません（本部のキャンセルで、理由が残っていません）」（frame hqnone）'
+- 'hqBookingDetail 記録のない古いキャンセル: 値ごとに「記録がありません」と notice info（frame legacy）'
+- 'hqBookingDetail お休みの記録の食い違い（cancel_reason が coach_leave なのに coach_leave が null）:
+  理由だけ出し、お休みの区切りの代わりに 1 行の注意'
+- 'hqBookingDetail 本部の名前が引けない: お休みにした本部「（名前を表示できません）・11/5（木）10:32」'
+- 'hqBookingDetail 権限がない（本部以外・未ログイン）: RoleGate がログイン画面へ戻す。API の 401・403 は失敗の文言'
+- '送信中・確認: 起きない（読むだけの画面で、送る操作がない）'
+ticket: guccyon/rally#1030
+changes:
+- kind: changed
+  after: 記録 1 件を 1 枚のカード（card plain。押せない）にして、時刻の古い順に縦に並べる。カードの頭は状態のタグ（確定済み・キャンセル済み）と日時（content.yaml
+    の「11/5（木）18:40」）。 確定のカードは「予約が確定しました。」の 1 行。キャンセルのカードは「キャンセルした人」「開始まで」「ビデオ通話の枠」と（あれば）「理由」を
+    ラベルと値で並べ、コーチのお休みなら下に「もとになったコーチのお休み」（期間・生徒への一言・お休みにした本部）を区切り線のあとに足す。 記録のない値は「記録がありません」と書き、推測で埋めない。上の項目（生徒〜予約した日時）はそのまま。
+  before: 「状態が変わった記録」は 2 列の表（日時・変わった後の状態）。日時は toLocaleString の「2026/11/5 18:40:00」の形。誰が・なぜキャンセルしたか、
+    開始の何時間前か、ビデオ通話の枠を使ったか、コーチのお休みの中身は出ない。記録が 0 件なら「状態が変わった記録はありません」。
+  screen: hqBookingDetail
+screens:
+- id: hqBookingDetail
+  new: false
+  more:
+    copy:
+    - 用語は glossary の ja（予約・確定済み・キャンセル済み・コーチのお休み・キャンセル規定・生徒・コーチ）。通話は「ビデオ通話」（content.yaml
+      の live_lesson）
+    - 本部（admin-web）の文は呼びかけず、事実を短く。感嘆符は使わない（content.address）
+    - 日時は content.yaml の datetime（「11/5（木）18:40」。今年でなければ年を足す）。英数字と和文のあいだは半角スペース
+    - ラベルは名詞（キャンセルした人・開始まで・ビデオ通話の枠・理由・お休みの期間・生徒への一言・お休みにした本部）
+    - 状態のコード・ID・true/false を画面に出さない（story の must_not）
+    analytics: []
+    accessibility:
+    - 記録のカードは article で、aria-label に「11/5（木）18:40 キャンセル済み」を入れる。中のラベルと値は dl / dt /
+      dd
+    - status_tag の点は aria-hidden。状態は字で読む
+    - 記録のない古いキャンセルの知らせは role=note（読み込みの結果の知らせではないので alert にしない）
+    - 読み込み中の section_text は role=status、失敗は role=alert（今のまま）
+    contract_needs:
+    - admin-web getBooking の status_changes[].coach_leave に、操作した本部のアカウントの表示名 created_by_display_name（string。引けないときは載せない）を足す。
+      今の CoachLeave は created_by（UUID）しかなく、ID を画面に出すのは must_not に触れる。#1029 の契約の追補として出す
+    - 今ある getBooking の status_changes[] の cancelled_by・consumes_quota・hours_before_start・cancel_reason・coach_leave（#1029）をバックエンドが載せること（story
+      の known_gaps）
+    microinteractions:
+    - 'きっかけ: 読み終わる。ルール: 記録のカードは一度に出す（1 件ずつ動かさない）。フィードバック: なし。繰り返し: なし（画面は自動で読み直さない）'
+  route: /headquarters/bookings/detail?booking_id=<予約 ID>
+  purpose: 予約 1 件の中身と経緯を読む画面。CS の流れ（cs-traces-vanished-booking）の step 3 で、「その予約に何が起きたか」を生徒に説明できる言葉で読む。
+    流れの中の位置は「予約の一覧で見つけた予約を開いた先」で、ここから先へは進まない（読んで答える、が終わり）。
+  audience: 本部（headquarters ロール）。主に生徒の問い合わせに答える CS
+  elements:
+  - name: 予約の一覧へ戻るリンク
+    note: 変えない
+    source: 固定
+    content: 「予約の一覧へ戻る」
+    required: true
+    component: 文字のリンク（今のまま）
+  - name: 予約の項目（生徒・コーチ・レッスンメニュー・枠の時刻・種類・今の状態・予約した日時）
+    note: この Issue では変えない（受け入れ条件）。日時の書式も今のまま（open_questions の 3）
+    source: getBooking の booking・slot・student_display_name・coach_display_name
+    content: 今のまま
+    required: true
+    component: ラベルと値の並び（今の BookingDetail.tsx の dl）と status_tag
+  - name: 状態が変わった記録の見出し
+    note: 今のまま
+    source: 固定
+    content: 「状態が変わった記録」
+    required: true
+    component: 欄の見出し（title 17px 900）
+  - name: 記録のカード
+    note: API が返した順（時刻の古い順）のまま並べ、画面で並べ替えない（patterns.list）。カードのあいだは sm 8px。 status_tag
+      は booking_state の色（確定済み success・キャンセル済み neutral）と glossary の呼び名。日時は「11/5（木）18:40」、今年でなければ「2025/12/1（月）9:00」
+    source: getBooking の status_changes[]（status・changed_at）
+    content: 記録 1 件。頭に status_tag と日時
+    required: true
+    component: card plain（押せない。カードの中にカードを置かない）
+  - name: 確定の一文
+    note: 誰が確定したかは契約にないので書かない
+    source: status が confirmed の記録
+    content: 「予約が確定しました。」
+    required: true
+    component: 本文（small）
+  - name: キャンセルした人
+    note: キャンセルの記録だけ。役割の呼び名は labels.ts の BOOKING_CANCELLER_LABELS（生徒・コーチ・本部）に添え書きを足す
+    source: status_changes[].cancelled_by・cancel_reason
+    content: student →「生徒（自分でキャンセル）」、coach →「コーチ」、headquarters で cancel_reason が coach_leave
+      →「本部（コーチのお休み）」、 headquarters で cancel_reason が null →「本部」、null →「記録がありません」
+    required: true
+    component: ラベルと値の並び
+  - name: 開始まで
+    note: 数字は sans の tnum。欄が載らないときは「記録がありません」
+    source: status_changes[].hours_before_start
+    content: 1 以上 →「開始の 17 時間前」（24 以上は「開始の 50 時間前（2 日 2 時間前）」と日と時間を添える）、0 →「開始の 1
+      時間以内」、 負 →「開始の 3 時間後」（開始より後のキャンセル）
+    required: true
+    component: ラベルと値の並び
+  - name: ビデオ通話の枠
+    note: 24 時間の境目との比べは consumes_quota を正とし、hours_before_start から推さない（契約の説明）
+    source: status_changes[].consumes_quota（正）・cancelled_by・cancel_reason
+    content: 'true →「1 回使いました（キャンセル規定: 開始 24 時間前より後のキャンセル）」、false で coach_leave →「使っていません（コーチのお休みのキャンセルは回数に数えません）」、
+      false でほか →「使っていません（開始 24 時間前までのキャンセル）」（本部・コーチのキャンセルは「使っていません」だけ）、null →「記録がありません」'
+    required: true
+    component: ラベルと値の並び
+  - name: 理由
+    note: 生徒とコーチのキャンセルで null のときは行ごと出さない（生徒のキャンセルは理由を保存しない決まりで、「記録がない」と書くと CS が不具合と思う）。
+      未知の値は null と同じに扱う（契約の BookingCancelReason）
+    source: status_changes[].cancel_reason
+    content: coach_leave →「コーチのお休み」、本部のキャンセルで null →「記録がありません（本部のキャンセルで、理由が残っていません）」
+    required: false
+    component: ラベルと値の並び
+  - name: もとになったコーチのお休み
+    note: cancel_reason が coach_leave で coach_leave があるときだけ。期間は content.yaml の日付の形を「〜」でつなぐ。一言は
+      200 文字まで、改行はそのまま、1 行 40em まで。 本部の名前が引けないときは「（名前を表示できません）」（今の NO_NAME と同じ）
+    source: status_changes[].coach_leave（from・to・note・created_by・created_at）と contract_needs
+      の created_by_display_name
+    content: 「お休みの期間」11/10（火）〜11/16（月）、「生徒への一言」（書かれていなければ「（一言はありません）」）、「お休みにした本部」佐々木
+      陽子・11/5（木）10:32
+    required: false
+    component: カードの中の区切り（border の 1px の線）と小見出し（small 700）とラベルと値の並び
+  - name: 記録のない古いキャンセルの知らせ
+    note: そのカードの中、ラベルと値の並びの下に 1 つ。片方だけ null のときは出さず、その行を「記録がありません」にする
+    source: cancelled_by と consumes_quota がどちらも null のキャンセルの記録
+    content: 「この予約は、キャンセルの経緯を残し始める前にキャンセルされました。キャンセルした人とビデオ通話の枠を使ったかは分かりません。開始の何時間前かは、枠の時刻とキャンセルした日時から出しています。」
+    required: false
+    component: notice inline（info）
+  - name: 記録がないときの表示
+    note: 今の「状態が変わった記録はありません」を、何を意味するかが分かる文に変える。画面に次の操作がないので action は置かない
+    source: status_changes が空
+    content: 「まだ確定もキャンセルもしていない予約です。コーチが確定すると、ここに記録が出ます。」
+    required: false
+    component: empty_state（section。ボタンなし）
+  behaviors:
+  - action: 開く
+    result: getBooking を 1 回読む（今のまま）。読んでいるあいだは「予約の詳細を読み込んでいます…」（loading の section_text。300ms
+      より速ければ出さない）
+    target: 画面
+    condition: booking_id がある
+  - action: 開く
+    result: 今のまま「この予約は見つかりません。予約の一覧から選び直してください。」（notice danger）
+    target: 画面
+    condition: booking_id がない・API が 404
+  - action: 開く
+    result: 今のまま、サーバーの文言（errorMessage.ts）を notice danger で出す。消さない。読み直しはページの再読み込み（今の画面にもボタンはない。open_questions
+      の 4）
+    target: 画面
+    condition: 404 以外の失敗（500・通信の失敗）
+  - action: 開く
+    result: RoleGate がログイン画面へ戻す。API の 401・403 は失敗の文言（生徒とコーチに経緯を見せない。story の must_not）
+    target: 画面
+    condition: 本部のロールでない・未ログイン
+  - action: 読み終わる
+    result: 返った順に記録のカードを並べる。キャンセルのカードは elements の対応で値を文にし、コード（student・coach_leave・true
+      など）は出さない
+    target: 記録のカード
+    condition: status_changes が 1 件以上
+  - action: 読み終わる
+    result: 「もとになったコーチのお休み」を足す
+    target: キャンセルのカード
+    condition: cancel_reason が coach_leave で coach_leave がある
+  - action: 読み終わる
+    result: 「理由」は「コーチのお休み」と出し、お休みの区切りの代わりに「お休みの記録を読み込めませんでした。開発の担当に知らせてください。」を small
+      の text_muted で出す
+    target: キャンセルのカード
+    condition: cancel_reason が coach_leave なのに coach_leave が null（データの食い違い）
+  - action: 読み終わる
+    result: その行を「記録がありません」にし、カードの中に記録のない古いキャンセルの知らせ（notice info）を出す
+    target: キャンセルのカード
+    condition: cancelled_by と consumes_quota がどちらも null
+  - action: 読み終わる
+    result: empty_state（section。ボタンなし）
+    target: 記録がないときの表示
+    condition: status_changes が空
+  - action: 押す
+    result: 何も起きない（押せない。押下の面・カーソル・chevron を付けず、押せそうに見せない）
+    target: 記録のカード
+    condition: —
+  transitions:
+    exits:
+    - to: /headquarters/bookings（今のまま）
+      action: 「予約の一覧へ戻る」
+    - to: 来た画面（何も入力しない画面なので、失うものはない）
+      action: ブラウザーの戻る
+    - to: 置かない（judgments の 1。お休みの画面は新しいお休みを始める画面で、記録を見る画面ではない）
+      action: お休みの記録の中のリンク
+    entries:
+    - data: booking_id（URL のクエリ）
+      from: 予約の一覧（/headquarters/bookings）の行
+      condition: 本部のロールでログインしている
+    - data: booking_id
+      from: キャンセルされた予約（/headquarters/cancelled-bookings）の行
+      condition: 同上
+    - data: booking_id
+      from: コーチのお休み（/headquarters/coaches/leave。#455）の期間の予約の行
+      condition: 同上
+summary: 本部の「予約の詳細」（/headquarters/bookings/detail）の「状態が変わった記録」を、日時と状態だけの表から記録ごとのカードに変え、
+  キャンセルした人・開始の何時間前か・ビデオ通話の枠を使ったか・コーチのお休みならその期間と一言と操作した本部を、CS が生徒にそのまま説明できる言葉で出す。 画面は新しく作らず、ほかの項目（生徒・コーチ・レッスンメニュー・枠の時刻など）は変えない。
+judgments:
+- kind: scope
+  note: 置かない。お休みの画面は新しいお休みを始める手続きで、過去の記録を見る画面がない。コーチの様子はお休みを出さない。CS の答えに要る中身（期間・一言・本部の人と時刻）は
+    記録のカードにすべて出すので、出口を足さない。お休みの記録の一覧の画面ができたら、そこへのリンクを足す
+  question: お休みの画面（/headquarters/coaches/leave）やコーチの様子へのリンクを、お休みの記録に置くか
+- kind: ui
+  note: カード（案 a）。1 件の経緯を項目ごとに読む用途で、表は一覧を見比べる型（data_table の not_for）。キャンセルの経緯は項目が 4〜7
+    個あり、確定の記録とは形が違う
+  question: 記録を表のままにするか、記録ごとのカードにするか
+- kind: error_handling
+  note: 値ごとに「記録がありません」と書き、推測しない。キャンセルした人と枠の両方がないときだけ、カードの中に notice info で「経緯を残し始める前のキャンセル」と説明を
+    1 つ出す。 生徒・コーチのキャンセルで理由が null なのは決まり（理由を保存しない）なので、「記録がありません」とは書かず、理由の行を出さない
+  question: 経緯の欄が null のとき（古いキャンセル）に、何を出すか
+- kind: system_interface
+  note: 推さない。consumes_quota を正とする（契約の説明）。null なら「記録がありません」で、時間だけは出す
+  question: ビデオ通話の枠を使ったかを、開始の何時間前かから推すか
+- kind: system_interface
+  note: 出さない（must_not の内部の言葉）。getBooking に表示名を足す contract_needs を出し、引けないときは「（名前を表示できません）」
+  question: お休みにした本部の人を ID で出すか
+- kind: ui
+  note: 「状態が変わった記録はありません」を、確定待ちで何も起きていないことが分かる文にした（empty_state section。次の操作がないのでボタンなし）
+  question: 記録が 0 件のときの文
+- kind: scope
+  note: そろえない（受け入れ条件「ほかの要素を変えない」）。open_questions の 3 で別のタスクにするかを聞く
+  question: 上の項目（枠の時刻・予約した日時）の日時の書式も content.yaml にそろえるか
+prototype: true
+rationale:
+  why: 問い合わせの答えに要るのは、予約 1 件の 2〜3 件の記録を、上から順に、項目ごとに確かに読めること。案 a は記録 1 件を 1 枚のカードにして、
+    キャンセルの経緯をラベルと値で並べるので、CS は「キャンセルした人」「ビデオ通話の枠」を探して読み、その言葉のまま生徒に伝えられる。 値ごとに「記録がありません」を書けるので、古いキャンセルで推測の答えをしない。コーチのお休みの中身も、そのキャンセルのカードの中に置けるので
+    「どのキャンセルのお休みか」が離れない。部品は card plain・status_tag・notice・empty_state の既存のものだけで組め、ほかの項目は変えずに済む。
+  rejected:
+  - idea: 案 b（今の表に列を 4 つ足す）
+    reason: reading 幅（768px）で 6 列になり、確定の行は「—」が 4 つ並ぶ。お休みの期間・一言・本部の人は表に入らず表の下に離れる。
+      記録を見比べる表は一覧の画面の型で、1 件の経緯を読む用途ではない（patterns.list・data_table の not_for「詳細 → detail
+      の型」）
+  - idea: 案 c（経緯を文に組み立てて出す）
+    reason: 読み上げには一番速いが、記録の欠け（null）の組み合わせごとに文の組み方が要り、文の中に「記録がありません」が埋もれて見落としやすい。 事実（値）より画面が作った文を信じさせることになる。案
+      a の値をそのまま読めば同じ説明ができる
+  - idea: 「お休みの画面（/headquarters/coaches/leave）を開く」リンクを置く
+    reason: 'その画面は新しいお休みを始める手続きの画面で、過去のお休みの記録を見る画面ではない（お休みの記録の一覧は #455 の範囲外）。 予約の詳細から開くと、問い合わせの対応中に誤って次のお休みを始める入口になる。お休みの中身は記録のカードにすべて出す'
+  - idea: 「コーチの様子を見る」リンクを置く（案 b で試した）
+    reason: コーチの様子はお休みを出さないので、問い合わせの答えに足すものがない。コーチ名は上の項目にあり、要るときは本部のホームから開ける。 画面の出口を増やさず、読むだけの画面にとどめる（judgments
+      の 1）
+  - idea: 開始の何時間前かから、ビデオ通話の枠を使ったかを推して出す（consumes_quota が null の古いキャンセル）
+    reason: 契約が consumes_quota を正としており、体験予約や規定の変わり目で推しが外れると CS が誤った説明をする。時間だけを出し、判断は記録に任せる
+  requirement_map:
+  - how: 記録のカードの頭の日時（content.yaml の「11/5（木）18:40」）と status_tag
+    requirement: 確定した日時・キャンセルした日時を出す
+  - how: キャンセルのカードの「キャンセルした人」（生徒（自分でキャンセル）・コーチ・本部（コーチのお休み）・本部・記録がありません）
+    requirement: 誰の操作でキャンセルしたか
+  - how: 「開始まで」（開始の 17 時間前。24 時間以上は日と時間を添える。開始より後は「開始の 3 時間後」）
+    requirement: 開始の何時間前か
+  - how: 「ビデオ通話の枠」（1 回使いました／使っていません／記録がありません）。consumes_quota を正とする
+    requirement: 回数を使ったか
+  - how: キャンセルのカードの「理由」の「コーチのお休み」と、区切りのあとの「もとになったコーチのお休み」（期間・生徒への一言・お休みにした本部の名前と時刻）
+    requirement: コーチのお休みならその期間と一言、操作した本部の記録
+  - how: すべての値を elements の対応で日本語の文にする。本部の人は ID でなく表示名（contract_needs）
+    requirement: 状態のコードを出さない（story の must_not）
+  - how: 案 a の a-student・a-studentfree（生徒）、a.html（お休み。代表）、a-legacy（記録なし）、a-confirmed（確定だけ）。ほかに
+      a-hqnone・a-empty・a-loading・a-failed
+    requirement: 状態ごとのコマ（生徒のキャンセル・お休みのキャンセル・記録のないキャンセル・確定だけ）
+  - how: 上のラベルと値の並びは文言・書式・順をそのままにし、「状態が変わった記録」の欄の中だけを変える
+    requirement: ほかの要素（生徒・コーチ・レッスンメニュー・枠の時刻）を変えない
+  - how: 置かない（rationale.rejected と judgments の 1）
+    requirement: お休みの画面やコーチの様子へのリンクを置くか、理由つきで決める
+  - how: '理由の欄（cancel_reason・coach_leave）は #1029 で契約に入っており、#455 のお休みの記録（CoachLeave）をそのまま出す。
+      お休みの手続きの画面は変えないので、お休みの「理由」として出せるのは生徒への一言（note）だけ（open_questions の 1）'
+    requirement: 理由を残す欄も今回作り、#455 と順番をそろえる
+user_flow:
+- to: hqBookings（/headquarters/bookings）
+  from: 本部のホーム
+  action: 「予約」を開き、問い合わせの日付のあたりの期間と生徒で絞り込む（今のまま）
+- to: hqBookingDetail（/headquarters/bookings/detail?booking_id=）
+  from: hqBookings
+  action: 問い合わせの日時に近い予約の行の開始の日時（リンク）を押す（今のまま）
+- to: hqBookingDetail
+  from: キャンセルされた予約（/headquarters/cancelled-bookings）・コーチのお休みの期間の予約の行（#455）
+  action: 予約の行を押す（今のまま）
+- to: hqBookingDetail（同じ画面。CS は読んだことを生徒に伝える）
+  from: hqBookingDetail
+  action: 「状態が変わった記録」のカードを上から読む（この Issue で変わるのはここだけ）
+- to: hqBookings
+  from: hqBookingDetail
+  action: 「予約の一覧へ戻る」を押す
+brand_impact: false
+open_questions:
+- 'お休みの「理由」として出せるのは、#455 の画面で書く「生徒への一言」（CoachLeave.note。任意・200 文字）だけ。本部の中だけの理由（体調不良・家庭の事情など）の欄は契約にも
+  #455 の画面にもない。 仮に「生徒への一言」を「もとになったコーチのお休み」の中にそのまま出す。本部の中の理由を別に残したいなら、#455 の画面を変える別のタスクになる（この
+  Issue の範囲外）。レビューで特に見てほしい'
+- お休みにした本部の人の名前は契約にない（CoachLeave.created_by は UUID だけ）。仮に getBooking に created_by_display_name
+  を足す前提で名前を描いた（contract_needs）。 足すまでは「（名前を表示できません）・11/5（木）10:32」になる。名前でなく「本部」とだけ出すので足りるかを決めてほしい
+- 記録の日時は content.yaml の形（「11/5（木）18:40」）にしたが、上の「枠の時刻」「予約した日時」は今の形（「2026/11/5 18:40:00」）のまま残る（ほかの要素を変えない受け入れ条件）。
+  同じ画面に 2 つの書式が並ぶ。上の項目の書式をそろえる小さなタスクを別に切るか決めてほしい
+- 読み込みの失敗のときに「読み込み直す」ボタンを置くか。今の画面にもなく、この Issue の範囲（記録の見え方）から外れるので置かず、ページの再読み込みを案内する文のまま（仮）
+- 0 時間の言い方。hours_before_start は端数を 0 に向けて切り捨てるので、0 は開始の 1 時間前から 1 時間後までを含む。仮に「開始の
+  1 時間以内」とした
+design_system_gaps:
+- id: description_list
+  ja: ラベルと値の並び（詳細の項目）
+  why: 予約の詳細・コーチの様子など admin-web の詳細の画面で使っているのに、components.yaml に部品がない（patterns.detail
+    にも項目の並びの定めがない）。 今回は今の BookingDetail.tsx の dl を写した。ラベルの幅・行のあいだ・狭い幅での折り返し（ラベルを上に積むか）を決めて部品にするタスクを切る
+- id: timeline
+  ja: 経緯の並び（時刻つきの出来事の縦の並び）
+  why: 状態が変わった記録を card plain の縦の並びで組んだが、出来事の順を線や点でつなぐ部品はない。今回は足さずに済む（記録は多くて 2〜3 件）が、
+    ほかの経緯（お知らせの取り下げ・メニューの公開の変化）でも同じ形が要るので、要るかを判断するタスクとして書いておく
+design_system_constraints:
+- admin-web の common_layout（RoleGate の見出し → Section。幅は content_width_px の reading
+  768px、左右 lg 24px）。今の BookingDetailHome のまま
+- 記録 1 件は components.yaml の card plain（background・border 1px・radius md・padding md
+  16px・gap sm 8px。影なし。押せないのでカード全体を押せる形にしない）
+- 状態は status_tag（booking_state の対応: 確定済み success・キャンセル済み neutral。点と glossary の呼び名の字）
+- 古いキャンセルの説明は notice inline（info。左に info.fg の 4px）。失敗は notice danger、記録なしは empty_state
+  section、読み込み中は loading の section_text
+- 文字は typography の small（14px）と title（17px 900）。数字は sans の tnum（表と詳細の数字は numeric の書体にしない。typography.admin_web）
+- 文言は content.yaml の datetime（「11/5（木）18:40」）・labels・address（admin-web は事実を短く、感嘆符なし）と
+  glossary の ja
+- ラベルと値の並び（dl）は正本に部品がないので、今の BookingDetail.tsx の dl（grid の auto と 1fr、列のあいだ md 16px、太字のラベル）を写した
+- モックの共通の見た目は out/rally.css。値は tokens.yaml（catalog.html の :root）からだけ取った。点線の「モックの注記」と左の灰の線（変わる範囲の目印）はモックだけのもので、製品には出さない
+variant:
+  id: a
+  axis: flow
+  name: 記録ごとのカード（経緯をラベルと値で）
+  frames:
+  - id: student
+    state: 生徒のキャンセル（枠を使った）
+    screen: hqBookingDetail
+    caption: 生徒が開始の 17 時間前に自分でキャンセルし、ビデオ通話の枠を 1 回使った予約を開いた
+  - id: studentfree
+    state: 生徒のキャンセル（24 時間前より前）
+    screen: hqBookingDetail
+    caption: 生徒が開始の 50 時間前にキャンセルし、枠を使わなかった予約を開いた
+  - id: legacy
+    state: 記録のないキャンセル
+    screen: hqBookingDetail
+    caption: 経緯の欄を足す前にキャンセルされた古い予約を開いた
+  - id: hqnone
+    state: 本部のキャンセル（理由の記録なし）
+    screen: hqBookingDetail
+    caption: 本部がキャンセルしたが理由が残っていない予約を開いた
+  - id: confirmed
+    state: 確定だけ
+    screen: hqBookingDetail
+    caption: 確定したまま、キャンセルされていない予約を開いた
+  - id: empty
+    state: 記録なし（確定待ち）
+    screen: hqBookingDetail
+    caption: 作ったばかりで、まだ確定していない体験予約を開いた
+  - id: loading
+    state: 読み込み中
+    screen: hqBookingDetail
+    caption: 予約の一覧の行を押した直後（getBooking を読んでいる）
+  - id: failed
+    state: 読み込みの失敗
+    screen: hqBookingDetail
+    caption: getBooking が 404 以外で失敗した
+  height: 1100
+  tradeoff: 1 件の記録の経緯を縦に読めて、値ごとに「記録がありません」を書き分けられるが、表より縦に長くなり、多くの予約を見比べる用途には向かない。
+  viewport: desktop

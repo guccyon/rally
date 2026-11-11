@@ -153,3 +153,27 @@ export function formatDay(value: string): string {
   const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
   return `${year}年${month}月${day}日（${weekday}）`;
 }
+
+const JST_DATE_TIME_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Tokyo",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/**
+ * 契約の date-time を specs/design/content.yaml の datetime の形（「11/5（木）18:40」。日本時間）で表示する。
+ * 今年（`now` の日本時間の年）でなければ「2025/12/1（月）9:00」と年を足す。`now` は epoch ミリ秒。
+ */
+export function formatShortDateTime(value: string, now: number = Date.now()): string {
+  const parts = JST_DATE_TIME_PARTS.formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const [year, month, day] = [part("year"), part("month"), part("day")];
+  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  const minute = String(part("minute")).padStart(2, "0");
+  const date = `${month}/${day}（${weekday}）${part("hour")}:${minute}`;
+  return toJstDate(now).startsWith(`${year}-`) ? date : `${year}/${date}`;
+}
