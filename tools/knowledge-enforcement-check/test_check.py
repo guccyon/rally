@@ -943,6 +943,54 @@ class RequiresCheckTest(unittest.TestCase):
         self.assertEqual(check.check_pull_request(self.item(None), d), [])
         self.assertEqual(check.check_pull_request(self.item(self.RUNS, wired=False), d), [])
 
+    def test_env_を書いた検査はその値を渡して呼ぶ手順だけを数える(self):
+        # 議決 D-0135 の ci_check の案、Issue #1344。値を渡さない手順では飛ばす組がある検査を、同じファイルを呼ぶだけで wired と読ませない
+        req = [{"runs": self.RUNS, "workflow": self.WF, "env": {"X_REQUIRED": "true"}}]
+        ok = (self.PR_WF.replace("    steps:\n", "    env:\n      X_REQUIRED: \"true\"\n    steps:\n"),
+              self.PR_WF.replace("      - run:", "      - env:\n          X_REQUIRED: true\n        run:"),
+              self.PR_WF.replace(f"python3 {self.RUNS}", f"X_REQUIRED=true python3 {self.RUNS}"),
+              "env:\n  X_REQUIRED: 'true'\n" + self.PR_WF)
+        for text in ok:
+            self.assertEqual(check.check_pull_request(self.item(req), self.repo({self.WF: text})), [], text)
+        bad = (self.PR_WF,
+               self.PR_WF.replace("    steps:\n", "    env:\n      X_REQUIRED: \"false\"\n    steps:\n"),
+               self.PR_WF.replace(f"python3 {self.RUNS}", f"X_REQUIRED=1 python3 {self.RUNS}"),
+               self.PR_WF.replace("    steps:\n", "    env:\n      X_REQUIRED: \"true\"\n    steps:\n").replace(
+                   f"python3 {self.RUNS}", f"X_REQUIRED=false python3 {self.RUNS}"),
+               self.PR_WF.replace("    steps:\n", "    env:\n      X_OTHER: \"true\"\n    steps:\n"))
+        for text in bad:
+            e = check.check_pull_request(self.item(req), self.repo({self.WF: text}))
+            self.assert_kind(e, check.REQUIRES_CHECK_UNWIRED, text)
+            for part in (f"X_REQUIRED=true を渡して {self.RUNS} を呼ぶ", f"議決 {check.REQUIRES_CHECK_DECISION}・{check.REQUIRES_CHECK_ENV_DECISION}"):
+                self.assertIn(part, e[0])
+        # env を書かない検査は今までどおり値を問わない
+        self.assertEqual(check.check_pull_request(self.item([{"runs": self.RUNS, "workflow": self.WF}]), self.repo()), [])
+
+    def test_env_の形の誤りは_wired_を問わず落とし_requires_schedule_には書けない(self):
+        d = self.repo()
+        for env in ({}, [], "X=true", {"X": True}, {"X": 1}, {"": "true"}, {"1X": "true"}, {"X-Y": "true"}, None):
+            for wired in (True, False):
+                e = check.check_pull_request(self.item([{"runs": self.RUNS, "env": env}], wired=wired), d)
+                self.assert_kind(e, check.REQUIRES_CHECK_INVALID, (env, wired))
+        self.assertEqual(check.required_entries({check.REQUIRES_CHECK: [{"runs": self.RUNS, "env": {"X": "true"}}]}),
+                         ([(self.RUNS, None, {"X": "true"})], []))
+        self.assertEqual(check.required_checks({check.REQUIRES_CHECK: [{"runs": self.RUNS, "env": {"X": "true"}}]}), ([(self.RUNS, None)], []))
+        req, bad = check.required_checks({check.REQUIRES_SCHEDULE: [{"runs": self.RUNS, "env": {"X": "true"}}]}, check.REQUIRES_SCHEDULE)
+        self.assertEqual(req, [])
+        self.assertEqual(len(bad), 1, bad)
+
+    def test_unittest_discover_は_p_に当たるテストだけを呼ぶ側に数える(self):
+        # 議決 D-0139 の ci_check の案、Issue #1344。-p 'test_schema_ci.py' のジョブを test_events.py の配線と読ませない
+        run = "python3 -B -m unittest discover -s tools/x-check"
+        for tail, calls in (("", True), (" -p 'test_*.py'", True), (" -p test_x.py -v", True), (" --pattern='test_x*'", True),
+                            (" -p 'test_y.py'", False), (" -p '*_test.py'", False), (" -p 'Test_x.py'", False)):
+            text = self.PR_WF.replace(f"python3 {self.RUNS}", run + tail)
+            e = check.check_pull_request(self.item([self.RUNS]), self.repo({self.WF: text}))
+            if calls:
+                self.assertEqual(e, [], tail)
+            else:
+                self.assert_kind(e, check.REQUIRES_CHECK_UNWIRED, tail)
+
     def test_前の組はどれも同じ中身で_requires_check_に移してある(self):
         found = {(k["id"], s.get("issue")): requires(k["id"], s.get("issue"))
                  for k in check.load(REPO) for s in check.solutions(k) if isinstance(s, dict) and check.REQUIRES_CHECK in s}
@@ -970,6 +1018,7 @@ class RequiresCheckTest(unittest.TestCase):
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0016", 1307): [("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
+                          ("K-0026", 1392): [("tools/pr-body-check/merge-order.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0014", 1207): [],   # 定期のジョブ（requires_schedule）で照らし、PR ごとに走らなくてよい
                           # 議決 D-0130（Issue #1335）で requires_schedule を書くときに、議決 D-0116 の欄の必須に合わせて [] を明示した定期だけの解決策
                           **{key: [] for key in (("K-0001", 1106), ("K-0001", 1179), ("K-0004", 1018), ("K-0004", 1087), ("K-0004", 1162), ("K-0014", 1214))},
@@ -978,7 +1027,11 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0014", 1295): [("tools/conflict-check/test_schema_ci.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1297): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
-                          ("K-0023", 1383): [("tools/conflict-check/test_open_pr.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0014", 1344): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0023", 1383): [("tools/conflict-check/test_open_pr.py", check.CONFLICT_CHECK_WORKFLOWS[0])],   # はじめから requires_check に書いた
+                          ("K-0004", 1369): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],   # README の手書きの一覧をやめた照合（Issue #1369）。はじめから requires_check に書いた
+                          # 議決 D-0141（Issue #1351）で、触れたファイルの欄のない解決策に後から書いた
+                          ("K-0014", 1135): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
@@ -1889,6 +1942,93 @@ class ConflictRecordScheduleTest(unittest.TestCase):
 
     def test_配線していなければ見ない(self):
         self.assertEqual(self.errors(self.repo({}), wired=False), [])
+
+
+class ConflictSqlPullRequestTest(unittest.TestCase):
+    """K-0014 の issue 1295 の解決策は、.github/workflows/conflict-check.yml の pull_request でも走るジョブから CONFLICT_SQL_REQUIRED=true で
+    test_schema_ci.py を呼ぶ項目（ひな形の conflict-sql のジョブ）がないと wired にできない（議決 D-0135 の ci_check の案、Issue #1344）。
+    issue 1297 の解決策は、同じワークフローの pull_request のジョブから unittest discover で test_events.py を呼ぶ項目（ひな形の conflict-check の
+    ジョブ）がないと wired にできない（議決 D-0139 の ci_check の案、Issue #1344）"""
+
+    SQL_TEST = "tools/conflict-check/test_schema_ci.py"
+    EVENTS_TEST = "tools/conflict-check/test_events.py"
+    TEMPLATE = REPO / check.CONFLICT_CHECK_WORKFLOWS[1]
+    WF = check.CONFLICT_CHECK_WORKFLOWS[0]
+    OTHER = ".github/workflows/conflict.yml"
+    ENV = "CONFLICT_SQL_REQUIRED: \"true\"\n"
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def repo(self, text: str | None = None, wf: str | None = None) -> Path:
+        """ひな形 ci/conflict-check.yml を text（既定はそのまま）で wf（既定は .github/workflows/conflict-check.yml）に写したリポジトリ"""
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, body in {self.SQL_TEST: "", self.EVENTS_TEST: "", wf or self.WF: self.template() if text is None else text}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(body, encoding="utf-8")
+        return d
+
+    def errors(self, d: Path, issue=1295, job="conflict-sql", runs=None, wf=None, wired=True) -> list[str]:
+        runs = runs or (self.SQL_TEST if issue == 1295 else self.EVENTS_TEST)
+        item = {"id": "K-0014", "_file": "K-0014.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": runs}]}]}}
+        return pr_errors(item, d) + check.check_wiring(item, d)
+
+    def assert_unwired(self, e: list[str], target: str, env: bool = True) -> None:
+        self.assertEqual(len(e), 1, e)
+        for part in (f"{check.REQUIRES_CHECK_UNWIRED}: ", f"on.pull_request のある {self.WF} で",
+                     f"{'CONFLICT_SQL_REQUIRED=true を渡して ' if env else ''}{target} を呼ぶ"):
+            self.assertIn(part, e[0])
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.required_entries(repo_solution("K-0014", 1295)),
+                         ([(self.SQL_TEST, self.WF, {"CONFLICT_SQL_REQUIRED": "true"})], []))
+        self.assertEqual(check.required_entries(repo_solution("K-0014", 1297)), ([(self.EVENTS_TEST, self.WF, {})], []))
+        self.assertIn(self.ENV.strip(), self.template())
+
+    def test_ひな形をそのまま写したジョブなら通る(self):
+        d = self.repo()
+        self.assertEqual(self.errors(d), [])
+        self.assertEqual(self.errors(d, issue=1297, job="conflict-check"), [])
+
+    def test_CONFLICT_SQL_REQUIRED_を渡さない_conflict_check_のジョブでは_1295_を_wired_にできない(self):
+        # conflict-check のジョブの unittest discover も test_schema_ci.py を走らせるが、Postgres がなく SQL の組は飛ぶ
+        e = self.errors(self.repo(), job="conflict-check")
+        self.assert_unwired(e, self.SQL_TEST)
+
+    def test_conflict_sql_から_CONFLICT_SQL_REQUIRED_を外すか値を変えた写しでは落ちる(self):
+        for after in ("", "CONFLICT_SQL_REQUIRED: \"false\"\n", "CONFLICT_SQL_REQUIRED: \"1\"\n", "CONFLICT_SQL: \"true\"\n"):
+            text = self.template().replace(self.ENV, after, 1)
+            self.assertNotEqual(text, self.template())
+            self.assert_unwired(self.errors(self.repo(text)), self.SQL_TEST)
+
+    def test_conflict_sql_の_SQL_の手順を外すか_pull_request_を外した写しでは落ちる(self):
+        text = self.template().replace("-p 'test_schema_ci.py'", "-p 'test_policy.py'", 1)
+        self.assertNotEqual(text, self.template())
+        e = [x for x in self.errors(self.repo(text)) if check.REQUIRES_CHECK_UNWIRED in x]
+        self.assert_unwired(e, self.SQL_TEST)
+        text = self.template().replace("on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n", 1)
+        self.assertNotEqual(text, self.template())
+        self.assert_unwired(self.errors(self.repo(text)), self.SQL_TEST)
+        self.assert_unwired(self.errors(self.repo(text), issue=1297, job="conflict-check"), self.EVENTS_TEST, env=False)
+
+    def test_別の名前のワークフローでは落ちる(self):
+        d = self.repo(wf=self.OTHER)
+        self.assert_unwired(self.errors(d, wf=self.OTHER), self.SQL_TEST)
+        self.assert_unwired(self.errors(d, issue=1297, job="conflict-check", wf=self.OTHER), self.EVENTS_TEST, env=False)
+
+    def test_test_schema_ci_py_だけを走らせる_conflict_sql_のジョブでは_1297_を_wired_にできない(self):
+        e = [x for x in self.errors(self.repo(), issue=1297, job="conflict-sql") if check.REQUIRES_CHECK_UNWIRED in x]
+        self.assert_unwired(e, self.EVENTS_TEST, env=False)
+
+    def test_配線していなければ見ない(self):
+        d = self.repo()
+        (d / self.WF).unlink()
+        self.assertEqual(self.errors(d, wired=False), [])
+        self.assertEqual(self.errors(d, issue=1297, job="conflict-check", wired=False), [])
 
 
 class PrBodyPatchScheduleTest(unittest.TestCase):
@@ -2914,13 +3054,16 @@ class SolutionFieldsTest(unittest.TestCase):
 
 
 class RequiresCheckDeclaredTest(unittest.TestCase):
-    """--base を渡すと、PR の差分で足したり直したりした kind が ci_check・test の解決策に requires_check の欄がなければ requires_check_missing で落とす
-    （議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を明示する）。base の版は一時の git リポジトリに積んで作る"""
+    """--base を渡すと、PR の差分で触れた知見のファイルの kind が ci_check・test の解決策に requires_check の欄がなければ requires_check_missing で落とす
+    （議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を明示する。直したかどうかにかかわらず見るのは議決 D-0141 の lint の案、
+    Issue #1351）。base の版は一時の git リポジトリに積んで作る"""
 
     HEAD = "id: K-0006\nenforcement:\n  level: deterministic\n  solutions:\n"
     CI = "    - {kind: ci_check, what: x, issue: 906, wired: false, verified: false}\n"
     TEST = "    - {kind: test, what: t, issue: 1304, wired: false, verified: false}\n"
     OPEN = HEAD + CI
+    # 同じ知見の欄を書いた ci_check（ほかの解決策を足しても、それだけでは落ちない）
+    DECLARED = HEAD + CI.replace("issue: 906,", "issue: 906, requires_check: [],")
 
     def repo(self, before: str | None, after: str | None) -> Path:
         """base の版の K-0006.yaml が before（None ならなし）、作業ツリーで after（None なら base のまま）"""
@@ -2936,7 +3079,7 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
                 self.assertIn(part, line)
 
     def test_足した_ci_check_と_test_の解決策に欄がなければ落とす(self):
-        self.assert_missing(self.errors(self.repo(self.OPEN, self.OPEN + self.TEST)), "solutions[1]（test、issue 1304）")
+        self.assert_missing(self.errors(self.repo(self.DECLARED, self.DECLARED + self.TEST)), "solutions[1]（test、issue 1304）")
         self.assert_missing(self.errors(self.repo(None, self.OPEN)), "solutions[0]（ci_check、issue 906）")
 
     def test_直した解決策に欄がなければ落とす(self):
@@ -2948,26 +3091,93 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
             after = self.OPEN.replace("issue: 906,", f"issue: 906, requires_check: {req},")
             self.assertEqual(self.errors(self.repo(self.OPEN, after)), [], req)
 
-    def test_ほかの種類と変えていない解決策は見ない(self):
-        for kind in ("lint", "schema", "type", "config", "overlay_rule"):
-            self.assertEqual(self.errors(self.repo(self.OPEN, self.OPEN + self.TEST.replace("kind: test", f"kind: {kind}"))), [], kind)
-        # 欄のない既存の解決策は、同じ知見のほかの解決策を足しても、並べ替えても見ない
+    def pr_template(self, d: Path, on: str = "  pull_request:\n") -> Path:
+        """作業ツリーに PR ごとのひな形 tools/x-check/ci/x.yml（on を差し替えれば別の契機）を置く"""
+        path = d / self.PR_TEMPLATE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"on:\n{on}jobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: python3 tools/x-check/test_x.py\n", encoding="utf-8")
+        return d
+
+    PR_TEMPLATE = "tools/x-check/ci/x.yml"
+    EMPTY = TEST.replace("what: t,", f"what: ひな形 {PR_TEMPLATE} のジョブで走らせる,").replace("issue: 1304,", "issue: 1304, requires_check: [],")
+
+    def test_PR_ごとのひな形を挙げた解決策は空の列でも落とす(self):
+        # 議決 D-0139 の ci_check の案、Issue #1344。K-0014 の issue 1295・1297 は PR ごとのひな形のジョブで走る試験なのに requires_check を書かずに足された
+        for kind in ("test", "ci_check"):
+            e = self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + self.EMPTY.replace("kind: test", f"kind: {kind}"))))
+            self.assertEqual(len(e), 1, e)
+            for part in (f"solutions[1]（{kind}、issue 1304）", f"{check.REQUIRES_CHECK_MISSING}: ", f"PR ごとのひな形 {self.PR_TEMPLATE} を挙げる",
+                         f"議決 {check.REQUIRES_CHECK_DECLARED_DECISION}・{check.PR_TEMPLATE_DECISION}"):
+                self.assertIn(part, e[0])
+        # 直した解決策も同じ
+        d = self.pr_template(self.repo(self.DECLARED + self.EMPTY, self.DECLARED + self.EMPTY.replace("wired: false", "wired: true")))
+        self.assertEqual(len(self.errors(d)), 1)
+
+    def test_PR_ごとのひな形を挙げても検査を書くか_変えていないか_定期の解決策なら通る(self):
+        req = "[{runs: tools/x-check/test_x.py, workflow: .github/workflows/x.yml}]"
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + self.EMPTY.replace("requires_check: []", f"requires_check: {req}")))), [])
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED + self.EMPTY, None))), [])
+        sched = self.EMPTY.replace("requires_check: [],", "requires_check: [], requires_schedule: [{runs: tools/x-check/x.py, workflow: .github/workflows/x.yml}],")
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + sched))), [])
+        for kind in ("lint", "schema"):
+            self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + self.EMPTY.replace("kind: test", f"kind: {kind}")))), [], kind)
+        # 触れたファイルでも、変えていない空の列はひな形を挙げていても見ない（欄はあるので D-0141 の線には当たらない）
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED + self.EMPTY, self.DECLARED + self.EMPTY + self.TEST.replace("issue: 1304,", "issue: 1305, requires_check: [],")))), [])
+
+    def test_PR_で走らないかないひな形は数えない(self):
+        added = self.DECLARED + self.EMPTY
+        self.assertEqual(self.errors(self.repo(self.DECLARED, added)), [])   # ひな形がない
+        for on in ("  schedule:\n    - cron: '0 0 * * *'\n  workflow_dispatch:\n", "  push:\n"):
+            self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, added), on)), [], on)
+        d = self.repo(self.DECLARED, added)
+        (d / self.PR_TEMPLATE).parent.mkdir(parents=True)
+        (d / self.PR_TEMPLATE).write_text("on: [\n", encoding="utf-8")
+        self.assertEqual(self.errors(d), [])
+        self.assertEqual(check.pr_templates({"what": "tools/conflict-check/ci/conflict-schema.yml と tools/conflict-check/ci/conflict-check.yml、"
+                                                     "もう一度 tools/conflict-check/ci/conflict-check.yml"}, REPO), ["tools/conflict-check/ci/conflict-check.yml"])
+
+    def test_PR_ごとのひな形を挙げた解決策は_base_を渡さなければ見ない(self):
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY)), None), [])
+
+    def test_同じファイルの触れていない解決策に欄がなければ落とす(self):
+        # 議決 D-0141 の lint の案、Issue #1351。K-0014 の issue 1135 は、同じファイルのほかの解決策を直す PR でも欄がないまま黙って通っていた
         added = self.OPEN + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],")
-        self.assertEqual(self.errors(self.repo(self.OPEN, added)), [])
-        self.assertEqual(self.errors(self.repo(self.OPEN + self.TEST, self.HEAD + self.TEST + self.CI)), [])
+        fixed = self.OPEN + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],").replace("what: t", "what: u")
+        for before, after in ((self.OPEN, added),                                                  # 欄を書いた解決策を足す
+                              (self.OPEN + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],"), fixed),  # ほかの解決策だけを直す
+                              (self.OPEN + self.TEST, self.HEAD + self.TEST + self.CI)):          # 並べ替えるだけ
+            e = self.errors(self.repo(before, after))
+            self.assertTrue(any("solutions[" in x and "（ci_check、issue 906）" in x for x in e), e)
+            for line in e:
+                for part in (f"{check.REQUIRES_CHECK_MISSING}: ", "直したかどうかにかかわらず", f"{check.REQUIRES_CHECK}: []",
+                             f"議決 {check.REQUIRES_CHECK_DECLARED_DECISION}・{check.REQUIRES_CHECK_TOUCHED_DECISION}"):
+                    self.assertIn(part, line)
+        self.assert_missing(self.errors(self.repo(self.OPEN, added)), "solutions[0]（ci_check、issue 906）")
+        # 解決策でないところ（statement など）だけを直しても、ファイルに触れたので落とす
+        self.assert_missing(self.errors(self.repo(self.OPEN, "statement: s\n" + self.OPEN)), "solutions[0]（ci_check、issue 906）")
+        # 触れていない欄のない解決策が両方の種類なら、両方とも落とす
+        self.assertEqual(len(self.errors(self.repo(self.OPEN + self.TEST, "statement: s\n" + self.OPEN + self.TEST))), 2)
+        # 欄を書けば通る
+        self.assertEqual(self.errors(self.repo(self.OPEN, self.DECLARED + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],"))), [])
+
+    def test_ほかの種類と触れていないファイルは見ない(self):
+        for kind in ("lint", "schema", "type", "config", "overlay_rule"):
+            self.assertEqual(self.errors(self.repo(self.DECLARED, self.DECLARED + self.TEST.replace("kind: test", f"kind: {kind}"))), [], kind)
+        # 欄のない解決策があっても、PR の差分でそのファイルに触れていなければ見ない
         self.assertEqual(self.errors(self.repo(self.OPEN, None)), [])
+        self.assertEqual(self.errors(self.repo(self.OPEN + self.TEST, None)), [])
 
     def test_base_を渡さなければ見ない(self):
         self.assertEqual(self.errors(self.repo(None, self.OPEN), None), [])
 
     def test_分かれ目より後に_base_で足した解決策は差分に数えない(self):
-        d = self.repo(self.OPEN, None)
+        d = self.repo(self.DECLARED, None)
         ReviewByHoldTest.git(d, "checkout", "-q", "-b", "base")
-        MainTest.write(None, d, "K-0006.yaml", self.OPEN + self.TEST)
+        MainTest.write(None, d, "K-0006.yaml", self.DECLARED + self.TEST)
         ReviewByHoldTest.git(d, "commit", "-q", "-am", "base が進む")
         ReviewByHoldTest.git(d, "checkout", "-q", "-")
         self.assertEqual(self.errors(d, "base"), [])
-        MainTest.write(None, d, "K-0006.yaml", self.OPEN + self.TEST)
+        MainTest.write(None, d, "K-0006.yaml", self.DECLARED + self.TEST)
         self.assert_missing(self.errors(d, "base"), "solutions[1]（test、issue 1304）")
 
     def test_分かれ目を求められなければ照らせないとして落とす(self):
@@ -2986,7 +3196,7 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
         self.assertIn(f"{check.REQUIRES_CHECK_UNVERIFIABLE}: base_unreadable", e[0])
 
     def test_main_が_base_を渡すと照らして_1_を返す(self):
-        d = self.repo(self.OPEN, self.OPEN + self.TEST)
+        d = self.repo(self.DECLARED, self.DECLARED + self.TEST)
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--base", "HEAD", "--json", str(out)]), 1)
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
@@ -2994,7 +3204,7 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
         self.assertEqual(check.main(["--repo", str(d)]), 0)
 
     def test_このリポジトリの記録は欄のない_ci_check_と_test_を残してもよい(self):
-        # 既存の解決策は直すときに書く（変えていない解決策は見ない）。この解決策を足した K-0004 の変更でも落ちない
+        # 既存の解決策は、そのファイルに触れるときに書く（触れていないファイルは見ない）
         self.assertEqual([x for k in check.load(REPO) for x in check.check_requires_check_declared(k, REPO, None)], [])
 
 
@@ -3011,31 +3221,37 @@ class RepoTest(unittest.TestCase):
         self.assertEqual(r["level"], "deterministic")
         self.assertEqual(r["label"], "未配線")
 
-    def listed(self, path, tail):
-        """README の「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の 2 つの一覧を取り出す"""
-        text = path.read_text(encoding="utf-8")
-        ids = r"((?:`K-\d{4,}`・?)+)"
-        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids}{tail}", text)
-        name = path.relative_to(REPO)
-        self.assertIsNotNone(m, f"{name} に「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の一覧がない")
-        return (re.findall(r"K-\d{4,}", g) for g in m.groups())
+    # 記入の状態を手で書いた一覧の形。前は README にこの一覧を書いて順まで照らしていたが、担保の PR がどれも同じ行を
+    # 書き換えて衝突したので、check.py の出力を正本にして README には書かない（Issue #1369）
+    HANDWRITTEN = (
+        re.compile(r"すべての解決策に書いたのは\s*`K-\d{4,}`"),
+        re.compile(r"`K-\d{4,}`\s*(?:には|の)未記入の解決策"),
+    )
+    READMES = (HERE / "README.md", REPO / ".factory-config" / "knowledge" / "README.md")
 
-    def assert_listed(self, path, tail):
-        listed_done, listed_open = self.listed(path, tail)
+    def handwritten(self, text):
+        return [m.group(0) for p in self.HANDWRITTEN for m in p.finditer(text)]
+
+    def test_手書きの一覧の形を見分ける(self):
+        self.assertEqual(len(self.handwritten("すべての解決策に書いたのは `K-0001`・`K-0002`。`K-0009` には未記入の解決策が残っていて")), 2)
+        self.assertEqual(len(self.handwritten("`K-0009` の未記入の解決策は次に書く")), 1)
+        self.assertEqual(self.handwritten("未記入の解決策が残る知見は、`check.py` の出力の「未記入」の件数で見る"), [])
+
+    def test_README_に記入の状態の手書きの一覧がない(self):
+        """README と記録のずれに気づく（議決 D-0035・D-0052、Issue #1062・#1138）ために、2 つの README に記入済み・未記入の知見の
+        手書きの一覧が戻っていれば落とす。一覧は check.py の出力を正本にする（Issue #1369）"""
+        for path in self.READMES:
+            name = path.relative_to(REPO)
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(self.handwritten(text), [], f"{name} に記入の状態の手書きの一覧がある。消して check.py の出力を見る")
+            self.assertIn("check.py` の出力（知見ごとの行の「未記入」の件数）を正本", text, f"{name} が記入の状態の正本（check.py の出力）を指していない")
+
+    def test_check_py_の出力の行が記録の数えた結果と一致する(self):
+        """README の代わりに正本にする check.py の出力が、解決策のある知見ごとに 1 行あり、未記入の件数が K-*.yaml と合う"""
+        out = subprocess.run(["python3", str(HERE / "check.py"), "--repo", str(REPO)], capture_output=True, text=True).stdout
+        printed = dict(re.findall(r"^(K-\d{4,}): .*未記入 (\d+)）$", out, re.M))
         rows = [check.row(x) for x in check.load(REPO)]
-        done = [r["id"] for r in rows if r["solutions"] and not r["unrecorded"]]
-        still_open = [r["id"] for r in rows if r["unrecorded"]]
-        name = path.relative_to(REPO)
-        self.assertEqual(listed_done, done, f"{name} の「すべての解決策に書いた」知見の一覧を K-*.yaml に合わせて直す")
-        self.assertEqual(listed_open, still_open, f"{name} の「未記入の解決策が残る」知見の一覧を K-*.yaml に合わせて直す")
-
-    def test_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
-        """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
-        self.assert_listed(HERE / "README.md", " の未記入の解決策は")
-
-    def test_knowledge_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
-        """.factory-config/knowledge/README.md の同じ 2 つの一覧も、順まで照らす（議決 D-0052、Issue #1138）"""
-        self.assert_listed(REPO / ".factory-config" / "knowledge" / "README.md", " には未記入の解決策が残っていて")
+        self.assertEqual(printed, {r["id"]: str(r["unrecorded"]) for r in rows if r["solutions"]})
 
 
 if __name__ == "__main__":

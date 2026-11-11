@@ -1,0 +1,79 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0151
+pr: https://github.com/guccyon/rally/pull/1389
+decided_at: '2026-11-11'
+outcome: enforce
+requires_human: false
+knowledge:
+- K-0025
+- K-0026
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0025 は K-0016 と同じ出来事の型ですが、欠ける場所を「実装役の報告から summary.md を作る取り出し」に絞り、元の文と照らす確かめを主張しているので、K-0016
+    の「組み立てたあとに先頭の見出しを確かめる」とは矛盾せず補い合います。
+  - 'C-0012 は実装役が ## 概要 から書いていたという材料で K-0016 の未確認の点（どこで欠けたか）に答えているので、次に K-0016 を直す変更セットで
+    evidence に C-0012 を足し、statement の「どちらの事例でも確かめられていない」を K-0025 に合わせて再確認してください。'
+  - K-0026 は本文の指摘を扱う K-0012 をコードの指摘に広げた別の主張だと C-0012 の学びに書かれ、K-0004（adopt の件数で差し戻しを起こす）とも
+    K-0003（adopt の二義）とも仕組みがぶつからないので、重複や矛盾はありません。
+  - 既存の知見の扱いは C-0012 の学びに K-0016・K-0012 との関係として書かれ、既存のファイルを書き換えていないのは D-0149 の先例と合いますが、K-0011・K-0009・K-0018
+    は「そのまま」と明記するとより分かりやすくなります。
+  - K-0026 の scope.work に dev.review.inspect があるのに roles が [supervisor, judge] だけなので、次に直すときに
+    inspect を外すか検査役を roles に足して揃えるとよいです。
+  - INDEX.md の 2 行は K-0025・K-0026 の中身と合い、specs の glossary・context-map にも触れないので矛盾はなく、根拠が
+    C-0012 の 1 件だけなので confidence は hypothesis、status は draft のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0025 と K-0026 は、どちらも evidence に事例記録 C-0012、PR 982、event case.analyzed:644507
+    を挙げており、一次記録まで辿れます。
+  - C-0012 は、分析役の推測、記録者が手元の Engine（34a53af）で確かめたこと、材料にないもの（ジョブが動いた時点の Engine の版、取り出しの記録、ジョブ
+    4938 の入力）を分けて書いており、根拠の出どころが区別できます。
+  - K-0025 は欠けた場所を特定せず、tail -80 と塊の分かれ方の 2 つの候補を推測として並べているので、確かさを hypothesis にしたのは妥当で、上げるべきではありません。
+  - K-0026 は時刻（merge_decided 14:44:39、inspector_approved の 4 秒後のマージ）と、採用した指摘 3 件を事例から引いていますが、根拠は
+    1 件だけと自分で書いているので、確かさは hypothesis のままが妥当です。
+  - K-0026 の一般化（採用した should をマージ後に回すと宿題が残りやすい）は、invalidate_when に PR の集計による反証の条件があり、確かめ方が示されています。
+  - 氏名・連絡先・利用者 ID・利用者の本文の引用は含まれておらず、出てくるのは PR・Issue・ジョブ・event の番号とファイル名だけなので、個人情報は抽象化で切れています。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0025 は「PR に載った本文の見出しの組が実装役の最後の文とそろっているか」を照らせば、落ちた場所が取り出しの塊か tail -80 かを決めなくても決定論で確かめられるので、context
+    のままにせず担保すべきです。
+  - 'K-0025 は既に deterministic で担保した K-0016 の head_not_first_heading（先頭が ## 概要 か）を補うもので、C-0012
+    のように箇条書きの途中から始まる欠けは今の関所でも落ちるはずなので、なぜ落ちなかったか（関所が配線前の版だったか）を確かめる手がかりとして記録する価値があります。'
+  - K-0026 は制御プレーンのイベント列で「supervisor.merge_decided（auto）と supervisor.merged が、同じ PR
+    の検査と裁きの後に出ているか、採用したコードの指摘が残っていないか」を照らせるので、K-0012 の recheck.mjs と同じ型のテストで担保できます。
+  - K-0026 の後半にある既存の定義の二重持ちを機械で見つける lint は、線が引きにくく誤検知の費用も高いので、今回の担保の対象から外し、マージの順序の検査を先にするのがよいです。
+  - どちらも根拠は C-0012 の 1 件だけで、K-0025 は落ちた場所も確かめていないため、確かさは hypothesis のままが妥当です。
+  - 事例記録と知見に、利用者や人を特定できる情報は見当たりません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - K-0025 は欠けた場所を「報告から summary.md を作る取り出し」に絞り、塊の分かれ方と tail -80 の 2 つの候補を確かめていないと
+    statement と invalidate_when に書いているので、根拠 1 件の hypothesis としては広すぎません。
+  - K-0025 の反例になりうる C-0008 の job 3873（## 概要 の前に文が足された形）は取り出しで落ちる型ではありませんが、それは K-0016
+    が受け持つので、K-0025 の主張とはぶつかりません。
+  - K-0025 の scope.roles に implement が入っていますが、主張の作用先は Engine の取り出しで実装役には直せないので、次に直すときは
+    roles を inspect と judge に絞るのがよいです。
+  - K-0025 は K-0016 と同じ出来事の型なので、C-0012 を K-0016 の evidence に足すか再確認に回すかの扱いを、次の変更セットで明示するのがよいです。
+  - K-0026 は根拠が C-0012 の 1 件だけで、採用した should のコードの指摘をマージ後に回すのが意図した決まりである場合もあるため、「すべての
+    should を直してからマージする」へ一般化しないよう hypothesis のままにし、invalidate_when の 2 つ目の集計で確かめるべきです。
+  - K-0026 は merge_decided の早出し・shadow のゲート・二重持ちの検出がないことの 3 つの条件を 1 つの主張にまとめているので、確かめるときにどの条件が効いたのかを分けて記録すべきです。
+  personal_data: false
+enforcement:
+- knowledge: K-0025
+  level: deterministic
+  solution_kind: test
+  proposal: 'tools/pr-body-check に、実装役の最後の文（session の output）と PR 本文の ## 見出しの並びと数を照らすテストを足す。あわせて
+    Engine の worker/entrypoint.sh で、80 行を超える報告と複数のテキストの塊に分かれた報告から summary.md を作っても先頭の
+    ## 概要 が残ることを確かめるテストを足す（tail -80 で頭が落ちれば失敗にする）。'
+- knowledge: K-0026
+  level: deterministic
+  solution_kind: test
+  proposal: '制御プレーンのイベント列で、同じ PR の supervisor.merge_decided（code_change=auto）が検査（inspector_approved）と裁き（judge）の後に出ていること、裁きで採用した
+    inspection の指摘のうち機械的に直せるコードの指摘が fix ジョブで閉じてから supervisor.merged が出ていることを確かめるテストを、K-0012
+    の tools/pr-body-check/recheck.mjs と同じ型で足し、C-0012（PR #982）の並びで落ちることを確かめる。'

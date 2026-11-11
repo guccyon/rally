@@ -9,7 +9,7 @@
 # enforcement のジョブも必須チェックに入れ、そのあとで K-0004 の issue 986・1059・1129 の解決策を wired: true にし、wired_by に
 # {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/check.py} を書く
 # （この写しの pull_request のジョブから check.py を呼ぶ項目がないと check.py が落とす。議決 D-0048、Issue #1129。議決 D-0072、Issue #1200）。
-# .factory-config/knowledge/README.md の一覧と K-*.yaml がずれた PR で enforcement のジョブの test_check.py が落ちる実行を
+# README と K-*.yaml がずれた PR（記入の状態の手書きの一覧を README に戻した PR など。Issue #1369）で enforcement のジョブの test_check.py が落ちる実行を
 # .factory-config/knowledge/cases/ の事例記録に残してから、K-0004 の issue 1062 と issue 1138 の解決策を
 # wired: true・verified: true にし、wired_by に {workflow: .github/workflows/knowledge-enforcement.yml, job: enforcement, runs: tools/knowledge-enforcement-check/test_check.py} を、
 # verified_by にその事例記録を書く（この写しの pull_request のジョブから test_check.py を呼ぶ項目がないと check.py が落とす。

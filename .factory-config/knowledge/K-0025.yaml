@@ -1,0 +1,30 @@
+id: K-0025
+theme: 4
+kind: causal
+statement: >-
+  実装役の報告（最後の文）から handoff の summary.md を作り PR 本文に渡す取り出しが、報告の一部しか拾わないと、実装役が ## 概要 から
+  書いた本文でも PR には前半の欠けた本文が載る。PR に載った本文を実装役の元の文と照らす段がないと、検査役と判定役は欠けた本文を前提に裁き、
+  本文の指摘と直しを生む（C-0012 では実装役の会話の記録の最後の文が ## 概要 から始まるのに、summary.md と PR 本文は箇条書きの途中から始まっていた）。
+  どこで落ちたかは確かめていない。分析役は最後の文が複数のテキストの塊に分かれ後ろの塊だけを拾ったと推測し、2026-11-11 の手元の Engine（34a53af）の
+  orchestrator/worker/entrypoint.sh は報告を tail -80 で切っている（80 行を超える報告は頭が落ちる）。ジョブが動いた時点の Engine が同じだったかは確かめていない。
+scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
+  roles: [implement, inspect, judge]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0012
+  - pr: 982
+  - event: "case.analyzed:644507"
+status: active
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0016, K-0011, K-0009]
+invalidate_when:
+  - "summary.md を作るときに実装役の最後の文を切らずに全部渡し、PR 本文の見出しの組を元の文と機械で照らすようになった"
+  - "ジョブが動いた時点の Engine と取り出しの記録を確かめ、欠けが取り出しの側ではなかった（実装役の最後の文そのものが欠けていた）と分かった"
+  - "80 行を超える報告と超えない報告を比べ、頭の欠けが報告の長さとも塊の分かれ方とも関係なく起きていると分かった"
+decided_by: committee:D-0151

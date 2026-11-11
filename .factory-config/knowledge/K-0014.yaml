@@ -46,6 +46,9 @@ enforcement:
       issue: 1135
       at: 2026-11-08
       decided_by: committee:D-0049
+      requires_check:
+        - runs: tools/conflict-check/test_events.py
+          workflow: .github/workflows/conflict-check.yml
       wired: false
       verified: false
     - kind: schema
@@ -198,6 +201,8 @@ enforcement:
       requires_check:
         - runs: tools/conflict-check/test_schema_ci.py
           workflow: .github/workflows/conflict-check.yml
+          env:
+            CONFLICT_SQL_REQUIRED: "true"
       wired: false
       verified: false
     - kind: test
@@ -244,6 +249,54 @@ enforcement:
       requires_check:
         - runs: tools/conflict-check/test_events.py
           workflow: .github/workflows/conflict-check.yml
+      wired: false
+      verified: false
+    - kind: ci_check
+      what: >-
+        議決 D-0135（PR #1341）の ci_check の案と、同じ知見の議決 D-0139（PR #1346）の ci_check の案を入れた。issue 1295 の解決策（conflict-sql のジョブの
+        WindowSqlTest・RecordSqlTest）と issue 1297 の解決策（ConflictFilesShapeParityTest）の requires_check は、それぞれ
+        tools/conflict-check/test_schema_ci.py・test_events.py と .github/workflows/conflict-check.yml ですでに書いてあったが、test_schema_ci.py は
+        conflict-check のジョブの unittest discover でも走る（Postgres がなく SQL の組は飛ぶ）ので、そのジョブを指すだけで wired: true にできた。
+        tools/knowledge-enforcement-check/check.py の requires_check の項目に env（環境変数の名前 → 値の文字列）を足し、issue 1295 の項目に
+        env: {CONFLICT_SQL_REQUIRED: "true"} を書いて、その値を渡して呼ぶ手順（手順・ジョブ・ワークフローの env か、行の中の NAME=値）を指す
+        wired_by の項目がなければ requires_check_unwired で落とすようにした。あわせて、unittest discover は -p（既定は test*.py）にファイル名が
+        当たるときだけそのテストを呼ぶ側に数えるようにし、-p 'test_schema_ci.py' の conflict-sql のジョブを issue 1297 の test_events.py の配線と
+        読ませないようにした。D-0139 の案の後半として、--base を渡した check.py が、kind が test・ci_check で what に PR ごとのひな形
+        （tools/*/ci/*.yml のうち on.pull_request のあるもの）を挙げた解決策を、PR の差分で足したり直したりしたときに requires_check が空の列 [] でも
+        requires_check_missing で落とすようにした（欄がないものは議決 D-0116 の線ですでに落ちる。requires_schedule を書いた定期の解決策は見ない）。
+        test_check.py の ConflictSqlPullRequestTest で、ひな形をそのまま写した conflict-sql のジョブなら issue 1295 が、conflict-check のジョブなら
+        issue 1297 が通り、conflict-check のジョブを指す issue 1295・CONFLICT_SQL_REQUIRED を外すか値を変えた写し・pull_request を外した写し・
+        別の名前のワークフロー・conflict-sql のジョブを指す issue 1297 は落ちることを、RequiresCheckTest で env と -p の読み方と env の形の誤りを、
+        RequiresCheckDeclaredTest で空の列の線を確かめた。ワーカーは .github/workflows/ を変えられないので、ひな形を
+        .github/workflows/conflict-check.yml に写して conflict-check・conflict-sql を必須のチェックにし、issue 1295・1297 の項目を wired: true にして
+        wired_by を書くのは建設者が行う（tools/conflict-check/README.md の「CI への組み込み」）。この解決策そのものは PR ごとの
+        knowledge-enforcement のジョブの test_check.py で走る。まだ配線されておらず、本物の記録では確かめていない
+      issue: 1344
+      at: 2026-11-11
+      decided_by: committee:D-0135
+      requires_check:
+        - runs: tools/knowledge-enforcement-check/test_check.py
+          workflow: .github/workflows/knowledge-enforcement.yml
+      wired: false
+      verified: false
+    - kind: lint
+      what: >-
+        議決 D-0141（PR #1350）の lint の案を入れた。議決 D-0116 の線（Issue #1304）の requires_check_missing は、PR の差分で足したり直したりした
+        ci_check・test の解決策しか見ておらず、同じファイルのほかの解決策を直す PR でも、前からある欄のない解決策（この知見の issue 1135 の test）が
+        黙って残っていた（議決 D-0141 の enforcement の票）。tools/knowledge-enforcement-check/check.py の check_requires_check_declared を、
+        --base と HEAD の分かれ目の版から中身が変わったか、その版になかった知見のファイルなら、その中の kind が ci_check・test の解決策すべてに、
+        直したかどうかにかかわらず requires_check の欄（PR ごとに走らないものは []）を求め、なければ requires_check_missing で落とすように広げた。
+        触れていないファイルは見ない。PR ごとのひな形を挙げた解決策の空の列 []（議決 D-0139）は、これまでどおり足したり直したりした解決策だけを見る。
+        先にこの知見の issue 1135 の解決策に、MissingConflictFilesTest を走らせる PR ごとのジョブの requires_check
+        （tools/conflict-check/test_events.py、.github/workflows/conflict-check.yml。issue 1208・1297 と同じ）を書き足した。issue 1214 の解決策は
+        schedule で走る ci_check で、すでに requires_check: [] と requires_schedule を書いてあるのでそのままにした。test_check.py の
+        RequiresCheckDeclaredTest に、欄を書いた解決策を足す・同じファイルのほかの解決策だけを直す・並べ替える・解決策でない欄だけを直す変更で、
+        触れていない欄のない解決策が落ちることと、触れていないファイルは見ないことを確かめる組を足した。この解決策そのものは PR ごとの
+        knowledge-enforcement のジョブの test_check.py で走るが、ワーカーは .github/workflows/ を変えられず、ひな形 ci/knowledge-enforcement.yml の写しは
+        建設者が置くので、まだ配線されておらず、本物の記録では確かめていない
+      issue: 1351
+      at: 2026-11-11
+      decided_by: committee:D-0141
       wired: false
       verified: false
 decided_by: committee:D-0049

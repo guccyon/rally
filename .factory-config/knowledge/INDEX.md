@@ -14,6 +14,7 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0016 | 4 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 実装役の報告（handoff の summary.md）から PR 本文を組み立てる受け渡しで、本文の頭（## 概要 と ## 対応内容）が欠けたり、 ## 概 |
 | K-0019 | 4 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | 実装役が契約や API の振る舞いの意味を解釈して仮決めしたときに、backend の実装・テストでその振る舞いを確かめた場所（ファイル名と関数名）を 根拠に添 |
 | K-0021 | 4 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | Issue が「いまの絞り込み」「ほかの期間の欄」のように今の画面を前提にした言葉で書かれているのに、指示役が前提にしている既存の欄や 手本の画面をファイル名で |
+| K-0025 | 4 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 実装役の報告（最後の文）から handoff の summary.md を作り PR 本文に渡す取り出しが、報告の一部しか拾わないと、実装役が ## 概要 から |
 | K-0002 | 6 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、  |
 | K-0004 | 6 | causal | hypothesis | active | deterministic | 2026-11-01 | 2026-12-01 | supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」では |
 | K-0006 | 6 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、 見出しの順と階層が崩れて新しい差し戻しを生む。同じ |
@@ -28,3 +29,4 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0022 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | どのチケットも同じ場所に追記する共有ファイル（apps/backend/README.md の機能ごとの節、apps/backend/crates/server |
 | K-0023 | 6 | causal | hypothesis | active | deterministic | 2026-11-11 | 2026-12-11 | 実装のジョブが PR を開く前に、最新の既定ブランチを同じセッションで取り込んで衝突を確かめないと、実装の間に main が進んだときに PR は開いた時点で衝 |
 | K-0024 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | よく衝突するファイル（apps/backend/README.md・apps/backend/crates/server/src/lib.rs・specs/co |
+| K-0026 | 6 | causal | hypothesis | active | deterministic | 2026-11-11 | 2026-12-11 | supervisor がマージの判断（supervisor.merge_decided）を変更のファイルの分類（表）だけで検査と裁きの前に出し、採用した検査の指 |
