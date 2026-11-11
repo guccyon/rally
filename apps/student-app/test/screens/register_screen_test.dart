@@ -37,6 +37,7 @@ void main() {
       'listMyVideos',
       'listMyNotifications',
       'listFavoriteCoaches',
+      'listMyLessonCompletions',
     ]);
     final request = api.requests.first as RegisterAccountRequest;
     expect(request.toJson(), {

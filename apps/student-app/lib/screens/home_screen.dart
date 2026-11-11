@@ -15,8 +15,8 @@ import '../ui/labels.dart';
 import '../ui/theme/rally_tokens.dart';
 
 /// ホーム（登録後に最初に開く）。これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
-/// お気に入りのコーチ（`listFavoriteCoaches`）・コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼・受けたレッスンの入口を
-/// 1 画面に並べる。
+/// お気に入りのコーチ（`listFavoriteCoaches`）・コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼・受けたレッスンの入口と、
+/// レッスンを受け終えた生徒への次のレッスンの予約の入口（`listMyLessonCompletions`）を 1 画面に並べる。
 /// 欄ごとに別の API を読み、読めなかった欄にだけその旨を出す（ほかの欄はそのまま出す）。
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -31,6 +31,7 @@ class HomeScreen extends ConsumerWidget {
         if (state.student case final student?)
           Text('${student.displayName}さん、こんにちは'),
         const SizedBox(height: 16),
+        const _NextLessonSection(),
         const _BookingsSection(),
         const SizedBox(height: 24),
         const _FavoriteCoachesSection(),
@@ -82,6 +83,41 @@ class _SectionFailure extends StatelessWidget {
     color: Theme.of(context).colorScheme.errorContainer,
     child: Padding(padding: const EdgeInsets.all(12), child: Text(text)),
   );
+}
+
+/// 次のレッスンの予約の入口（スロットの選択を開く）。完了したレッスンが 1 件でもあれば出し、
+/// まだない・読み込み中・読めなかったときは欄ごと出さない（初回かどうかはアプリで数え直さない。ADR 0006）
+class _NextLessonSection extends ConsumerWidget {
+  const _NextLessonSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
+    final completions = ref.watch(
+      lessonCompletionsProvider.select((s) => s.completions),
+    );
+    if (completions == null || completions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _SectionTitle('次のレッスン'),
+          const Text('レッスンおつかれさまでした。続けて受けられるよう、次のレッスンも予約しておきましょう。'),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: busy
+                ? null
+                : ref.read(studentFlowProvider.notifier).goToSlotSearch,
+            icon: const Icon(Icons.event_available),
+            label: const Text('次のレッスンを予約する'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// これからの予約（開始の近い順に 3 件まで）

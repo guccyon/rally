@@ -55,6 +55,20 @@ class LessonCompletionsNotifier extends Notifier<LessonCompletionsState> {
     return refresh();
   }
 
+  /// ホームの「次のレッスンを予約する」の入口のために一覧を読む（[StudentFlowNotifier] がホームの欄と並べて呼ぶ）。
+  /// 入口は完了したレッスンが 1 件でもあれば出す（初回かどうかはサーバーの記録が決めるので、アプリでは数え直さない。ADR 0006）。
+  /// 読めなければ入口を出さないだけで、失敗の文言は出さない
+  Future<void> loadForHome() async {
+    try {
+      final list = await _api.listMyLessonCompletions();
+      if (!ref.mounted) return;
+      state = LessonCompletionsState(completions: list.lessonCompletions);
+    } on StudentApiException {
+      if (!ref.mounted) return;
+      state = LessonCompletionsState();
+    }
+  }
+
   /// 一覧を読み直す。読めなければ [LessonCompletionsState.failed] を立て、画面の一覧の欄にだけその旨を出す
   /// （失敗の文言は出さない）
   Future<void> refresh() => _flow.run(() async {

@@ -30,4 +30,4 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0022 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | どのチケットも同じ場所に追記する共有ファイル（apps/backend/README.md の機能ごとの節、apps/backend/crates/server |
 | K-0023 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 実装のジョブが PR を開く前に、最新の既定ブランチを同じセッションで取り込んで衝突を確かめないと、実装の間に main が進んだときに PR は開いた時点で衝 |
 | K-0024 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | よく衝突するファイル（apps/backend/README.md・apps/backend/crates/server/src/lib.rs・specs/co |
-| K-0026 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | supervisor がマージの判断（supervisor.merge_decided）を変更のファイルの分類（表）だけで検査と裁きの前に出し、採用した検査の指 |
+| K-0026 | 6 | causal | hypothesis | active | deterministic | 2026-11-11 | 2026-12-11 | supervisor がマージの判断（supervisor.merge_decided）を変更のファイルの分類（表）だけで検査と裁きの前に出し、採用した検査の指 |
