@@ -1,0 +1,31 @@
+id: K-0022
+theme: 6
+kind: causal
+statement: >-
+  どのチケットも同じ場所に追記する共有ファイル（apps/backend/README.md の機能ごとの節、apps/backend/crates/server/src/lib.rs、
+  specs/contracts/api/student-app/openapi.yaml など）を 1 つのファイルのまま残すと、並列に流れるチケットどうしがその追記で衝突し、
+  並列の数とともに衝突の解消のジョブが増える（C-0011 では README の束が 11 チケットに 17 件・49.17 USD、前の窓は 0 件）。
+  1 本の衝突の解消のジョブは衝突したファイルのすべてが衝突しなくなって初めて消えるので、CHANGELOG.md だけを断片にしても（K-0002）、
+  ほかの共有ファイルが残っていればジョブは残る（例の PR #345 は CHANGELOG.md・README・lib.rs・openapi.yaml の 4 つで衝突した）。
+  ただし束の費用がジョブの費用を衝突したファイルの数で均等に割ったものだというのは分析役の読み（0.97 = 3.88 / 4）で、
+  窓（2026-10-29〜11-05）は断片方式（2026-11-03）とまたがり、例の #336 がその前か後かは材料にない。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  files: [apps/backend/README.md, apps/backend/crates/server/src/lib.rs, specs/contracts/api/student-app/openapi.yaml, CHANGELOG.md]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0011
+  - pr: 345
+  - event: "case.analyzed:644407"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0002, K-0024, K-0023]
+invalidate_when:
+  - "apps/backend/README.md のどのチケットも追記する部分が、機能ごとのファイルか生成物に分かれた（または merge=union などで機械的に解かれるようになった）"
+  - "断片方式のあとの窓（2026-11-04 以降）で、README・lib.rs・openapi.yaml の衝突の束が出なくなった（衝突は断片方式の前の PR に限られていた）"
+  - "共有ファイルを分けたあとも、同じファイルの衝突の束が減らなかった（原因はファイルの作りではなく並べ方だった）"
