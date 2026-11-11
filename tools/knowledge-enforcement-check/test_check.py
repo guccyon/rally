@@ -1018,6 +1018,7 @@ class RequiresCheckTest(unittest.TestCase):
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0016", 1307): [("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
+                          ("K-0026", 1392): [("tools/pr-body-check/merge-order.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0014", 1207): [],   # 定期のジョブ（requires_schedule）で照らし、PR ごとに走らなくてよい
                           # 議決 D-0130（Issue #1335）で requires_schedule を書くときに、議決 D-0116 の欄の必須に合わせて [] を明示した定期だけの解決策
                           **{key: [] for key in (("K-0001", 1106), ("K-0001", 1179), ("K-0004", 1018), ("K-0004", 1087), ("K-0004", 1162), ("K-0014", 1214))},
