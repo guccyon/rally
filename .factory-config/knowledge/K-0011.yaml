@@ -25,4 +25,27 @@ related: [K-0005]
 invalidate_when:
   - "judge のジョブの入力に、指摘が引く rubric_id の本文が添えられるようになった"
   - "rubric の本文を入力に持つ判定役でも、rubric にだけある要求を同じように決まりの外として退けた（原因は rubric の本文が渡らないことではなく、K-0005 の定義の分かれだけだった）"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: ci_check
+      what: >-
+        議決 D-0146（Issue #1320 の起票時の番号は D-0119。PR #1117）の ci_check の案を入れた。tools/judge-input-check/ci/judge-input-engine.yml が、
+        Engine を .factory-config/engine.lock の版でチェックアウトして ENGINE_DIR を向け、tools/judge-input-check のテスト（line.test.mjs と engine.test.mjs。
+        線は line.mjs、Engine の core-gates/judge.py の main を動かすのは engine_harness.py）を pull_request ごとに走らせ、チェック judge-input-engine-test を報告する。
+        Engine の judge.py・rubric.yaml の変化は engine.lock の版上げの PR で、製品の overlay のルールの変化はその PR のチェックアウトで、どちらもこのジョブに入る。
+        必須のチェックにするので paths で絞らない。テストは Issue #1054 の PR #1117（未マージ）のものを取り込み、今の Engine の judge.py が同じ core-gates/ の
+        knowledge_context を import して engine_harness.py（python3 -I）が読み込めなかったので、core-gates/ を import の道に足す直しだけを足した。
+        手元の Engine（d0edc77。engine.lock の版ではない）で 12 件中 11 件が通り、(1)（OV-001 の本文が judge の入力に入らない）は今の Engine の形のときだけの todo のまま。
+        ワーカーは .github/workflows/ を変えられないので、ひな形を写して judge-input-engine-test を必須のチェックにすることは建設者が行い
+        （tools/judge-input-check/README.md の「CI への組み込み（建設者）」）、配線されておらず効き目は確かめていない。写したら wired: true にして、wired_by に
+        {workflow: .github/workflows/judge-input-engine.yml, job: engine-test} を runs が line.test.mjs・engine.test.mjs の 2 項目で書く
+      issue: 1320
+      at: 2026-11-11
+      decided_by: committee:D-0146
+      requires_check:
+        - {runs: tools/judge-input-check/line.test.mjs, workflow: .github/workflows/judge-input-engine.yml}
+        - {runs: tools/judge-input-check/engine.test.mjs, workflow: .github/workflows/judge-input-engine.yml}
+      wired: false
+      verified: false
 decided_by: committee:D-0033

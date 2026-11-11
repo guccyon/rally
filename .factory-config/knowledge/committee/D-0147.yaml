@@ -1,0 +1,94 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0147
+pr: https://github.com/guccyon/rally/pull/1371
+decided_at: '2026-11-11'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'K-0011 に足した ci_check の解決策は D-0146 の enforcement にある K-0011 の ci_check の案（tools/judge-input-check
+    のテストを pull_request で走る必須のチェックにし、requires_check に検査の道を書く）に当たり、decided_by: committee:D-0146
+    は議決と合っています。'
+  - '「Issue #1320 の起票時の番号は D-0119」という書き方は、K-0001 の D-0032・D-0068・D-0093 などと同じく起票時の番号と議決の番号を書き分ける前例どおりで、D-0119
+    が別の PR（#1309）の議決として残っていることとも矛盾しません。'
+  - 'kind が ci_check の解決策に requires_check を {runs, workflow} の列で書き、wired: false・verified:
+    false として配線も確認もまだだと本文で認めているので、README の D-0021・D-0034・D-0077・D-0116 の決まりと矛盾しません。'
+  - INDEX.md の担保の列が context から deterministic に変わったのは enforcement.level をそのまま出すという
+    README の決まりどおりで、statement・scope・evidence・related・確かさは変えておらず、関連する K-0005 の扱いは「そのまま」で足ります。
+  - README の一覧は「2026-11-08 の時点」と書いたまま 2026-11-11 に入れた K-0011 を足しているので、次に README を直すときは日付を一覧の実際の時点に合わせるとよいです。
+  - 'D-0033 と D-0146 が求めた K-0011 の test の解決策（C-0006 の指摘 7 件を fixtures にし、Engine が直ったら
+    todo を外すことを強制する確かめ）はまだ solutions にないので、PR #1117 を閉じるか取り込むかを決める変更セットで test の解決策として別に記録してください。また今の
+    Engine では PR-002 の本文が渡り OV-001 だけが欠けるので、次の再確認で invalidate_when の 1 つ目に照らして statement
+    を overlay の rubric に絞るか確かめ、specs/ には judge や rubric に触れる規範がなく矛盾はないので、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0011 に足した ci_check の解決策は decided_by: committee:D-0146 と issue: 1320 を持ち、同じ
+    PR で足した D-0146 の enforcement にある ci_check の案（tools/judge-input-check のテストを pull_request
+    で走る必須のチェックにし、requires_check に検査の道を書く）と中身が合うので、一次記録に辿れます。'
+  - 'D-0119 の番号は今の置き場では PR #1309（K-0017・K-0018）の議決に使われているので、PR #1117 の議決を D-0146 に付け直して「起票時の番号は
+    D-0119」と書き添えたのは、D-0077（起票時の番号は D-0075）と同じ扱いで、辿り先の取り違えを防いでいます。'
+  - what に、確かめた Engine の版（d0edc77。engine.lock の版ではない）と、12 件中 11 件が通り OV-001 の 1 件は
+    todo のままであることが書かれており、D-0146 の根拠の票が求めた「いつの Engine で確かめたか」に応えています。
+  - 'wired: false・verified: false とし、配線も本物の記録での確かめもまだないと本文で認めているので言い過ぎがなく、K-0011 の
+    confidence は hypothesis のままが妥当です。'
+  - README の一覧は「2026-11-08 の時点で」と書いたまま、2026-11-11 に解決策を足した K-0011 を加えているので、次に README
+    を直すときは日付を一覧の中身に合わせると記録として正確になります。
+  - 差分に残るのは知見・事例・議決の id、rubric の id、Issue と PR の番号、Engine のコミット、ファイルの道だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0011 は「judge の入力に、指摘が引く rubric_id の本文がすべて入っているか」で線がはっきり引け、C-0003・C-0006 で繰り返し、外すと検査役と判定役の基準が割れるので、決定論で担保する値打ちがあります。
+  - '足した ci_check の解決策は requires_check に line.test.mjs・engine.test.mjs を {runs, workflow}
+    で書き、wired: false・verified: false と正直に残しているので、README の D-0021・D-0077・D-0116 の決まりに合い、記録として採ってよいです。'
+  - 'ただし D-0146 が決めた 2 つ目の案（todo の条件に当たらなくなったら落ちる test）は K-0011 の enforcement.solutions
+    に入っておらず、D-0033 の test の案も ci_check の what に溶けているので、次の変更セットで test の解決策として wired:
+    false・verified: false で分けて記録してください。'
+  - what では手元の Engine（d0edc77）で 12 件中 11 件が通ったとだけあり、engine.lock の版で走らせた結果も、K-0005
+    のように overlay の本文を渡す Engine の写しで todo が外れて通ることを確かめた記録もないので、todo が黙って残る穴が担保されていません。
+  - INDEX.md の担保の列が未配線のまま deterministic と出るのは README の決まりどおりですが、建設者が judge-input-engine.yml
+    を写して必須のチェックにするまでは効き目がないので、K-0011 の confidence は hypothesis のままが妥当です。
+  - 差分に残るのは知見・議決・事例の id、Issue と PR の番号、ファイルの道、コミットの短い番号だけで、人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この PR は K-0011 に D-0146 の ci_check の案を wired: false・verified: false で足し、README
+    の一覧と INDEX.md の担保の列を合わせるだけで、statement・scope・evidence・確かさは変えていないので、範囲が広がる問題はありません。'
+  - 検査は paths で絞らずすべての pull_request で走りますが、必須のチェックにするための意図した広さで、照らす中身は K-0011 の statement（指摘が引く
+    rubric の本文が judge の入力にあるか）と同じ範囲に収まっています。
+  - '反例として、根拠の害そのもの（OV-001 の本文が judge の入力に入らない）を確かめる (1) は今の Engine では todo で通るので、配線してもいまの既知の欠けは止まりませんが、what
+    にそう書かれ verified: false なので採らない理由にはなりません。'
+  - 手元で通したのは engine.lock の版ではない d0edc77 の Engine なので、配線するときに engine.lock の版で 12 件の結果を確かめ直してください。
+  - D-0146 が出した 2 つ目の案（todo の条件に当たらなくなったら落ちる test）はこの PR に入っておらず、README の一覧も「2026-11-08
+    の時点」のまま K-0011 を足しているので、次の変更セットで解決策の追加と時点の書き直しをしてください。
+  - 根拠は C-0003・C-0006 の 2 件で D-0033 の反対の票が求めた statement の絞り込みもまだなので、K-0011 の confidence
+    は hypothesis のままが妥当です。
+  personal_data: false
+enforcement:
+- knowledge: K-0011
+  level: deterministic
+  solution_kind: test
+  proposal: 'engine.test.mjs の (1)（OV-001 の本文が judge の入力に入らない）の todo を『overlay の本文が
+    1 つも入っていない今の Engine の形』のときだけに限り、その形に当たらないのに todo が残っていたら落ちる確かめを足す。overlay の本文を渡すように直した
+    Engine の写しで todo が外れて 12 件すべて通ることを確かめ、K-0011 の enforcement.solutions に kind: test、requires_check
+    に engine.test.mjs を書いて wired: false・verified: false で記録する。'
+- knowledge: K-0011
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/judge-input-check/ci/judge-input-engine.yml を建設者が .github/workflows/judge-input-engine.yml
+    に写し、job engine-test を paths で絞らない必須のチェック judge-input-engine-test にする。Engine は
+    .factory-config/engine.lock の版でチェックアウトし、写したら wired: true と wired_by（workflow・job・runs
+    が line.test.mjs と engine.test.mjs の 2 項目）を書き、check.py の D-0077 の照らしに通す。'
+- knowledge: K-0011
+  level: checklist
+  solution_kind: test
+  proposal: TAP の結果で skip・todo の数を数え、todo が engine.test.mjs の (1) の 1 件を超えたら落ちる見張りを
+    K-0016 の pass 数の見張りと同じ形で line.test.mjs・engine.test.mjs に足し、C-0006 の指摘 7 件の fixtures
+    がすべて pass と数えられたら verified_by に C-0006 を書く。

@@ -9,7 +9,7 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0005 | 4 | causal | hypothesis | active | deterministic | 2026-11-07 | 2026-12-07 | PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002）・リポジトリの決まり（CLAUDE.md の PR の説明 |
 | K-0007 | 4 | causal | hypothesis | draft | context | 2026-11-04 | 2026-12-04 | 続きの job（continue）が PR 本文に書く自分の報告で、既定ブランチの取り込みやコミットの状態を head を確かめずに書くと、 報告を書いた時点の |
 | K-0009 | 4 | causal | hypothesis | active | deterministic | 2026-11-05 | 2026-12-05 | 検査の採用済みの指摘（PR-002 など）と、本文を直す役（body_fix）が決めた本文の書き方の決まりが、次に PR 本文を書き足す役 （続きのジョブの s |
-| K-0011 | 4 | causal | hypothesis | active | context | 2026-11-07 | 2026-12-07 | 判定役（judge）のジョブの入力に、検査役の指摘が根拠として引く rubric（PR-002・OV-001 など）の本文が入っていないと、 判定役は指摘の根拠 |
+| K-0011 | 4 | causal | hypothesis | active | deterministic | 2026-11-07 | 2026-12-07 | 判定役（judge）のジョブの入力に、検査役の指摘が根拠として引く rubric（PR-002・OV-001 など）の本文が入っていないと、 判定役は指摘の根拠 |
 | K-0014 | 4 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 衝突を解く続きのジョブを積むときに、衝突したファイルを記録しない（pr.conflicted・continue.enqueued・handoff に載せない）と |
 | K-0016 | 4 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 実装役の報告（handoff の summary.md）から PR 本文を組み立てる受け渡しで、本文の頭（## 概要 と ## 対応内容）が欠けたり、 ## 概 |
 | K-0019 | 4 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | 実装役が契約や API の振る舞いの意味を解釈して仮決めしたときに、backend の実装・テストでその振る舞いを確かめた場所（ファイル名と関数名）を 根拠に添 |
