@@ -1,0 +1,24 @@
+id: K-0027
+theme: 5
+kind: hypothesis_test
+statement: >-
+  事実: 観点 flow（利用者の流れ。Engine の definitions/qa.yaml の viewpoints）の Defect が、マージの後（QA・診断・本番）で直近 30 日に 8 件見つかっており、
+  マージの手前（PR の検査・CI）で止まっていない（2026-W46 の品質の Learn の集計。発見工程の分布は pr 32・qa 10、流出防止率 0.762、Incident 0 件）。
+  変更の案: 品質方針（.factory-config/quality_policy.yaml）に、観点 flow をマージの手前で確かめる約束を足す
+  （例: PR の検査のルーブリックに入れる、S の条件・エラーバジェットの欄で扱いを決める）。値を変えるのは人の承認で、この知見では変えない。
+  見込み: 観点 flow の Defect のうちマージの手前で見つかる割合が上がり、流出防止率が上がる。
+  見込みは集計 1 回からの仮説で、試した結果はまだない（8 件の Defect がどの PR・どの流れのものか、マージの手前で見つけられる形だったかは確かめていない）。
+scope:
+  work: [biz.quality_policy, ops.qa]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - event: "quality.proposal_drafted:1282725"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0026]
+invalidate_when:
+  - "品質方針に観点 flow をマージの手前で確かめる約束が入り、その後の 30 日の集計で観点 flow のマージ後の Defect が減らなかった"
+  - "観点 flow のマージ後の Defect を個別に見て、マージの手前の検査・CI では見つけられない形（本番のデータや時間をまたぐものなど）が大半だと分かった"
