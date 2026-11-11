@@ -156,6 +156,15 @@ ci_check・test の解決策の requires_check の必須（議決 D-0116 の sch
 分かれ目を求められない・その版を読めないときは requires_check_unverifiable で落とす。wired: true の解決策の空の列は、挙げる検査がないので
 上の D-0080 の線では書いていないのと同じに数える（requires_schedule を書いたもの・REQUIRED_RUNS に挙げたものを除いて requires_check_missing）。
 
+PR ごとのひな形のジョブで走らせる試験の requires_check（議決 D-0135・D-0139 の ci_check の案、Issue #1344）: requires_check の項目に env
+（環境変数の名前 → 値の文字列。例: {CONFLICT_SQL_REQUIRED: "true"}）を書いた検査は、その値を渡して呼ぶ手順（手順・ジョブ・ワークフローの env か、
+行の中の NAME=値）を指す wired_by の項目しか数えず、なければ requires_check_unwired で落とす（K-0014 の issue 1295 の test_schema_ci.py は、
+CONFLICT_SQL_REQUIRED=true の conflict-sql のジョブでないと SQL の組を飛ばすので、同じファイルを呼ぶ conflict-check のジョブだけでは wired にしない）。
+unittest discover は -p（--pattern。既定は test*.py）にファイル名が当たるときだけ、そのテストを呼ぶ側に数える（-p 'test_schema_ci.py' の
+conflict-sql のジョブは test_events.py を呼ばない）。--base を渡すと、kind が ci_check・test で what に PR ごとのひな形（tools/*/ci/*.yml のうち
+on.pull_request のあるもの）を挙げた解決策は、PR の差分で足したり直したものに空の列 [] も許さず requires_check_missing で落とす
+（requires_schedule を書いた解決策は見ない）。
+
 写しの配線の記録（議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）: .github/workflows/knowledge-enforcement.yml（ひな形の写し）が
 実在するのに、MIRROR_WIRED の解決策（K-0004 の issue 1063・1144。engine-test のジョブ）が wired: true でない（false・未記入・真偽でない値）なら
 mirror_unwired で落とす。建設者が写したあとに記録の更新が遅れて、未配線と表示され続けるずれを止める。写しがなければ見ない。
@@ -176,6 +185,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import fnmatch
 import io
 import json
 import os
@@ -225,6 +235,11 @@ KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
 REQUIRES_CHECK = "requires_check"
 REQUIRES_CHECK_KEYS = ("runs", "workflow")
 REQUIRES_CHECK_DECISION = "D-0077"
+# requires_check の項目に env（環境変数の名前 → 値）を書いた検査は、その値を渡して呼ぶ手順を指す wired_by だけを数える（議決 D-0135 の ci_check の案、Issue #1344。
+# K-0014 の issue 1295 の test_schema_ci.py は CONFLICT_SQL_REQUIRED=true の conflict-sql のジョブでないと SQL の組を飛ばすので、
+# 同じファイルを呼ぶ conflict-check のジョブを指すだけで wired と読ませないように）。requires_schedule には書けない
+REQUIRES_CHECK_ENV = "env"
+REQUIRES_CHECK_ENV_DECISION = "D-0135"
 REQUIRES_CHECK_INVALID = "requires_check_invalid"
 REQUIRES_CHECK_UNWIRED = "requires_check_unwired"
 # wired: true の解決策は、requires_check を書くか、requires_schedule を書くか、REQUIRED_RUNS（名前で並べた残りの求め）に挙げてあることを求める
@@ -237,6 +252,11 @@ REQUIRES_CHECK_MISSING_DECISION = "D-0080"
 REQUIRES_CHECK_KINDS = ("ci_check", "test")
 REQUIRES_CHECK_DECLARED_DECISION = "D-0116"
 REQUIRES_CHECK_UNVERIFIABLE = "requires_check_unverifiable"
+# kind が REQUIRES_CHECK_KINDS で、what に PR ごとのひな形（tools/*/ci/*.yml のうち on.pull_request のあるもの）を挙げた解決策は、--base を渡すと、
+# PR の差分で足したり直したりしたものに空の列 [] も許さない（議決 D-0139 の ci_check の案、Issue #1344。K-0014 の issue 1295・1297 は
+# PR ごとのひな形のジョブで走らせる試験なのに requires_check を書かずに足され、議決 D-0135・D-0139 で続けて指摘された）
+PR_TEMPLATE_RE = re.compile(r"tools/[\w.-]+/ci/[\w.-]+\.ya?ml")
+PR_TEMPLATE_DECISION = "D-0139"
 # wired: true の解決策は、知見と issue を問わずどれも、ひな形 ci/knowledge-enforcement.yml の写しの .github/workflows/knowledge-enforcement.yml の
 # pull_request でも走るジョブから check.py を呼ぶ項目を wired_by に要する（議決 D-0072（起票時の番号は D-0071）の test の案、Issue #1201。
 # 前は K-0004 の issue 986・1059・1129 を REQUIRED_PR に名前で挙げていて、ほかの知見の解決策は組を足し忘れると黙って通っていた。
@@ -376,11 +396,23 @@ def expand(line: str, env: dict) -> str:
     return re.sub(r"\$\{(\w+)\}|\$(\w+)", lambda m: str(env.get(m.group(1) or m.group(2), m.group(0))), line)
 
 
-def calls(lines: list[str], target: str, cwd: str, env: dict, read, depth: int = 0) -> bool:
+def env_value(v) -> str:
+    """環境変数の値を、GitHub Actions が渡す文字列にする（YAML の true・false は "true"・"false"）"""
+    return ("true" if v else "false") if isinstance(v, bool) else str(v)
+
+
+def has_env(env: dict, need: dict | None) -> bool:
+    """env が need（環境変数の名前 → 値）をすべて同じ値で持つか（議決 D-0135、Issue #1344）"""
+    return all(key in env and env_value(env[key]) == env_value(v) for key, v in (need or {}).items())
+
+
+def calls(lines: list[str], target: str, cwd: str, env: dict, read, depth: int = 0, need: dict | None = None) -> bool:
     """行の並び（1 つの手順の run か、ラッパーのスクリプト）が target（根からの道）の検査を呼ぶか。
 
     直の道（cwd か根から）、npm・pnpm の run（cwd の package.json の scripts）、unittest discover・node --test で
     target のあるディレクトリのテストを全部走らせる形、中身を読めるラッパーのスクリプト（3 段まで）を辿る。
+    unittest discover は -p（--pattern。既定は test*.py）に target のファイル名が当たるときだけ数える（議決 D-0139、Issue #1344）。
+    need（環境変数の名前 → 値）を渡すと、その値を渡して呼ぶ形だけを数える（手順の env と行の中の NAME=値。議決 D-0135、Issue #1344）。
     """
     env = dict(env)
     tdir, tname = target.rsplit("/", 1) if "/" in target else ("", target)
@@ -396,10 +428,10 @@ def calls(lines: list[str], target: str, cwd: str, env: dict, read, depth: int =
                 rel = norm(base, m.group(1))
                 if rel is None:
                     continue
-                if rel == target:
+                if rel == target and has_env(env, need):
                     return True
                 inner = read(rel) if depth < 3 and rel.rsplit(".", 1)[-1] in ("sh", "bash") else None
-                if inner is not None and calls(logical_lines(inner), target, cwd, env, read, depth + 1):
+                if inner is not None and calls(logical_lines(inner), target, cwd, env, read, depth + 1, need):
                     return True
         npm = re.search(r"\b(?:npm|pnpm)\b((?:\s+\S+)*?)\s+(?:run|run-script)\s+([\w:.-]+)|\b(?:npm|pnpm)\s+(test)\b", line)
         if npm and depth < 3:
@@ -410,22 +442,25 @@ def calls(lines: list[str], target: str, cwd: str, env: dict, read, depth: int =
                 body = (json.loads(pkg).get("scripts") or {}).get(npm.group(2) or npm.group(3)) if pkg else None
             except ValueError:
                 body = None
-            if isinstance(body, str) and calls(logical_lines(body), target, pdir, env, read, depth + 1):
+            if isinstance(body, str) and calls(logical_lines(body), target, pdir, env, read, depth + 1, need):
                 return True
         if is_test:
             node = re.search(r"\bnode\b.*--test\b(.*)$", line)
-            if node and cwd == tdir and not re.search(r"\.[cm]?js\b", node.group(1)) and tname.endswith("js"):
+            if node and cwd == tdir and not re.search(r"\.[cm]?js\b", node.group(1)) and tname.endswith("js") and has_env(env, need):
                 return True
             disc = re.search(r"\bunittest\s+discover\b(.*)$", line)
             if disc and tname.endswith(".py"):
                 start = re.search(r"(?:-s|--start-directory)[=\s]+[\"']?([^\"'\s]+)", disc.group(1))
-                if norm(cwd, start.group(1) if start else ".") == tdir:
+                pattern = re.search(r"(?:-p|--pattern)[=\s]+[\"']?([^\"'\s]+)", disc.group(1))
+                if (norm(cwd, start.group(1) if start else ".") == tdir and fnmatch.fnmatchcase(tname, pattern.group(1) if pattern else "test*.py")
+                        and has_env(env, need)):
                     return True
     return False
 
 
-def calling_steps(workflow: dict, job_id: str, target: str, read, off=runs_off):
-    """ワークフローの job_id のジョブで target を呼ぶ手順を順に返す（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える）"""
+def calling_steps(workflow: dict, job_id: str, target: str, read, off=runs_off, need: dict | None = None):
+    """ワークフローの job_id のジョブで target を呼ぶ手順を順に返す（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える。
+    need を渡すと、その環境変数の値を渡して呼ぶ手順だけ）"""
     job = (workflow.get("jobs") or {}).get(job_id)
     if not isinstance(job, dict) or off(job.get("if")):
         return
@@ -436,13 +471,14 @@ def calling_steps(workflow: dict, job_id: str, target: str, read, off=runs_off):
             continue
         env = {**wenv, **(step.get("env") or {})}
         cwd = norm("", expand(str(step.get("working-directory") or wd), env)) or ""
-        if calls(logical_lines(step["run"]), target, cwd, env, read):
+        if calls(logical_lines(step["run"]), target, cwd, env, read, need=need):
             yield step
 
 
-def job_calls(workflow: dict, job_id: str, target: str, read, off=runs_off) -> bool:
-    """ワークフローの job_id のジョブの手順のどれかが target を呼ぶか（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える）"""
-    return any(True for _ in calling_steps(workflow, job_id, target, read, off))
+def job_calls(workflow: dict, job_id: str, target: str, read, off=runs_off, need: dict | None = None) -> bool:
+    """ワークフローの job_id のジョブの手順のどれかが target を呼ぶか（if: が字面で偽のジョブ・手順は走らないので数えない。off で差し替える。
+    need を渡すと、その環境変数の値を渡して呼ぶ手順だけを数える）"""
+    return any(True for _ in calling_steps(workflow, job_id, target, read, off, need))
 
 
 def repo_reader(repo: Path):
@@ -634,10 +670,18 @@ def schedule_errors(f: str, i: int, s: dict, target: str, workflow: str | None, 
 
 def required_checks(s: dict, field: str = REQUIRES_CHECK) -> tuple[list[tuple[str, str | None]], list[str]]:
     """解決策の requires_check（field に REQUIRES_SCHEDULE を渡せば requires_schedule）を (検査の道, ワークフロー（なければ None）) の列にする
-    （議決 D-0077（起票時の番号は D-0075）、Issue #1216。requires_schedule は議決 D-0130、Issue #1335）。
+    （議決 D-0077（起票時の番号は D-0075）、Issue #1216。requires_schedule は議決 D-0130、Issue #1335）。項目の env は required_entries が返す"""
+    entries, bad = required_entries(s, field)
+    return [(runs, workflow) for runs, workflow, _ in entries], bad
 
-    値は検査の道の文字列か、その列。列の項目は道の文字列か {runs, workflow}（workflow は書けばそのワークフローのジョブを指す wired_by だけを数える）。
+
+def required_entries(s: dict, field: str = REQUIRES_CHECK) -> tuple[list[tuple[str, str | None, dict]], list[str]]:
+    """解決策の requires_check（field に REQUIRES_SCHEDULE を渡せば requires_schedule）を (検査の道, ワークフロー（なければ None）, 環境変数) の列にする。
+
+    値は検査の道の文字列か、その列。列の項目は道の文字列か {runs, workflow, env}（workflow は書けばそのワークフローのジョブを指す wired_by だけを数える。
+    env は requires_check だけに書ける、環境変数の名前 → 値の文字列の対応で、その値を渡して呼ぶ手順だけを数える。議決 D-0135、Issue #1344）。
     書いていなければ空の列。空の列 [] は PR ごとに走らなくてよい解決策の印として許す（議決 D-0116、Issue #1304）。形の誤りは 2 つ目に返す"""
+    keys = set(REQUIRES_CHECK_KEYS) | ({REQUIRES_CHECK_ENV} if field == REQUIRES_CHECK else set())
     if field not in s:
         return [], []
     v = s[field]
@@ -648,15 +692,20 @@ def required_checks(s: dict, field: str = REQUIRES_CHECK) -> tuple[list[tuple[st
     for j, x in enumerate(entries):
         if isinstance(x, str):
             x = {"runs": x}
-        ok = (isinstance(x, dict) and set(x) <= set(REQUIRES_CHECK_KEYS) and "runs" in x
-              and all(isinstance(x[key], str) and x[key] for key in x))
+        ok = (isinstance(x, dict) and set(x) <= keys and "runs" in x
+              and all(isinstance(x[key], str) and x[key] for key in x if key != REQUIRES_CHECK_ENV))
         runs = norm("", x["runs"]) if ok else None
+        env = x.get(REQUIRES_CHECK_ENV) if ok else None
         if not runs:
-            bad.append(f"{field}[{j}]: 検査の道の文字列か、runs（とあれば workflow）を空でない文字列で書いた項目（{entries[j]!r}）")
+            more = "・env" if field == REQUIRES_CHECK else ""
+            bad.append(f"{field}[{j}]: 検査の道の文字列か、runs（とあれば workflow{more}）を空でない文字列で書いた項目（{entries[j]!r}）")
         elif "workflow" in x and not is_workflow(x["workflow"]):
             bad.append(f"{field}[{j}]: workflow は {WORKFLOWS}/ の直下のファイル（{x['workflow']}）")
+        elif REQUIRES_CHECK_ENV in x and not (isinstance(env, dict) and env and all(
+                isinstance(key, str) and re.fullmatch(r"[A-Za-z_]\w*", key) and isinstance(v, str) for key, v in env.items())):
+            bad.append(f"{field}[{j}]: env は環境変数の名前 → 値の文字列の対応を 1 つ以上（例: {{CONFLICT_SQL_REQUIRED: \"true\"}}。{env!r}）")
         else:
-            out.append((runs, x.get("workflow")))
+            out.append((runs, x.get("workflow"), dict(env or {})))
     return out, bad
 
 
@@ -673,20 +722,22 @@ def check_pull_request(k: dict, repo: Path) -> list[str]:
         if not isinstance(s, dict):
             continue
         where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
-        required, bad = required_checks(s)
+        required, bad = required_entries(s)
         e += [f"{where}: {REQUIRES_CHECK_INVALID}: {b}" for b in bad]
-        for target, _ in required:
+        for target, _, _ in required:
             if read(target) is None:
                 e.append(f"{where}: {REQUIRES_CHECK_INVALID}: {REQUIRES_CHECK} の {target} がない")
         if s.get("wired") is not True:
             continue
-        for target, workflow in required:
-            if read(target) is None or pr_job_calls(s, repo, read, target, workflow):
+        for target, workflow, need in required:
+            if read(target) is None or pr_job_calls(s, repo, read, target, workflow, need):
                 continue
             place = workflow or f"{WORKFLOWS}/ のワークフロー"
+            how = f"{'・'.join(f'{key}={v}' for key, v in need.items())} を渡して " if need else ""
+            why = f"・{REQUIRES_CHECK_ENV_DECISION}。値を渡さない手順では飛ばす組がある" if need else ""
             e.append(f"{where}: {REQUIRES_CHECK_UNWIRED}: wired にするには wired_by に、on.pull_request のある {place} で pull_request でも走るジョブから"
-                     f" {target} を呼ぶ項目が要る（{REQUIRES_CHECK} に挙げた検査。ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。"
-                     f"議決 {REQUIRES_CHECK_DECISION}）")
+                     f" {how}{target} を呼ぶ項目が要る（{REQUIRES_CHECK} に挙げた検査。ほかの検査を呼ぶだけ・定期や手動だけでは wired にできない。"
+                     f"議決 {REQUIRES_CHECK_DECISION}{why}）")
     return e
 
 
@@ -742,8 +793,9 @@ def check_mirror_wired(k: dict, repo: Path) -> list[str]:
     return e
 
 
-def pr_job_calls(s: dict, repo: Path, read, target: str, workflow: str | None) -> bool:
-    """解決策の wired_by に、pull_request でも走るジョブから target を呼ぶ項目があるか（workflow を渡したらそのワークフローの項目だけを数える）"""
+def pr_job_calls(s: dict, repo: Path, read, target: str, workflow: str | None, need: dict | None = None) -> bool:
+    """解決策の wired_by に、pull_request でも走るジョブから target を呼ぶ項目があるか（workflow を渡したらそのワークフローの項目だけを、
+    need を渡したらその環境変数の値を渡して呼ぶ項目だけを数える）"""
     for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
         if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
             continue
@@ -753,7 +805,7 @@ def pr_job_calls(s: dict, repo: Path, read, target: str, workflow: str | None) -
             doc = load_yaml(repo / w["workflow"])
         except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
             continue
-        if isinstance(doc, dict) and has_pull_request(doc) and job_calls(doc, w["job"], target, read, off_event("pull_request")):
+        if isinstance(doc, dict) and has_pull_request(doc) and job_calls(doc, w["job"], target, read, off_event("pull_request"), need):
             return True
     return False
 
@@ -1166,12 +1218,16 @@ def check_requires_check_declared(k: dict, repo: Path, base: str | None, cache: 
     """kind が REQUIRES_CHECK_KINDS（ci_check・test）の解決策で、PR の差分で足したり直したりしたもの（分かれ目の版の同じ知見に、同じ中身の解決策がない）に
     requires_check の欄がなければ requires_check_missing で落とす（議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を書く）。
     base を渡さないとき・欄のない対象の解決策がないときは見ない。分かれ目を求められない・その版を読めないときは REQUIRES_CHECK_UNVERIFIABLE で落とす。
-    変えていない解決策は、欄がなくても見ない"""
+    変えていない解決策は、欄がなくても見ない。
+    what に PR ごとのひな形（pr_templates）を挙げた解決策は、空の列 [] でも同じに落とす（議決 D-0139 の ci_check の案、Issue #1344。
+    requires_schedule を書いた解決策は定期のジョブを配線先と明示しているので、schedule と pull_request の両方で走るひな形を挙げても見ない）"""
     if not base:
         return []
     f = k.get("_file", str(k.get("id")))
-    todo = [(i, s) for i, s in enumerate(solutions(k))
-            if isinstance(s, dict) and s.get("kind") in REQUIRES_CHECK_KINDS and REQUIRES_CHECK not in s]
+    todo = [(i, s, pr_templates(s, repo) if s.get(REQUIRES_CHECK) == [] and not required_checks(s, REQUIRES_SCHEDULE)[0] else [])
+            for i, s in enumerate(solutions(k))
+            if isinstance(s, dict) and s.get("kind") in REQUIRES_CHECK_KINDS and s.get(REQUIRES_CHECK, []) == []]
+    todo = [(i, s, templates) for i, s, templates in todo if REQUIRES_CHECK not in s or templates]
     if not todo:
         return []
     cache = {} if cache is None else cache
@@ -1187,11 +1243,28 @@ def check_requires_check_declared(k: dict, repo: Path, base: str | None, cache: 
     except HoldUncheckable as x:
         return [f"{f}: {REQUIRES_CHECK_UNVERIFIABLE}: {x}（議決 {REQUIRES_CHECK_DECLARED_DECISION}）"]
     before = solutions(prev) if isinstance(prev, dict) else []
-    return [f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {REQUIRES_CHECK_MISSING}: kind が "
-            f"{'・'.join(REQUIRES_CHECK_KINDS)} の解決策を足したり直したりするときは {REQUIRES_CHECK} を書く（PR ごとに走らせる検査の道。"
-            f"例: {REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_check.py。PR ごとに走らなくてよいなら {REQUIRES_CHECK}: [] と明示する。"
-            f"議決 {REQUIRES_CHECK_DECLARED_DECISION}）"
-            for i, s in todo if s not in before]
+    return [f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {REQUIRES_CHECK_MISSING}: "
+            + (f"what が PR ごとのひな形 {'・'.join(templates)} を挙げるのに {REQUIRES_CHECK} が空の列。そのジョブで走らせる検査の道を"
+               f"（例: {{runs: tools/conflict-check/test_events.py, workflow: .github/workflows/conflict-check.yml}}）書く"
+               f"（空の列は PR ごとに走らなくてよい解決策の印。議決 {REQUIRES_CHECK_DECLARED_DECISION}・{PR_TEMPLATE_DECISION}）" if templates else
+               f"kind が {'・'.join(REQUIRES_CHECK_KINDS)} の解決策を足したり直したりするときは {REQUIRES_CHECK} を書く（PR ごとに走らせる検査の道。"
+               f"例: {REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_check.py。PR ごとに走らなくてよいなら {REQUIRES_CHECK}: [] と明示する。"
+               f"議決 {REQUIRES_CHECK_DECLARED_DECISION}）")
+            for i, s, templates in todo if s not in before]
+
+
+def pr_templates(s: dict, repo: Path) -> list[str]:
+    """解決策の what が挙げる PR ごとのひな形（tools/*/ci/*.yml のうち、リポジトリにあって on.pull_request のあるもの）を出てくる順に返す
+    （議決 D-0139 の ci_check の案、Issue #1344。定期だけ・手動だけのひな形は PR ごとに走らないので数えない）"""
+    out = []
+    for path in dict.fromkeys(PR_TEMPLATE_RE.findall(s.get("what") if isinstance(s.get("what"), str) else "")):
+        try:
+            doc = load_yaml(repo / path) if (repo / path).is_file() else None
+        except Exception:  # noqa: BLE001  読めないひな形は数えない（形は各ツールの test_ci.py が見る）
+            doc = None
+        if isinstance(doc, dict) and has_pull_request(doc):
+            out.append(path)
+    return out
 
 
 def row(k: dict) -> dict:
@@ -1233,7 +1306,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--summary")
     ap.add_argument("--head-comments", help="Issue #948 のコメント（gh api の出力）。engine-head に関わる解決策が verified: true のときに照らす")
     ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送り（議決 D-0067）と、差分で変わった知見の wired・verified の記入（議決 D-0071）と、"
-                    "差分で足したり直したりした ci_check・test の解決策の requires_check（議決 D-0116）を照らす")
+                    "差分で足したり直したりした ci_check・test の解決策の requires_check（議決 D-0116。PR ごとのひな形を挙げたものは空の列も。議決 D-0139）を照らす")
     ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR") or None, help="Engine のチェックアウト（全履歴。既定は ENGINE_DIR）")
     a = ap.parse_args(argv)
     try:

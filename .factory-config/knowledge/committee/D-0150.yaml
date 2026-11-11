@@ -1,0 +1,78 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0150
+pr: https://github.com/guccyon/rally/pull/1386
+decided_at: '2026-11-11'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この変更セットは K-0014 の enforcement.solutions に議決 D-0135 と D-0139 の ci_check の案を入れた項目（issue
+    1344）を 1 件足し、issue 1295 の requires_check に env を添えただけで、statement・scope・evidence・confidence・invalidate_when
+    は変えていないので、既存の知見や議決と矛盾しません。
+  - 足した項目の中身は、CONFLICT_SQL_REQUIRED=true で conflict-sql のジョブから test_schema_ci.py を呼ぶ配線を求める
+    D-0135 の案と、test_events.py の配線と ひな形を指す解決策の requires_check の抜けを止める D-0139 の案にそろっており、issue
+    1295・1297 の既存の項目とも重なりません。
+  - D-0139 の案は新しく足した項目だけを落とすとしていましたが、実装は足したり直したりした項目に広げ、空の列 [] も落とすので、D-0116 と README
+    の「PR ごとに走らなくてよいものは [] を明示する」の線を、ひな形を指す解決策では [] を認めないと狭めていることを README に書き足してください。
+  - requires_check の項目に env を足した形と unittest discover の -p の読み方も、README の requires_check
+    の説明にまだ載っていないので、次に README を直す変更セットで添えてください。
+  - この項目は D-0135 と D-0139 の両方の案を入れているのに decided_by が committee:D-0135 だけなので、what の記述で
+    D-0139 に辿れるものの、どちらの議決にも辿れることが分かるよう注記をそろえるとよいです。
+  - 'wired: false・verified: false で主張（記録の欠けが手を打つ時期を遅らせたか）の確かめは進んでおらず、specs の glossary・context-map
+    ともぶつからないので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した issue 1344 の ci_check の項目は、議決 D-0135（PR #1341）の enforcement の案（issue 1295
+    の requires_check に CONFLICT_SQL_REQUIRED=true を渡して呼ぶ wired_by を求める）と、D-0139（PR
+    #1346）の案（issue 1297 の test_events.py の照合と、PR ごとのひな形を挙げた解決策で requires_check がなければ
+    --base で落とす）の両方と中身がそろっていて、一次記録に辿れます。'
+  - 'issue 1295 の項目に足した env: {CONFLICT_SQL_REQUIRED: "true"} は、同じ項目の what に書かれた conflict-sql
+    のジョブが CONFLICT_SQL_REQUIRED=true を渡すという記録と合っています。'
+  - decided_by は committee:D-0135 だけですが、what の中で D-0139 の案も入れたと名指ししているので辿れはします。次に
+    K-0014 を直すときは、decided_by から D-0139 にも辿れる書き方にそろえるとよいです。
+  - 'ワークフローへの写しと wired: true にする作業は建設者に残り、本物の記録でも確かめていないと断っているので、wired: false・verified:
+    false は正直な記録です。'
+  - この PR は statement・evidence・confidence を変えず、記録の欠けが手を打つ時期を遅らせたかという主張の確かめも進んでいないので、confidence
+    は hypothesis のままが妥当です。
+  - 差分に出てくるのはファイルの道・テストの名前・環境変数の名前・Issue と PR と議決の番号だけで、利用者を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'この PR は議決 D-0135 と D-0139 の ci_check の案を K-0014 の enforcement.solutions に 1 件記録し、issue
+    1295 の requires_check に env: {CONFLICT_SQL_REQUIRED: "true"} を足すもので、中身は両方の議決の
+    proposal とそろっているので、担保の観点で採ってよいです。'
+  - 'conflict-check のジョブを指すだけで issue 1295 を wired: true にできた抜けを、env の照合と unittest
+    discover の -p の読み方で requires_check_unwired に落とすようにしたのは、黙って SQL の組が飛ぶ痛さを機械で止めるもので、線の引き方も明確です。'
+  - requires_check の抜けが D-0135・D-0139 と 2 度続いたことに対し、--base を渡した check.py が PR ごとのひな形を挙げた
+    test・ci_check の解決策で空の列 [] も requires_check_missing で落とすようにしたので、繰り返しへの決定論の手当てはこの
+    PR の中で済んでいます。
+  - ただしひな形を挙げたかを what の自由文から読む線は、ひな形の道を書かなければすり抜けられるので、次に check.py を直すときは解決策の構造化された欄（例えば
+    template の道）で判定することを検討するとよいです。
+  - decided_by は committee:D-0135 だけですが D-0139 の案も入れているので、両方の議決に辿れるよう what に書いてある記述を残すか、decided_by
+    を列にできるなら両方を書くとよいです。
+  - '新しい解決策も wired: false・verified: false で、担保を足しても主張（記録の欠けが手を打つ時期を遅らせたか）は確かめていないので、K-0014
+    の確かさは hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0014 の statement・scope・evidence・confidence・invalidate_when を変えず、議決 D-0135・D-0139
+    の ci_check の案を入れた記録を 1 件足し、issue 1295 の項目に env を書き添えただけなので、主張の範囲は広がっていません。
+  - D-0139 の案は requires_check の抜けを「新しく足した項目だけ」落とすとしていましたが、この PR は「足したり直したりした項目」に広げ、空の列
+    [] も落とします。案より少し広いものの、D-0116 の requires_check_missing と同じ範囲の取り方なので、採ってよい範囲です。
+  - 反例として、what に PR ごとのひな形の名前を「そこには足さない」のような言及だけで挙げた定期の解決策は、直したときに [] で落とされ、要らない requires_check
+    を書かされるおそれがあります。次に直すときは、what の文字列ではなく配線先の欄で見分けるかを検討してください。
+  - 'K-0014 の issue 1207・1214 の項目は requires_check: [] で、requires_schedule もまだ書いていません。挙げたひな形
+    conflict-schema.yml に on.pull_request がないことに除外を頼っているので、その前提を test_check.py の組で押さえているかを書き添えるとよいです。'
+  - requires_check の項目に env の欄を足したのは README の決まりにある requires_check の形を広げることなので、README
+    の該当の段にも env の書き方を足してそろえてください。
+  - 'wired: false・verified: false と書き、本物の記録では確かめていないと断っているので、効き目を言い過ぎていません。主張の確かめも進んでいないので確かさは
+    hypothesis のままが妥当で、差分に利用者を特定できる情報もありません。'
+  personal_data: false
+enforcement: []
