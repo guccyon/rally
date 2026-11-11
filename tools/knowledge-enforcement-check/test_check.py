@@ -943,6 +943,54 @@ class RequiresCheckTest(unittest.TestCase):
         self.assertEqual(check.check_pull_request(self.item(None), d), [])
         self.assertEqual(check.check_pull_request(self.item(self.RUNS, wired=False), d), [])
 
+    def test_env_を書いた検査はその値を渡して呼ぶ手順だけを数える(self):
+        # 議決 D-0135 の ci_check の案、Issue #1344。値を渡さない手順では飛ばす組がある検査を、同じファイルを呼ぶだけで wired と読ませない
+        req = [{"runs": self.RUNS, "workflow": self.WF, "env": {"X_REQUIRED": "true"}}]
+        ok = (self.PR_WF.replace("    steps:\n", "    env:\n      X_REQUIRED: \"true\"\n    steps:\n"),
+              self.PR_WF.replace("      - run:", "      - env:\n          X_REQUIRED: true\n        run:"),
+              self.PR_WF.replace(f"python3 {self.RUNS}", f"X_REQUIRED=true python3 {self.RUNS}"),
+              "env:\n  X_REQUIRED: 'true'\n" + self.PR_WF)
+        for text in ok:
+            self.assertEqual(check.check_pull_request(self.item(req), self.repo({self.WF: text})), [], text)
+        bad = (self.PR_WF,
+               self.PR_WF.replace("    steps:\n", "    env:\n      X_REQUIRED: \"false\"\n    steps:\n"),
+               self.PR_WF.replace(f"python3 {self.RUNS}", f"X_REQUIRED=1 python3 {self.RUNS}"),
+               self.PR_WF.replace("    steps:\n", "    env:\n      X_REQUIRED: \"true\"\n    steps:\n").replace(
+                   f"python3 {self.RUNS}", f"X_REQUIRED=false python3 {self.RUNS}"),
+               self.PR_WF.replace("    steps:\n", "    env:\n      X_OTHER: \"true\"\n    steps:\n"))
+        for text in bad:
+            e = check.check_pull_request(self.item(req), self.repo({self.WF: text}))
+            self.assert_kind(e, check.REQUIRES_CHECK_UNWIRED, text)
+            for part in (f"X_REQUIRED=true を渡して {self.RUNS} を呼ぶ", f"議決 {check.REQUIRES_CHECK_DECISION}・{check.REQUIRES_CHECK_ENV_DECISION}"):
+                self.assertIn(part, e[0])
+        # env を書かない検査は今までどおり値を問わない
+        self.assertEqual(check.check_pull_request(self.item([{"runs": self.RUNS, "workflow": self.WF}]), self.repo()), [])
+
+    def test_env_の形の誤りは_wired_を問わず落とし_requires_schedule_には書けない(self):
+        d = self.repo()
+        for env in ({}, [], "X=true", {"X": True}, {"X": 1}, {"": "true"}, {"1X": "true"}, {"X-Y": "true"}, None):
+            for wired in (True, False):
+                e = check.check_pull_request(self.item([{"runs": self.RUNS, "env": env}], wired=wired), d)
+                self.assert_kind(e, check.REQUIRES_CHECK_INVALID, (env, wired))
+        self.assertEqual(check.required_entries({check.REQUIRES_CHECK: [{"runs": self.RUNS, "env": {"X": "true"}}]}),
+                         ([(self.RUNS, None, {"X": "true"})], []))
+        self.assertEqual(check.required_checks({check.REQUIRES_CHECK: [{"runs": self.RUNS, "env": {"X": "true"}}]}), ([(self.RUNS, None)], []))
+        req, bad = check.required_checks({check.REQUIRES_SCHEDULE: [{"runs": self.RUNS, "env": {"X": "true"}}]}, check.REQUIRES_SCHEDULE)
+        self.assertEqual(req, [])
+        self.assertEqual(len(bad), 1, bad)
+
+    def test_unittest_discover_は_p_に当たるテストだけを呼ぶ側に数える(self):
+        # 議決 D-0139 の ci_check の案、Issue #1344。-p 'test_schema_ci.py' のジョブを test_events.py の配線と読ませない
+        run = "python3 -B -m unittest discover -s tools/x-check"
+        for tail, calls in (("", True), (" -p 'test_*.py'", True), (" -p test_x.py -v", True), (" --pattern='test_x*'", True),
+                            (" -p 'test_y.py'", False), (" -p '*_test.py'", False), (" -p 'Test_x.py'", False)):
+            text = self.PR_WF.replace(f"python3 {self.RUNS}", run + tail)
+            e = check.check_pull_request(self.item([self.RUNS]), self.repo({self.WF: text}))
+            if calls:
+                self.assertEqual(e, [], tail)
+            else:
+                self.assert_kind(e, check.REQUIRES_CHECK_UNWIRED, tail)
+
     def test_前の組はどれも同じ中身で_requires_check_に移してある(self):
         found = {(k["id"], s.get("issue")): requires(k["id"], s.get("issue"))
                  for k in check.load(REPO) for s in check.solutions(k) if isinstance(s, dict) and check.REQUIRES_CHECK in s}
@@ -977,7 +1025,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0014", 1208): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1295): [("tools/conflict-check/test_schema_ci.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1297): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
-                          ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
+                          ("K-0014", 1344): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
@@ -1888,6 +1937,93 @@ class ConflictRecordScheduleTest(unittest.TestCase):
 
     def test_配線していなければ見ない(self):
         self.assertEqual(self.errors(self.repo({}), wired=False), [])
+
+
+class ConflictSqlPullRequestTest(unittest.TestCase):
+    """K-0014 の issue 1295 の解決策は、.github/workflows/conflict-check.yml の pull_request でも走るジョブから CONFLICT_SQL_REQUIRED=true で
+    test_schema_ci.py を呼ぶ項目（ひな形の conflict-sql のジョブ）がないと wired にできない（議決 D-0135 の ci_check の案、Issue #1344）。
+    issue 1297 の解決策は、同じワークフローの pull_request のジョブから unittest discover で test_events.py を呼ぶ項目（ひな形の conflict-check の
+    ジョブ）がないと wired にできない（議決 D-0139 の ci_check の案、Issue #1344）"""
+
+    SQL_TEST = "tools/conflict-check/test_schema_ci.py"
+    EVENTS_TEST = "tools/conflict-check/test_events.py"
+    TEMPLATE = REPO / check.CONFLICT_CHECK_WORKFLOWS[1]
+    WF = check.CONFLICT_CHECK_WORKFLOWS[0]
+    OTHER = ".github/workflows/conflict.yml"
+    ENV = "CONFLICT_SQL_REQUIRED: \"true\"\n"
+
+    def template(self) -> str:
+        return self.TEMPLATE.read_text(encoding="utf-8")
+
+    def repo(self, text: str | None = None, wf: str | None = None) -> Path:
+        """ひな形 ci/conflict-check.yml を text（既定はそのまま）で wf（既定は .github/workflows/conflict-check.yml）に写したリポジトリ"""
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, body in {self.SQL_TEST: "", self.EVENTS_TEST: "", wf or self.WF: self.template() if text is None else text}.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(body, encoding="utf-8")
+        return d
+
+    def errors(self, d: Path, issue=1295, job="conflict-sql", runs=None, wf=None, wired=True) -> list[str]:
+        runs = runs or (self.SQL_TEST if issue == 1295 else self.EVENTS_TEST)
+        item = {"id": "K-0014", "_file": "K-0014.yaml", "enforcement": {"level": "deterministic", "solutions": [
+            {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False,
+             "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": runs}]}]}}
+        return pr_errors(item, d) + check.check_wiring(item, d)
+
+    def assert_unwired(self, e: list[str], target: str, env: bool = True) -> None:
+        self.assertEqual(len(e), 1, e)
+        for part in (f"{check.REQUIRES_CHECK_UNWIRED}: ", f"on.pull_request のある {self.WF} で",
+                     f"{'CONFLICT_SQL_REQUIRED=true を渡して ' if env else ''}{target} を呼ぶ"):
+            self.assertIn(part, e[0])
+
+    def test_対象に挙げてある(self):
+        self.assertEqual(check.required_entries(repo_solution("K-0014", 1295)),
+                         ([(self.SQL_TEST, self.WF, {"CONFLICT_SQL_REQUIRED": "true"})], []))
+        self.assertEqual(check.required_entries(repo_solution("K-0014", 1297)), ([(self.EVENTS_TEST, self.WF, {})], []))
+        self.assertIn(self.ENV.strip(), self.template())
+
+    def test_ひな形をそのまま写したジョブなら通る(self):
+        d = self.repo()
+        self.assertEqual(self.errors(d), [])
+        self.assertEqual(self.errors(d, issue=1297, job="conflict-check"), [])
+
+    def test_CONFLICT_SQL_REQUIRED_を渡さない_conflict_check_のジョブでは_1295_を_wired_にできない(self):
+        # conflict-check のジョブの unittest discover も test_schema_ci.py を走らせるが、Postgres がなく SQL の組は飛ぶ
+        e = self.errors(self.repo(), job="conflict-check")
+        self.assert_unwired(e, self.SQL_TEST)
+
+    def test_conflict_sql_から_CONFLICT_SQL_REQUIRED_を外すか値を変えた写しでは落ちる(self):
+        for after in ("", "CONFLICT_SQL_REQUIRED: \"false\"\n", "CONFLICT_SQL_REQUIRED: \"1\"\n", "CONFLICT_SQL: \"true\"\n"):
+            text = self.template().replace(self.ENV, after, 1)
+            self.assertNotEqual(text, self.template())
+            self.assert_unwired(self.errors(self.repo(text)), self.SQL_TEST)
+
+    def test_conflict_sql_の_SQL_の手順を外すか_pull_request_を外した写しでは落ちる(self):
+        text = self.template().replace("-p 'test_schema_ci.py'", "-p 'test_policy.py'", 1)
+        self.assertNotEqual(text, self.template())
+        e = [x for x in self.errors(self.repo(text)) if check.REQUIRES_CHECK_UNWIRED in x]
+        self.assert_unwired(e, self.SQL_TEST)
+        text = self.template().replace("on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n", 1)
+        self.assertNotEqual(text, self.template())
+        self.assert_unwired(self.errors(self.repo(text)), self.SQL_TEST)
+        self.assert_unwired(self.errors(self.repo(text), issue=1297, job="conflict-check"), self.EVENTS_TEST, env=False)
+
+    def test_別の名前のワークフローでは落ちる(self):
+        d = self.repo(wf=self.OTHER)
+        self.assert_unwired(self.errors(d, wf=self.OTHER), self.SQL_TEST)
+        self.assert_unwired(self.errors(d, issue=1297, job="conflict-check", wf=self.OTHER), self.EVENTS_TEST, env=False)
+
+    def test_test_schema_ci_py_だけを走らせる_conflict_sql_のジョブでは_1297_を_wired_にできない(self):
+        e = [x for x in self.errors(self.repo(), issue=1297, job="conflict-sql") if check.REQUIRES_CHECK_UNWIRED in x]
+        self.assert_unwired(e, self.EVENTS_TEST, env=False)
+
+    def test_配線していなければ見ない(self):
+        d = self.repo()
+        (d / self.WF).unlink()
+        self.assertEqual(self.errors(d, wired=False), [])
+        self.assertEqual(self.errors(d, issue=1297, job="conflict-check", wired=False), [])
 
 
 class PrBodyPatchScheduleTest(unittest.TestCase):
@@ -2946,6 +3082,52 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
         for req in ("[]", "tools/x-check/test_x.py", "[{runs: tools/x-check/test_x.py, workflow: .github/workflows/x.yml}]"):
             after = self.OPEN.replace("issue: 906,", f"issue: 906, requires_check: {req},")
             self.assertEqual(self.errors(self.repo(self.OPEN, after)), [], req)
+
+    def pr_template(self, d: Path, on: str = "  pull_request:\n") -> Path:
+        """作業ツリーに PR ごとのひな形 tools/x-check/ci/x.yml（on を差し替えれば別の契機）を置く"""
+        path = d / self.PR_TEMPLATE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"on:\n{on}jobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: python3 tools/x-check/test_x.py\n", encoding="utf-8")
+        return d
+
+    PR_TEMPLATE = "tools/x-check/ci/x.yml"
+    EMPTY = TEST.replace("what: t,", f"what: ひな形 {PR_TEMPLATE} のジョブで走らせる,").replace("issue: 1304,", "issue: 1304, requires_check: [],")
+
+    def test_PR_ごとのひな形を挙げた解決策は空の列でも落とす(self):
+        # 議決 D-0139 の ci_check の案、Issue #1344。K-0014 の issue 1295・1297 は PR ごとのひな形のジョブで走る試験なのに requires_check を書かずに足された
+        for kind in ("test", "ci_check"):
+            e = self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY.replace("kind: test", f"kind: {kind}"))))
+            self.assertEqual(len(e), 1, e)
+            for part in (f"solutions[1]（{kind}、issue 1304）", f"{check.REQUIRES_CHECK_MISSING}: ", f"PR ごとのひな形 {self.PR_TEMPLATE} を挙げる",
+                         f"議決 {check.REQUIRES_CHECK_DECLARED_DECISION}・{check.PR_TEMPLATE_DECISION}"):
+                self.assertIn(part, e[0])
+        # 直した解決策も同じ
+        d = self.pr_template(self.repo(self.OPEN + self.EMPTY, self.OPEN + self.EMPTY.replace("wired: false", "wired: true")))
+        self.assertEqual(len(self.errors(d)), 1)
+
+    def test_PR_ごとのひな形を挙げても検査を書くか_変えていないか_定期の解決策なら通る(self):
+        req = "[{runs: tools/x-check/test_x.py, workflow: .github/workflows/x.yml}]"
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY.replace("requires_check: []", f"requires_check: {req}")))), [])
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN + self.EMPTY, None))), [])
+        sched = self.EMPTY.replace("requires_check: [],", "requires_check: [], requires_schedule: [{runs: tools/x-check/x.py, workflow: .github/workflows/x.yml}],")
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + sched))), [])
+        for kind in ("lint", "schema"):
+            self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY.replace("kind: test", f"kind: {kind}")))), [], kind)
+
+    def test_PR_で走らないかないひな形は数えない(self):
+        added = self.OPEN + self.EMPTY
+        self.assertEqual(self.errors(self.repo(self.OPEN, added)), [])   # ひな形がない
+        for on in ("  schedule:\n    - cron: '0 0 * * *'\n  workflow_dispatch:\n", "  push:\n"):
+            self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, added), on)), [], on)
+        d = self.repo(self.OPEN, added)
+        (d / self.PR_TEMPLATE).parent.mkdir(parents=True)
+        (d / self.PR_TEMPLATE).write_text("on: [\n", encoding="utf-8")
+        self.assertEqual(self.errors(d), [])
+        self.assertEqual(check.pr_templates({"what": "tools/conflict-check/ci/conflict-schema.yml と tools/conflict-check/ci/conflict-check.yml、"
+                                                     "もう一度 tools/conflict-check/ci/conflict-check.yml"}, REPO), ["tools/conflict-check/ci/conflict-check.yml"])
+
+    def test_PR_ごとのひな形を挙げた解決策は_base_を渡さなければ見ない(self):
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY)), None), [])
 
     def test_ほかの種類と変えていない解決策は見ない(self):
         for kind in ("lint", "schema", "type", "config", "overlay_rule"):
