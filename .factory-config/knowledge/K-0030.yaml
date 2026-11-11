@@ -1,0 +1,30 @@
+id: K-0030
+theme: 4
+kind: causal
+statement: >-
+  衝突を解く続きのジョブが、PR 本文を「その時点の要約」（概要・対応内容・動作確認）として書き直さずに、回ごとの取り込みの記録を本文の節として
+  足していくと、本文の先頭が見出しのない断片になり、body_fix が直しても次の衝突の解消でまた崩れて、検査役の同じ本文の指摘と body_fix が
+  衝突の解消のたびに繰り返される（C-0013 では PR #362 に job 485・496・499・519・531・543・556 の取り込みの記録が積み重なり、
+  body_fix（559・579）の直しが続く取り込みで崩れ直した）。本文の重なり（K-0001）、組み直す持ち主のなさ（K-0006）、body_fix の決まりが
+  次の書き手に渡らないこと（K-0009）と同じ型の再現で、この知見の主張は、取り込みの記録を本文の外（handoff か PR コメント）に置き、
+  本文はその時点の要約として書き直すという直し方の向きに絞る。K-0001 の担保（記録を本文の「## 工場の記録」の下の ### に置かせる）とは
+  向きが違う。根拠はこの 1 つの PR だけで、body_fix の直しが崩れ直した仕組みには推測を含む。
+scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
+  roles: [implement, body_fix, inspect]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0013
+  - pr: 362
+  - event: "case.analyzed:644601"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0001, K-0006, K-0009, K-0016]
+invalidate_when:
+  - "続きのジョブへの指示が、PR 本文を追記せずその時点の要約として書き直し、取り込みの記録を handoff か PR コメントに残すよう求めるようになった"
+  - "K-0001 の関所（記録を「## 工場の記録」の下の ### に置かせる）が配線されたあと、衝突の解消のたびの本文の指摘と body_fix が出なくなった（本文の外に出さなくても足りた）"

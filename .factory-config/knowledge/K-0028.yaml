@@ -1,0 +1,31 @@
+id: K-0028
+theme: 6
+kind: causal
+statement: >-
+  ファイルごとの衝突の解消の束（process:conflict_fix:<ファイル>）の費用は、1 本の衝突の解消のジョブの費用を衝突したファイルの数で割ったものなので、
+  小さい束のファイル（apps/backend/crates/interface/src/lib.rs など）だけを追記しない作りに直しても、同じジョブで一緒に衝突する
+  追記型の共有ファイル（CHANGELOG.md）が残っていればジョブは消えず、費用はほとんど減らない。直す順番は、束の大きさではなく
+  衝突の解消の回に入っている割合で決める（C-0013 では interface/src/lib.rs の束 10 件・24.43 USD の例の PR #362 で、
+  衝突の解消 8 回のすべてに CHANGELOG.md が入り、lib.rs が入ったのは 2 回だけだった）。
+  ただし費用がファイルの数で割られているというのは分析役の読み（0.94 ≒ 9.40 / 約 10）で、ジョブ 485〜575 が CHANGELOG の断片方式
+  （2026-11-03）の前か後かは材料にない。lib.rs の中で何がぶつかったか（mod 宣言かルートの登録か）も確かめていない。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  files: [apps/backend/crates/interface/src/lib.rs, CHANGELOG.md]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0013
+  - pr: 362
+  - event: "case.analyzed:644601"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0002, K-0022, K-0024]
+invalidate_when:
+  - "断片方式（changelog.d/）のあとの窓で、interface/src/lib.rs の衝突の解消の回のうち CHANGELOG.md を含まない回が多数になった（lib.rs が単独の原因になった）"
+  - "衝突の束の費用がファイルの数で割ったものではなく、ファイルごとに別に数えたものだと分かった"
+  - "CHANGELOG.md の衝突がなくなったあとも、lib.rs の束の件数と費用が減らなかった"

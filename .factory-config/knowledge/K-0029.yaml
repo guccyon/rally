@@ -1,0 +1,31 @@
+id: K-0029
+theme: 6
+kind: causal
+statement: >-
+  supervisor がマージを決めた（supervisor.merge_decided）あとも、検査（inspect・judge）が終わってマージするまでの間に既定ブランチの進みを止める
+  順番（merge queue）がないと、検査の最中に main に追い越されて PR が衝突し、衝突の解消で head が変わるたびに、差分が衝突の解消だけでも
+  inspect・judge・body_fix が一から回り直す。長く開いている大きい PR ほど、これが繰り返される（C-0013 では 26 ファイル・1665 行の PR #362 が
+  merge_decided（14:09:33）のあと inspect の最中に pr.conflicted（14:11:56）になり、衝突の解消が attempt 8 まで続いて、
+  そのたびに inspect と judge が回り直した（555→577、558→578。1 周およそ 1 USD）。中身のほとんどは CHANGELOG の追記の取り込みだった）。
+  衝突の解消の回数の上限とセッションの引き継ぎは K-0010、解く時機は K-0013、投入の並べ方は K-0024 が書き、この知見はマージの判断から
+  マージまでの間の順番と、衝突の解消だけの差分の再検査に絞る。根拠はこの束の 1 つの PR だけで、ほかの 7 チケットが同じ流れかは確かめていない。
+scope:
+  work: [dev.build, dev.review.inspect, dev.review.judge]
+  artifacts: [PR.code]
+  request_form: [ticket]
+  roles: [supervisor, inspect, judge]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0013
+  - pr: 362
+  - event: "case.analyzed:644601"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0010, K-0013, K-0024, K-0026]
+invalidate_when:
+  - "検査に通った PR を 1 本ずつ既定ブランチに取り込み直して CI を回してからマージする順番（merge queue）が入った"
+  - "衝突の解消だけの差分では inspect・judge を一から回さず、解消した差分だけを確かめるようになった"
+  - "merge queue のような順番を入れたあとも、同じ PR の衝突の解消の回数が減らなかった（原因はマージの順番ではなかった）"
