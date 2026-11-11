@@ -1,0 +1,31 @@
+id: K-0023
+theme: 6
+kind: causal
+statement: >-
+  実装のジョブが PR を開く前に、最新の既定ブランチを同じセッションで取り込んで衝突を確かめないと、実装の間に main が進んだときに
+  PR は開いた時点で衝突し、文脈を持たない別の続きのジョブ（tier-large）で解くことになって、衝突の解消が実装より高くつきうる
+  （C-0011 では job 429 が 13 分の実装の後に PR #345 を開き、4 秒後に continue.enqueued(reason=conflict) が出て、
+  解消の job 433 は 3.88 USD と実装の 3.30 USD より高かった）。
+  Engine の worker/entrypoint.sh は、続きのジョブでは既定ブランチを取り込むが、新しい PR では取り込まずに push して PR を開く（2026-11-11 の Engine で確かめた）。
+  同じセッションで取り込めば別のジョブが要らなくなるかは確かめていない（取り込みの間にも main は進みうる）。根拠はこの束の 1 件の例だけ。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  request_form: [ticket]
+  roles: [implement]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0011
+  - pr: 345
+  - event: "case.analyzed:644407"
+status: active
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0010, K-0014, K-0001, K-0022]
+invalidate_when:
+  - "実装のジョブが PR を開く直前に最新の既定ブランチを取り込み、衝突したら同じセッションで解くようになった"
+  - "取り込んでから PR を開くようにしたあとも、開いて数分の内に衝突する PR が減らなかった（取り込みから開くまでの間に main が進んでいた）"
+  - "衝突の束を集計して、PR が開いた時点で衝突していたもの（pr.opened と continue.enqueued(reason=conflict) が数秒差）が束の少数だと分かった"
+decided_by: committee:D-0149
