@@ -29,4 +29,4 @@ invalidate_when:
   - "断片方式（changelog.d/）のあとの窓で、interface/src/lib.rs の衝突の解消の回のうち CHANGELOG.md を含まない回が多数になった（lib.rs が単独の原因になった）"
   - "衝突の束の費用がファイルの数で割ったものではなく、ファイルごとに別に数えたものだと分かった"
   - "CHANGELOG.md の衝突がなくなったあとも、lib.rs の束の件数と費用が減らなかった"
-decided_by: committee:D-0156
+decided_by: committee:D-0157

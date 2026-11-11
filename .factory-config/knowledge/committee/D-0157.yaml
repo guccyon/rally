@@ -1,5 +1,5 @@
 # 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
-id: D-0156
+id: D-0157
 pr: https://github.com/guccyon/rally/pull/1411
 decided_at: '2026-11-12'
 outcome: adopt

@@ -29,4 +29,4 @@ invalidate_when:
   - "検査に通った PR を 1 本ずつ既定ブランチに取り込み直して CI を回してからマージする順番（merge queue）が入った"
   - "衝突の解消だけの差分では inspect・judge を一から回さず、解消した差分だけを確かめるようになった"
   - "merge queue のような順番を入れたあとも、同じ PR の衝突の解消の回数が減らなかった（原因はマージの順番ではなかった）"
-decided_by: committee:D-0156
+decided_by: committee:D-0157
