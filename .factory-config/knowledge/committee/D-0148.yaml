@@ -1,0 +1,88 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0148
+pr: https://github.com/guccyon/rally/pull/1379
+decided_at: '2026-11-11'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この差分は K-0001 に D-0130 の schema の案を入れた記録を 1 件足し、既存の 11 の解決策に requires_schedule
+    を書き添えるだけで、statement・scope・confidence・evidence は変えていないので、変更セットの扱いとして妥当です。
+  - 足した項目は D-0130 の enforcement の schema の案（requires_check と同じ形の requires_schedule
+    を設け、REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW をその欄へ移す）とそのまま対応していて、D-0077 が
+    pull_request 側で名前の組をやめたのと同じ流れなので、過去の議決と矛盾しません。
+  - 移した組は各解決策の what に書かれた REQUIRED_SCHEDULE と REQUIRED_SCHEDULE_WORKFLOW の記述（例えば issue
+    1182 は pr-body-protection.yml、issue 1179 は pr-body-patch.yml、issue 1106 はワークフロー指定なし）と合っています。
+  - 'ci_check の解決策で欄がなかったものに requires_check: [] を明示したのは D-0116 の決まりに合っており、kind が schema
+    の issue 1136・1213 に足していないのも D-0116 の範囲どおりです。'
+  - 'README の requires_schedule の段落は requires_check の段落と同じ書き方で議決 D-0130 と Issue #1335
+    を示しているので重複はありませんが、REQUIRED_RUNS はまだ名前の一覧のままなので、K-0004 の記述と合わせて次の変更セットで扱ってください。'
+  - 'D-0130 の 2 つめの案（patch_check_failed で定期の照合が黙って止まらないことを確かめる test）はこの PR に入っていないので、重複ではなく残りの作業として別の
+    Issue で扱うべきで、wired: false・verified: false のため confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0001 に足した解決策の decided_by: committee:D-0130 は PR #1334 の議決で、その enforcement の
+    schema の案（requires_schedule の欄を設け、REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW
+    をそこへ移す）とそのまま対応しているので、一次記録に辿れます。'
+  - what に挙げた 11 の組（K-0001 の issue 1106・1179・1182、K-0004 の issue 1018・1087・1158・1162、K-0014
+    の issue 1136・1207・1213・1214）は、差分で requires_schedule を足した解決策と数も issue も一致しています。
+  - 'requires_check: [] を足したのは ci_check の解決策だけで、schema の issue 1136・1213 には足していないので、what
+    にある「議決 D-0116 に合わせて」という説明と食い違いません。'
+  - 'README の追記は議決 D-0130 と Issue #1335 を出典に挙げていて、前は REQUIRED_SCHEDULE の名前の組だったという経緯も既存の書き方と同じ形で残しているので、辿れます。'
+  - 'statement・scope・evidence・confidence は変えておらず、新しい項目も wired: false・verified: false
+    で確かめた本物の記録がないので、confidence は hypothesis のままが妥当です。'
+  - 差分にあるのはファイルの道・Issue と PR の番号・議決の番号だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は議決 D-0130 の schema の案を入れた記録で、check.py の手書きの REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW
+    をなくして 11 の組を解決策の requires_schedule に移しており、issue 1179 で起きた足し忘れの穴を決定論の側で塞ぐ向きなので、担保の観点では採ってよいです。
+  - 移した 11 の組は K-0001・K-0004・K-0014 の差分で各解決策に入っており、kind が schema の K-0014 の issue
+    1136・1213 に requires_check を足していないのも D-0116 の決まり（ci_check と test だけ必須）と合っています。
+  - 'ただし requires_schedule は書かなくても落ちない任意の欄なので、定期に走らないと止められない新しい ci_check で欄を書き忘れると、D-0116
+    の前の requires_check と同じく schedule の wired_by なしで wired: true にできる穴が残ります。'
+  - D-0130 の 2 つめの案（patch_check_failed のときも Issue を開くか通知することを確かめる test）と、D-0116 が挙げた
+    REQUIRED_RUNS の名前の組はこの差分に入っておらず、別の Issue で残りとして扱うべきです。
+  - 'test_check.py が .github/workflows/ からまだ走っておらず、足した解決策も wired: false・verified:
+    false なので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この変更セットは D-0130 の schema の案（REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW を requires_schedule
+    の欄へ移す）をそのまま記録したもので、statement・scope・evidence・confidence は変えておらず、主張の範囲は広がっていません。
+  - 移した組を数えると K-0001 が 1106・1179・1182、K-0004 が 1018・1087・1158・1162、K-0014 が 1136・1207・1213・1214
+    の 11 件で、what の数と食い違う反例は見つかりませんでした。
+  - 'requires_check: [] を足したのは kind が ci_check の解決策（K-0001 の 1106・1179、K-0004 の 1018・1087・1162、K-0014
+    の 1214）だけで、kind が schema の K-0014 の 1136・1213 に足していないのは D-0116 の決まりと合っています。'
+  - K-0014 の 1136 の what は schema.py を「周期ごとか PR ごとに」走らせると書いていて requires_schedule で定期に絞るのは少し強めですが、前の
+    REQUIRED_SCHEDULE の組をそのまま移しただけなので、この PR で狭めたことにはなりません。
+  - README の「定期に走らないと止められない検査（branch protection の照合など）」は例を挙げた書き方で、conflict-check/schema.py
+    や heartbeat.mjs のように照合でない検査も「など」に入るので言い過ぎではありません。
+  - 'test_check.py が .github/workflows/ からまだ走っていないことを what に明記し wired: false・verified:
+    false としているので、confidence は hypothesis のままが妥当です。'
+  personal_data: false
+enforcement:
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: schema
+  proposal: D-0116 の requires_check と同じように、kind が ci_check の解決策では requires_schedule
+    を必須の欄にし（定期に走らなくてよいものは [] を明示）、足したり直したりした解決策で欄がなければ --base を渡した check.py が requires_schedule_missing
+    で落とすようにする。あわせて wired_by が on.schedule だけで走るジョブを指すのに requires_schedule が空の解決策も落とす。test_check.py
+    で欄のない ci_check の追加が落ちることを確かめる。
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: schema
+  proposal: 'check.py に残る REQUIRED_RUNS の知見と issue の名前の組も、解決策の欄（例: requires_same_job）へ移して手書きの一覧をなくし、test_check.py
+    で前の組が同じ中身で欄に移り同じ結果になることを確かめる（D-0116 の担保の案の残り）。'
+- knowledge: K-0001
+  level: deterministic
+  solution_kind: test
+  proposal: tools/pr-body-check/patch.mjs で ENGINE_REF の版が取れないなどの patch_check_failed
+    になったときも Issue を開くか通知することを確かめるテストを足し、定期のジョブが黙って止まる外れ方を落とす（D-0130 の 2 つめの案の残り）。

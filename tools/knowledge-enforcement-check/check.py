@@ -96,6 +96,12 @@ Engine の handoff.saved の形で確かめた schema の解決策。照らす�
 ENGINE_REF の版と Engine の既定のブランチの先頭に当たるかを patch.mjs で定期に照らす）を REQUIRED_SCHEDULE に挙げ、REQUIRED_SCHEDULE_WORKFLOW の
 .github/workflows/pr-body-patch.yml の schedule でも走るジョブから tools/pr-body-check/patch.mjs を呼ぶ項目がないと wired にできないようにした
 （tools/pr-body-check/ci/pr-body-patch.yml を写した patch のジョブで満たす）。
+議決 D-0130（PR #1334）の schema の案（Issue #1335）で、上で REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に (知見の id, 解決策の issue) の名前で
+並べていた組をやめ、解決策の requires_schedule（検査の道か、道か {runs, workflow} の列。requires_check と同じ形）に書く形に一般化した。wired: true の解決策は、
+requires_schedule に挙げた検査ごとに、on.schedule のあるワークフロー（workflow を書いた検査はそのファイル）の schedule でも走り continue-on-error が真でない
+ジョブからそれを呼ぶ wired_by の項目がないと落とす（読み方は上の D-0061・D-0087 のまま）。形の誤りと、挙げた検査がリポジトリにないことは、wired を問わず
+requires_schedule_invalid で落とす。上で REQUIRED_SCHEDULE などに挙げたと書いた 11 の組は、今はそれぞれの解決策の requires_schedule に同じ中身で書いてある
+（issue 1179 のように組を check.py に足し忘れると黙って通っていた。PR の側を requires_check にした D-0077 と同じく、足す場所を解決策そのものの 1 つにする）。
 
 呼ぶ検査を解決策に書く（議決 D-0077（Issue #1216。起票時の番号は D-0075）の schema の案）: 上で REQUIRED_PR・REQUIRED_PR_WORKFLOW・REQUIRED_PR_ALSO に
 (知見の id, 解決策の issue) の名前で並べていた組をやめ、解決策の requires_check（検査の道か、道か {runs, workflow} の列）に書く形に一般化した。
@@ -103,8 +109,8 @@ wired: true の解決策は、requires_check に挙げた検査ごとに、on.pu
 ジョブからそれを呼ぶ wired_by の項目がないと requires_check_unwired で落とす。requires_check の形の誤りと、挙げた検査がリポジトリにないことは、
 wired を問わず requires_check_invalid で落とす。上で REQUIRED_PR などに挙げたと書いた組は、今はそれぞれの解決策の requires_check に同じ中身で書いてある
 （組を check.py に足し忘れると、その解決策が wired: true でも黙って通っていた。検査の求めを解決策そのものに置き、足す場所を 1 つにする）。
-議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案で、wired: true の解決策は requires_check を書くか、REQUIRED_SCHEDULE・REQUIRED_RUNS に
-挙げてあることを求め、どちらでもなければ requires_check_missing で落とすようにした（requires_check は書いた解決策しか照らさないので、書き忘れると
+議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案で、wired: true の解決策は requires_check を書くか、REQUIRED_SCHEDULE（今は requires_schedule の欄）・
+REQUIRED_RUNS に挙げてあることを求め、どちらでもなければ requires_check_missing で落とすようにした（requires_check は書いた解決策しか照らさないので、書き忘れると
 KNOWLEDGE_GATE の check.py の配線だけで wired と読ませてしまい、組の足し忘れと同じ穴が欄の書き忘れとして残っていた）。
 
 Engine の merge_step の照合（議決 D-0100（起票時の番号は D-0071）、Issue #1196）: REQUIRED_ENGINE_WAIT の解決策（K-0012 の issue 1122・1196）が
@@ -148,7 +154,7 @@ ci_check・test の解決策の requires_check の必須（議決 D-0116 の sch
 必須の欄にする（PR ごとに走らなくてよいものは空の列 [] を明示する。空の列は形の誤りに数えない）。--base を渡すと、PR の差分で足したり直したりした
 その種類の解決策（分かれ目の版の同じ知見に、同じ中身の解決策がないもの）に欄がなければ requires_check_missing で落とす。変えていない解決策は見ない。
 分かれ目を求められない・その版を読めないときは requires_check_unverifiable で落とす。wired: true の解決策の空の列は、挙げる検査がないので
-上の D-0080 の線では書いていないのと同じに数える（REQUIRED_SCHEDULE・REQUIRED_RUNS に挙げたものを除いて requires_check_missing）。
+上の D-0080 の線では書いていないのと同じに数える（requires_schedule を書いたもの・REQUIRED_RUNS に挙げたものを除いて requires_check_missing）。
 
 写しの配線の記録（議決 D-0080（起票時の番号は D-0078）の ci_check の案、Issue #1226）: .github/workflows/knowledge-enforcement.yml（ひな形の写し）が
 実在するのに、MIRROR_WIRED の解決策（K-0004 の issue 1063・1144。engine-test のジョブ）が wired: true でない（false・未記入・真偽でない値）なら
@@ -196,46 +202,20 @@ WHAT_DECISION_RE = re.compile(r"議決 (D-\d{4,})(?:（([^（）]*)）)?")
 WHAT_PR_RE = re.compile(r"PR #(\d+)")
 DECISION_PR_RE = re.compile(r"/pull/(\d+)$")
 EVENT_RE = re.compile(r"^[\w.-]+:\S+$")
-# (知見の id, 解決策の issue) → schedule のジョブから呼ぶことを求める検査（議決 D-0039、Issue #1088。K-0001 は議決 D-0044、Issue #1106。
-# K-0004 の issue 1158 は議決 D-0059（起票時の番号は D-0056）。requires_check にも書き、schedule と pull_request の両方のジョブから呼ぶことを求める。
-# K-0004 の issue 1087 は議決 D-0060（起票時の番号は D-0056）、Issue #1160。
-# K-0004 の issue 1162 は議決 D-0061（起票時の番号は D-0058）。sendback-protection が最後に通ってからの時間を照らす heartbeat.mjs。
-# K-0001 の issue 1182 は議決 D-0070（起票時の番号は D-0067）。requires_check にも書く。
-# K-0014 の issue 1136・1207 は議決 D-0101（起票時の番号は D-0073）、Issue #1207。衝突したファイルの列を直近の窓のイベント列で照らす schema.py。
-# K-0014 の issue 1214 は議決 D-0076（起票時の番号は D-0074）、Issue #1214。直近の窓に積まれた衝突の続きのジョブを照らす events.py。
-# K-0001 の issue 1179 は議決 D-0093（起票時の番号は D-0089）、Issue #1262。engine/pr-body-gate.patch が Engine に当たるかを照らす patch.mjs）
+# 解決策が schedule でも走るジョブから呼ぶことを求める検査は、その解決策の requires_schedule（{runs, workflow} の列）に書く（議決 D-0130 の schema の案、Issue #1335）。
+# 前は (知見の id, 解決策の issue) の名前で並べた組（REQUIRED_SCHEDULE と、ワークフローを絞る REQUIRED_SCHEDULE_WORKFLOW）をここに持っていて、
+# 組を足し忘れた解決策は wired: true にしても黙って通っていた（issue 1179 で実際に起きた）。前の 11 の組（議決 D-0039・D-0044・D-0059・D-0060・D-0061・
+# D-0070・D-0076・D-0093・D-0101）は同じ中身でそれぞれの解決策の requires_schedule に移した。議決 D-0039 の求めの読み方（off_schedule・continue-on-error）は変えない
+REQUIRES_SCHEDULE = "requires_schedule"
+REQUIRES_SCHEDULE_DECISION = "D-0039・D-0130"
+REQUIRES_SCHEDULE_INVALID = "requires_schedule_invalid"
 SENDBACK_PROTECTION = "tools/sendback-check/protection.mjs"
-PR_BODY_PROTECTION = "tools/pr-body-check/protection.mjs"
-SENDBACK_HEARTBEAT = "tools/sendback-check/heartbeat.mjs"
-CONFLICT_SCHEMA = "tools/conflict-check/schema.py"
-CONFLICT_EVENTS = "tools/conflict-check/events.py"
-PR_BODY_PATCH = "tools/pr-body-check/patch.mjs"
-REQUIRED_SCHEDULE = {("K-0004", 1018): SENDBACK_PROTECTION,
-                     ("K-0001", 1106): PR_BODY_PROTECTION,
-                     ("K-0001", 1182): PR_BODY_PROTECTION,
-                     ("K-0004", 1158): SENDBACK_PROTECTION,
-                     ("K-0004", 1087): SENDBACK_PROTECTION,
-                     ("K-0004", 1162): SENDBACK_HEARTBEAT,
-                     ("K-0014", 1136): CONFLICT_SCHEMA,
-                     ("K-0014", 1207): CONFLICT_SCHEMA,
-                     ("K-0014", 1213): CONFLICT_SCHEMA,
-                     ("K-0014", 1214): CONFLICT_EVENTS,
-                     ("K-0001", 1179): PR_BODY_PATCH}
-# (知見の id, 解決策の issue) → (REQUIRED_SCHEDULE の検査を呼ぶジョブがあることを求めるワークフロー, 落ちたときに挙げる議決)（議決 D-0060、Issue #1160）
 SENDBACK_PROTECTION_WORKFLOW = f"{WORKFLOWS}/sendback-protection.yml"
-REQUIRED_SCHEDULE_WORKFLOW = {("K-0004", 1018): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
-                              ("K-0004", 1087): (SENDBACK_PROTECTION_WORKFLOW, "D-0039・D-0060"),
-                              ("K-0001", 1182): (f"{WORKFLOWS}/pr-body-protection.yml", "D-0070"),
-                              ("K-0014", 1136): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
-                              ("K-0014", 1207): (f"{WORKFLOWS}/conflict-schema.yml", "D-0101"),
-                              ("K-0014", 1213): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076"),
-                              ("K-0014", 1214): (f"{WORKFLOWS}/conflict-schema.yml", "D-0076"),
-                              ("K-0001", 1179): (f"{WORKFLOWS}/pr-body-patch.yml", "D-0093")}
 # wired_by に SENDBACK_PROTECTION を呼ぶ項目を持つ wired: true の解決策は、知見と issue を問わずどれも、SENDBACK_PROTECTION_WORKFLOW の
 # schedule でも走るジョブから呼ぶ項目を要する（議決 D-0086（Issue #1247 の起票時の番号は D-0085）の lint の案。別の issue 番号で足した見張りが、
-# REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に組を足し忘れるとすり抜けないように）
+# 名前の組（今は requires_schedule）を足し忘れるとすり抜けないように）
 SENDBACK_PROTECTION_DECISION = "D-0086"
-# REQUIRED_SCHEDULE の検査を schedule で呼ぶジョブと手順は、continue-on-error が真（true や式）なら数えない（議決 D-0087（Issue #1248 の起票時の番号は D-0086）の
+# requires_schedule の検査を schedule で呼ぶジョブと手順は、continue-on-error が真（true や式）なら数えない（議決 D-0087（Issue #1248 の起票時の番号は D-0086）の
 # lint の案。schedule で走っても落ちたことが伝わらず、if: の許可リストをすり抜けるため）
 CONTINUE_ON_ERROR_DECISION = "D-0087"
 KNOWLEDGE_CHECK = "tools/knowledge-enforcement-check/check.py"
@@ -247,7 +227,7 @@ REQUIRES_CHECK_KEYS = ("runs", "workflow")
 REQUIRES_CHECK_DECISION = "D-0077"
 REQUIRES_CHECK_INVALID = "requires_check_invalid"
 REQUIRES_CHECK_UNWIRED = "requires_check_unwired"
-# wired: true の解決策は、requires_check を書くか、REQUIRED_SCHEDULE・REQUIRED_RUNS（名前で並べた残りの求め）に挙げてあることを求める
+# wired: true の解決策は、requires_check を書くか、requires_schedule を書くか、REQUIRED_RUNS（名前で並べた残りの求め）に挙げてあることを求める
 # （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案。requires_check を書き忘れた解決策が、check.py の配線だけで wired と読ませないように）
 REQUIRES_CHECK_MISSING = "requires_check_missing"
 REQUIRES_CHECK_MISSING_DECISION = "D-0080"
@@ -577,31 +557,38 @@ def calls_sendback_protection(s: dict) -> bool:
         isinstance(w, dict) and isinstance(w.get("runs"), str) and norm("", w["runs"]) == SENDBACK_PROTECTION for w in wired_by)
 
 
-def schedule_requirements(k: dict, s: dict) -> dict[str, tuple[str | None, str]]:
-    """解決策に求める schedule の配線を {検査の道: (ワークフロー（なければ None）, 落ちたときに挙げる議決)} にする。
+def schedule_requirements(s: dict) -> list[tuple[str, str | None, str]]:
+    """解決策に求める schedule の配線を (検査の道, ワークフロー（なければ None）, 落ちたときに挙げる議決) の列にする。
 
-    REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW の組に加えて、wired_by に SENDBACK_PROTECTION を呼ぶ項目を持つ解決策は
-    知見と issue を問わず SENDBACK_PROTECTION_WORKFLOW のジョブを求める（議決 D-0086（起票時の番号は D-0085）、Issue #1247）"""
-    key = (k.get("id"), s.get("issue"))
-    out = {}
-    if key in REQUIRED_SCHEDULE:
-        out[REQUIRED_SCHEDULE[key]] = REQUIRED_SCHEDULE_WORKFLOW.get(key, (None, "D-0039"))
-    if calls_sendback_protection(s) and out.get(SENDBACK_PROTECTION, (None,))[0] is None:
-        out[SENDBACK_PROTECTION] = (SENDBACK_PROTECTION_WORKFLOW, SENDBACK_PROTECTION_DECISION)
+    解決策の requires_schedule（議決 D-0130 の schema の案、Issue #1335。前の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW の組）に加えて、
+    wired_by に SENDBACK_PROTECTION を呼ぶ項目を持つ解決策は、ワークフローを絞った項目がなければ知見と issue を問わず
+    SENDBACK_PROTECTION_WORKFLOW のジョブを求める（議決 D-0086（起票時の番号は D-0085）、Issue #1247）。形の誤りは check_schedule が落とす"""
+    out = [(target, workflow, REQUIRES_SCHEDULE_DECISION) for target, workflow in required_checks(s, REQUIRES_SCHEDULE)[0]]
+    if calls_sendback_protection(s) and not any(target == SENDBACK_PROTECTION and workflow for target, workflow, _ in out):
+        out = [x for x in out if x[0] != SENDBACK_PROTECTION] + [(SENDBACK_PROTECTION, SENDBACK_PROTECTION_WORKFLOW, SENDBACK_PROTECTION_DECISION)]
     return out
 
 
 def check_schedule(k: dict, repo: Path) -> list[str]:
-    """REQUIRED_SCHEDULE の解決策が wired: true なら、schedule のジョブから検査を呼ぶ wired_by を求める（議決 D-0039、Issue #1088）。
-    REQUIRED_SCHEDULE_WORKFLOW に挙げた解決策は、そのワークフローのジョブを指す項目だけを数える（議決 D-0060、Issue #1160）。
-    wired_by に protection.mjs を呼ぶ項目を持つ解決策は、組に挙げていなくても sendback-protection.yml のジョブを求める（議決 D-0086、Issue #1247）"""
+    """requires_schedule を書いた解決策を照らす（議決 D-0039、Issue #1088。欄にしたのは議決 D-0130 の schema の案、Issue #1335）。
+
+    形が誤っているか、挙げた検査がリポジトリにないなら requires_schedule_invalid で落とす（wired を問わない）。
+    wired: true なら、挙げた検査ごとに、schedule でも走り continue-on-error が真でないジョブからそれを呼ぶ wired_by の項目
+    （workflow を書いた検査はそのワークフローの項目だけ。議決 D-0060、Issue #1160）を求める。
+    wired_by に protection.mjs を呼ぶ項目を持つ解決策は、欄に書いていなくても sendback-protection.yml のジョブを求める（議決 D-0086、Issue #1247）"""
     f, e = k.get("_file", str(k.get("id"))), []
     read = repo_reader(repo)
 
     for i, s in enumerate(solutions(k)):
-        if not isinstance(s, dict) or s.get("wired") is not True:
+        if not isinstance(s, dict):
             continue
-        for target, (workflow, decision) in schedule_requirements(k, s).items():
+        where = f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）"
+        required, bad = required_checks(s, REQUIRES_SCHEDULE)
+        e += [f"{where}: {REQUIRES_SCHEDULE_INVALID}: {b}" for b in bad]
+        e += [f"{where}: {REQUIRES_SCHEDULE_INVALID}: {REQUIRES_SCHEDULE} の {target} がない" for target, _ in required if read(target) is None]
+        if s.get("wired") is not True:
+            continue
+        for target, workflow, decision in schedule_requirements(s):
             e += schedule_errors(f, i, s, target, workflow, decision, repo, read)
     return e
 
@@ -645,17 +632,18 @@ def schedule_errors(f: str, i: int, s: dict, target: str, workflow: str | None, 
             f"ジョブと手順の if: は無いか、github.event_name == 'schedule' を || でつないだ決まった形だけを許す。議決 D-0061）"]
 
 
-def required_checks(s: dict) -> tuple[list[tuple[str, str | None]], list[str]]:
-    """解決策の requires_check を (検査の道, ワークフロー（なければ None）) の列にする（議決 D-0077（起票時の番号は D-0075）、Issue #1216）。
+def required_checks(s: dict, field: str = REQUIRES_CHECK) -> tuple[list[tuple[str, str | None]], list[str]]:
+    """解決策の requires_check（field に REQUIRES_SCHEDULE を渡せば requires_schedule）を (検査の道, ワークフロー（なければ None）) の列にする
+    （議決 D-0077（起票時の番号は D-0075）、Issue #1216。requires_schedule は議決 D-0130、Issue #1335）。
 
     値は検査の道の文字列か、その列。列の項目は道の文字列か {runs, workflow}（workflow は書けばそのワークフローのジョブを指す wired_by だけを数える）。
     書いていなければ空の列。空の列 [] は PR ごとに走らなくてよい解決策の印として許す（議決 D-0116、Issue #1304）。形の誤りは 2 つ目に返す"""
-    if REQUIRES_CHECK not in s:
+    if field not in s:
         return [], []
-    v = s[REQUIRES_CHECK]
+    v = s[field]
     entries = [v] if isinstance(v, str) else v
     if not isinstance(entries, list):
-        return [], [f"{REQUIRES_CHECK} は検査の道か、道か {{runs, workflow}} の列（PR ごとに走らなくてよいなら空の列 []。{v!r}）"]
+        return [], [f"{field} は検査の道か、道か {{runs, workflow}} の列（{'PR ごとに走らなくてよいなら空の列 []。' if field == REQUIRES_CHECK else ''}{v!r}）"]
     out, bad = [], []
     for j, x in enumerate(entries):
         if isinstance(x, str):
@@ -664,9 +652,9 @@ def required_checks(s: dict) -> tuple[list[tuple[str, str | None]], list[str]]:
               and all(isinstance(x[key], str) and x[key] for key in x))
         runs = norm("", x["runs"]) if ok else None
         if not runs:
-            bad.append(f"{REQUIRES_CHECK}[{j}]: 検査の道の文字列か、runs（とあれば workflow）を空でない文字列で書いた項目（{entries[j]!r}）")
+            bad.append(f"{field}[{j}]: 検査の道の文字列か、runs（とあれば workflow）を空でない文字列で書いた項目（{entries[j]!r}）")
         elif "workflow" in x and not is_workflow(x["workflow"]):
-            bad.append(f"{REQUIRES_CHECK}[{j}]: workflow は {WORKFLOWS}/ の直下のファイル（{x['workflow']}）")
+            bad.append(f"{field}[{j}]: workflow は {WORKFLOWS}/ の直下のファイル（{x['workflow']}）")
         else:
             out.append((runs, x.get("workflow")))
     return out, bad
@@ -703,8 +691,8 @@ def check_pull_request(k: dict, repo: Path) -> list[str]:
 
 
 def check_requires_check_missing(k: dict) -> list[str]:
-    """wired: true の解決策で、requires_check を書いておらず、REQUIRED_SCHEDULE・REQUIRED_RUNS にも挙げていないなら requires_check_missing で落とす
-    （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案）。
+    """wired: true の解決策で、requires_check を書いておらず、requires_schedule も書かず、REQUIRED_RUNS にも挙げていないなら requires_check_missing で落とす
+    （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案。requires_schedule は前の REQUIRED_SCHEDULE。議決 D-0130、Issue #1335）。
 
     requires_check は書いた解決策しか照らさないので、書き忘れると、どの解決策にも求める check.py の配線（knowledge_gate）だけで wired: true にできてしまう。
     名前で組を並べていたころの足し忘れと同じ穴が、欄の書き忘れとして残っていた。形の誤りは check_pull_request が落とす。
@@ -713,8 +701,7 @@ def check_requires_check_missing(k: dict) -> list[str]:
     for i, s in enumerate(solutions(k)):
         if not isinstance(s, dict) or s.get("wired") is not True or (REQUIRES_CHECK in s and s[REQUIRES_CHECK] != []):
             continue
-        key = (k.get("id"), s.get("issue"))
-        if key in REQUIRED_SCHEDULE or key in REQUIRED_RUNS:
+        if required_checks(s, REQUIRES_SCHEDULE)[0] or (k.get("id"), s.get("issue")) in REQUIRED_RUNS:
             continue
         e.append(f"{f}: enforcement.solutions[{i}]（{s.get('kind')}、issue {s.get('issue')}）: {REQUIRES_CHECK_MISSING}: wired にするには {REQUIRES_CHECK} に、"
                  f"pull_request でも走るジョブから呼ぶ検査の道（例: {REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_engine_patch.py）を書く"
