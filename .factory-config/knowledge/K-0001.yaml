@@ -2,21 +2,24 @@ id: K-0001
 theme: 4
 kind: causal
 statement: >-
-  続きのジョブ（continue。既定ブランチとの衝突の解消など）の報告が、既存の PR 本文への追記になることが実装役に伝わらず、
-  Engine も見出しの階層を変えずに本文の末尾に足すと、新しい PR と同じ見出しの組（## 概要・## 対応内容 など）が本文に 2 回出て、
-  検査・判定・本文の修正のジョブを使う差し戻しになりやすい。
+  続きのジョブ（continue。既定ブランチとの衝突の解消など）の報告を、実装役が新しい PR と同じ ## の見出しの組で書き、
+  Engine もその見出しの階層を下げずに既存の PR 本文の末尾に足すと、同じ見出しの組（## 概要・## 対応内容 など）が本文に 2 回以上出て、
+  検査役の指摘（PR-002）と本文の修正のジョブを使う差し戻しになりやすい。主張は実装役と Engine が報告の見出しの階層を下げないことに絞る。
+  採用済みの指摘と本文の決まりが続きのジョブの入力に渡らないことは K-0009、本文全体を組み直す持ち主がいないことは K-0006 の主張。
 scope:
   work: [dev.describe]
   artifacts: [PR.body]
   request_form: [ticket]
-  roles: [implement, inspect, judge, body_fix]
+  roles: [implement, inspect, body_fix]
 acts_on: context
 confidence: hypothesis
 evidence:
   - case: C-0001
-  - case: C-0003
   - pr: 546
   - event: "case.analyzed:113682"
+  - case: C-0003
+  - pr: "396"
+  - event: "case.analyzed:40381"
   - case: C-0004
   - pr: 534
   - event: "case.analyzed:113588"
@@ -27,13 +30,13 @@ evidence:
   - pr: 290
   - event: "case.analyzed:370939"
 status: active
-verified_at: 2026-11-08
-review_by: 2026-12-08
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
-related: [K-0003, K-0004, K-0009, K-0010, K-0014]
+related: [K-0003, K-0004, K-0006, K-0009, K-0010, K-0014]
 enforcement:
   level: deterministic
   solutions:

@@ -4,7 +4,10 @@ kind: causal
 statement: >-
   採用した PR 本文の指摘を直す body_fix（本文だけの直し）が終わる前に supervisor が承認（inspector_approved）を出し、
   直した本文の再検査をマージの条件に入れないと、PR は直していない本文か、直したが再検査していない本文のままマージされうる。
-  直しが漏れたり失敗したりしていても、マージの前に止める段がない（根拠の 2 件では、直し漏れが残った記録はまだない）。
+  直しが漏れたり失敗したりしていても、マージの前に止める段がない。根拠の 3 件では、C-0005 は採用済みの本文の指摘が残ったまま、
+  本文の直し（pr.body_amended 20:08:50）の 7 秒前の 20:08:43 にマージされた（直しが間に合わずに漏れた本文でマージされた記録）。
+  C-0003 は最後の本文の直し（job 572）のあと検査をもう一度通さずに、C-0006 は直しの約 1 秒後に再検査なしでマージされた。
+  直しが失敗したまま直らずに残った記録はまだない。
 scope:
   work: [dev.describe, dev.review.inspect]
   artifacts: [PR.body]
@@ -18,14 +21,17 @@ evidence:
   - case: C-0005
   - pr: 659
   - event: "case.analyzed:274379"
+  - case: C-0003
+  - pr: "396"
+  - event: "case.analyzed:40381"
 status: active
-verified_at: 2026-11-07
-review_by: 2026-12-07
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
 related: [K-0004, K-0006]
 invalidate_when:
   - "supervisor.merged が、採用した PR 本文の指摘を直す body_fix の終わりと、直した本文の再検査（少なくとも見出しの機械的な確認）を待つようになった"
-  - "本文だけの直し（pr.body_amended）もマージ前の必須チェックで確かめられるようになった"
+  - "本文だけの直し（pr.body_amended）もマージ前の必須チェックで確かめられるようになった（K-0006 の issue 906 の解決策の本文の検査が、本文だけの直しのあとにも走るよう配線された）"
 enforcement:
   level: deterministic
   solutions:
