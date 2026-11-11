@@ -29,3 +29,27 @@ invalidate_when:
   - "取り込んでから PR を開くようにしたあとも、開いて数分の内に衝突する PR が減らなかった（取り込みから開くまでの間に main が進んでいた）"
   - "衝突の束を集計して、PR が開いた時点で衝突していたもの（pr.opened と continue.enqueued(reason=conflict) が数秒差）が束の少数だと分かった"
 decided_by: committee:D-0149
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        議決 D-0149（Issue #1383 の起票時の番号は D-0148。PR #1382）の test の案を入れた。Engine は別のリポジトリなので、worker/entrypoint.sh
+        （orchestrator/worker/entrypoint.sh）の新しい PR の道で、実装をコミットしたあと push と gh pr create の前に origin の既定ブランチを fetch して取り込み、
+        衝突したら同じエージェントのセッション（STATE_ARGS の --state-dir）で解いてから開き、解けなければ（印が残る・取り込みを中止した）push も PR 作成もせずに
+        終了コード 5（FACTORY_RESULT の reason は conflict_unresolved）で終える差分を tools/conflict-check/engine/open-pr-merge.patch に置いた。
+        tools/conflict-check/test_open_pr.py が、open_pr_harness.py で entrypoint.sh の新しい PR の道を一時の origin と偽の gh・エージェントの上でそのまま動かし、
+        「新しい PR の道で既定ブランチの取り込みが gh pr create より前にある」（行の順と、実装の間に main が進んだときに gh pr create の時点で PR のブランチが
+        main の最新を含むこと）と「取り込みが衝突したまま PR を開かない」（エージェントが解けない・中止したときに gh pr create も push もせず失敗で返す）を確かめる。
+        差分を当てた Engine の写しでは必須で通り、ENGINE_REF（2490db6）の Engine では今の形（新しい PR の道に fetch も取り込みもない）なので todo になり、
+        この知見の review_by を過ぎたら落ちること、解けないときの exit 5 を消した写しでは落ちることを確かめた。ひな形 ci/conflict-check.yml の unittest discover で
+        一緒に走るが、差分を Engine に当てて ENGINE_REF を上げること、ひな形を .github/workflows/ に写して conflict-check を必須のチェックにすることは建設者なので、
+        配線はまだで、pr.opened と continue.enqueued(reason=conflict) が数秒差の PR の件数での効き目もまだ確かめていない
+      issue: 1383
+      at: 2026-11-11
+      decided_by: committee:D-0149
+      requires_check:
+        - runs: tools/conflict-check/test_open_pr.py
+          workflow: .github/workflows/conflict-check.yml
+      wired: false
+      verified: false

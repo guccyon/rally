@@ -1,6 +1,8 @@
 # 衝突の続きのジョブの検査（tools/conflict-check/、知見 K-0010 の担保。議決 D-0030、Issue #1034）。決定論（LLM を使わない）。
 # PR ごとに、線のテスト（test_policy.py）・イベント列の検査のテスト（test_events.py）・見張りのテスト（test_watch.py）と、
 # Engine を固定した版（ENGINE_REF）でチェックアウトして ENGINE_DIR を向けた Engine の本物の処理のテスト（test_engine.py）を走らせる。
+# 同じ discover で、Engine の新しい PR の道が PR を開く前に既定ブランチを取り込み、衝突したまま開かないかのテスト（test_open_pr.py。知見 K-0023 の担保。
+# 議決 D-0149・Issue #1383）も走る。
 # CI=true と ENGINE_DIR を渡すので、fixtures が読めないとき・Engine のチェックアウトがないとき・engine_harness.py が関数や手順を
 # 取り出せないとき・node か git がないときは飛ばさずに落ちる。Engine が今の形のときだけの todo（README の「今の Engine」）は飛ばしとして結果に出る。
 # ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/conflict-check.yml に写す。

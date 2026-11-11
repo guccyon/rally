@@ -1028,6 +1028,7 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0014", 1297): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1344): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0023", 1383): [("tools/conflict-check/test_open_pr.py", check.CONFLICT_CHECK_WORKFLOWS[0])],   # はじめから requires_check に書いた
                           ("K-0004", 1369): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],   # README の手書きの一覧をやめた照合（Issue #1369）。はじめから requires_check に書いた
                           # 議決 D-0141（Issue #1351）で、触れたファイルの欄のない解決策に後から書いた
                           ("K-0014", 1135): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})
