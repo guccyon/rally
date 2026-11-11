@@ -491,10 +491,13 @@ SCOPE_JOB = "enforcement"
 CONFLICT_TEMPLATE = REPO / "tools/conflict-check/ci/conflict-check.yml"
 
 
-# check.py が名前で並べた、呼ぶことを求める検査とワークフローの一覧の名前の頭。REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW・REQUIRED_RUNS と、
-# いまは解決策の requires_check に移った REQUIRED_PR（議決 D-0077）を、一覧を足しても手で書き足さずに拾う（議決 D-0090（Issue #1259 の起票時の番号は D-0089））
+# check.py が名前で並べた、呼ぶことを求める検査とワークフローの一覧の名前の頭。REQUIRED_RUNS と、いまは解決策の requires_check に移った REQUIRED_PR（議決 D-0077）・
+# requires_schedule に移った REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW（議決 D-0130、Issue #1335）を、一覧を足しても手で書き足さずに拾う
+# （議決 D-0090（Issue #1259 の起票時の番号は D-0089））
 REQUIRED_PREFIX = "REQUIRED_"
-NAMED_REQUIRED = ("REQUIRED_SCHEDULE", "REQUIRED_SCHEDULE_WORKFLOW", "REQUIRED_RUNS")
+NAMED_REQUIRED = ("REQUIRED_RUNS",)
+# 解決策に書く、呼ぶことを求める検査の欄（requires_check は議決 D-0077、requires_schedule は議決 D-0130）
+REQUIRED_FIELDS = (check.REQUIRES_CHECK, check.REQUIRES_SCHEDULE)
 
 
 def path_values(v) -> list[str]:
@@ -517,12 +520,19 @@ def required_paths(mod=check) -> dict[str, list[str]]:
     return out
 
 
+def field_paths(s) -> list[str]:
+    """解決策の requires_check（前の REQUIRED_PR）と requires_schedule（前の REQUIRED_SCHEDULE）に書いた検査とワークフローの道"""
+    if not isinstance(s, dict):
+        return []
+    return [x for field in REQUIRED_FIELDS for t, wf in check.required_checks(s, field)[0] for x in (t, wf) if x]
+
+
 def scope_places(items: list[dict], mod=check) -> list[str]:
-    """check.py の REQUIRED_* と、K-*.yaml の解決策の requires_check（前の REQUIRED_PR）が指す検査とワークフローの置き場（ディレクトリ）"""
+    """check.py の REQUIRED_* と、K-*.yaml の解決策の requires_check・requires_schedule が指す検査とワークフローの置き場（ディレクトリ）"""
     paths = [p for ps in required_paths(mod).values() for p in ps]
     for k in items:
         for s in check.solutions(k):
-            paths += [x for t, wf in (check.required_checks(s)[0] if isinstance(s, dict) else []) for x in (t, wf) if x]
+            paths += field_paths(s)
     return sorted({p.rsplit("/", 1)[0] for p in paths})
 
 
@@ -532,8 +542,8 @@ def scope_targets(items: list[dict]) -> list[str]:
     out += [p for ps in required_paths().values() for p in ps]
     for k in items:
         for s in check.solutions(k):
-            # 解決策の requires_check に書いた検査とワークフロー（議決 D-0077（起票時の番号は D-0075）、Issue #1216）
-            out += [x for t, wf in (check.required_checks(s)[0] if isinstance(s, dict) else []) for x in (t, wf) if x]
+            # 解決策の requires_check・requires_schedule に書いた検査とワークフロー（議決 D-0077（起票時の番号は D-0075）、Issue #1216。議決 D-0130、Issue #1335）
+            out += field_paths(s)
             for w in (s.get("wired_by") if isinstance(s, dict) and isinstance(s.get("wired_by"), list) else []):
                 out += [check.norm("", w[key]) or w[key] for key in ("workflow", "runs") if isinstance(w, dict) and isinstance(w.get(key), str)]
     return list(dict.fromkeys(out))
@@ -593,12 +603,14 @@ class EnforcementScopeTest(unittest.TestCase):
             self.assertIn(place, places)
 
     def test_check_pyに足した新しい置き場を範囲に足し忘れると見分ける(self):
-        # 上のテストが足し忘れを落とせることの対照。REQUIRED_SCHEDULE と、もう一度名前で並べた REQUIRED_PR に別の置き場の検査を足した check.py の形
+        # 上のテストが足し忘れを落とせることの対照。もう一度名前で並べた REQUIRED_SCHEDULE・REQUIRED_PR に別の置き場の検査を足した check.py の形と、
+        # 解決策の requires_schedule に別の置き場の検査を書いた K-*.yaml の形（議決 D-0130、Issue #1335）
         fake = types.SimpleNamespace(**{k: v for k, v in vars(check).items() if k.startswith(REQUIRED_PREFIX)})
-        fake.REQUIRED_SCHEDULE = {**check.REQUIRED_SCHEDULE, ("K-0002", 1): "tools/changelog-check/protection.mjs"}
+        fake.REQUIRED_SCHEDULE = {("K-0002", 1): "tools/changelog-check/protection.mjs"}
         fake.REQUIRED_PR = {("K-0009", 1): "tools/continue-input-check/test_check.py"}
-        places = scope_places([], fake)
-        for place in ("tools/changelog-check", "tools/continue-input-check"):
+        item = {"id": "K-0003", "enforcement": {"solutions": [{"issue": 1, check.REQUIRES_SCHEDULE: [{"runs": "tools/scope-x-check/watch.mjs"}]}]}}
+        places = scope_places([item], fake)
+        for place in ("tools/changelog-check", "tools/continue-input-check", "tools/scope-x-check"):
             with self.subTest(place):
                 self.assertIn(place, places)
                 self.assertEqual(self.changed([f"{place}/new_check.py"]), "changed=false")

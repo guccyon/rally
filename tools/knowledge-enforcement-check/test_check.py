@@ -114,14 +114,50 @@ def repo_solution(kid: str, issue: int) -> dict:
     return next((s for s in check.solutions(repo_knowledge(kid)) if isinstance(s, dict) and s.get("issue") == issue), {})
 
 
+def as_recorded(item: dict, field: str) -> dict:
+    """テストの解決策に、このリポジトリの K-*.yaml のその解決策の field の欄を写したもの（テストの解決策に欄があれば写さない）"""
+    sols = []
+    for s in check.solutions(item):
+        req = repo_solution(item.get("id"), s.get("issue")).get(field) if isinstance(s, dict) else None
+        sols.append({**s, field: req} if req is not None and field not in s else s)
+    return {**item, "enforcement": {**item["enforcement"], "solutions": sols}}
+
+
 def pr_errors(item: dict, d: Path) -> list[str]:
     """check_pull_request を、テストの解決策に、このリポジトリの K-*.yaml のその解決策の requires_check を写して走らせる
     （議決 D-0077（起票時の番号は D-0075）、Issue #1216。前は check.py の REQUIRED_PR などに並べた組で照らしていたので、その組を写した本物の値で照らす）"""
-    sols = []
-    for s in check.solutions(item):
-        req = repo_solution(item.get("id"), s.get("issue")).get(check.REQUIRES_CHECK) if isinstance(s, dict) else None
-        sols.append({**s, check.REQUIRES_CHECK: req} if req is not None and check.REQUIRES_CHECK not in s else s)
-    return check.check_pull_request({**item, "enforcement": {**item["enforcement"], "solutions": sols}}, d)
+    return check.check_pull_request(as_recorded(item, check.REQUIRES_CHECK), d)
+
+
+def schedule_errors(item: dict, d: Path) -> list[str]:
+    """check_schedule を、テストの解決策に、このリポジトリの K-*.yaml のその解決策の requires_schedule を写して走らせる
+    （議決 D-0130 の schema の案、Issue #1335。前は check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に並べた組で照らしていたので、その組を写した本物の値で照らす）"""
+    return check.check_schedule(as_recorded(item, check.REQUIRES_SCHEDULE), d)
+
+
+def schedules(kid: str, issue: int) -> list[tuple[str, str | None]]:
+    """このリポジトリの K-*.yaml のその解決策の requires_schedule を (検査, ワークフロー) の列にしたもの"""
+    req, bad = check.required_checks(repo_solution(kid, issue), check.REQUIRES_SCHEDULE)
+    assert not bad, bad
+    return req
+
+
+# 議決 D-0130（Issue #1335）で解決策の requires_schedule に移す前に、check.py が REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に名前で並べていた組
+# （(知見の id, 解決策の issue) → (検査, ワークフロー（REQUIRED_SCHEDULE_WORKFLOW になければ None）)）。移した欄が同じ中身であることを照らす
+MOVED_SCHEDULE = {
+    ("K-0004", 1018): ("tools/sendback-check/protection.mjs", ".github/workflows/sendback-protection.yml"),
+    ("K-0001", 1106): ("tools/pr-body-check/protection.mjs", None),
+    ("K-0001", 1182): ("tools/pr-body-check/protection.mjs", ".github/workflows/pr-body-protection.yml"),
+    ("K-0004", 1158): ("tools/sendback-check/protection.mjs", None),
+    ("K-0004", 1087): ("tools/sendback-check/protection.mjs", ".github/workflows/sendback-protection.yml"),
+    ("K-0004", 1162): ("tools/sendback-check/heartbeat.mjs", None),
+    ("K-0014", 1136): ("tools/conflict-check/schema.py", ".github/workflows/conflict-schema.yml"),
+    ("K-0014", 1207): ("tools/conflict-check/schema.py", ".github/workflows/conflict-schema.yml"),
+    ("K-0014", 1213): ("tools/conflict-check/schema.py", ".github/workflows/conflict-schema.yml"),
+    ("K-0014", 1214): ("tools/conflict-check/events.py", ".github/workflows/conflict-schema.yml"),
+    ("K-0001", 1179): ("tools/pr-body-check/patch.mjs", ".github/workflows/pr-body-patch.yml"),
+}
+SCHEDULE_DECISION = f"議決 {check.REQUIRES_SCHEDULE_DECISION}"
 
 
 def requires(kid: str, issue: int) -> list[tuple[str, str | None]]:
@@ -361,7 +397,7 @@ class ScheduleTest(unittest.TestCase):
         wb = [{"workflow": self.WF, "job": "protection", "runs": runs or self.PROT}]
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wb}]}}
-        return check.check_schedule(item, d)
+        return schedule_errors(item, d)
 
     SCHEDULE = "  schedule:\n    - cron: '0 0 * * *'\n  workflow_dispatch:\n"
 
@@ -439,9 +475,9 @@ class ScheduleTest(unittest.TestCase):
         item = {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": 1018, "wired": True, "verified": False, "wired_by": [
                 {"workflow": self.WF, "job": "soft", "runs": self.PROT}, {"workflow": self.WF, "job": "protection", "runs": self.PROT}]}]}}
-        self.assertEqual(check.check_schedule(item, d), [])
+        self.assertEqual(schedule_errors(item, d), [])
         item["enforcement"]["solutions"][0]["wired_by"].pop()
-        self.assertEqual(len(check.check_schedule(item, d)), 1)
+        self.assertEqual(len(schedule_errors(item, d)), 1)
 
     def test_許可リストの読み方(self):
         self.assertFalse(check.off_schedule(None))
@@ -476,7 +512,10 @@ class ScheduleTest(unittest.TestCase):
         e = self.errors(d2, kid="K-0001", issue=1106, runs=prot)
         self.assertEqual(len(e), 1, e)
         self.assertIn(prot, e[0])
-        e = self.errors(self.repo(self.wf(self.SCHEDULE)), kid="K-0001", issue=1106)
+        d3 = self.repo(self.wf(self.SCHEDULE))
+        (d3 / prot).parent.mkdir(parents=True, exist_ok=True)
+        (d3 / prot).write_text("", encoding="utf-8")   # 欄に挙げた検査がないと requires_schedule_invalid も出る
+        e = self.errors(d3, kid="K-0001", issue=1106)
         self.assertEqual(len(e), 1, e)
         self.assertIn(prot, e[0])
 
@@ -489,6 +528,151 @@ class ScheduleTest(unittest.TestCase):
         errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("issue 1018）: wired にするには", errors[0])
+
+
+class RequiresScheduleTest(unittest.TestCase):
+    """requires_schedule を書いた解決策は、wired: true にするとき、挙げた検査ごとに schedule でも走り continue-on-error が真でないジョブから
+    それを呼ぶ wired_by を求める（議決 D-0130 の schema の案、Issue #1335。前は check.py の REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW に
+    名前で並べた組だけを見ていて、issue 1179 のように組を足し忘れた解決策は黙って通っていた）"""
+
+    PROT = ScheduleTest.PROT
+    WF = ".github/workflows/watch.yml"
+    OTHER = ".github/workflows/other.yml"
+    SCHEDULE = ScheduleTest.SCHEDULE
+
+    def repo(self, files: dict[str, str]) -> Path:
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        d = Path(t.name)
+        for rel, text in files.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(text, encoding="utf-8")
+        return d
+
+    def wf(self, on: str, target: str, job_coe: str = "") -> str:
+        return f"on:\n{on}jobs:\n  watch:\n    runs-on: ubuntu-latest\n{job_coe}    steps:\n      - run: node {target}\n"
+
+    def item(self, req, wired_by: list, wired=True, kid="K-9999", issue=1) -> dict:
+        s = {"kind": "schema", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wired_by}
+        if req is not None:
+            s[check.REQUIRES_SCHEDULE] = req
+        return {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [s]}}
+
+    def test_check_py_に名前で並べた組はもうない(self):
+        for name in ("REQUIRED_SCHEDULE", "REQUIRED_SCHEDULE_WORKFLOW"):
+            self.assertFalse(hasattr(check, name), name)
+
+    def test_欄を書いた解決策は知見と_issue_を問わず_schedule_の_wired_by_なしで落ちる(self):
+        target = "tools/x-check/watch.mjs"
+        d = self.repo({target: "", self.WF: self.wf(self.SCHEDULE, target), self.OTHER: self.wf("  pull_request:\n  workflow_dispatch:\n", target)})
+        for kid, issue in (("K-9999", 1), ("K-0001", 1335), ("K-0005", 936)):
+            for req in (target, [target], [{"runs": target}], [{"runs": f"./{target}", "workflow": self.WF}]):
+                for wb in ([], [{"workflow": self.OTHER, "job": "watch", "runs": target}]):
+                    e = check.check_schedule(self.item(req, wb, kid=kid, issue=issue), d)
+                    self.assertEqual(len(e), 1, (kid, issue, req, wb, e))
+                    for part in (f"issue {issue}）: wired にするには", "on.schedule（cron）", target, f"議決 {check.REQUIRES_SCHEDULE_DECISION}"):
+                        self.assertIn(part, e[0])
+                self.assertEqual(check.check_schedule(self.item(req, [{"workflow": self.WF, "job": "watch", "runs": target}], kid=kid, issue=issue), d),
+                                 [], (kid, issue, req))
+                # 欄を書かなければ見ない（protection.mjs のような名前を問わない求めは別。SendbackProtectionAnyIssueTest）
+                self.assertEqual(check.check_schedule(self.item(None, [], kid=kid, issue=issue), d), [])
+
+    def test_continue_on_error_が真のジョブだけなら落ちる(self):
+        target = "tools/x-check/watch.mjs"
+        d = self.repo({target: "", self.WF: self.wf(self.SCHEDULE, target, "    continue-on-error: true\n")})
+        e = check.check_schedule(self.item([{"runs": target}], [{"workflow": self.WF, "job": "watch", "runs": target}]), d)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("continue-on-error", e[0])
+        self.assertIn(check.CONTINUE_ON_ERROR_DECISION, e[0])
+
+    def test_workflow_を書いた検査はそのワークフローのジョブだけを数える(self):
+        target = "tools/x-check/watch.mjs"
+        d = self.repo({target: "", self.WF: self.wf(self.SCHEDULE, target), self.OTHER: self.wf(self.SCHEDULE, target)})
+        req = [{"runs": target, "workflow": self.WF}]
+        self.assertEqual(check.check_schedule(self.item(req, [{"workflow": self.WF, "job": "watch", "runs": target}]), d), [])
+        e = check.check_schedule(self.item(req, [{"workflow": self.OTHER, "job": "watch", "runs": target}]), d)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(f"on.schedule（cron）のある {self.WF} で", e[0])
+        # workflow を書かなければほかのワークフローの schedule のジョブでも数える
+        self.assertEqual(check.check_schedule(self.item([{"runs": target}], [{"workflow": self.OTHER, "job": "watch", "runs": target}]), d), [])
+
+    def test_挙げた検査ごとに項目が要る(self):
+        a, b = "tools/x-check/a.mjs", "tools/x-check/b.mjs"
+        d = self.repo({a: "", b: "", self.WF: self.wf(self.SCHEDULE, a).replace(f"run: node {a}\n", f"run: node {a}\n      - run: node {b}\n")})
+        wb = [{"workflow": self.WF, "job": "watch", "runs": a}]
+        e = check.check_schedule(self.item([a, b], wb), d)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn(b, e[0])
+        self.assertEqual(check.check_schedule(self.item([a, b], wb + [{"workflow": self.WF, "job": "watch", "runs": b}]), d), [])
+
+    def test_形の誤りとない検査は_wired_を問わず落とす(self):
+        d = self.repo({self.PROT: ""})
+        for req in (1, {"runs": self.PROT}, [1], [{}], [{"runs": ""}], [{"runs": self.PROT, "job": "x"}], [{"runs": self.PROT, "workflow": "ci/x.yml"}],
+                    ["tools/x-check/missing.mjs"]):
+            for wired in (True, False):
+                e = [x for x in check.check_schedule(self.item(req, [], wired=wired), d) if check.REQUIRES_SCHEDULE_INVALID in x]
+                self.assertEqual(len(e), 1, (req, wired, e))
+                self.assertIn(f"issue 1）: {check.REQUIRES_SCHEDULE_INVALID}: {check.REQUIRES_SCHEDULE}", e[0])
+        # 空の列は挙げる検査がないだけで形の誤りに数えない
+        self.assertEqual(check.check_schedule(self.item([], []), d), [])
+
+    def test_前の組はどれも同じ中身で_requires_schedule_に移してある(self):
+        found = {(k["id"], s.get("issue")): schedules(k["id"], s.get("issue"))
+                 for k in check.load(REPO) for s in check.solutions(k) if isinstance(s, dict) and check.REQUIRES_SCHEDULE in s}
+        self.assertEqual(found, {key: [v] for key, v in MOVED_SCHEDULE.items()})
+
+    @staticmethod
+    def old_requirements(key: tuple[str, int], s: dict) -> list[tuple[str, str | None]]:
+        """前の check.py の schedule_requirements（REQUIRED_SCHEDULE・REQUIRED_SCHEDULE_WORKFLOW の組と、議決 D-0086 の protection.mjs の求め）"""
+        out = {}
+        if key in MOVED_SCHEDULE:
+            out[MOVED_SCHEDULE[key][0]] = MOVED_SCHEDULE[key][1]
+        if check.calls_sendback_protection(s) and out.get(check.SENDBACK_PROTECTION) is None:
+            out[check.SENDBACK_PROTECTION] = check.SENDBACK_PROTECTION_WORKFLOW
+        return sorted(out.items(), key=lambda x: x[0])
+
+    def test_前の組と同じ結果になる(self):
+        """前の check.py の組から導く求めと、欄から導く求めが同じで、求めたワークフローの schedule のジョブで通り、
+        それがなければ落ちる（(K-0001, 1106)・(K-0001, 1179) などすべての組）"""
+        decoy = "tools/x-check/other.mjs"
+        for (kid, issue), (target, workflow) in MOVED_SCHEDULE.items():
+            with self.subTest(kid=kid, issue=issue):
+                # protection.mjs は欄にワークフローがなくても sendback-protection.yml のジョブを求める（議決 D-0086）
+                wf = workflow or (check.SENDBACK_PROTECTION_WORKFLOW if target == check.SENDBACK_PROTECTION else self.WF)
+                d = self.repo({target: "", decoy: "", wf: self.wf(self.SCHEDULE, target), self.OTHER: self.wf(self.SCHEDULE, target)})
+                for wb in ([], [{"workflow": wf, "job": "watch", "runs": target}], [{"workflow": self.OTHER, "job": "watch", "runs": target}]):
+                    s = check.solutions(as_recorded(self.item(None, wb, kid=kid, issue=issue), check.REQUIRES_SCHEDULE))[0]
+                    self.assertEqual(sorted(((t, w) for t, w, _ in check.schedule_requirements(s)), key=lambda x: x[0]),
+                                     self.old_requirements((kid, issue), s), wb)
+                good = self.item(None, [{"workflow": wf, "job": "watch", "runs": target}], kid=kid, issue=issue)
+                self.assertEqual(schedule_errors(good, d), [])
+                for wb in ([], [{"workflow": wf, "job": "watch", "runs": decoy}]):
+                    e = schedule_errors(self.item(None, wb, kid=kid, issue=issue), d)
+                    self.assertEqual(len(e), 1, (wb, e))
+                    self.assertIn(target, e[0])
+                other = schedule_errors(self.item(None, [{"workflow": self.OTHER, "job": "watch", "runs": target}], kid=kid, issue=issue), d)
+                # ワークフローを絞った組と、議決 D-0086 で sendback-protection.yml に絞る protection.mjs はほかのワークフローでは落ちる
+                self.assertEqual(len(other), 1 if workflow or target == check.SENDBACK_PROTECTION else 0, other)
+                no_sched = self.repo({target: "", wf: self.wf("  workflow_dispatch:\n", target)})
+                self.assertEqual(len(schedule_errors(self.item(None, [{"workflow": wf, "job": "watch", "runs": target}], kid=kid, issue=issue), no_sched)), 1)
+                self.assertEqual(schedule_errors(self.item(None, [], wired=False, kid=kid, issue=issue), d), [])
+
+    def test_このリポジトリの記録では落ちない(self):
+        self.assertEqual([x for k in check.load(REPO) for x in check.check_schedule(k, REPO)], [])
+
+    def test_main_で落とす(self):
+        target = "tools/x-check/watch.mjs"
+        d = self.repo({target: "", self.WF: self.wf("  workflow_dispatch:\n", target)})
+        MainTest.write(None, d, "K-9999.yaml", "id: K-9999\nenforcement:\n  level: deterministic\n  solutions:\n"
+                       f"    - {{kind: schema, what: x, issue: 1, wired: true, verified: false, requires_schedule: [{{runs: {target}}}],"
+                       f" wired_by: [{{workflow: {self.WF}, job: watch, runs: {target}}}]}}\n"
+                       "    - {kind: schema, what: x, issue: 2, wired: false, verified: false, requires_schedule: [{runs: tools/x-check/missing.mjs}]}\n")
+        out = d / "out.json"
+        self.assertEqual(check.main(["--repo", str(d), "--json", str(out)]), 1)
+        errors = without_gate(json.loads(out.read_text(encoding="utf-8"))["errors"])
+        self.assertEqual(len(errors), 2, errors)
+        self.assertIn("issue 1）: wired にするには", errors[0])
+        self.assertIn(f"issue 2）: {check.REQUIRES_SCHEDULE_INVALID}: ", errors[1])
 
 
 class SendbackProtectionWorkflowTest(unittest.TestCase):
@@ -516,14 +700,13 @@ class SendbackProtectionWorkflowTest(unittest.TestCase):
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": True, "verified": False,
              "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": self.PROT}]}]}}
-        return check.check_schedule(item, d)
+        return schedule_errors(item, d)
 
     def test_対象に挙げてある(self):
         for issue in (1087, 1018):
-            self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", issue)], self.PROT)
-            self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0004", issue)][0], self.WF)
-        self.assertNotIn(("K-0004", 1158), check.REQUIRED_SCHEDULE_WORKFLOW)
-        self.assertNotIn(("K-0001", 1106), check.REQUIRED_SCHEDULE_WORKFLOW)
+            self.assertEqual(schedules("K-0004", issue), [(self.PROT, self.WF)], issue)
+        self.assertEqual(schedules("K-0004", 1158), [(self.PROT, None)])
+        self.assertEqual(schedules("K-0001", 1106), [("tools/pr-body-check/protection.mjs", None)])
 
     def test_ひな形をそのまま写した_protection_のジョブなら通る(self):
         d = self.repo({self.WF: self.template()})
@@ -536,7 +719,7 @@ class SendbackProtectionWorkflowTest(unittest.TestCase):
             e = self.errors(d, issue, wf=self.OTHER)
             self.assertEqual(len(e), 1, (issue, e))
             self.assertIn(f"on.schedule（cron）のある {self.WF} で", e[0])
-            self.assertIn("議決 D-0039・D-0060", e[0])
+            self.assertIn(SCHEDULE_DECISION, e[0])
 
     def test_写しが_schedule_で走らなければ落ちる(self):
         no_sched = self.template().replace('  schedule:\n    - cron: "0 20 * * *"\n', "", 1)
@@ -787,7 +970,10 @@ class RequiresCheckTest(unittest.TestCase):
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0016", 1307): [("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
-                          ("K-0014", 1207): [],   # 定期のジョブ（REQUIRED_SCHEDULE）で照らし、PR ごとに走らなくてよい
+                          ("K-0014", 1207): [],   # 定期のジョブ（requires_schedule）で照らし、PR ごとに走らなくてよい
+                          # 議決 D-0130（Issue #1335）で requires_schedule を書くときに、議決 D-0116 の欄の必須に合わせて [] を明示した定期だけの解決策
+                          **{key: [] for key in (("K-0001", 1106), ("K-0001", 1179), ("K-0004", 1018), ("K-0004", 1087), ("K-0004", 1162), ("K-0014", 1214))},
+                          ("K-0001", 1335): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0014", 1208): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1295): [("tools/conflict-check/test_schema_ci.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1297): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
@@ -809,8 +995,8 @@ class RequiresCheckTest(unittest.TestCase):
 
 
 class RequiresCheckMissingTest(unittest.TestCase):
-    """wired: true の解決策は、requires_check を書くか、REQUIRED_SCHEDULE・REQUIRED_RUNS に挙げてあることを求める
-    （議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案。requires_check は書いた解決策しか照らさないので、
+    """wired: true の解決策は、requires_check を書くか、requires_schedule を書くか（前の REQUIRED_SCHEDULE。議決 D-0130、Issue #1335）、
+    REQUIRED_RUNS に挙げてあることを求める（議決 D-0080（Issue #1227 の起票時の番号は D-0078）の lint の案。requires_check は書いた解決策しか照らさないので、
     書き忘れると check.py の配線（knowledge_gate）だけで wired: true にできてしまっていた）"""
 
     RUNS = RequiresCheckTest.RUNS
@@ -849,14 +1035,27 @@ class RequiresCheckMissingTest(unittest.TestCase):
         self.assertIn(f"issue 1）: {check.REQUIRES_CHECK_MISSING}: ", e[0])
         for wired in (False, None):
             self.assertEqual(check.check_requires_check_missing(self.item(wired=wired, req=[])), [], wired)
-        for key in sorted(set(check.REQUIRED_SCHEDULE) | set(check.REQUIRED_RUNS)):
-            self.assertEqual(check.check_requires_check_missing(self.item(req=[], kid=key[0], issue=key[1])), [], key)
+        for key in sorted(set(MOVED_SCHEDULE) | set(check.REQUIRED_RUNS)):
+            item = as_recorded(self.item(req=[], kid=key[0], issue=key[1]), check.REQUIRES_SCHEDULE)
+            self.assertEqual(check.check_requires_check_missing(item), [], key)
 
-    def test_名前で並べた残りの求めに挙げた解決策は見ない(self):
-        for key in sorted(set(check.REQUIRED_SCHEDULE) | set(check.REQUIRED_RUNS)):
-            self.assertEqual(check.check_requires_check_missing(self.item(kid=key[0], issue=key[1])), [], key)
-        # 同じ知見でも挙げていない issue は落とす
+    def test_requires_schedule_を書いた解決策と名前で並べた残りの求めに挙げた解決策は見ない(self):
+        # requires_schedule は前の REQUIRED_SCHEDULE の組を移した欄（議決 D-0130、Issue #1335）。知見と issue を問わず、書けば見ない
+        for key in sorted(set(MOVED_SCHEDULE) | set(check.REQUIRED_RUNS)):
+            item = as_recorded(self.item(kid=key[0], issue=key[1]), check.REQUIRES_SCHEDULE)
+            self.assertEqual(check.check_requires_check_missing(item), [], key)
+        for v in ([{"runs": ScheduleTest.PROT}], ScheduleTest.PROT, [{"runs": ScheduleTest.PROT, "workflow": ScheduleTest.WF}]):
+            item = self.item()
+            item["enforcement"]["solutions"][0][check.REQUIRES_SCHEDULE] = v
+            self.assertEqual(check.check_requires_check_missing(item), [], v)
+        # 空の列や形の誤りの requires_schedule は、挙げる検査がないので書いていないのと同じに落とす
+        for v in ([], "", [{"workflow": ScheduleTest.WF}]):
+            item = self.item()
+            item["enforcement"]["solutions"][0][check.REQUIRES_SCHEDULE] = v
+            self.assertEqual(len(check.check_requires_check_missing(item)), 1, v)
+        # 同じ知見でも欄を書いていない・挙げていない issue は落とす
         self.assertEqual(len(check.check_requires_check_missing(self.item(kid="K-0010", issue=1035))), 1)
+        self.assertEqual(len(check.check_requires_check_missing(self.item(kid="K-0004", issue=1018))), 1)
 
     def test_このリポジトリの記録では落ちない(self):
         self.assertEqual([x for k in check.load(REPO) for x in check.check_requires_check_missing(k)], [])
@@ -1382,10 +1581,10 @@ class SendbackProtectionScheduleAndPullRequestTest(unittest.TestCase):
         item = {"id": kid, "_file": f"{kid}.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
              "wired_by": [{"workflow": self.WF, "job": job, "runs": runs or self.PROT} for job in jobs]}]}}
-        return check.check_schedule(item, d) + pr_errors(item, d) + check.check_wiring(item, d)
+        return schedule_errors(item, d) + pr_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
-        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1158)], self.PROT)
+        self.assertEqual(schedules("K-0004", 1158), [(self.PROT, None)])
         self.assertEqual(requires("K-0004", 1158), [(self.PROT, None)])
 
     def test_ひな形をそのまま写した_protection_と_protection_pr_なら通る(self):
@@ -1457,12 +1656,11 @@ class SendbackProtectionAnyIssueTest(unittest.TestCase):
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False, "wired_by": wired_by}]}}
 
     def errors(self, d: Path, wired_by: list, **kw) -> list[str]:
-        return check.check_schedule(self.item(wired_by, **kw), d)
+        return schedule_errors(self.item(wired_by, **kw), d)
 
     def test_組に挙げていない(self):
         for kid, issue in (("K-0004", 1247), ("K-0004", 1159), ("K-9999", 1)):
-            self.assertNotIn((kid, issue), check.REQUIRED_SCHEDULE)
-            self.assertNotIn((kid, issue), check.REQUIRED_SCHEDULE_WORKFLOW)
+            self.assertEqual(schedules(kid, issue), [], (kid, issue))
 
     def test_ひな形をそのまま写した_protection_のジョブなら通る(self):
         d = self.repo({self.WF: self.template()})
@@ -1490,10 +1688,10 @@ class SendbackProtectionAnyIssueTest(unittest.TestCase):
         self.assertEqual(len(e), 1, e)
 
     def test_表の求めと重ねても_1_件だけ出す(self):
-        """issue 1018・1087 は表の議決（D-0039・D-0060）のまま、1158 は表にワークフローがないので D-0086 で 1 件だけ"""
+        """issue 1018・1087 は requires_schedule の議決（D-0039・D-0130）のまま、1158 は欄にワークフローがないので D-0086 で 1 件だけ"""
         d = self.repo({self.OTHER: self.template()})
         wb = [{"workflow": self.OTHER, "job": "protection", "runs": self.PROT}]
-        for issue, decision in ((1018, "議決 D-0039・D-0060"), (1087, "議決 D-0039・D-0060"), (1158, "議決 D-0086")):
+        for issue, decision in ((1018, SCHEDULE_DECISION), (1087, SCHEDULE_DECISION), (1158, "議決 D-0086")):
             e = self.errors(d, wb, issue=issue)
             self.assertEqual(len(e), 1, (issue, e))
             self.assertIn(decision, e[0])
@@ -1545,10 +1743,10 @@ class SendbackHeartbeatScheduleTest(unittest.TestCase):
         item = {"id": "K-0004", "_file": "K-0004.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": 1162, "wired": wired, "verified": False,
              "wired_by": [{"workflow": self.WF, "job": "heartbeat", "runs": runs or self.HB}]}]}}
-        return check.check_schedule(item, d) + check.check_wiring(item, d)
+        return schedule_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
-        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0004", 1162)], self.HB)
+        self.assertEqual(schedules("K-0004", 1162), [(self.HB, None)])
         self.assertEqual(requires("K-0004", 1162), [])
 
     def test_ひな形をそのまま写した_heartbeat_なら通る(self):
@@ -1596,12 +1794,11 @@ class ConflictSchemaScheduleTest(unittest.TestCase):
         item = {"id": "K-0014", "_file": "K-0014.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
              "wired_by": [{"workflow": wf or self.WF, "job": "conflict-schema", "runs": runs or self.SCHEMA}]}]}}
-        return check.check_schedule(item, d) + check.check_wiring(item, d)
+        return schedule_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
-        for issue, decision in ((1136, "D-0101"), (1207, "D-0101"), (1213, "D-0076")):   # issue 1213 は議決 D-0076（起票時の番号は D-0074）
-            self.assertEqual(check.REQUIRED_SCHEDULE[("K-0014", issue)], self.SCHEMA)
-            self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0014", issue)], (self.WF, decision))
+        for issue in (1136, 1207, 1213):   # issue 1213 は議決 D-0076（起票時の番号は D-0074）
+            self.assertEqual(schedules("K-0014", issue), [(self.SCHEMA, self.WF)], issue)
             self.assertEqual(requires("K-0014", issue), [], issue)
 
     def test_ひな形をそのまま写した_conflict_schema_なら通る(self):
@@ -1659,11 +1856,10 @@ class ConflictRecordScheduleTest(unittest.TestCase):
         item = {"id": "K-0014", "_file": "K-0014.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": 1214, "wired": wired, "verified": False,
              "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": runs or self.EVENTS}]}]}}
-        return check.check_schedule(item, d) + check.check_wiring(item, d)
+        return schedule_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
-        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0014", 1214)], self.EVENTS)
-        self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0014", 1214)], (self.WF, "D-0076"))
+        self.assertEqual(schedules("K-0014", 1214), [(self.EVENTS, self.WF)])
         self.assertEqual(requires("K-0014", 1214), [])
 
     def test_ひな形をそのまま写した_conflict_record_なら通る(self):
@@ -1706,7 +1902,7 @@ class PrBodyPatchScheduleTest(unittest.TestCase):
         t = tempfile.TemporaryDirectory()
         self.addCleanup(t.cleanup)
         d = Path(t.name)
-        for rel, text in {self.PATCH: "", check.PR_BODY_PROTECTION: "", **files}.items():
+        for rel, text in {self.PATCH: "", "tools/pr-body-check/protection.mjs": "", **files}.items():
             (d / rel).parent.mkdir(parents=True, exist_ok=True)
             (d / rel).write_text(text, encoding="utf-8")
         return d
@@ -1718,11 +1914,10 @@ class PrBodyPatchScheduleTest(unittest.TestCase):
         item = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": 1179, "wired": wired, "verified": False,
              "wired_by": [{"workflow": wf or self.WF, "job": job, "runs": runs or self.PATCH}]}]}}
-        return check.check_schedule(item, d) + check.check_wiring(item, d)
+        return schedule_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
-        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0001", 1179)], self.PATCH)
-        self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0001", 1179)], (self.WF, "D-0093"))
+        self.assertEqual(schedules("K-0001", 1179), [(self.PATCH, self.WF)])
         self.assertEqual(requires("K-0001", 1179), [])
 
     def test_ひな形をそのまま写した_patch_なら通る(self):
@@ -1734,7 +1929,7 @@ class PrBodyPatchScheduleTest(unittest.TestCase):
         e = self.errors(self.repo({other: self.template()}), wf=other)
         self.assertEqual(len(e), 1, e)
         self.assertIn(self.WF, e[0])
-        self.assertIn("議決 D-0093", e[0])
+        self.assertIn(SCHEDULE_DECISION, e[0])
 
     def test_schedule_を外した写しでは落ちる(self):
         text = self.template().replace('  schedule:\n    - cron: "50 19 * * *"\n', "", 1)
@@ -1750,7 +1945,7 @@ class PrBodyPatchScheduleTest(unittest.TestCase):
         self.assertTrue(any("wired にするには" in x and self.PATCH in x for x in e), e)
 
     def test_ほかの検査を指す項目では落ちる(self):
-        e = self.errors(self.repo({self.WF: self.template()}), runs=check.PR_BODY_PROTECTION)
+        e = self.errors(self.repo({self.WF: self.template()}), runs="tools/pr-body-check/protection.mjs")
         self.assertTrue(any("wired にするには" in x and self.PATCH in x for x in e), e)
 
     def test_落ちても伝わらない写しでは落ちる(self):
@@ -1798,11 +1993,10 @@ class PrBodyEngineWiringTest(unittest.TestCase):
         item = {"id": "K-0001", "_file": "K-0001.yaml", "enforcement": {"level": "deterministic", "solutions": [
             {"kind": "ci_check", "what": "x", "issue": issue, "wired": wired, "verified": False,
              "wired_by": [{"workflow": wf, "job": job, "runs": runs} for wf, job, runs in wired_by]}]}}
-        return check.check_schedule(item, d) + pr_errors(item, d) + check.check_wiring(item, d)
+        return schedule_errors(item, d) + pr_errors(item, d) + check.check_wiring(item, d)
 
     def test_対象に挙げてある(self):
-        self.assertEqual(check.REQUIRED_SCHEDULE[("K-0001", 1182)], self.PROT)
-        self.assertEqual(check.REQUIRED_SCHEDULE_WORKFLOW[("K-0001", 1182)], (self.PROT_WF, "D-0070"))
+        self.assertEqual(schedules("K-0001", 1182), [(self.PROT, self.PROT_WF)])
         self.assertEqual(requires("K-0001", 1182), [(self.ENGINE_TEST, self.ENGINE_WF)])
 
     def test_2_つのひな形をそのまま写したジョブなら通る(self):
@@ -1813,7 +2007,7 @@ class PrBodyEngineWiringTest(unittest.TestCase):
         e = self.errors(d, wired_by=self.WIRED_BY[:1])
         self.assertEqual(len(e), 1, e)
         self.assertIn(f"on.schedule（cron）のある {self.PROT_WF} で", e[0])
-        self.assertIn("議決 D-0070", e[0])
+        self.assertIn(SCHEDULE_DECISION, e[0])
         e = self.errors(d, wired_by=self.WIRED_BY[1:])
         self.assertEqual(len(e), 1, e)
         self.assertIn(f"on.pull_request のある {self.ENGINE_WF} で", e[0])

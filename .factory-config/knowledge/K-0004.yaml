@@ -340,6 +340,10 @@ enforcement:
       issue: 1018
       at: 2026-11-07
       decided_by: committee:D-0026
+      requires_check: []
+      requires_schedule:
+        - runs: tools/sendback-check/protection.mjs
+          workflow: .github/workflows/sendback-protection.yml
       wired: false
       verified: false
     - kind: ci_check
@@ -635,6 +639,10 @@ enforcement:
       issue: 1087
       at: 2026-11-08
       decided_by: committee:D-0039
+      requires_check: []
+      requires_schedule:
+        - runs: tools/sendback-check/protection.mjs
+          workflow: .github/workflows/sendback-protection.yml
       wired: false
       verified: false
     - kind: lint
@@ -879,6 +887,8 @@ enforcement:
       decided_by: committee:D-0059
       requires_check:
         - runs: tools/sendback-check/protection.mjs
+      requires_schedule:
+        - runs: tools/sendback-check/protection.mjs
       wired: false
       verified: false
     - kind: test
@@ -930,6 +940,9 @@ enforcement:
       issue: 1162
       at: 2026-11-08
       decided_by: committee:D-0061
+      requires_check: []
+      requires_schedule:
+        - runs: tools/sendback-check/heartbeat.mjs
       wired: false
       verified: false
     - kind: lint
