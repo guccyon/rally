@@ -427,7 +427,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画・
   /// お気に入りのコーチ（[FavoriteCoachesNotifier.loadForHome]））と、
-  /// アプリバーのお知らせのしるし（[NotificationsNotifier.loadForHome]。読めなければしるしを出さないだけ）を
+  /// アプリバーのお知らせのしるし（[NotificationsNotifier.loadForHome]。読めなければしるしを出さないだけ）と、
+  /// 「次のレッスンを予約する」の入口のための受けたレッスン（[LessonCompletionsNotifier.loadForHome]。読めなければ入口を出さないだけ）を
   /// 並べて読む。どれかが失敗しても他の欄は出す（失敗した欄を [StudentFlowState.homeFailures] に入れるだけで、失敗の文言は出さない）。
   /// 受講権の 404 は失敗ではなく、月額契約の前（[SubscriptionState.noEntitlement]）
   Future<void> _loadHome() async {
@@ -453,6 +454,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         ref.read(favoriteCoachesProvider.notifier).loadForHome,
       ),
       ref.read(notificationsProvider.notifier).loadForHome(),
+      ref.read(lessonCompletionsProvider.notifier).loadForHome(),
     ]);
     if (!ref.mounted) return;
     state = state.copyWith(homeFailures: Set.unmodifiable(failures));

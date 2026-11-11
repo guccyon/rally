@@ -114,6 +114,7 @@ void main() {
       'listMyVideos',
       'listMyNotifications',
       'listFavoriteCoaches',
+      'listMyLessonCompletions',
     ]);
     expect(find.text('ホーム'), findsOneWidget);
     expect(find.text('山田さん、こんにちは'), findsOneWidget);
@@ -608,6 +609,60 @@ void main() {
     expect(api.requests.whereType<Sport>().last, Sport.tennis);
   });
 
+  testWidgets('レッスンを受け終えた生徒には「次のレッスンを予約する」を出し、押すと生徒のスポーツのスロットを探す。月額の欄はそのまま', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      entitlement: entitlement,
+      lessonCompletions: [Fixtures.lessonCompletions.first],
+    );
+    final container = await pumpHome(tester, api);
+
+    expect(find.text('次のレッスン'), findsOneWidget);
+    expect(
+      find.text('レッスンおつかれさまでした。続けて受けられるよう、次のレッスンも予約しておきましょう。'),
+      findsOneWidget,
+    );
+    // 月額契約の欄と、契約したプラン・残りの回数は今までどおり
+    expect(find.text('今月のビデオ通話'), findsOneWidget);
+    expect(find.text('月 2 回のうち残り 1 回'), findsOneWidget);
+    expect(find.text('プラン: スタンダード'), findsOneWidget);
+    api.calls.clear();
+
+    await tapText(tester, '次のレッスンを予約する');
+
+    expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
+    expect(api.calls.first, 'searchSlots');
+    expect(api.requests.whereType<Sport>().last, Sport.tennis);
+  });
+
+  testWidgets('受けたレッスンがまだない生徒には「次のレッスンを予約する」を出さない。月額契約の前の文言はそのまま', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(lessonCompletions: const []);
+    await pumpHome(tester, api);
+
+    expect(find.text('次のレッスン'), findsNothing);
+    expect(find.text('次のレッスンを予約する'), findsNothing);
+    expect(
+      find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('受けたレッスンを読めなければ「次のレッスンを予約する」を出さず、失敗の文言も出さない', (tester) async {
+    final api = FakeStudentApi(
+      entitlement: entitlement,
+      failures: {'listMyLessonCompletions': Fixtures.unreachable},
+    );
+    final container = await pumpHome(tester, api);
+
+    expect(find.text('次のレッスンを予約する'), findsNothing);
+    expect(find.textContaining('読み込めませんでした'), findsNothing);
+    expect(container.read(studentFlowProvider).errorMessage, isNull);
+    expect(find.text('月 2 回のうち残り 1 回'), findsOneWidget);
+  });
+
   testWidgets('アプリバーの「チャット」に未読の数の合計のしるしを付け、スレッドを開いて既読にしてホームに戻ると消える', (
     tester,
   ) async {
@@ -749,6 +804,7 @@ void main() {
       'listMyVideos',
       'listMyNotifications',
       'listFavoriteCoaches',
+      'listMyLessonCompletions',
     ]);
     // ホームの画面には「ホーム」の入口を出さない
     expect(find.byTooltip('ホーム'), findsNothing);
