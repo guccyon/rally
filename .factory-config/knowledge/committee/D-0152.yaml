@@ -1,0 +1,65 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0152
+pr: https://github.com/guccyon/rally/pull/1395
+decided_at: '2026-11-11'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0026 の enforcement は議決 D-0151 の K-0026 への test の案（merge_decided が検査と裁きの後か、採用したコードの指摘を
+    fix で閉じてからマージしたか、C-0012 の並びで落ちるか）をそのまま入れており、議決と矛盾しません。
+  - 本文の指摘を K-0012 の recheck.mjs に任せ、is_body_only の線で数えないと明記しているので、K-0012 と担保が重複せず役割が分かれています。
+  - 'requires_check の形と wired: false・verified: false の書き方は K-0012・K-0016 の pr-body-engine.yml
+    への同じ未配線の扱いと揃っており、README の決まり（D-0116 の requires_check 必須、D-0034 の verified_by の条件）にも合っています。'
+  - README の一覧に K-0026 を足したのは test_check.py の照合に合わせた妥当な扱いですが、一覧の前置きが「2026-11-08 の時点で」のままなので、次に直すときに日付を
+    2026-11-11 に改めるとよいです。
+  - D-0151 で指摘した scope.work の dev.review.inspect と roles の食い違いはこの変更セットでも残っているので、次に
+    K-0026 を直す変更セットで揃えてください。
+  - 根拠は C-0012 の 1 件だけで担保も未配線・未確認なので、confidence は hypothesis のままが妥当で、specs の用語や業務ルールにも触れていません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - K-0026 に足した enforcement は decided_by の committee:D-0151 と issue 1392 に辿れ、D-0151
+    の K-0026 の test の案と中身が合っています。
+  - テストで組み直した列の時刻（merge_decided 14:44:39、inspector_approved の 4 秒後の 14:47:58 にマージ）と採用した指摘
+    3 件は、事例記録 C-0012 の出来事の節と一致しています。
+  - 'テストは C-0012 を組み直した列に当てただけで、本物のイベント列には当てていないため、verified: false と verified_by なしにしたのは
+    README の決まりに合い、確かさを正直に書いています。'
+  - 'Engine の judgment.judged が指摘の箇所を今は載せないことや、ひな形が .github/workflows/ に写されるまで PR
+    ごとに走らないことを書いており、wired: false の理由が辿れます。'
+  - 担保の案を記録しただけで主張の根拠は C-0012 の 1 件のままなので、confidence は hypothesis のまま据え置くのが妥当で、上げるべきではありません。
+  - 差分に出てくるのは PR・Issue・議決・事例の番号、イベント名、ファイルの道だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0151 で決めた K-0026 の test の案をそのまま入れたもので、イベント列の順だけを見る線は引きやすく、C-0012 の並びで落ち、正しい並びで通り、線を外すと落ちることまで確かめているので、担保として妥当です。
+  - 既存の定義の二重持ちを見つける lint を担保の対象から外し、マージの順序の検査に絞っているのは、D-0151 の担保の票で挙げた費用と誤検知の見立てと合います。
+  - 'requires_check に tools/pr-body-check/merge-order.test.mjs と .github/workflows/pr-body-engine.yml
+    を書き、ひな形を写していないので wired: false、本物のイベント列に当てていないので verified: false と正直に書いており、README
+    の決まりと check.py の照合に合います。'
+  - 'Engine の judgment.judged は指摘の箇所と mechanical を今は載せず、本物の記録に当てるときは Judgment の artifact
+    から手で足す必要があるので、verified: true にする前に Engine の payload にこれらを載せるか、足す手順を道具に組み込むべきです。'
+  - 箇所が分からない指摘をコードの指摘として数える線は取りこぼしを防ぐ側に倒していますが、誤って落ちる例が出たら本文だけの指摘の扱いを K-0012 の recheck.mjs
+    と照らして直すべきです。
+  - 根拠は C-0012 の 1 件だけで担保も未配線・未確認なので、K-0026 の確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - 'この変更セットは議決 D-0151 で決めた K-0026 の test の案を入れたと記録するだけで、wired: false・verified: false
+    と正直に書いているので、主張の範囲は広がっていません。'
+  - merged_without_code_fix は採用した機械的に直せるコードの指摘をすべてマージ前に直す決まりとして働くので、D-0151 の反対票が指摘した「should
+    をマージ後に回すのが意図した決まりである場合」が反例になり得ます。配線する前に invalidate_when の 2 つ目の集計で確かめるべきです。
+  - 箇所が分からない指摘をコードの指摘として数えるため、今の Engine の judgment.judged（箇所を載せない）にそのまま当てると、本文だけの指摘でも誤って落ちる恐れがあります。本物の記録に当てて
+    verified にするときは、defect を足した列と足さない列の両方で誤検知を確かめるべきです。
+  - 'INDEX.md の担保の列が wired: false のまま deterministic と出るのは README に書いた今の決まりどおりで、README
+    の一覧に K-0026 を足したのも test_check.py と合わせる決まりに沿っています。'
+  - 根拠は C-0012 の 1 件だけで、テストも組み直した列で確かめただけなので、confidence は hypothesis のままが妥当で、上げるべきではありません。
+  - 出てくるのは PR・Issue・イベント名・時刻・ファイルの道だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+enforcement: []
