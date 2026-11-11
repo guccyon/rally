@@ -1,0 +1,30 @@
+id: K-0026
+theme: 6
+kind: causal
+statement: >-
+  supervisor がマージの判断（supervisor.merge_decided）を変更のファイルの分類（表）だけで検査と裁きの前に出し、採用した検査の指摘のうち
+  コードのもの（should）を「続きのジョブか差し戻しで直す」としてマージ後に回すと、検査が見つけた欠陥（既存の定義の二重持ちなど）を直さないまま
+  auto でマージし、直す作業が差し戻しとして後に残る（C-0012 では merge_decided（code_change=auto）が検査の前に出て、inspector_approved の 4 秒後に
+  マージされ、採用した inspection の指摘 3 件が宿題として残った）。rubric のゲートが shadow で検査に止める力がないことと、既存の定義の
+  二重持ちを機械で見つける検査がないことが、この流れを素通りさせる条件になっている。本文の指摘の側の同じ型は K-0012 が書く。根拠はこの 1 件だけ。
+scope:
+  work: [dev.review.inspect, dev.review.judge]
+  artifacts: [PR.code]
+  request_form: [ticket]
+  roles: [supervisor, judge]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0012
+  - pr: 982
+  - event: "case.analyzed:644507"
+status: active
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0012, K-0004, K-0003]
+invalidate_when:
+  - "merge_decided（auto）が検査と裁きの後に出るようになり、採用した機械的に直せるコードの指摘を fix ジョブで直してからマージするようになった"
+  - "採用した should のコードの指摘をマージ後に回した PR を集計して、宿題が差し戻しとして残ったものが少数だと分かった"
+  - "rubric のゲートが shadow から外れ、採用した指摘があればマージが止まるようになった"
+decided_by: committee:D-0151
