@@ -977,7 +977,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0014", 1208): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1295): [("tools/conflict-check/test_schema_ci.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1297): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
-                          ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
+                          ("K-0023", 1383): [("tools/conflict-check/test_open_pr.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):

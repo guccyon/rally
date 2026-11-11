@@ -26,5 +26,5 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0018 | 6 | causal | hypothesis | active | context | 2026-11-08 | 2026-12-08 | 契約（specs/contracts）の変更と 2 つ以上のアプリ（apps/*）をまたぐ機能のチケットを起こすときに、契約の変更を先行の子チケットにし、 各ア |
 | K-0020 | 6 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | 仮決めの escalate で人の判断を待つ PR が衝突の多いファイルに触っているのに、待つ間に同じファイルに触る次の変更の投入を止めないと、 待ちの間に既定 |
 | K-0022 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | どのチケットも同じ場所に追記する共有ファイル（apps/backend/README.md の機能ごとの節、apps/backend/crates/server |
-| K-0023 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 実装のジョブが PR を開く前に、最新の既定ブランチを同じセッションで取り込んで衝突を確かめないと、実装の間に main が進んだときに PR は開いた時点で衝 |
+| K-0023 | 6 | causal | hypothesis | active | deterministic | 2026-11-11 | 2026-12-11 | 実装のジョブが PR を開く前に、最新の既定ブランチを同じセッションで取り込んで衝突を確かめないと、実装の間に main が進んだときに PR は開いた時点で衝 |
 | K-0024 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | よく衝突するファイル（apps/backend/README.md・apps/backend/crates/server/src/lib.rs・specs/co |
