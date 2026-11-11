@@ -270,7 +270,8 @@ export interface paths {
          *         `coach_leave`。生徒が自分でしたキャンセルは理由を残さないので null（student-app の `cancelBooking` の本文の
          *         `reason` は保存しない）
          *       - `coach_leave`: `cancel_reason` が `coach_leave` のとき、そのお休みの記録（`CoachLeave`。期間 `from`・`to`・生徒への
-         *         一言 `note`・操作した本部のアカウント `created_by`・時刻 `created_at`）。それ以外は null
+         *         一言 `note`・操作した本部のアカウント `created_by` とその表示名 `created_by_display_name`（引けないときは載せない）・
+         *         時刻 `created_at`）。それ以外は null
          *     - 理由が残る前のキャンセル: 理由・判定の記録がないキャンセル（この欄を足す前のキャンセルを含む）は、`cancel_reason`・
          *       `coach_leave`・`consumes_quota` が null になる（欄は省かず null）。コーチのお休みでキャンセルした予約は、お休みの記録と
          *       予約の結びつき（#455 の `startCoachLeave` から残している）から出すので、この欄を足す前にキャンセルしたものも
@@ -4016,6 +4017,11 @@ export interface components {
              * @description 操作した本部のアカウント
              */
             created_by: string;
+            /**
+             * @description 操作した本部のアカウントの表示名。`getBooking` の `status_changes[].coach_leave` だけが載せる（本部の画面で ID を
+             *     出さずに「お休みにした本部」を読むため。#1030）。アカウントが引けないときと、`startCoachLeave` の応答では載らない
+             */
+            created_by_display_name?: string;
             /** Format: date-time */
             created_at: string;
         };
