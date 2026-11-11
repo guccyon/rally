@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0145
+pr: https://github.com/guccyon/rally/pull/1368
+decided_at: '2026-11-11'
+outcome: enforce
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - 'この差分は K-0012 の enforcement.solutions に議決 D-0106 の ci_check の案のうちワーカーの権限で入れた分の記録を
+    1 件足すだけで、statement・scope・evidence・confidence・invalidate_when とトップの decided_by:
+    committee:D-0033 は変えておらず、README の「担保した知見も消さず solutions に残す」決まりに合っています。'
+  - '書いた中身は D-0106 の enforcement の ci_check の案（写し・pr-body-engine-test を必須のチェックにする・engine-test
+    の 3 項目の wired_by）と一致しており、kind: ci_check に必須の requires_check も D-0116 の決まりどおりに書かれています。'
+  - requires_check の 3 項目と PrBodyEngineTestsWiringTest は issue 1197 の test の記録と重なりますが、what
+    がその両方で同じテストを走らせると明記し、別の議決（D-0100 と D-0106）の記録として分けているので、重複というより同じ写しへの配線をそろえる形として矛盾はありません。
+  - 'ジョブの名前 engine-test と必須のチェックの名前 pr-body-engine-test の書き分けは K-0001 の記録（ひな形の engine-test
+    に name: pr-body-engine-test を付けた）と合っており、D-0106 の反対の票が心配した名前の食い違いは起きていません。'
+  - 'wired: false・verified: false と what の「まだ配線されておらず効き目は確かめていない」が一致し、invalidate_when
+    もまだ満たされないので、K-0012 は active・hypothesis のままが妥当で確かさを変える理由はありません。'
+  - 差分は工場の担保の記録だけで製品の用語や業務ルールを定めておらず、specs/ の glossary.yaml・context-map.yaml と重なるところもありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '足した ci_check の項目は decided_by: committee:D-0106 を指していて、D-0106 の enforcement の
+    2 つ目の ci_check の案（写し・pr-body-engine-test を必須のチェックにすること・3 項目の wired_by・PrBodyEngineTestsWiringTest
+    での照らし）と中身が合うので、議決まで辿れます。'
+  - 'what に書いた PR #1282 は D-0106 の pr と合い、issue 1284 とあわせて出どころを辿れます。'
+  - '確かめたのは test_check.py の PrBodyEngineTestsWiringTest で組んだ写しの上だけで、写しも必須のチェックもまだなく
+    PR ごとには走っていないと書き、wired: false・verified: false にしているので、効き目を言い過ぎていません。'
+  - 担保の記録を 1 件足しただけで statement・evidence・confidence・invalidate_when は変えておらず、本物のイベント列での確かめもないので、確かさは
+    hypothesis のままが妥当です。
+  - 差分にあるのは議決・Issue・PR の番号、道具とワークフローの道、ジョブとチェックの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0106 の ci_check の案のうちワーカーの権限で入れた分の記録を
+    1 件足すだけで、statement・scope・confidence・invalidate_when は変えていません。
+  - kind が ci_check の解決策に requires_check を 3 つのテストと .github/workflows/pr-body-engine.yml
+    で明示しており、D-0116 の requires_check の必須の決まりと D-0077 の requires_check_unwired の照らしに沿っています。
+  - '3 つのテストを pull_request でも走るジョブから呼ぶ wired_by の項目がなければ wired: true にできない線は、ワークフローの写しの中身だけで機械的に引けるので、言い過ぎを止める決定論の担保として作る費用に見合っています。'
+  - 'ワークフローの写しと必須のチェックはまだなく PR ごとに走っていないので、wired: false・verified: false のままが正しく、K-0012
+    の確かさは hypothesis のままが妥当です。'
+  - '残る穴は、建設者が写したあとに issue 1131・1197・1205 とこの解決策の wired をまとめて揃え忘れても今の check.py は落とさない点で、同じ
+    workflow を requires_check に持つ解決策の wired の食い違いや写しがあるのに wired: false のままの状態は機械で見つけられます。'
+  - 必須のチェックの名前 pr-body-engine-test とジョブ engine-test の対応は D-0106 でも食い違いが指摘されており、protection.mjs
+    で照らす名前とひな形のジョブの name を test で揃えておくと建設者の登録違いを前もって止められます。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この差分は K-0012 の enforcement.solutions に D-0106 の ci_check の案のうちワーカーの権限で入れた分の記録を
+    1 件足すだけで、statement・scope・confidence・invalidate_when は変えていないので、主張の範囲は広がっていません。
+  - 'wired: false・verified: false で、what にも「まだ配線されておらず効き目は確かめていない」とあるので効き目を言い過ぎておらず、確かさは
+    hypothesis のままが妥当です。'
+  - 新しい項目の requires_check と PrBodyEngineTestsWiringTest での確かめは issue 1197 の test の項目とほぼ同じなので、次に
+    K-0012 を直すときは、この ci_check で新たに足したのが check.py にこの解決策を挙げたことだけだと分かるように what を短くしてください。
+  - 必須のチェックの名前を pr-body-engine-test、ジョブを engine-test と書き分けており、D-0106 の反対の票が挙げた名前の取り違えの反例には応えていますが、issue
+    1131・1205 の項目はまだ engine-test を必須のチェックと書いているので、配線する変更セットで揃えてください。
+  - '反例として、check.py の照らしは wired_by にジョブが書かれているかを見るだけで、pr-body-engine-test が本当に必須のチェックに登録されたかは
+    protection.mjs に頼っており、check.py 自体もまだ PR ごとに走っていないので、wired: true にするときはこの 2 つが走っていることを先に確かめてください。'
+  - D-0106 の反対の票が求めた ci.test.mjs 自身の見張りを外す書き換えへの手当てはこの差分でも書かれていないので、次の変更セットで応えてください。
+  personal_data: false
+enforcement:
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: ci_check
+  proposal: 'tools/knowledge-enforcement-check/check.py に、requires_check の workflow（.github/workflows/pr-body-engine.yml）が実在し、そのジョブが挙げた検査を
+    pull_request で呼んでいるのに、その workflow を requires_check に持つ解決策（issue 1131・1197・1205・1284
+    など）が wired: false のまま残っている、または同じ workflow を持つ解決策の間で wired が食い違っていれば requires_check_wired_stale
+    で落とす照らしを足し、test_check.py で揃え忘れの写しが落ちることを確かめる。'
+- knowledge: K-0012
+  level: deterministic
+  solution_kind: test
+  proposal: tools/pr-body-check/ci.test.mjs で、ひな形 tools/pr-body-check/ci/pr-body-engine.yml
+    の engine-test ジョブの name（GitHub の必須チェックの名前になるもの）が protection.mjs で照らす pr-body-engine-test
+    と一致することを照らし、名前を変える書き換えを落とす。
