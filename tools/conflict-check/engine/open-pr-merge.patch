@@ -1,0 +1,55 @@
+diff --git a/orchestrator/worker/entrypoint.sh b/orchestrator/worker/entrypoint.sh
+index 3a86eb5..9c03dc6 100755
+--- a/orchestrator/worker/entrypoint.sh
++++ b/orchestrator/worker/entrypoint.sh
+@@ -382,6 +382,50 @@ if [ -n "${CONTINUE_BRANCH}" ]; then
+ else
+ stage_all
+ git commit -q -m "$(printf 'feat: %s (#%s)\n\n工場のヘッドレスワーカー（job %s）による実装。%s\n\n%s #%s' "${TITLE}" "${ISSUE_NUMBER}" "${JOB_ID}" "${INCOMPLETE:+ 途中終了（claude exit ${CLAUDE_RC}）のため未完了。}" "${LINK_KW}" "${ISSUE_NUMBER}")"
++# PR を開く前に、最新の既定ブランチを同じセッションで取り込む（rally の知見 K-0023、議決 D-0148）。取り込まずに開くと、実装の間に既定ブランチが
++# 進んでいたとき PR は開いた時点で衝突し、文脈を持たない衝突の解消のジョブ（tier-large）で解くことになる（rally C-0011: PR #345 は開いて 4 秒後に衝突し、
++# 解消のジョブが実装より高くついた）。衝突したら同じエージェントのセッション（STATE_ARGS）で解き、解けなければ PR を開かずに失敗（conflict_unresolved）で終える。
++# 作業は push しないが、ボリュームの diff.patch（save_handoff）に残る。既定ブランチを取れない（通信の失敗）ときは数回やり直し、取れなければ取り込まずに開く（前と同じ）
++FETCHED=""
++for wait in 0 2 4 8; do
++  sleep "${wait}"
++  git fetch --quiet origin "${DEFAULT_BRANCH}" && { FETCHED="1"; break; }
++done
++OPEN_CONFLICTS=""
++if [ -z "${FETCHED}" ]; then
++  echo "[worker] fetch ${DEFAULT_BRANCH} failed; opening the PR without merging it"
++elif ! git merge --no-edit -q "origin/${DEFAULT_BRANCH}" >/dev/null 2>&1; then
++  OPEN_CONFLICTS=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
++  echo "[worker] merge ${DEFAULT_BRANCH} before opening the PR: conflicts=[${OPEN_CONFLICTS}]"
++  if [ -n "${OPEN_CONFLICTS}" ]; then
++    RESOLVE_PROMPT="# PR を開く前の既定ブランチの取り込み
++実装をコミットし、PR を開く前に既定ブランチ（${DEFAULT_BRANCH}）の最新を取り込んだら衝突しました（取り込みは途中で、衝突の印が残っています）: ${OPEN_CONFLICTS}
++Issue #${ISSUE_NUMBER} の実装はすでに済んでいます。範囲を広げず、衝突の解消と、取り込んだ変更に合わせて壊れたビルド・テストの直しだけを行ってください。
++両方の変更の意図を残して解消し、衝突の印（<<<<<<< ======= >>>>>>>）を残さないこと。CHANGELOG.md の追記どうしの衝突は、両方の行を残します。取り込みを中止（git merge --abort）したり、ブランチを作り直したりしないこと。git commit / push / PR 作成はこちらで行うので実行しない。"
++    RESOLVE_TIMEOUT=()
++    if [ -n "${JOB_DEADLINE:-}" ]; then
++      REMAIN=$(( JOB_DEADLINE - $(date +%s) - ${POST_RESERVE_SEC:-300} ))
++      [ "${REMAIN}" -lt 60 ] && REMAIN=60
++      RESOLVE_TIMEOUT=(timeout --kill-after=20 "${REMAIN}")
++    fi
++    set +e
++    RESOLVE_OUT=$(AGENT_HEARTBEAT_FD=3 "${RESOLVE_TIMEOUT[@]}" "${AGENT[@]}" exec implement --tier "${MODEL_TIER:-tier-large}" --max-turns "${MAX_TURNS}" "${STATE_ARGS[@]}" <<<"${RESOLVE_PROMPT}" 3>&2 2>>/work/claude.err)
++    echo "[worker] claude (merge ${DEFAULT_BRANCH}) exit=$? at=$(date -u +%H:%M:%S)"
++    set -e
++    COST=$(jq -nr --arg a "${COST}" --arg b "$(jq -r '.cost_usd // 0' <<<"${RESOLVE_OUT}" 2>/dev/null)" '(($a|tonumber?) // 0) + (($b|tonumber?) // 0)')
++    TURNS=$(jq -nr --arg a "${TURNS}" --arg b "$(jq -r '.num_turns // 0' <<<"${RESOLVE_OUT}" 2>/dev/null)" '(($a|tonumber?) // 0) + (($b|tonumber?) // 0)')
++  fi
++  stage_all
++  # 衝突の印が残っていればコミットしない。取り込みを終えられなかった（中止した・印が残った）ら、既定ブランチが HEAD に入らないので下で落とす
++  if ! { [ -n "${OPEN_CONFLICTS}" ] && git grep -qE '^(<<<<<<<|>>>>>>>) ' -- ${OPEN_CONFLICTS} 2>/dev/null; } && [ -f .git/MERGE_HEAD ]; then
++    git commit -q --no-edit || true
++  fi
++  if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
++    echo "[worker] merge ${DEFAULT_BRANCH} unresolved; not opening the PR"
++    echo "FACTORY_RESULT:$(jq -nc --argjson usage "${USAGE}" --arg cost "${COST}" --arg model "${MODEL}" --arg turns "${TURNS}" --arg c "${OPEN_CONFLICTS}" '{pr_url:null, reason:"conflict_unresolved", conflicts:$c, usage:$usage, cost_usd:($cost|tonumber), model:$model, num_turns:($turns|tonumber)}')"
++    exit 5
++  fi
++fi
+ git push -q -u origin "${BRANCH}:${BRANCH}"
+ 
+ PR_BODY=$(cat <<EOF

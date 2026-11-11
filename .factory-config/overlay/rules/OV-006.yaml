@@ -1,6 +1,6 @@
 id: OV-006
 title: "工場のワーカーが作った PR の本文に「## 知見」を書き、後の作業に効く事実を残す"
-state: shadow
+state: adopted
 knowledge_stage: rubric
 confidentiality: product
 severity: should

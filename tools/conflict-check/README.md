@@ -1,6 +1,6 @@
 # 衝突の続きのジョブの検査
 
-既定ブランチとの衝突で supervisor が積む続きのジョブ（continue の reason=conflict）の積み方を、設定 `.factory-config/continuation.yaml` の `conflict` に照らして決定論で（LLM を使わずに）見る。知見 `K-0010`（`.factory-config/knowledge/K-0010.yaml`）の担保で、委員会の議決 `D-0013` と Issue #954 で作った。`events.py` の rule `missing_conflict_files` は知見 `K-0014`（衝突したファイルの記録）の担保（議決 `D-0049`、Issue #1135。`continue.enqueued` の欄 `conflict_files` を読むのは議決 `D-0101`（Issue #1208 の起票時の番号は `D-0073`）、Issue #1208）。`schema.py` を直近の窓のイベント列に対して定期に走らせるひな形 `ci/conflict-schema.yml` も `K-0014` の担保（議決 `D-0101`（Issue #1207 の起票時の番号は `D-0073`）、Issue #1207）。同じひな形の `conflict-record` のジョブ（`record-events.sql` で読んだ直近の窓に積まれた衝突の続きのジョブを `events.py --record-only` で照らす）も `K-0014` の担保（議決 `D-0076`（Issue #1214 の起票時の番号は `D-0074`）、Issue #1214）。`events.py` の rule `mechanical_without_verify` と、同じファイルの機械的な解消の回数は知見 `K-0015`（検査を通さない機械的な解消の繰り返し）の担保（議決 `D-0078`（Issue #1220 の起票時の番号は `D-0077`）、Issue #1220）。
+既定ブランチとの衝突で supervisor が積む続きのジョブ（continue の reason=conflict）の積み方を、設定 `.factory-config/continuation.yaml` の `conflict` に照らして決定論で（LLM を使わずに）見る。知見 `K-0010`（`.factory-config/knowledge/K-0010.yaml`）の担保で、委員会の議決 `D-0013` と Issue #954 で作った。`events.py` の rule `missing_conflict_files` は知見 `K-0014`（衝突したファイルの記録）の担保（議決 `D-0049`、Issue #1135。`continue.enqueued` の欄 `conflict_files` を読むのは議決 `D-0101`（Issue #1208 の起票時の番号は `D-0073`）、Issue #1208）。`schema.py` を直近の窓のイベント列に対して定期に走らせるひな形 `ci/conflict-schema.yml` も `K-0014` の担保（議決 `D-0101`（Issue #1207 の起票時の番号は `D-0073`）、Issue #1207）。同じひな形の `conflict-record` のジョブ（`record-events.sql` で読んだ直近の窓に積まれた衝突の続きのジョブを `events.py --record-only` で照らす）も `K-0014` の担保（議決 `D-0076`（Issue #1214 の起票時の番号は `D-0074`）、Issue #1214）。`events.py` の rule `mechanical_without_verify` と、同じファイルの機械的な解消の回数は知見 `K-0015`（検査を通さない機械的な解消の繰り返し）の担保（議決 `D-0078`（Issue #1220 の起票時の番号は `D-0077`）、Issue #1220）。`test_open_pr.py` と `open_pr_harness.py`・`engine/open-pr-merge.patch` は知見 `K-0023`（PR を開く前の既定ブランチの取り込み）の担保（議決 `D-0149`、Issue #1383。下の「PR を開く前の既定ブランチの取り込み」）。
 
 PR #659（事例 `C-0005`）では、`CHANGELOG.md` の同じ場所の衝突のたびに、上限なしで tier-large の続きのジョブが 21 回積まれ、セッションを引き継いだ 1 回ごとの費用が $1.95 から $10.36 に増えた。この検査は、その積み方を設定の線にし、Engine の本物の処理と、起きた記録（制御プレーンのイベント列）がそれに合っているかを見る。
 
@@ -274,3 +274,36 @@ todo で飛ばしたテスト（`test_engine.py` の `todo_while_legacy` と `te
 同じひな形のジョブ `conflict-sql` は、Postgres のサービスコンテナ（`postgres:16`。合言葉はジョブの中だけの使い捨て）と psql（`postgresql-client`）を用意して `DATABASE_URL` と `CONFLICT_SQL_REQUIRED=true` を渡し、`test_schema_ci.py` の `WindowSqlTest`・`RecordSqlTest` を `unittest discover -k` で走らせる（知見 `K-0014` の担保。議決 `D-0111`（PR #1294）、Issue #1295）。`conflict-check` のジョブには Postgres がないのでこの 2 つは飛ぶが、`conflict-sql` では psql か `DATABASE_URL` がなければ `setUpClass` が `conflict_sql_unavailable` で落とし、飛ばしで緑にならない。`test_schema_ci.py` の `SqlRequiredTest` がその落ち方を、`test_ci.py` の `SqlJobTest` がジョブの形（絞り込みなし・サービスコンテナ・psql を入れる手順・`DATABASE_URL` と `CONFLICT_SQL_REQUIRED`・`-k` の名前が今のテストの組の名前であること）と、`DATABASE_URL` がないと手順が落ちることを見る。写すときは `conflict-check` と一緒に `.github/workflows/conflict-check.yml` に写り、`conflict-sql` も必須のチェックにする（建設者）。`K-0014` の issue 1295 の項目を `wired: true` にするときは、`wired_by` に `conflict-sql` のジョブ（`conflict-check` のジョブではない）を書く。`tools/knowledge-enforcement-check/check.py` が、`CONFLICT_SQL_REQUIRED=true` を渡して `test_schema_ci.py` を呼ぶ pull_request のジョブを指す項目がなければ `requires_check_unwired` で落とす（議決 `D-0135`、Issue #1344。`tools/knowledge-enforcement-check/README.md` の「PR ごとのひな形のジョブで走らせる試験」）
 
 写したら、K-0010 の ci_check の解決策（issue 1034）を `wired: true` にし、`wired_by` に `{workflow: .github/workflows/conflict-check.yml, job: conflict-check, runs: tools/conflict-check/test_watch.py}` と `runs: tools/conflict-check/test_engine.py` の 2 項目を書く。`tools/knowledge-enforcement-check/check.py` が、1 つのジョブからこの 2 つのテストをすべて呼ぶ項目がなければ落とす（議決 `D-0042`、Issue #1100。`check.py` の README の「呼ぶ検査の必須」）。
+
+## PR を開く前の既定ブランチの取り込み（`test_open_pr.py`）
+
+知見 `K-0023`（`.factory-config/knowledge/K-0023.yaml`）の担保（議決 `D-0149`（Issue #1383 の起票時の番号は `D-0148`。PR #1382）、Issue #1383）。Engine の `orchestrator/worker/entrypoint.sh` は、続きのジョブでは既定ブランチを取り込むが、新しい PR では取り込まずに push して PR を開く。実装の間に既定ブランチが進んでいると PR は開いた時点で衝突し、文脈を持たない衝突の解消のジョブ（tier-large）で解くことになる（事例 `C-0011`: PR #345 は開いて 4 秒後に `continue.enqueued`(reason=conflict) が出て、解消のジョブは実装より高かった）。
+
+```sh
+ENGINE_DIR=/path/to/factory-engine python3 -B -m unittest discover -s tools/conflict-check -p 'test_open_pr.py' -v
+python3 -B tools/conflict-check/open_pr_harness.py order <entrypoint.sh>                                    # 新しい PR の道の中の fetch・取り込み・push・gh pr create の行の位置
+python3 -B tools/conflict-check/open_pr_harness.py run <entrypoint.sh> --main conflict --agent leave        # 動かした結果（PR を開いたか・その時点で main の最新を含むか・終了コード）
+```
+
+Engine は別のリポジトリなので、Engine に当てる差分を `engine/open-pr-merge.patch` に置いた。新しい PR の道で、実装をコミットしたあと push と `gh pr create` の前に次を行う。
+
+- origin の既定ブランチを fetch する（通信の失敗は 0・2・4・8 秒の間をおいて 4 回まで。取れなければ取り込まずに開く。前と同じで、衝突は続きのジョブで解く）
+- 既定ブランチを取り込む（`git merge --no-edit origin/${DEFAULT_BRANCH}`）。衝突したら、同じエージェントのセッション（`STATE_ARGS` の `--state-dir`）で衝突だけを解かせる。費用と turns は実装の分に足す
+- 衝突の印が残ったか、取り込みを中止された（既定ブランチの最新が HEAD に入っていない）ら、push も PR 作成もせず、`FACTORY_RESULT`（`pr_url` は null、`reason` は `conflict_unresolved`、`conflicts` は衝突したファイル）を出して終了コード 5 で終える（dispatcher は `failed`（`exit=5`）にする）。作業はボリュームの `diff.patch`（`save_handoff`）に残る
+
+`open_pr_harness.py` が、`entrypoint.sh` の `stage_all` と新しい PR の道（`[worker] continued pr=` の echo のあとの `else` から、`gh pr create` のあとの最初の `fi` の前まで）をそのまま bash で動かす。一時の bare リポジトリを origin にして既定ブランチ（main）を浅く（`--depth 1`）クローンし、作業のブランチに実装の変更を置いてから、main を進める（`none` = 進めない、`advance` = ほかのファイル、`conflict` = 実装と同じ行）。`gh` は偽物で、`gh pr create` が呼ばれた時点の origin で PR のブランチが push 済みか・main の最新を含むか・衝突の印を含むかを記録する。エージェントも偽物で、`resolve` = 両方の行を残して解く、`leave` = 何もしない、`abort` = 取り込みを中止する。変えるのはファイルの置き場（`/work/` を一時ディレクトリに）だけ。bash・git・jq を使う。
+
+| テスト | 確かめること |
+|---|---|
+| (0) | 新しい PR の道と `stage_all` を取り出せる。置き場が変わったら落ちる |
+| (1) 取り込みが gh pr create より前にある | 新しい PR の道で、fetch → 既定ブランチの取り込み → push → `gh pr create` の順に行がある。main が進んだとき、`gh pr create` の時点で PR のブランチが main の最新を含み、エージェントは呼ばない |
+| (2) 取り込みが衝突したまま PR を開かない | 衝突をエージェントが解けない・取り込みを中止したとき、`gh pr create` も push もせず、終了コード 0 以外と `reason: conflict_unresolved` で終える |
+| (3) | 衝突は同じセッション（`--state-dir`）で 1 回解かせてから、main の最新を含み衝突の印のないブランチで開く |
+| (4) | main が進んでいなければ、エージェントを呼ばずにそのまま開く |
+
+- `PatchedEngineTest` は差分を Engine の `entrypoint.sh` の写しに当てて（もう入っていればそのまま）動かす。todo にしない。差分が当たらなければ落ちる
+- `EngineTest` は Engine のチェックアウトの `entrypoint.sh` をそのまま動かす。今の Engine の形（新しい PR の道に fetch も取り込みもない）のときだけ、`test_engine.py` の `todo` で飛ばして件数に数え、`K-0023` の `review_by`（2026-12-11）を過ぎたら落とす（期限の日までは todo、翌日から落ちる。`CONFLICT_CHECK_TODAY` で今日を差し替えられる。`test_events.py` の `EngineFinishedTest` と同じ。議決 `D-0043`）。Engine が今の形から変わったら、その版からは todo にならず線に合わないと落ちる
+- 2026-11-11 の Engine（`main` の `34a53af`）と `ENGINE_REF`（`2490db6`）のどちらでも、`EngineTest` の (1)〜(3) は todo（(0) と (4) は通る）、`PatchedEngineTest` はすべて通る。解けないときの `exit 5` を消した写しでは (2) が落ちることを確かめた
+- Engine のチェックアウトの渡し方と飛ばし方は `test_engine.py` と同じ。ひな形 `ci/conflict-check.yml` の `unittest discover -s tools/conflict-check -p 'test_*.py'` で一緒に走る
+
+配線は建設者が入れる。差分を Engine に当てて `ENGINE_REF` を上げること、ひな形を `.github/workflows/conflict-check.yml` に写して `conflict-check` を必須のチェックにすること。入るまでは `K-0023` の解決策は `wired: false`・`verified: false`。効き目は、配線の後の窓で `pr.opened` と `continue.enqueued`(reason=conflict) が数秒差の PR の件数を数えて確かめる（それまで `verified` は `false`）。
