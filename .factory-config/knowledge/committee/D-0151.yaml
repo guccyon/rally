@@ -1,0 +1,73 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0151
+pr: https://github.com/guccyon/rally/pull/1390
+decided_at: '2026-11-11'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - '新しい lint の解決策（issue 1351、decided_by: committee:D-0141）は、議決 D-0141 の enforcement
+    の案（触れた知見のファイルの ci_check・test の解決策すべてに requires_check を求め、先に issue 1135 に欄を書き足し、test_check.py
+    に組を足す）と中身が合っています。'
+  - issue 1135 に書き足した requires_check（tools/conflict-check/test_events.py、.github/workflows/conflict-check.yml）は、同じ
+    K-0014 の issue 1208・1297 の欄と同じ形で、重複も食い違いもありません。
+  - 'issue 1214 は schedule で走る ci_check で、すでに requires_check: [] と requires_schedule
+    があるので、そのままにした扱いは D-0116 と README の決まりに合っています。'
+  - 'README の書き換えは D-0116 の「足したり直したりした解決策」を「触れた知見のファイルの解決策」に広げたもので、D-0141 と Issue
+    #1351 を名指ししており、D-0139 の空の列 [] は前のとおり直した解決策だけを見るという what の記述も議決 D-0150 の読みと矛盾しません。'
+  - K-0001・K-0004・K-0010・K-0012 などには requires_check のない ci_check・test の解決策がまだ多く残っているため、これらのファイルに次に触れる変更セットは全部の欄を書き足すことになるので、README
+    の K-0009 の注記と同じように、その積み残しを書いておくと読み手が戸惑いません。
+  - 'statement・scope・evidence は変えておらず、新しい解決策も wired: false・verified: false なので、ほかの知見の扱いは「そのまま」でよく、confidence
+    は hypothesis のままが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - '新しい lint の項目は decided_by: committee:D-0141 と issue 1351 で PR #1350 の議決に辿れ、中身も
+    D-0141 の enforcement の lint の案（触れた知見のファイルの ci_check・test の解決策すべてに requires_check
+    を求める）と一致しています。'
+  - issue 1135 の test に足した requires_check は D-0141 の案が求めた書き足しで、同じ MissingConflictFilesTest
+    を走らせる issue 1208・1297 の項目と同じ {runs, workflow} なので一次記録と食い違いません。
+  - 'issue 1214 の ci_check をそのままにしたのは、D-0141 の時点では欄がなかったものの、D-0148 の頃の変更セットで requires_check:
+    [] と requires_schedule が書き足されていることを head の K-0014.yaml と committee/D-0148.yaml
+    で確かめられたので妥当です。'
+  - 'README の追記が引く議決 D-0116（Issue #1304）と D-0141（Issue #1351）、空の列の扱いに引く D-0139 は、どれも
+    committee/ の記録と PR 番号が合っています。'
+  - '新しい解決策は wired: false・verified: false のままで、本物の記録で確かめていないと自分で書いており、statement と
+    evidence も変えていないので、confidence は hypothesis のままが妥当です。'
+  - 差分にあるのは議決・PR・Issue の番号とファイル名・テスト名だけで、利用者の氏名・連絡先・ID・本文の引用はなく、個人情報は残っていません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0141 の enforcement の票の lint の案（触れた知見のファイルの ci_check・test の解決策すべてに
+    requires_check の欄を求め、なければ requires_check_missing で落とす）をそのまま入れた記録で、担保はすでに決定論の線に乗っています。
+  - '案が求めた先の書き足しも済んでおり、issue 1135 の test には PR ごとのジョブの requires_check（tools/conflict-check/test_events.py、.github/workflows/conflict-check.yml）を書き、issue
+    1214 の ci_check には前から requires_check: [] と requires_schedule があります。'
+  - 触れていないファイルは見ないという線は、README の「足したり直したりした知見から順に」書く進め方と同じで、全ファイルを一度に落とすより費用が小さく、外したときの痛さも次に直す
+    PR で拾えるので妥当です。
+  - 議決 D-0139 の空の列 [] の照らし方を、足したり直したりした解決策だけに残したのは、ひな形の判定と欄の有無の判定を混ぜない線引きで、偽の落ちを増やしません。
+  - 新しい lint の解決策は kind が lint なので requires_check は要りませんが、K-0004 のほかの lint と同じ扱いで、PR
+    ごとの knowledge-enforcement のジョブの test_check.py で走ると書いています。
+  - 'どの解決策も wired: false・verified: false のままで、記録の欠けが手を打つ時期を遅らせたかも確かめていないので、K-0014
+    の確かさは hypothesis のままが妥当です。'
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は議決 D-0141 の enforcement の lint の案（触れた知見のファイルの ci_check・test の解決策すべてに requires_check
+    を求める）を、その範囲どおりに記録しており、触れていないファイルは見ないと線を引いているので、主張の範囲は案より広がっていません。
+  - 'issue 1135 の test に足した requires_check（tools/conflict-check/test_events.py と .github/workflows/conflict-check.yml）は
+    issue 1208・1297 と同じ組で、issue 1214 は schedule で走るので requires_check: [] のままでよく、反例は見つかりませんでした。'
+  - 反例になりうる点として、K-0004 には欄のない ci_check・test の解決策がおよそ 37 件、K-0001・K-0010・K-0012 にも合わせて
+    20 件ほど残っており、広げた検査のもとでは、これらのファイルを 1 行直すだけの PR でも全部に欄を書き足さないと落ちます。
+  - このため README の段落に、K-0009 の solution_fields_missing と同じように、欄の抜けが残っている知見の名前と、次に直す変更セットでまとめて書き足すという扱いを書いておくと、思わぬ形で落ちても戸惑いにくくなります。
+  - README の一文は「PR の差分で触れた知見のファイル」とだけ書いていて、空の列 [] の照合（議決 D-0139）は足したり直したりした解決策だけを見るという例外が
+    what にしか書かれていないので、次に直すときに README にも一言足すとよいです。
+  - '解決策は wired: false・verified: false のままで、statement・scope・evidence も変えていないので、K-0014
+    の確かさは hypothesis のままが妥当です。'
+  personal_data: false
+enforcement: []
