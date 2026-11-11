@@ -1,0 +1,56 @@
+id: K-0025
+theme: 4
+kind: causal
+statement: >-
+  実装役の報告（最後の文）から handoff の summary.md を作り PR 本文に渡す取り出しが、報告の一部しか拾わないと、実装役が ## 概要 から
+  書いた本文でも PR には前半の欠けた本文が載る。PR に載った本文を実装役の元の文と照らす段がないと、検査役と判定役は欠けた本文を前提に裁き、
+  本文の指摘と直しを生む（C-0012 では実装役の会話の記録の最後の文が ## 概要 から始まるのに、summary.md と PR 本文は箇条書きの途中から始まっていた）。
+  どこで落ちたかは確かめていない。分析役は最後の文が複数のテキストの塊に分かれ後ろの塊だけを拾ったと推測し、2026-11-11 の手元の Engine（34a53af）の
+  orchestrator/worker/entrypoint.sh は報告を tail -80 で切っている（80 行を超える報告は頭が落ちる）。ジョブが動いた時点の Engine が同じだったかは確かめていない。
+scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
+  roles: [implement, inspect, judge]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0012
+  - pr: 982
+  - event: "case.analyzed:644507"
+status: active
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0016, K-0011, K-0009]
+invalidate_when:
+  - "summary.md を作るときに実装役の最後の文を切らずに全部渡し、PR 本文の見出しの組を元の文と機械で照らすようになった"
+  - "ジョブが動いた時点の Engine と取り出しの記録を確かめ、欠けが取り出しの側ではなかった（実装役の最後の文そのものが欠けていた）と分かった"
+  - "80 行を超える報告と超えない報告を比べ、頭の欠けが報告の長さとも塊の分かれ方とも関係なく起きていると分かった"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        議決 D-0151（PR #1389）の test の案を入れた。tools/pr-body-check/k0025.mjs の reportHeadingProblems が、実装役の最後の文（session の output）と
+        PR 本文の ## 見出し（Engine が付ける ## 工場の記録 より前）の並びと数を照らし、数が違えば report_heading_count、並びが違えば report_heading_order で落とす。
+        k0025.test.mjs で、事例 C-0012（PR #982）の形（## 概要 から書かれた 93 行の報告と、箇条書きの途中から始まる本文）・末尾の 80 行だけを拾った本文・
+        複数のテキストの塊の後ろだけを拾った本文・並びを入れ替えた本文・見出しを足した本文が落ち、報告をそのまま載せた本文は通ることを確かめた。
+        engine.test.mjs の (16)(17) で、ENGINE_DIR の Engine の orchestrator/worker/entrypoint.sh そのものの SUMMARY を作る行・save_handoff の summary.md を書く行・
+        PR_BODY を動かし、80 行を超える報告（(16)）と複数のテキストの塊に分かれた報告（(17)）から作った summary.md の先頭が ## 概要 で、PR 本文の ## 見出しの並びと数が
+        報告とそろうかを見る。手元の Engine（34a53af）では (16) が tail -80 で頭が落ちて（summary.md が事例と同じ「  - カタログにスロットの状態の見本を足した」から始まり）落ち、
+        (17) は通る。tail -80 を外した写しでは両方通り、最後の塊だけを拾う写しでは両方落ちることを確かめた。塊を 1 つの output につなぐのは Engine の
+        core-gates/agent_runner.py と claude の側で、このテストは entrypoint.sh が受け取った output から取り出す段だけを見る。entrypoint.sh の取り出しを直して
+        ENGINE_REF を上げること（Engine への作用なので人の承認が要る）と、ci/pr-body-engine.yml を .github/workflows/ に写して必須のチェックにすることは建設者が行うので、
+        まだ配線されておらず効き目は確かめていない
+      issue: 1391
+      at: 2026-11-11
+      decided_by: committee:D-0151
+      requires_check:
+        - runs: tools/pr-body-check/k0025.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
+decided_by: committee:D-0151

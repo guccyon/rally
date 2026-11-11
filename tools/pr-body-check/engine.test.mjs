@@ -15,6 +15,7 @@ import { FIRST_SUMMARY, ISSUE, PASSING_REPORTS, PR_URL, REASONS, continuationSum
 import { checkBody } from "./check.mjs";
 import { gate } from "./gate.mjs";
 import { BROKEN_HEADS, PR_URL_678 } from "./k0016.mjs";
+import { C0012_REPORT, ISSUE_979, SPLIT_BLOCKS, SPLIT_REPORT, h2s, reportHeadingProblems } from "./k0025.mjs";
 import { checkEvents } from "./recheck.mjs";
 
 const harness = fileURLToPath(new URL("./engine_harness.py", import.meta.url));
@@ -663,4 +664,55 @@ test("(15) 関所を配線した Engine は、「## 概要」から始まる最�
     assert.deepEqual(checkBody(gh.body()), []);
     assert.ok(gh.body().includes(FIRST_SUMMARY));
   }
+});
+
+// (16)(17) 実装役の最後の文から summary.md を作る取り出し（知見 K-0025 の担保。議決 D-0151 の test の案、Issue #1391）。
+// ENGINE_DIR（CI では ENGINE_REF の版）の entrypoint.sh そのものの、SUMMARY を作る行（session の output から取り出す）と、save_handoff の
+// summary.md を書く行と、新しい PR の本文（PR_BODY）を動かし、summary.md の先頭が ## 概要 のままで、PR 本文の ## 見出しの並びと数が
+// 実装役の最後の文とそろうかを見る。入力は事例 C-0012（PR #982）の形（k0025.mjs）。(16) は 80 行を超える報告で、tail -80 で頭が落ちる Engine では落ちる。
+// (17) は複数のテキストの塊に分かれた報告（つないで 80 行に収まる）。塊を 1 つの output につなぐのは Engine の core-gates/agent_runner.py と
+// claude の側で、ここでは entrypoint.sh が受け取った output から取り出す段だけを見る
+
+/** Engine の entrypoint.sh から、summary.md を作る行を取り出す。名前や形が変わって取り出せなければ null。 */
+export function summarySnippets(source) {
+  return {
+    // 実装役の最後の文（CLAUDE_OUT の output）から SUMMARY を作る（LESSONS_JSON の前まで）
+    summarize: extract(source, (l) => /^SUMMARY=\$\(.*\.output/.test(l), (l) => l.startsWith("LESSONS_JSON="), false),
+    // save_handoff の中で SUMMARY を引き継ぎの summary.md に書く行
+    save: source.split("\n").find((l) => /^\s*\[ -n "\$\{SUMMARY\}" \] && .*\/summary\.md"$/.test(l))?.trim() ?? null,
+  };
+}
+
+/** Engine の取り出しで、実装役の最後の文（report）から summary.md と新しい PR の本文を作って返す。 */
+function engineSummary(report) {
+  const s = summarySnippets(entrypoint);
+  for (const [name, part] of Object.entries(s)) assert.ok(part, `entrypoint.sh から ${name} の行を取り出せない（ENGINE_DIR=${engineDir}。形が変わったら summarySnippets を合わせる）`);
+  need("prBody");
+  const jd = mkdtempSync(join(tmpdir(), "pr-body-summary-"));
+  const claudeOut = JSON.stringify({ output: report, cost_usd: 8.4, num_turns: 120, usage: {}, resumed: false });
+  const body = bash(`${s.summarize}\njd="$JD"\n${s.save}\n${parts.prBody}\nprintf '%s' "$PR_BODY"`,
+    { ...JOB, ISSUE_NUMBER: String(ISSUE_979), JOB_ID: "4931", CLAUDE_OUT: claudeOut, JD: jd });
+  const file = join(jd, "summary.md");
+  assert.ok(existsSync(file), "summary.md を書いていない");
+  return { summary: readFileSync(file, "utf8"), body };
+}
+
+/** summary.md の先頭が ## 概要 のままで、PR 本文の ## 見出しの並びと数が報告とそろうかを確かめる。 */
+function assertSummaryKeepsHead(report) {
+  const { summary, body } = engineSummary(report);
+  const first = summary.split("\n")[0];
+  assert.equal(first, "## 概要", `summary.md の先頭が「${first}」で、実装役の最後の文の頭（## 概要）が落ちた（${summary.split("\n").length - 1} 行。tail -80 で切っていないか）`);
+  assert.deepEqual(h2s(summary), h2s(report), "summary.md の ## 見出しが実装役の最後の文とそろわない");
+  assert.deepEqual(reportHeadingProblems(report, body), [], "PR 本文の ## 見出しの並びと数が実装役の最後の文とそろわない");
+  assert.ok(body.includes(report), "PR 本文に実装役の最後の文が切れずに入っていない");
+}
+
+test("(16) ENGINE_REF の Engine は、80 行を超える実装役の報告（C-0012 の形）から summary.md を作っても先頭の ## 概要 を残し、PR 本文の ## 見出しを報告とそろえる", { skip }, () => {
+  assert.ok(C0012_REPORT.split("\n").length > 80);
+  assertSummaryKeepsHead(C0012_REPORT);
+});
+
+test("(17) ENGINE_REF の Engine は、複数のテキストの塊に分かれた実装役の報告から summary.md を作っても先頭の ## 概要 を残し、PR 本文の ## 見出しを報告とそろえる", { skip }, () => {
+  assert.ok(SPLIT_BLOCKS.length > 1 && SPLIT_REPORT.split("\n").length <= 80);
+  assertSummaryKeepsHead(SPLIT_REPORT);
 });
