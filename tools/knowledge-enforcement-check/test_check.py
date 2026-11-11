@@ -781,6 +781,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0012", 1284): [(f"tools/pr-body-check/{name}", check.PR_BODY_ENGINE_WORKFLOW)
                                              for name in ("recheck.test.mjs", "engine.test.mjs", "ci.test.mjs")],
                           ("K-0004", 1304): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
+                          ("K-0011", 1320): [(f"tools/judge-input-check/{name}", ".github/workflows/judge-input-engine.yml")
+                                             for name in ("line.test.mjs", "engine.test.mjs")],
                           ("K-0016", 1219): [("tools/pr-body-check/gate.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0016", 1307): [("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),

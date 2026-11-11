@@ -1,0 +1,61 @@
+# judge のジョブの入力に、検査役の指摘が引くすべての rubric の本文が入るかを Engine の本物の judge.py で確かめる（知見 K-0011 の担保。議決 D-0146（Issue #1320 の起票時の番号は D-0119。PR #1117）の ci_check の案、Issue #1320）。決定論（LLM を使わない）。
+# Engine を .factory-config/engine.lock の版でチェックアウトして ENGINE_DIR を向け、tools/judge-input-check のテスト（line.test.mjs と engine.test.mjs。
+# 線は line.mjs、Engine の judge.py の main を動かすのは engine_harness.py）を PR ごとに走らせる。
+# Engine の core-gates/judge.py・core-gates/rubric.yaml の変化は engine.lock の版上げの PR で、製品の overlay のルール（.factory-config/overlay/rules/）の変化は
+# その PR のチェックアウトで、どちらもこのジョブに入る。必須のチェックにするので paths・branches で絞らない（絞ると、走らない PR で必須のチェックが報告されず止まる）。
+# ENGINE_DIR を渡し CI=true なので、Engine のチェックアウトがないときや engine_harness.py が judge.py を読み込めないときは飛ばさずに落ちる。
+# ワーカーは .github/workflows/ を変えられないので、建設者がこのファイルを .github/workflows/judge-input-engine.yml にそのまま写す（Engine の版は engine.lock で上げ、ここは変えない）。
+# 写したら engine-test のジョブ（が報告するチェック judge-input-engine-test）をブランチ保護の必須のチェックにする。id のままの engine-test は
+# ほかのワークフローも報告するので、名前を分けておく（議決 D-0038 と同じ理由）。手順は tools/judge-input-check/README.md の「CI への組み込み（建設者）」。
+name: judge-input-engine
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: judge-input-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine-test:
+    name: judge-input-engine-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine の版を読む（.factory-config/engine.lock。40 桁の commit SHA だけ受ける）
+        shell: bash
+        run: |
+          lock=.factory-config/engine.lock
+          ref=$(grep -Ev '^[[:space:]]*(#|$)' "$lock" | head -1 | tr -d '[:space:]')
+          if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=judge-input-engine engine_ref_not_sha::$lock には 40 桁の commit SHA を 1 行で書く（${ref}）"
+            exit 1
+          fi
+          echo "ENGINE_REF=$ref" >> "$GITHUB_ENV"
+      - name: Engine を取る（engine.lock の版）
+        uses: actions/checkout@v4
+        with:
+          repository: guccyon/factory-engine
+          ref: ${{ env.ENGINE_REF }}
+          path: .engine
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: PyYAML を入れる（judge.py と engine.test.mjs が rubric を読む）
+        run: python -m pip install --disable-pip-version-check pyyaml
+      - name: judge の入力の rubric の本文のテスト（K-0011）
+        working-directory: tools/judge-input-check
+        env:
+          ENGINE_DIR: ${{ github.workspace }}/.engine
+        run: |
+          rc=0
+          node --test --test-reporter=spec > judge-input-test.txt 2>&1 || rc=$?
+          { echo "## judge-input-engine（ENGINE_REF=${ENGINE_REF}）"; echo; echo '```'; cat judge-input-test.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat judge-input-test.txt
+          exit $rc

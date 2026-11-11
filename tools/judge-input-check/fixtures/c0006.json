@@ -1,0 +1,22 @@
+{
+  "_note": "事例 C-0006（PR #821）の judge の入力の写し。検査役（job 4297）の指摘 7 件＝実装役の仮決め 5 件（D287-1〜5）と、rubric を引く指摘 2 件（PR-002・OV-001）。仮決めの問いと案は PR #821 の本文の「## 仮決め」から、指摘の evidence は C-0006 の「出来事」から組み直した（制御プレーンの原文ではない）",
+  "pr_url": "https://github.com/guccyon/rally/pull/821",
+  "mode": "unattended",
+  "pr": {
+    "title": "D287: 管理画面でお知らせの下書きの一覧を競技と更新した期間で絞り込む (#809)",
+    "body": "Closes #809\n\n- `apps/admin-web/src/api/headquarters.ts`: `listAnnouncementDrafts` で `from`・`to`・`sport` も受け取れるようにした\n\n## 影響範囲・互換性\n- 管理画面だけの変更です\n\n## 仮決め\n### ui D287-1: 下書きの期間の欄は既定の期間を入れて開くか、期間を付けずに開くか\n"
+  },
+  "provisional": [
+    { "artifact_id": 1, "category": "ui", "question": "下書きの期間の欄は既定の期間を入れて開くか、期間を付けずに開くか", "decision": "期間を付けずに開き（すべての下書き）、確定したときだけ「期間を外す」を出す", "alternatives": "送ったお知らせと同じく、今日までの 7 日を入れて開く", "evidence": "specs/contracts/api/admin-web/openapi.yaml の listAnnouncementDrafts", "interpretation": "7 日を既定にすると古い下書きが開いた時点で見えなくなる", "score": 0.75, "impact": "Announcements.tsx、テスト、screens.ts" },
+    { "artifact_id": 2, "category": "ui", "question": "0 件のときの文言の組み立て方", "decision": "選んだ条件を「、」でつなぎ、最後に「下書きはありません」を付ける", "alternatives": "送ったお知らせのように「この期間に…」と書き、期間を別の行に出す", "evidence": "Announcements.tsx の emptyMessageOf", "interpretation": "下書きの一覧には期間を出す行がない", "score": 0.6, "impact": "Announcements.tsx、テスト、screens.ts" },
+    { "artifact_id": 3, "category": "ui", "question": "下書きの欄の中での並びと説明文", "decision": "送ったお知らせと同じ並びにし、絞り込みの説明を 1 段落足す", "alternatives": "「題で探す」の行に全部を並べる／説明文を足さない", "evidence": "Announcements.tsx の「送ったお知らせ」の欄", "interpretation": "部品と振る舞いを送ったお知らせの一覧と揃える", "score": 0.65, "impact": "Announcements.tsx、お知らせの画面のキャプチャ" },
+    { "artifact_id": 4, "category": "error_handling", "question": "期間で絞っているときの 422 の文言", "decision": "期間で絞っていれば送ったお知らせと同じ VALIDATION_FAILED を出す", "alternatives": "どの場合もサーバーの文言に語の長さの直し方を添える", "evidence": "Announcements.tsx の fetchAnnouncements と fetchDrafts", "interpretation": "直す場所が期間にもあるときは送ったお知らせと同じ伝え方にする", "score": 0.7, "impact": "Announcements.tsx、テスト" },
+    { "artifact_id": 5, "category": "implementation", "question": "期間の欄が 2 つの欄に出ることへの対処", "decision": "同じ文言のままにし、テストと screens.ts は欄（region）の中で探す", "alternatives": "下書きの欄だけ違う文言にする", "evidence": "screens.ts の hq-announcement-drafts-search", "interpretation": "同じ名前が並ぶのは前例どおり欄で区別する", "score": 0.7, "impact": "tests/headquartersAnnouncements.test.tsx、screens.ts" }
+  ],
+  "defects": [
+    { "rubric_id": "PR-002", "gate": "process", "severity": "should", "location": "PR 本文", "evidence": "本文が箇条書きから始まり、「## 概要」「## 対応内容」の見出しがない（「## 背景」「## 問題」もない）", "remediation_hint": "テンプレートの見出し（概要・背景・問題・対応内容）で本文を組み直す" },
+    { "rubric_id": "OV-001", "gate": "process", "severity": "should", "shadow": true, "location": "PR 本文", "evidence": "「## 背景」「## 問題」の見出しがなく、なぜこの変更が要るのかを Closes #809 から読み取るしかない", "remediation_hint": "「## 背景」「## 問題」を独立した見出しで書く" }
+  ],
+  "track_record": {},
+  "constraints": ""
+}
