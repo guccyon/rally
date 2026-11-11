@@ -778,6 +778,8 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0012", 1281): [("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0012", 1283): [("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
+                          ("K-0012", 1284): [(f"tools/pr-body-check/{name}", check.PR_BODY_ENGINE_WORKFLOW)
+                                             for name in ("recheck.test.mjs", "engine.test.mjs", "ci.test.mjs")],
                           ("K-0004", 1304): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],
                           ("K-0016", 1219): [("tools/pr-body-check/gate.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
@@ -2097,6 +2099,8 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
     """K-0012 の issue 1197（test）の解決策は、.github/workflows/pr-body-engine.yml の pull_request のジョブから recheck.test.mjs・engine.test.mjs・
     ci.test.mjs をそれぞれ呼ぶ項目がないと wired にできない（議決 D-0100（起票時の番号は D-0071）、Issue #1197）"""
 
+    ISSUE = 1197
+    KIND = "test"
     TESTS = ("tools/pr-body-check/recheck.test.mjs", "tools/pr-body-check/engine.test.mjs", "tools/pr-body-check/ci.test.mjs")
     TEMPLATE = REPO / "tools/pr-body-check/ci/pr-body-engine.yml"
     WF = ".github/workflows/pr-body-engine.yml"
@@ -2113,9 +2117,9 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
             (d / rel).write_text(body, encoding="utf-8")
         return d
 
-    def item(self, runs=TESTS, workflow=WF, issue=1197, wired=True) -> dict:
+    def item(self, runs=TESTS, workflow=WF, issue=None, wired=True) -> dict:
         return {"id": "K-0012", "_file": "K-0012.yaml", "enforcement": {"level": "deterministic", "solutions": [
-            {"kind": "test", "what": "x", "issue": issue, "wired": wired, "verified": False,
+            {"kind": self.KIND, "what": "x", "issue": self.ISSUE if issue is None else issue, "wired": wired, "verified": False,
              "wired_by": [{"workflow": workflow, "job": "engine-test", "runs": r} for r in runs]}]}}
 
     def errors(self, d: Path, **kw) -> list[str]:
@@ -2123,7 +2127,7 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
         return pr_errors(item, d) + check.check_wiring(item, d) + check.check_engine_wait(item, d, None)
 
     def test_対象に挙げてある(self):
-        key = ("K-0012", 1197)
+        key = ("K-0012", self.ISSUE)
         self.assertEqual(requires(*key), [(t, self.WF) for t in self.TESTS])
         self.assertNotIn(key, check.REQUIRED_ENGINE_WAIT)
 
@@ -2135,7 +2139,7 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
         for missing in self.TESTS:
             e = self.errors(d, runs=tuple(t for t in self.TESTS if t != missing))
             self.assertEqual(len(e), 1, (missing, e))
-            for part in (f"on.pull_request のある {self.WF} で", missing, PR_DECISION, "issue 1197"):
+            for part in (f"on.pull_request のある {self.WF} で", missing, PR_DECISION, f"issue {self.ISSUE}"):
                 self.assertIn(part, e[0])
 
     def test_別のワークフローの写しでは落ちる(self):
@@ -2160,6 +2164,15 @@ class PrBodyEngineTestsWiringTest(unittest.TestCase):
         d = self.repo()
         (d / self.WF).unlink()
         self.assertEqual(self.errors(d, wired=False), [])
+
+
+class PrBodyEngineTestsCiCheckWiringTest(PrBodyEngineTestsWiringTest):
+    """K-0012 の issue 1284（ci_check。建設者が写した pr-body-engine-test を必須のチェックにして 3 つのテストを配線する）の解決策も、
+    issue 1197 と同じく、.github/workflows/pr-body-engine.yml の pull_request のジョブから recheck.test.mjs・engine.test.mjs・ci.test.mjs を
+    それぞれ呼ぶ項目がないと wired にできない（議決 D-0106 の ci_check の案、Issue #1284）"""
+
+    ISSUE = 1284
+    KIND = "ci_check"
 
 
 class PrBodyEngineCopyWiringTest(PrBodyEngineTestsWiringTest):
