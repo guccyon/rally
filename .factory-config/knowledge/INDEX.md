@@ -16,6 +16,7 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0021 | 4 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | Issue が「いまの絞り込み」「ほかの期間の欄」のように今の画面を前提にした言葉で書かれているのに、指示役が前提にしている既存の欄や 手本の画面をファイル名で |
 | K-0025 | 4 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 実装役の報告（最後の文）から handoff の summary.md を作り PR 本文に渡す取り出しが、報告の一部しか拾わないと、実装役が ## 概要 から |
 | K-0030 | 4 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 衝突を解く続きのジョブが、PR 本文を「その時点の要約」（概要・対応内容・動作確認）として書き直さずに、回ごとの取り込みの記録を本文の節として 足していくと、本 |
+| K-0033 | 4 | causal | hypothesis | draft | context | 2026-11-11 | 2026-12-11 | 衝突の解消のような付随作業をした続きのジョブ（continue、reason=conflict）の報告を、PR のコメントや handoff ではなく PR 本 |
 | K-0027 | 5 | hypothesis_test | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 事実: 観点 flow（利用者の流れ。Engine の definitions/qa.yaml の viewpoints）の Defect が、マージの後（QA |
 | K-0002 | 6 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、  |
 | K-0004 | 6 | causal | hypothesis | active | deterministic | 2026-11-01 | 2026-12-01 | supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」では |
@@ -34,3 +35,5 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0026 | 6 | causal | hypothesis | active | deterministic | 2026-11-11 | 2026-12-11 | supervisor がマージの判断（supervisor.merge_decided）を変更のファイルの分類（表）だけで検査と裁きの前に出し、採用した検査の指 |
 | K-0028 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | ファイルごとの衝突の解消の束（process:conflict_fix:<ファイル>）の費用は、1 本の衝突の解消のジョブの費用を衝突したファイルの数で割ったも |
 | K-0029 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | supervisor がマージを決めた（supervisor.merge_decided）あとも、検査（inspect・judge）が終わってマージするまでの間 |
+| K-0031 | 6 | causal | hypothesis | draft | context | 2026-11-11 | 2026-12-11 | リポジトリの根の README.md の「## 構成」の表で、アプリの行（apps/admin-web/・apps/student-app/）の 1 つのセルに |
+| K-0032 | 6 | causal | hypothesis | draft | context | 2026-11-11 | 2026-12-11 | 同じよく衝突するファイル（README.md・CHANGELOG.md など）に触る PR が同時にマージを待っているとき、マージの時点でそれらを 1 本ずつ  |

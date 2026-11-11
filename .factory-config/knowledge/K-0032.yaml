@@ -1,0 +1,32 @@
+id: K-0032
+theme: 6
+kind: causal
+statement: >-
+  同じよく衝突するファイル（README.md・CHANGELOG.md など）に触る PR が同時にマージを待っているとき、マージの時点でそれらを 1 本ずつ
+  直列にし、マージの直前に既定ブランチを取り込む順番がないと、1 回のマージで待っている複数の PR が同時に衝突し、それぞれに衝突の解消の
+  続きのジョブが積まれる（C-0014 では README.md の束で job 759 と 761 の 2 つのサンプルが 2 秒差で出ており、1 回のマージで 2 本の PR が
+  同時に衝突したと読める）。投入の時点の並べ方（Engine の orchestrator/dispatcher/serialize.py。CHANGELOG.md は対象外）は K-0024、
+  CHANGELOG の衝突を解く時機は K-0013、1 本の PR のマージの判断からマージまでの間の merge queue は K-0029 が書き、この知見は、
+  すでに同時に開いている複数の PR が 1 回のマージで一斉に衝突することと、マージの時点で直列にする向きに絞る。
+  ただし同時の衝突は 2 秒差のサンプルからの分析役の読みで、759 と 761 がどの PR のどのファイルで衝突したか、投入の時点の並べ方が
+  README.md を見ていたかは材料にない。根拠はこの束 1 つだけ。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  files: [README.md, CHANGELOG.md]
+  request_form: [ticket]
+  roles: [supervisor]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0014
+  - event: "case.analyzed:775818"
+status: draft
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0013, K-0024, K-0029, K-0031]
+invalidate_when:
+  - "supervisor がよく衝突するファイルに触る PR を 1 本ずつマージし、マージの直前に既定ブランチを取り込むようになった（merge queue）"
+  - "同じ秒に複数の PR が衝突する重なりが、よく衝突するファイルに触らない PR でも同じ割合で起きていると分かった（原因はファイルではなかった）"
+  - "job 759 と 761 の衝突が、同じ 1 回のマージによるものではなかったと分かった"
