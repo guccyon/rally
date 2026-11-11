@@ -1,0 +1,32 @@
+id: K-0032
+theme: 6
+kind: causal
+statement: >-
+  同じファイルに触る PR が同時にマージを待っていると、1 回のマージで待っている複数の PR が同時に衝突し、それぞれに衝突の解消の
+  続きのジョブが積まれることがあるらしい（C-0014 では README.md の束で job 759 と 761 の 2 つのサンプルが 2 秒差で出ており、
+  分析役はこれを 1 回のマージで 2 本の PR が同時に衝突したと読んだ）。この知見は観察にとどめる。759 と 761 がどの PR の
+  どのファイルで衝突したかは材料になく、同じ 1 回のマージによるものかも確かめていない。
+  分析役の提案の向き（よく衝突するファイルに触る PR をマージの時点で 1 本ずつ直列にし、直前に既定ブランチを取り込む）には反例がある。
+  同じ 1 行（README.md の表のセルなど）を書き換える PR は、直列にして直前に取り込んでも同じ行で衝突するので、衝突の解消の回数は減らない。
+  減るのは、同じ PR がほかの PR のマージのたびに解き直される分（K-0013 が書く）だけである。
+  投入の時点の並べ方は K-0024、1 本の PR のマージの判断からマージまでの間の merge queue は K-0029 が書く。根拠はこの束 1 つだけ。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  request_form: [ticket]
+  roles: [supervisor]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0014
+  - event: "case.analyzed:775818"
+status: active
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0013, K-0024, K-0029, K-0031]
+invalidate_when:
+  - "supervisor がよく衝突するファイルに触る PR を 1 本ずつマージし、マージの直前に既定ブランチを取り込むようになった（merge queue）"
+  - "同じ秒に複数の PR が衝突する重なりが、よく衝突するファイルに触らない PR でも同じ割合で起きていると分かった（原因はファイルではなかった）"
+  - "job 759 と 761 の衝突が、同じ 1 回のマージによるものではなかったと分かった"
+decided_by: committee:D-0158

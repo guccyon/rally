@@ -1,0 +1,35 @@
+id: K-0031
+theme: 6
+kind: causal
+statement: >-
+  リポジトリの根の README.md の「## 構成」の表で、アプリの行（apps/admin-web/・apps/student-app/）の 1 つのセルに画面や API の名前を
+  書き足していく作りのままだと、同じアプリの行に触るチケットが同時に開いているときは、どれも同じ 1 行を書き換えるので、
+  先にマージされた PR のあとに残りの PR が衝突する（C-0014 では README.md の束が 10 チケットに 15 件・21.61 USD。例の PR #301 の衝突は
+  CHANGELOG.md と README.md の 2 つだけで、解消の job 347 は tier-large で 1.03 USD と、元の実装の 0.82 USD より高かった）。
+  共有の追記型のファイル一般の型は K-0022、CHANGELOG は K-0002 が書き、この知見は根の README.md の表の 1 行の作りに絞る。
+  CHANGELOG.md だけの衝突を機械的に解く線（.factory-config/continuation.yaml の conflict.mechanical）が効いていれば、README.md が
+  一緒に衝突することでその線から外れ、ジョブごと tier-large の経路に落ちるとみられるが、これは仮定の話である
+  （線は Engine にまだ配線されておらず、例の PR #301 の衝突が断片方式（2026-11-03）の前か後かも材料にない）。
+  .gitattributes の merge=union は、1 行のセルを両方が書き換えた衝突では行を両方残して表の行が重なるとみられ（記録者の推測。試していない）、
+  README.md の手当には合わない見込み。根拠はこの束 1 つだけ。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  files: [README.md, CHANGELOG.md]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0014
+  - pr: 301
+  - event: "case.analyzed:775818"
+status: active
+verified_at: 2026-11-11
+review_by: 2026-12-11
+confidentiality: product
+related: [K-0002, K-0022, K-0028, K-0010, K-0032]
+invalidate_when:
+  - "README.md のアプリごとの機能の一覧が、機能ごとのファイルか生成物に分かれた（またはチケットでは触らない規約になった）"
+  - "断片方式のあとの窓（2026-11-04 以降）で、README.md の衝突の束が出なくなった（衝突は断片方式の前の PR に限られていた）"
+  - "README.md と CHANGELOG.md だけの衝突が、エージェントを使わずに機械的に解かれるようになった"
+decided_by: committee:D-0158

@@ -34,3 +34,5 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0026 | 6 | causal | hypothesis | active | deterministic | 2026-11-11 | 2026-12-11 | supervisor がマージの判断（supervisor.merge_decided）を変更のファイルの分類（表）だけで検査と裁きの前に出し、採用した検査の指 |
 | K-0028 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | ファイルごとの衝突の解消の束（process:conflict_fix:<ファイル>）の費用は、1 本の衝突の解消のジョブの費用を衝突したファイルの数で割ったも |
 | K-0029 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | supervisor がマージを決めた（supervisor.merge_decided）あとも、検査（inspect・judge）が終わってマージするまでの間 |
+| K-0031 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | リポジトリの根の README.md の「## 構成」の表で、アプリの行（apps/admin-web/・apps/student-app/）の 1 つのセルに |
+| K-0032 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 同じファイルに触る PR が同時にマージを待っていると、1 回のマージで待っている複数の PR が同時に衝突し、それぞれに衝突の解消の 続きのジョブが積まれるこ |
