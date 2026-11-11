@@ -19,7 +19,7 @@ contracts/
 ├── api/
 │   ├── student-app/   # Gen1 で実装（openapi.yaml）
 │   ├── admin-web/     # Gen1 で実装
-│   ├── coach-app/     # 境界のみ
+│   ├── coach-app/     # 入口（ログイン）だけ（openapi.yaml。ADR 0011）
 │   ├── coach-web/     # 境界のみ
 │   └── golf-app/      # 境界のみ
 └── events/            # AsyncAPI（境界間イベント）
@@ -36,12 +36,12 @@ contracts/
 | アプリ | Gen1 | 備考 |
 |---|---|---|
 | student-app | 実装する | 生徒アプリ（iOS / Android、ゴルフ以外） |
-| admin-web | 実装する | 最小の admin-web。コーチ側の最小操作（添削の返却・予約枠の登録・通話参加）も同居させる（docs/adr/0002 Q3） |
-| coach-app | 境界だけ引く | |
+| admin-web | 実装する | 最小の admin-web。コーチ側の最小操作（添削の返却・予約枠の登録・通話参加）も同居させる（docs/adr/0002 Q3）。入口は本部だけにし、コーチの入口は coach-app に移るまでの移行中だけ残す（docs/adr/0011） |
+| coach-app | 入口だけ書く | コーチのモバイルアプリ。生徒と同じ形のログイン（docs/adr/0011）。コーチの画面は後続で admin-web から移す |
 | coach-web | 境界だけ引く | |
 | golf-app | 境界だけ引く | ゴルフのワンショット課金のアプリ |
 
-境界だけ引くアプリは枝を置くだけで、Gen1 では契約を書かない。
+境界だけ引くアプリは枝を置くだけで、Gen1 では契約を書かない（coach-app は入口の分け直し（docs/adr/0011）で入口の契約だけを書いた）。
 
 ## 互換ポリシー
 
