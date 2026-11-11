@@ -22,4 +22,4 @@ related: [K-0026]
 invalidate_when:
   - "品質方針に観点 flow をマージの手前で確かめる約束が入り、その後の 30 日の集計で観点 flow のマージ後の Defect が減らなかった"
   - "観点 flow のマージ後の Defect を個別に見て、マージの手前の検査・CI では見つけられない形（本番のデータや時間をまたぐものなど）が大半だと分かった"
-decided_by: committee:D-0154
+decided_by: committee:D-0155
