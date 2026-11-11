@@ -71,11 +71,24 @@ describe("components.yaml とカタログの対応", () => {
 
   test("/design のページに、部品ごとの欄とすべての枠の見出しが出る", () => {
     render(<DesignCatalog />);
+    // getByRole を枠ごとに呼ぶとページ全体のアクセシビリティツリーを毎回なめ直し、CI で 5 秒を超える。
+    // 欄と見出しはそれぞれ 1 回だけ集め、名前ごとにちょうど 1 つあることを確かめる（getByRole と同じ判定）。
+    // 名前は aria-label があればそれ、なければ中身の文字（欄は aria-label、h3 は中身で名前が付く）
+    const countByName = (elements: HTMLElement[]) => {
+      const counts = new Map<string, number>();
+      for (const element of elements) {
+        const name = (element.getAttribute("aria-label") ?? element.textContent ?? "").trim();
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+      return counts;
+    };
+    const regions = countByName(screen.getAllByRole("region"));
     for (const component of new Set(CATALOG.map((entry) => entry.component))) {
-      expect(screen.getByRole("region", { name: component })).toBeInTheDocument();
+      expect(regions.get(component), component).toBe(1);
     }
+    const headings = countByName(screen.getAllByRole("heading", { level: 3 }));
     for (const entry of CATALOG) {
-      expect(screen.getByRole("heading", { level: 3, name: catalogEntryName(entry) })).toBeInTheDocument();
+      expect(headings.get(catalogEntryName(entry)), catalogEntryName(entry)).toBe(1);
     }
   });
 });
