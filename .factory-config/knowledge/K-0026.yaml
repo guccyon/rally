@@ -18,7 +18,7 @@ evidence:
   - case: C-0012
   - pr: 982
   - event: "case.analyzed:644507"
-status: draft
+status: active
 verified_at: 2026-11-11
 review_by: 2026-12-11
 confidentiality: product
@@ -27,3 +27,4 @@ invalidate_when:
   - "merge_decided（auto）が検査と裁きの後に出るようになり、採用した機械的に直せるコードの指摘を fix ジョブで直してからマージするようになった"
   - "採用した should のコードの指摘をマージ後に回した PR を集計して、宿題が差し戻しとして残ったものが少数だと分かった"
   - "rubric のゲートが shadow から外れ、採用した指摘があればマージが止まるようになった"
+decided_by: committee:D-0151
