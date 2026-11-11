@@ -3216,31 +3216,37 @@ class RepoTest(unittest.TestCase):
         self.assertEqual(r["level"], "deterministic")
         self.assertEqual(r["label"], "未配線")
 
-    def listed(self, path, tail):
-        """README の「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の 2 つの一覧を取り出す"""
-        text = path.read_text(encoding="utf-8")
-        ids = r"((?:`K-\d{4,}`・?)+)"
-        m = re.search(rf"すべての解決策に書いたのは {ids}。{ids}{tail}", text)
-        name = path.relative_to(REPO)
-        self.assertIsNotNone(m, f"{name} に「すべての解決策に書いたのは `K-…`。`K-…`{tail}」の一覧がない")
-        return (re.findall(r"K-\d{4,}", g) for g in m.groups())
+    # 記入の状態を手で書いた一覧の形。前は README にこの一覧を書いて順まで照らしていたが、担保の PR がどれも同じ行を
+    # 書き換えて衝突したので、check.py の出力を正本にして README には書かない（Issue #1369）
+    HANDWRITTEN = (
+        re.compile(r"すべての解決策に書いたのは\s*`K-\d{4,}`"),
+        re.compile(r"`K-\d{4,}`\s*(?:には|の)未記入の解決策"),
+    )
+    READMES = (HERE / "README.md", REPO / ".factory-config" / "knowledge" / "README.md")
 
-    def assert_listed(self, path, tail):
-        listed_done, listed_open = self.listed(path, tail)
+    def handwritten(self, text):
+        return [m.group(0) for p in self.HANDWRITTEN for m in p.finditer(text)]
+
+    def test_手書きの一覧の形を見分ける(self):
+        self.assertEqual(len(self.handwritten("すべての解決策に書いたのは `K-0001`・`K-0002`。`K-0009` には未記入の解決策が残っていて")), 2)
+        self.assertEqual(len(self.handwritten("`K-0009` の未記入の解決策は次に書く")), 1)
+        self.assertEqual(self.handwritten("未記入の解決策が残る知見は、`check.py` の出力の「未記入」の件数で見る"), [])
+
+    def test_README_に記入の状態の手書きの一覧がない(self):
+        """README と記録のずれに気づく（議決 D-0035・D-0052、Issue #1062・#1138）ために、2 つの README に記入済み・未記入の知見の
+        手書きの一覧が戻っていれば落とす。一覧は check.py の出力を正本にする（Issue #1369）"""
+        for path in self.READMES:
+            name = path.relative_to(REPO)
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(self.handwritten(text), [], f"{name} に記入の状態の手書きの一覧がある。消して check.py の出力を見る")
+            self.assertIn("check.py` の出力（知見ごとの行の「未記入」の件数）を正本", text, f"{name} が記入の状態の正本（check.py の出力）を指していない")
+
+    def test_check_py_の出力の行が記録の数えた結果と一致する(self):
+        """README の代わりに正本にする check.py の出力が、解決策のある知見ごとに 1 行あり、未記入の件数が K-*.yaml と合う"""
+        out = subprocess.run(["python3", str(HERE / "check.py"), "--repo", str(REPO)], capture_output=True, text=True).stdout
+        printed = dict(re.findall(r"^(K-\d{4,}): .*未記入 (\d+)）$", out, re.M))
         rows = [check.row(x) for x in check.load(REPO)]
-        done = [r["id"] for r in rows if r["solutions"] and not r["unrecorded"]]
-        still_open = [r["id"] for r in rows if r["unrecorded"]]
-        name = path.relative_to(REPO)
-        self.assertEqual(listed_done, done, f"{name} の「すべての解決策に書いた」知見の一覧を K-*.yaml に合わせて直す")
-        self.assertEqual(listed_open, still_open, f"{name} の「未記入の解決策が残る」知見の一覧を K-*.yaml に合わせて直す")
-
-    def test_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
-        """README の「すべての解決策に書いた知見」「未記入の解決策が残る知見」の一覧を、check.py が K-*.yaml から数えた結果と照らす（議決 D-0035、Issue #1062）"""
-        self.assert_listed(HERE / "README.md", " の未記入の解決策は")
-
-    def test_knowledge_README_の記入済みと未記入の知見の一覧が記録と一致する(self):
-        """.factory-config/knowledge/README.md の同じ 2 つの一覧も、順まで照らす（議決 D-0052、Issue #1138）"""
-        self.assert_listed(REPO / ".factory-config" / "knowledge" / "README.md", " には未記入の解決策が残っていて")
+        self.assertEqual(printed, {r["id"]: str(r["unrecorded"]) for r in rows if r["solutions"]})
 
 
 if __name__ == "__main__":
