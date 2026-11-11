@@ -3,3 +3,5 @@
 .env
 .env.*
 tools/design-catalog/node_modules/
+__pycache__/
+*.pyc
