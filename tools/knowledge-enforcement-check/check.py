@@ -151,8 +151,9 @@ solution_fields_missing で落とす（未記入の解決策を残したまま�
 未記入の解決策のある知見で分かれ目を求められない・その版を読めないときは solution_fields_unverifiable で落とす。
 
 ci_check・test の解決策の requires_check の必須（議決 D-0116 の schema の案、Issue #1304）: kind が ci_check か test の解決策では requires_check を
-必須の欄にする（PR ごとに走らなくてよいものは空の列 [] を明示する。空の列は形の誤りに数えない）。--base を渡すと、PR の差分で足したり直したりした
-その種類の解決策（分かれ目の版の同じ知見に、同じ中身の解決策がないもの）に欄がなければ requires_check_missing で落とす。変えていない解決策は見ない。
+必須の欄にする（PR ごとに走らなくてよいものは空の列 [] を明示する。空の列は形の誤りに数えない）。--base を渡すと、PR の差分で触れた知見のファイル
+（分かれ目の版から中身が変わったか、その版になかったもの）にあるその種類の解決策に、直したかどうかにかかわらず欄がなければ requires_check_missing で落とす
+（議決 D-0141 の lint の案、Issue #1351 で、足したり直したりした解決策だけからファイル全体に広げた）。触れていないファイルは見ない。
 分かれ目を求められない・その版を読めないときは requires_check_unverifiable で落とす。wired: true の解決策の空の列は、挙げる検査がないので
 上の D-0080 の線では書いていないのと同じに数える（requires_schedule を書いたもの・REQUIRED_RUNS に挙げたものを除いて requires_check_missing）。
 
@@ -251,6 +252,9 @@ REQUIRES_CHECK_MISSING_DECISION = "D-0080"
 # requires_check は書いた解決策しか照らさないので、PR ごとに走るべき解決策で欄を書き忘れると黙って通っていた）
 REQUIRES_CHECK_KINDS = ("ci_check", "test")
 REQUIRES_CHECK_DECLARED_DECISION = "D-0116"
+# 欄の必須は、PR の差分で触れた知見のファイルなら、直したかどうかにかかわらずその中の対象の解決策すべてに求める（議決 D-0141 の lint の案、Issue #1351。
+# 直した解決策だけを見ると、同じファイルのほかの解決策を直す PR でも、前からある欄のない解決策が黙って残っていた）
+REQUIRES_CHECK_TOUCHED_DECISION = "D-0141"
 REQUIRES_CHECK_UNVERIFIABLE = "requires_check_unverifiable"
 # kind が REQUIRES_CHECK_KINDS で、what に PR ごとのひな形（tools/*/ci/*.yml のうち on.pull_request のあるもの）を挙げた解決策は、--base を渡すと、
 # PR の差分で足したり直したりしたものに空の列 [] も許さない（議決 D-0139 の ci_check の案、Issue #1344。K-0014 の issue 1295・1297 は
@@ -1215,10 +1219,11 @@ def check_solution_fields(k: dict, repo: Path, base: str | None, cache: dict | N
 
 
 def check_requires_check_declared(k: dict, repo: Path, base: str | None, cache: dict | None = None) -> list[str]:
-    """kind が REQUIRES_CHECK_KINDS（ci_check・test）の解決策で、PR の差分で足したり直したりしたもの（分かれ目の版の同じ知見に、同じ中身の解決策がない）に
-    requires_check の欄がなければ requires_check_missing で落とす（議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を書く）。
-    base を渡さないとき・欄のない対象の解決策がないときは見ない。分かれ目を求められない・その版を読めないときは REQUIRES_CHECK_UNVERIFIABLE で落とす。
-    変えていない解決策は、欄がなくても見ない。
+    """PR の差分で触れた知見のファイル（分かれ目の版から中身が変わったか、その版になかったもの）の、kind が REQUIRES_CHECK_KINDS（ci_check・test）の
+    解決策に requires_check の欄がなければ requires_check_missing で落とす（議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を書く）。
+    前は足したり直したりした解決策だけを見ていたが、同じファイルの触れていない解決策も直したかどうかにかかわらず見る（議決 D-0141 の lint の案、Issue #1351。
+    K-0014 の issue 1135・1214 は、同じファイルのほかの解決策を直す PR でも欄がないまま黙って通っていた）。
+    base を渡さないとき・欄のない対象の解決策がないとき・触れていないファイルは見ない。分かれ目を求められない・その版を読めないときは REQUIRES_CHECK_UNVERIFIABLE で落とす。
     what に PR ごとのひな形（pr_templates）を挙げた解決策は、空の列 [] でも同じに落とす（議決 D-0139 の ci_check の案、Issue #1344。
     requires_schedule を書いた解決策は定期のジョブを配線先と明示しているので、schedule と pull_request の両方で走るひな形を挙げても見ない）"""
     if not base:
@@ -1233,13 +1238,17 @@ def check_requires_check_declared(k: dict, repo: Path, base: str | None, cache: 
     cache = {} if cache is None else cache
     if base not in cache:
         cache[base] = merge_base(repo, base)
-    mb = cache[base]
+    mb, rel = cache[base], f"{ROOT}/{f}"
     if mb is None:
         return [f"{f}: {REQUIRES_CHECK_UNVERIFIABLE}: {'・'.join(REQUIRES_CHECK_KINDS)} の解決策に {REQUIRES_CHECK} のないものがあるが、前の版 {base} と HEAD の"
                 f"分かれ目を求められず、この変更セットで足したり直したりしたかを照らせない（fetch-depth: 0 で取る。照らせないときは落とす。"
                 f"議決 {REQUIRES_CHECK_DECLARED_DECISION}）"]
+    if git(repo, "cat-file", "-e", f"{mb}:{rel}").returncode == 0:
+        text = git(repo, "show", f"{mb}:{rel}")
+        if text.returncode == 0 and text.stdout == (repo / rel).read_text(encoding="utf-8"):
+            return []
     try:
-        prev = base_knowledge(repo, mb, f"{ROOT}/{f}")
+        prev = base_knowledge(repo, mb, rel)
     except HoldUncheckable as x:
         return [f"{f}: {REQUIRES_CHECK_UNVERIFIABLE}: {x}（議決 {REQUIRES_CHECK_DECLARED_DECISION}）"]
     before = solutions(prev) if isinstance(prev, dict) else []
@@ -1247,10 +1256,10 @@ def check_requires_check_declared(k: dict, repo: Path, base: str | None, cache: 
             + (f"what が PR ごとのひな形 {'・'.join(templates)} を挙げるのに {REQUIRES_CHECK} が空の列。そのジョブで走らせる検査の道を"
                f"（例: {{runs: tools/conflict-check/test_events.py, workflow: .github/workflows/conflict-check.yml}}）書く"
                f"（空の列は PR ごとに走らなくてよい解決策の印。議決 {REQUIRES_CHECK_DECLARED_DECISION}・{PR_TEMPLATE_DECISION}）" if templates else
-               f"kind が {'・'.join(REQUIRES_CHECK_KINDS)} の解決策を足したり直したりするときは {REQUIRES_CHECK} を書く（PR ごとに走らせる検査の道。"
-               f"例: {REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_check.py。PR ごとに走らなくてよいなら {REQUIRES_CHECK}: [] と明示する。"
-               f"議決 {REQUIRES_CHECK_DECLARED_DECISION}）")
-            for i, s, templates in todo if s not in before]
+               f"この変更セットで知見のファイルに触れるので、直したかどうかにかかわらず kind が {'・'.join(REQUIRES_CHECK_KINDS)} の解決策には "
+               f"{REQUIRES_CHECK} を書く（PR ごとに走らせる検査の道。例: {REQUIRES_CHECK}: tools/knowledge-enforcement-check/test_check.py。"
+               f"PR ごとに走らなくてよいなら {REQUIRES_CHECK}: [] と明示する。議決 {REQUIRES_CHECK_DECLARED_DECISION}・{REQUIRES_CHECK_TOUCHED_DECISION}）")
+            for i, s, templates in todo if not templates or s not in before]
 
 
 def pr_templates(s: dict, repo: Path) -> list[str]:
@@ -1306,7 +1315,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--summary")
     ap.add_argument("--head-comments", help="Issue #948 のコメント（gh api の出力）。engine-head に関わる解決策が verified: true のときに照らす")
     ap.add_argument("--base", help="前の版（例: origin/main）。渡すと K-0010 の review_by の先送り（議決 D-0067）と、差分で変わった知見の wired・verified の記入（議決 D-0071）と、"
-                    "差分で足したり直したりした ci_check・test の解決策の requires_check（議決 D-0116。PR ごとのひな形を挙げたものは空の列も。議決 D-0139）を照らす")
+                    "差分で触れた知見のファイルの ci_check・test の解決策の requires_check（議決 D-0116・D-0141。PR ごとのひな形を挙げたものは空の列も。議決 D-0139）を照らす")
     ap.add_argument("--engine", default=os.environ.get("ENGINE_DIR") or None, help="Engine のチェックアウト（全履歴。既定は ENGINE_DIR）")
     a = ap.parse_args(argv)
     try:
