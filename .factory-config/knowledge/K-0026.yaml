@@ -27,4 +27,31 @@ invalidate_when:
   - "merge_decided（auto）が検査と裁きの後に出るようになり、採用した機械的に直せるコードの指摘を fix ジョブで直してからマージするようになった"
   - "採用した should のコードの指摘をマージ後に回した PR を集計して、宿題が差し戻しとして残ったものが少数だと分かった"
   - "rubric のゲートが shadow から外れ、採用した指摘があればマージが止まるようになった"
+enforcement:
+  level: deterministic
+  solutions:
+    - kind: test
+      what: >-
+        議決 D-0151（PR #1389）の test の案を入れた。tools/pr-body-check/merge-order.mjs が、古い順の制御プレーンのイベント列で、同じ PR の
+        supervisor.merge_decided のうち code_change の表が auto のもの（change_types に code_change があり table が auto）が、同じ head の
+        検査役の承認（supervisor.inspector_approved）と裁き（supervisor.judge_enqueued の skipped か、そのあとの judgment.judged）の両方より後に
+        来ていなければ merge_decided_before_review、裁きで採用した検査の指摘（judgment.judged の category が inspection・verdict が adopt）のうち
+        機械的に直せるコードの指摘を直すジョブ（continue.enqueued の reason が review_fix か judgment.fix_enqueued）がないまま supervisor.merged が来たら
+        merged_without_code_fix、直すジョブの終わり（job.finished の state が succeeded。job_id で結ぶ）より前に来たら merged_before_code_fix_finished で
+        落とす（終了コード 1。読めなければ 2）。本文だけの指摘（Engine の is_body_only と同じ線。本文の直しは K-0012 の recheck.mjs が見る）、overlay の
+        shadow のルールの指摘、judge が機械的に直せないとした指摘（mechanical が false）は数えず、箇所が分からない指摘はコードの指摘として数える。
+        Engine の judgment.judged は今は指摘の箇所を載せないので、本物の記録に当てるときは Judgment の artifact の defect を payload に足して渡す。
+        merge-order.test.mjs で、C-0012（PR #982）の記録の順（merge_decided 14:44:39 が検査の前、inspector_approved の 4 秒後の 14:47:58 にマージ、
+        採用したコードの指摘 3 件を直すジョブなし）を組み直した列が merge_decided_before_review と merged_without_code_fix で落ち、検査と裁きと
+        直しのあとにマージを決めてマージした列は通ることを確かめた。それぞれの線を外す書き換えでテストが落ちることも確かめた。
+        テストはひな形 ci/pr-body-engine.yml の engine-test（道を渡さない node --test）で走るが、建設者がひな形を .github/workflows/ に写して
+        必須のチェックにするまで PR ごとには走らず、merge-order.mjs もまだ本物のイベント列に当てていないので、未配線・未確認
+      issue: 1392
+      at: 2026-11-11
+      decided_by: committee:D-0151
+      requires_check:
+        - runs: tools/pr-body-check/merge-order.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
+      wired: false
+      verified: false
 decided_by: committee:D-0151

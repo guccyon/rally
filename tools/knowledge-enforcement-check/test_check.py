@@ -1018,6 +1018,7 @@ class RequiresCheckTest(unittest.TestCase):
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0016", 1307): [("tools/pr-body-check/ci.test.mjs", check.PR_BODY_ENGINE_WORKFLOW),
                                              ("tools/pr-body-check/engine.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
+                          ("K-0026", 1392): [("tools/pr-body-check/merge-order.test.mjs", check.PR_BODY_ENGINE_WORKFLOW)],
                           ("K-0014", 1207): [],   # 定期のジョブ（requires_schedule）で照らし、PR ごとに走らなくてよい
                           # 議決 D-0130（Issue #1335）で requires_schedule を書くときに、議決 D-0116 の欄の必須に合わせて [] を明示した定期だけの解決策
                           **{key: [] for key in (("K-0001", 1106), ("K-0001", 1179), ("K-0004", 1018), ("K-0004", 1087), ("K-0004", 1162), ("K-0014", 1214))},
@@ -1026,7 +1027,10 @@ class RequiresCheckTest(unittest.TestCase):
                           ("K-0014", 1295): [("tools/conflict-check/test_schema_ci.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1297): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
                           ("K-0014", 1299): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])],
-                          ("K-0014", 1344): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)]})   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0014", 1344): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],   # 組から移したのではなく、はじめから requires_check に書いた解決策
+                          ("K-0004", 1369): [("tools/knowledge-enforcement-check/test_check.py", check.KNOWLEDGE_ENFORCEMENT_WORKFLOW)],   # README の手書きの一覧をやめた照合（Issue #1369）。はじめから requires_check に書いた
+                          # 議決 D-0141（Issue #1351）で、触れたファイルの欄のない解決策に後から書いた
+                          ("K-0014", 1135): [("tools/conflict-check/test_events.py", check.CONFLICT_CHECK_WORKFLOWS[0])]})
         self.assertEqual({key: v for key, v in found.items() if key in self.MOVED}, self.MOVED)
 
     def test_main_で落とす(self):
