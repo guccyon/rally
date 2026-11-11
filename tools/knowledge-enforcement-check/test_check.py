@@ -3049,13 +3049,16 @@ class SolutionFieldsTest(unittest.TestCase):
 
 
 class RequiresCheckDeclaredTest(unittest.TestCase):
-    """--base を渡すと、PR の差分で足したり直したりした kind が ci_check・test の解決策に requires_check の欄がなければ requires_check_missing で落とす
-    （議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を明示する）。base の版は一時の git リポジトリに積んで作る"""
+    """--base を渡すと、PR の差分で触れた知見のファイルの kind が ci_check・test の解決策に requires_check の欄がなければ requires_check_missing で落とす
+    （議決 D-0116 の schema の案、Issue #1304。PR ごとに走らなくてよいものは空の列 [] を明示する。直したかどうかにかかわらず見るのは議決 D-0141 の lint の案、
+    Issue #1351）。base の版は一時の git リポジトリに積んで作る"""
 
     HEAD = "id: K-0006\nenforcement:\n  level: deterministic\n  solutions:\n"
     CI = "    - {kind: ci_check, what: x, issue: 906, wired: false, verified: false}\n"
     TEST = "    - {kind: test, what: t, issue: 1304, wired: false, verified: false}\n"
     OPEN = HEAD + CI
+    # 同じ知見の欄を書いた ci_check（ほかの解決策を足しても、それだけでは落ちない）
+    DECLARED = HEAD + CI.replace("issue: 906,", "issue: 906, requires_check: [],")
 
     def repo(self, before: str | None, after: str | None) -> Path:
         """base の版の K-0006.yaml が before（None ならなし）、作業ツリーで after（None なら base のまま）"""
@@ -3071,7 +3074,7 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
                 self.assertIn(part, line)
 
     def test_足した_ci_check_と_test_の解決策に欄がなければ落とす(self):
-        self.assert_missing(self.errors(self.repo(self.OPEN, self.OPEN + self.TEST)), "solutions[1]（test、issue 1304）")
+        self.assert_missing(self.errors(self.repo(self.DECLARED, self.DECLARED + self.TEST)), "solutions[1]（test、issue 1304）")
         self.assert_missing(self.errors(self.repo(None, self.OPEN)), "solutions[0]（ci_check、issue 906）")
 
     def test_直した解決策に欄がなければ落とす(self):
@@ -3096,30 +3099,32 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
     def test_PR_ごとのひな形を挙げた解決策は空の列でも落とす(self):
         # 議決 D-0139 の ci_check の案、Issue #1344。K-0014 の issue 1295・1297 は PR ごとのひな形のジョブで走る試験なのに requires_check を書かずに足された
         for kind in ("test", "ci_check"):
-            e = self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY.replace("kind: test", f"kind: {kind}"))))
+            e = self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + self.EMPTY.replace("kind: test", f"kind: {kind}"))))
             self.assertEqual(len(e), 1, e)
             for part in (f"solutions[1]（{kind}、issue 1304）", f"{check.REQUIRES_CHECK_MISSING}: ", f"PR ごとのひな形 {self.PR_TEMPLATE} を挙げる",
                          f"議決 {check.REQUIRES_CHECK_DECLARED_DECISION}・{check.PR_TEMPLATE_DECISION}"):
                 self.assertIn(part, e[0])
         # 直した解決策も同じ
-        d = self.pr_template(self.repo(self.OPEN + self.EMPTY, self.OPEN + self.EMPTY.replace("wired: false", "wired: true")))
+        d = self.pr_template(self.repo(self.DECLARED + self.EMPTY, self.DECLARED + self.EMPTY.replace("wired: false", "wired: true")))
         self.assertEqual(len(self.errors(d)), 1)
 
     def test_PR_ごとのひな形を挙げても検査を書くか_変えていないか_定期の解決策なら通る(self):
         req = "[{runs: tools/x-check/test_x.py, workflow: .github/workflows/x.yml}]"
-        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY.replace("requires_check: []", f"requires_check: {req}")))), [])
-        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN + self.EMPTY, None))), [])
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + self.EMPTY.replace("requires_check: []", f"requires_check: {req}")))), [])
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED + self.EMPTY, None))), [])
         sched = self.EMPTY.replace("requires_check: [],", "requires_check: [], requires_schedule: [{runs: tools/x-check/x.py, workflow: .github/workflows/x.yml}],")
-        self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + sched))), [])
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + sched))), [])
         for kind in ("lint", "schema"):
-            self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY.replace("kind: test", f"kind: {kind}")))), [], kind)
+            self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, self.DECLARED + self.EMPTY.replace("kind: test", f"kind: {kind}")))), [], kind)
+        # 触れたファイルでも、変えていない空の列はひな形を挙げていても見ない（欄はあるので D-0141 の線には当たらない）
+        self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED + self.EMPTY, self.DECLARED + self.EMPTY + self.TEST.replace("issue: 1304,", "issue: 1305, requires_check: [],")))), [])
 
     def test_PR_で走らないかないひな形は数えない(self):
-        added = self.OPEN + self.EMPTY
-        self.assertEqual(self.errors(self.repo(self.OPEN, added)), [])   # ひな形がない
+        added = self.DECLARED + self.EMPTY
+        self.assertEqual(self.errors(self.repo(self.DECLARED, added)), [])   # ひな形がない
         for on in ("  schedule:\n    - cron: '0 0 * * *'\n  workflow_dispatch:\n", "  push:\n"):
-            self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, added), on)), [], on)
-        d = self.repo(self.OPEN, added)
+            self.assertEqual(self.errors(self.pr_template(self.repo(self.DECLARED, added), on)), [], on)
+        d = self.repo(self.DECLARED, added)
         (d / self.PR_TEMPLATE).parent.mkdir(parents=True)
         (d / self.PR_TEMPLATE).write_text("on: [\n", encoding="utf-8")
         self.assertEqual(self.errors(d), [])
@@ -3129,26 +3134,45 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
     def test_PR_ごとのひな形を挙げた解決策は_base_を渡さなければ見ない(self):
         self.assertEqual(self.errors(self.pr_template(self.repo(self.OPEN, self.OPEN + self.EMPTY)), None), [])
 
-    def test_ほかの種類と変えていない解決策は見ない(self):
-        for kind in ("lint", "schema", "type", "config", "overlay_rule"):
-            self.assertEqual(self.errors(self.repo(self.OPEN, self.OPEN + self.TEST.replace("kind: test", f"kind: {kind}"))), [], kind)
-        # 欄のない既存の解決策は、同じ知見のほかの解決策を足しても、並べ替えても見ない
+    def test_同じファイルの触れていない解決策に欄がなければ落とす(self):
+        # 議決 D-0141 の lint の案、Issue #1351。K-0014 の issue 1135 は、同じファイルのほかの解決策を直す PR でも欄がないまま黙って通っていた
         added = self.OPEN + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],")
-        self.assertEqual(self.errors(self.repo(self.OPEN, added)), [])
-        self.assertEqual(self.errors(self.repo(self.OPEN + self.TEST, self.HEAD + self.TEST + self.CI)), [])
+        fixed = self.OPEN + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],").replace("what: t", "what: u")
+        for before, after in ((self.OPEN, added),                                                  # 欄を書いた解決策を足す
+                              (self.OPEN + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],"), fixed),  # ほかの解決策だけを直す
+                              (self.OPEN + self.TEST, self.HEAD + self.TEST + self.CI)):          # 並べ替えるだけ
+            e = self.errors(self.repo(before, after))
+            self.assertTrue(any("solutions[" in x and "（ci_check、issue 906）" in x for x in e), e)
+            for line in e:
+                for part in (f"{check.REQUIRES_CHECK_MISSING}: ", "直したかどうかにかかわらず", f"{check.REQUIRES_CHECK}: []",
+                             f"議決 {check.REQUIRES_CHECK_DECLARED_DECISION}・{check.REQUIRES_CHECK_TOUCHED_DECISION}"):
+                    self.assertIn(part, line)
+        self.assert_missing(self.errors(self.repo(self.OPEN, added)), "solutions[0]（ci_check、issue 906）")
+        # 解決策でないところ（statement など）だけを直しても、ファイルに触れたので落とす
+        self.assert_missing(self.errors(self.repo(self.OPEN, "statement: s\n" + self.OPEN)), "solutions[0]（ci_check、issue 906）")
+        # 触れていない欄のない解決策が両方の種類なら、両方とも落とす
+        self.assertEqual(len(self.errors(self.repo(self.OPEN + self.TEST, "statement: s\n" + self.OPEN + self.TEST))), 2)
+        # 欄を書けば通る
+        self.assertEqual(self.errors(self.repo(self.OPEN, self.DECLARED + self.TEST.replace("issue: 1304,", "issue: 1304, requires_check: [],"))), [])
+
+    def test_ほかの種類と触れていないファイルは見ない(self):
+        for kind in ("lint", "schema", "type", "config", "overlay_rule"):
+            self.assertEqual(self.errors(self.repo(self.DECLARED, self.DECLARED + self.TEST.replace("kind: test", f"kind: {kind}"))), [], kind)
+        # 欄のない解決策があっても、PR の差分でそのファイルに触れていなければ見ない
         self.assertEqual(self.errors(self.repo(self.OPEN, None)), [])
+        self.assertEqual(self.errors(self.repo(self.OPEN + self.TEST, None)), [])
 
     def test_base_を渡さなければ見ない(self):
         self.assertEqual(self.errors(self.repo(None, self.OPEN), None), [])
 
     def test_分かれ目より後に_base_で足した解決策は差分に数えない(self):
-        d = self.repo(self.OPEN, None)
+        d = self.repo(self.DECLARED, None)
         ReviewByHoldTest.git(d, "checkout", "-q", "-b", "base")
-        MainTest.write(None, d, "K-0006.yaml", self.OPEN + self.TEST)
+        MainTest.write(None, d, "K-0006.yaml", self.DECLARED + self.TEST)
         ReviewByHoldTest.git(d, "commit", "-q", "-am", "base が進む")
         ReviewByHoldTest.git(d, "checkout", "-q", "-")
         self.assertEqual(self.errors(d, "base"), [])
-        MainTest.write(None, d, "K-0006.yaml", self.OPEN + self.TEST)
+        MainTest.write(None, d, "K-0006.yaml", self.DECLARED + self.TEST)
         self.assert_missing(self.errors(d, "base"), "solutions[1]（test、issue 1304）")
 
     def test_分かれ目を求められなければ照らせないとして落とす(self):
@@ -3167,7 +3191,7 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
         self.assertIn(f"{check.REQUIRES_CHECK_UNVERIFIABLE}: base_unreadable", e[0])
 
     def test_main_が_base_を渡すと照らして_1_を返す(self):
-        d = self.repo(self.OPEN, self.OPEN + self.TEST)
+        d = self.repo(self.DECLARED, self.DECLARED + self.TEST)
         out = d / "out.json"
         self.assertEqual(check.main(["--repo", str(d), "--base", "HEAD", "--json", str(out)]), 1)
         errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
@@ -3175,7 +3199,7 @@ class RequiresCheckDeclaredTest(unittest.TestCase):
         self.assertEqual(check.main(["--repo", str(d)]), 0)
 
     def test_このリポジトリの記録は欄のない_ci_check_と_test_を残してもよい(self):
-        # 既存の解決策は直すときに書く（変えていない解決策は見ない）。この解決策を足した K-0004 の変更でも落ちない
+        # 既存の解決策は、そのファイルに触れるときに書く（触れていないファイルは見ない）
         self.assertEqual([x for k in check.load(REPO) for x in check.check_requires_check_declared(k, REPO, None)], [])
 
 
