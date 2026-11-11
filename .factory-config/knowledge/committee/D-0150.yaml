@@ -1,0 +1,66 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0150
+pr: https://github.com/guccyon/rally/pull/1388
+decided_at: '2026-11-11'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0023 に足した enforcement の test の解決策は、議決 D-0149 の enforcement の案（新しい PR の道で gh
+    pr create より前に既定ブランチを取り込む、衝突したまま PR を開かない、の 2 つを確かめる）と中身が合っていて、議決と矛盾しません。
+  - 'Engine は別のリポジトリなので差分を tools/conflict-check/engine/open-pr-merge.patch に置き、wired:
+    false・verified: false にしていて、配線と効き目の確認が済むまで真にしないという D-0149 の条件と README の決まり（D-0021・D-0034）に沿っています。'
+  - kind が test の解決策に requires_check（runs と workflow の組）を書いていて、議決 D-0116 の必須の欄の決まりを満たしています。
+  - README.md の『すべての解決策に書いた』一覧に K-0023 を足し日付を 2026-11-11 に直したのは、test_check.py が check.py
+    の数えた結果と照らす一覧（D-0052）を K-0023 の変更に合わせたもので、ほかの文は変えていません。
+  - INDEX.md の K-0023 の担保の列を deterministic にしたのは、README の『INDEX.md の担保の列は enforcement.level
+    のまま出る』という決まりどおりで、K-*.yaml と合っています。
+  - 既存の知見（K-0010・K-0014・K-0022 など）の主張や statement・確かさは変えておらず、hypothesis のままなので、変更セットの扱いとして妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0023 に足した解決策は decided_by: committee:D-0149 を示し、その enforcement の test の案（新しい
+    PR の道で gh pr create の前に既定ブランチを取り込み、衝突したまま PR を開かない）と中身が対応しているので、一次記録に辿れます。'
+  - 'what にある「Issue #1383 の起票時の番号は D-0148」は D-0077 と同じ書き方の経緯の注記です。いまの D-0148 は別の PR
+    #1379 の議決なので、取り違えないよう読むときに注意が要ります。'
+  - what は ENGINE_REF（2490db6）の Engine の新しい PR の道には fetch も取り込みもないと書いています。D-0149 の
+    evidence の担当が求めた Engine の版の記録に一部応えていますが、statement と evidence にはまだ版が出ていないので、確かさを上げる前にそこにも書き添えてください。
+  - '差分の適用、ENGINE_REF の引き上げ、.github/workflows/ への配線はまだで、pr.opened と continue.enqueued(reason=conflict)
+    が数秒差の PR の件数での効き目も確かめていません。そのことを what に明記して wired: false・verified: false としているので、confidence
+    は hypothesis のままが妥当で、上げるべきではありません。'
+  - README の一覧に K-0023 を足して日付を 2026-11-11 にしたことと、INDEX.md の担保の列を deterministic にしたことは、K-0023.yaml
+    の enforcement.level と README の決まりに合っています。
+  - 差分に出てくるのは議決・Issue・PR の番号、コミットの短い番号、ファイルの道、終了コードだけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - K-0023 の enforcement は議決 D-0149 の test の案（新しい PR の道で gh pr create の前に既定ブランチを取り込む、衝突したまま
+    PR を開かない）をそのまま tools/conflict-check/test_open_pr.py に落としており、線が entrypoint.sh の
+    1 か所で引けて繰り返し確かめられる形になっています。
+  - Engine が別のリポジトリなので差分を open-pr-merge.patch に置き、ENGINE_REF の今の Engine では todo、review_by（2026-12-11）を過ぎたら落ちる作りは、配線を忘れたまま黙って通ることを防ぐ期限として妥当です。
+  - kind が test の解決策に必須の requires_check が runs と workflow の組で書かれていて、README の決まり（D-0116・D-0077）に沿っています。
+  - '配線は建設者の作業として残り、効き目（pr.opened と continue.enqueued(reason=conflict) が数秒差の PR の件数）も未確認なので、wired:
+    false と verified: false のままにしているのは正直で、配線と事例記録が揃うまで true にしないでください。'
+  - INDEX.md の担保の列が deterministic と出ても実際は未配線なので、check.py の表示どおり『未配線』として読むべきで、確かさは
+    hypothesis のままが妥当です。
+  - 差分にあるのは議決・Issue・PR の番号、ファイルの道、コミットの短い番号、終了コードだけで、人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この変更セットは議決 D-0149 で決めた K-0023 の test の案を enforcement.solutions に記録し、README の一覧に
+    K-0023 を足すだけで、statement・scope・confidence を広げていないので、範囲は広すぎません。
+  - 'wired: false と verified: false をはっきり書き、配線と効き目の確かめがまだだと what に書いているので、enforcement.level
+    の deterministic は K-0001・K-0005 など先例と同じ扱いで、言い過ぎではありません。'
+  - 反例の候補として、解けないときに push もせず終了コード 5 で終える形では、今は続きのジョブで救えていた実装の成果が失われうるので、配線の前にブランチや作業の残し方を確かめることを勧めます。
+  - test_open_pr.py は今の Engine で todo になり K-0023 の review_by（2026-12-11）を過ぎると落ちるので、配線した後に
+    Engine への差分の適用が遅れると知見の期限が CI を止める理由になることに気をつけてください。
+  - 根拠は C-0011 の 1 件だけで効き目も確かめていないので、confidence は hypothesis のままが妥当で、上げるべきではありません。
+  - 差分にあるのは知見・議決・Issue・PR の番号、ファイルの道、コミットの短い番号だけで、人を特定できる情報はありません。
+  personal_data: false
+enforcement: []
