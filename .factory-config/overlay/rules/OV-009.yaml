@@ -1,0 +1,24 @@
+id: OV-009
+title: "README・docstring・コメントに書く議決の番号を、記録の decided_by（委員会の記録の id）とそろえる（起票時の番号を議決として書かない）"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#1228"
+  - "github:guccyon/rally#1326"
+  - "github:guccyon/rally#1251"
+  - "github:guccyon/rally#1330"
+signature: "judgment:system_interface"
+check:
+  kind: rubric
+  text: >-
+    差分が知見の記録（`.factory-config/knowledge/K-*.yaml` の `enforcement.solutions` など）に `decided_by: committee:D-xxxx` を足し、同じ PR の README・docstring・コメントの追加行が
+    その案の根拠として別の番号（Issue の起票時の番号など。例: `decided_by: committee:D-0054` なのに「議決 `D-0053`、Issue #1149」、`committee:D-0066` なのに「議決 D-0062・Issue #1174。委員会の記録は committee/D-0066.yaml」）を
+    「議決 D-yyyy」として書いているときは、読み手が別の議決に辿り着くので欠陥とする。
+    議決の番号を decided_by と同じ番号で書いている差分や、「議決 `D-0066`（Issue #1174 の起票時の番号は `D-0062`）」のように decided_by の番号を本体にして起票時の番号を括弧の注記に置いている差分は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-009/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-009/negative-1.diff" }
+  - { id: p2, polarity: positive, expect: fire, diff_ref: "file:rules/OV-009/positive-2.diff" }
+  - { id: n2, polarity: negative, expect: silent, diff_ref: "file:rules/OV-009/negative-2.diff" }
