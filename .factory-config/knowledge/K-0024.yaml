@@ -30,4 +30,4 @@ invalidate_when:
   - "窓の中の README・lib.rs・openapi.yaml の衝突の束のチケットについて plan.serialized を確かめ、並べ方が効いていたのに衝突が繰り返していた（原因は投入の並べ方ではなく、ファイルの作りか解く時機だった）"
   - "投入のときに見込みのファイルでよく衝突するファイルを共有するチケットを並べるようになったあと、同じチケットの衝突の繰り返しが減らなかった"
   - "見込みのファイル（expected_files）が README などの共有ファイルを外さなくなり、並べ方の後の窓で同じファイルの衝突の束が出なくなった"
-decided_by: committee:D-0148
+decided_by: committee:D-0149

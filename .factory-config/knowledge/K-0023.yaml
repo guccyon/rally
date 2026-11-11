@@ -28,4 +28,4 @@ invalidate_when:
   - "実装のジョブが PR を開く直前に最新の既定ブランチを取り込み、衝突したら同じセッションで解くようになった"
   - "取り込んでから PR を開くようにしたあとも、開いて数分の内に衝突する PR が減らなかった（取り込みから開くまでの間に main が進んでいた）"
   - "衝突の束を集計して、PR が開いた時点で衝突していたもの（pr.opened と continue.enqueued(reason=conflict) が数秒差）が束の少数だと分かった"
-decided_by: committee:D-0148
+decided_by: committee:D-0149
