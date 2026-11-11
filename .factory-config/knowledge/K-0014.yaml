@@ -63,6 +63,9 @@ enforcement:
       issue: 1136
       at: 2026-11-08
       decided_by: committee:D-0049
+      requires_schedule:
+        - runs: tools/conflict-check/schema.py
+          workflow: .github/workflows/conflict-schema.yml
       wired: false
       verified: false
     - kind: ci_check
@@ -88,6 +91,9 @@ enforcement:
       at: 2026-11-08
       decided_by: committee:D-0101
       requires_check: []
+      requires_schedule:
+        - runs: tools/conflict-check/schema.py
+          workflow: .github/workflows/conflict-schema.yml
       wired: false
       verified: false
     - kind: test
@@ -137,6 +143,10 @@ enforcement:
       issue: 1214
       at: 2026-11-08
       decided_by: committee:D-0076
+      requires_check: []
+      requires_schedule:
+        - runs: tools/conflict-check/events.py
+          workflow: .github/workflows/conflict-schema.yml
       wired: false
       verified: false
     - kind: schema
@@ -161,6 +171,9 @@ enforcement:
       issue: 1213
       at: 2026-11-08
       decided_by: committee:D-0076
+      requires_schedule:
+        - runs: tools/conflict-check/schema.py
+          workflow: .github/workflows/conflict-schema.yml
       wired: false
       verified: false
     - kind: test
