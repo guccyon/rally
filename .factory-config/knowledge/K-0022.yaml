@@ -20,7 +20,7 @@ evidence:
   - case: C-0011
   - pr: 345
   - event: "case.analyzed:644407"
-status: draft
+status: active
 verified_at: 2026-11-11
 review_by: 2026-12-11
 confidentiality: product
@@ -29,3 +29,4 @@ invalidate_when:
   - "apps/backend/README.md のどのチケットも追記する部分が、機能ごとのファイルか生成物に分かれた（または merge=union などで機械的に解かれるようになった）"
   - "断片方式のあとの窓（2026-11-04 以降）で、README・lib.rs・openapi.yaml の衝突の束が出なくなった（衝突は断片方式の前の PR に限られていた）"
   - "共有ファイルを分けたあとも、同じファイルの衝突の束が減らなかった（原因はファイルの作りではなく並べ方だった）"
+decided_by: committee:D-0148

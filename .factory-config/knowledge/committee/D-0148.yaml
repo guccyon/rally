@@ -1,0 +1,81 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0148
+pr: https://github.com/guccyon/rally/pull/1382
+decided_at: '2026-11-11'
+outcome: enforce
+requires_human: false
+knowledge:
+- K-0022
+- K-0023
+- K-0024
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0022 は CHANGELOG.md の部分を既存の K-0002 に任せ、主張を CHANGELOG 以外の共有ファイル（README・lib.rs・openapi.yaml）と「衝突したファイルをすべて直さないとジョブが消えない」点に絞っており、K-0002
+    と矛盾も重複もしません。
+  - ただし K-0022 の scope.files に CHANGELOG.md が残っていて、取り出すときに K-0002 と重なるので、次に直すときは外すか
+    statement の絞り方に合わせることを勧めます。
+  - K-0024 は投入の並べ方（plan.serialized）の仕組みについての知見で、K-0013（CHANGELOG に限った、解き直す時機の話で、ほかのファイルには広げないと明記）とも
+    K-0020（判断待ちの間の投入）とも仕組みが別なので、K-0013 の範囲を勝手に広げてはいません。
+  - K-0023 は PR を開く前に衝突を防ぐ話で、衝突した後の続きのジョブの積み方を決めた K-0010 の線（回数の上限、CHANGELOG だけなら機械的に解く）や
+    K-0014 の記録の話とぶつからず、補い合う関係です。
+  - 変更セットとして、既存の知見の扱い（K-0002 は重なるので主張を絞ってそのまま、K-0013・K-0020 は別の仕組みとしてそのまま）が C-0011
+    の学びに書かれていて、既存のファイルを書き換えていないのも妥当です。INDEX.md の 3 行も K-*.yaml と合っています。
+  - 3 件とも根拠は 1 つの束（C-0011）だけで、断片方式や並べる段が入った時期と窓が重なっていることも書かれているので、確かさは hypothesis、状態は
+    draft のままが妥当です。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0022・K-0023・K-0024 は 3 件とも evidence に C-0011・PR #345・event case.analyzed:644407
+    を挙げていて、C-0011 は数値（17 件・49.17 USD、job 429 と job 433 の費用、09:23:38 と 09:23:42 の時刻）をその分析の記録として書いているので、一次記録に辿れます。'
+  - 根拠はこの束 1 つで、どの知見も分析役の推測と材料にないこと（窓が断片方式の 2026-11-03 とまたがること、plan.serialized が効いていたか）を
+    statement に書いているので、confidence は hypothesis のままが妥当で、上げるべきではありません。
+  - 'K-0024 の主張の例は #348 の 2 回の衝突ですが、evidence には pr 345 しかなく #348 は C-0011 の 1 行だけなので、次に直すときに
+    #348 の PR 番号か衝突の event を evidence に足してください。'
+  - K-0023 の『worker/entrypoint.sh は新しい PR では既定ブランチを取り込まない』は 2026-11-11 の手元の Engine
+    で確かめたと書くだけで、Engine の版（engine.lock のコミット）が記録されていないので、確かさを上げる前にその版を事例か evidence
+    に書き添えてください。
+  - K-0022 の『束の費用はジョブの費用をファイルの数で均等に割ったもの』は 0.97 = 3.88 / 4 の 1 点からの読みだと statement
+    に断っているので、根拠を超えた言い切りにはなっていません。
+  - 差分に残るのはチケット・PR・job・event の番号、コミットの短い番号、ファイルの道、費用だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: enforce
+  reasons:
+  - K-0023 は「新しい PR を開く前に既定ブランチを取り込む」という線が worker/entrypoint.sh の 1 か所で引け、作る費用が小さく、外すと
+    1 件ごとに実装より高い tier-large の解消ジョブ（job 433 は 3.88 USD）が走るので、決定論で担保する値打ちがあります。
+  - K-0023 の担保は Engine のテストで「新しい PR の道でも gh pr create の前に既定ブランチの取り込みと衝突の確かめがある」ことを照らす形にすれば、続きのジョブの道ではすでに取り込んでいる事実と揃い、退行も捕まえられます。
+  - K-0022 の担保の候補（.gitattributes の merge=union）は README には使えても lib.rs と openapi.yaml
+    には安全に使えず、README を機能ごとのファイルに分けるのは製品の作りを変えるので、今は決定論にせず context のままがよいです。
+  - K-0024 は Engine にすでに serialize.py の並べる段があり、窓の中でそれが効いていたか（plan.serialized）を確かめる前に新しい検査を足すと二重の仕組みになるので、担保は確かめの後に回すべきです。
+  - 'K-0022 と K-0024 は窓が断片方式（2026-11-03）とまたがり #336 の前後が材料にないので、確かさは hypothesis のままが妥当です。'
+  - 差分にはチケット・PR・ジョブの番号、ファイル名、費用だけが出ていて、人を特定できる情報はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - '3 つの知見は、根拠が束 C-0011 の 1 つと例の PR #345 だけだと書いています。窓が断片方式（2026-11-03）と plan.serialized
+    の時期にまたがって前後が分からないことも書いているので、言い過ぎてはいません。下書きの hypothesis としては採ってよいです。'
+  - K-0022 は、事例の学びでは「CHANGELOG 以外の共有ファイルに絞った」としているのに、scope.files に CHANGELOG.md を入れています。これでは
+    K-0002 と効く範囲が重なるので、次に直すときに CHANGELOG.md を外すか、入れる理由を statement に書いてください。
+  - K-0022 と K-0024 の statement は、共有ファイルを「など」で開いたままにしています。K-0013 は根拠のないほかの共有ファイルには広げないと線を引いていたので、確かめるまでは
+    scope.files の 3 つ（README・lib.rs・openapi.yaml）に限って読むべきです。
+  - 反例の候補が残っています。README が衝突した 17 件のすべてで CHANGELOG.md も一緒に衝突していたなら、README の束は、ジョブの費用をファイルの数で割ったときにできる
+    CHANGELOG の束の影にすぎません。その場合は K-0022 の「README を分けないとジョブが消えない」の根拠が弱くなるので、README だけ、または
+    CHANGELOG を含まない衝突の件数を確かめるまで確かさを上げないでください。
+  - 'K-0024 の繰り返しの例 #348 の 2 回の衝突で、どのファイルが衝突したかは材料にありません。CHANGELOG だけの衝突なら K-0013
+    の主張と同じなので、confirmed に上げる前に #348 の conflict.files を確かめてください。'
+  - K-0023 の反例は、取り込みから PR を開くまでの間にも main が進むことです。これは statement と invalidate_when に書かれていて、範囲は
+    1 件の例と新しい PR に限られているので、広すぎることはありません。
+  personal_data: false
+enforcement:
+- knowledge: K-0023
+  level: deterministic
+  solution_kind: test
+  proposal: Engine の worker/entrypoint.sh で、新しい PR の道でも push と gh pr create の直前に origin
+    の既定ブランチを fetch して取り込み、衝突したら同じセッションで解いてから開く（解けなければ PR を開かずに失敗として返す）ようにし、同じ変更で engine
+    のテストに「新しい PR の道で既定ブランチの取り込みが gh pr create より前にある」「取り込みが衝突したまま PR を開かない」の 2 つを足して
+    CI で必須にする。効き目は配線の後の窓で pr.opened と continue.enqueued(reason=conflict) が数秒差の PR
+    の件数を数えて確かめ、それまで verified は false のままにする。
