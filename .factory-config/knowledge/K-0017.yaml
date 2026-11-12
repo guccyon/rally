@@ -8,6 +8,8 @@ statement: >-
   rerun の job 261 は仕掛かりなしで同じ大きさを作り直し、1 ジョブで PR #247 を出した）。
   主張は途中終了が起きやすいことまでで、費用の膨らみ（rerun が仕掛かりを引き継がずに作り直したこと）は別の仕組みなので入れない。
   例のチケットの合計 17.0 USD は束 process:cost_outlier:code_change の 1 件平均（約 17.8 USD）とほぼ同じで、束の費用を押し上げた代表ではなく平均並みの 1 件である。
+  C-0015（PR #995）でも、plan が design_system の 1 段だけでデザインの正本・両アプリのテーマと部品を 1 PR に入れ、plan.outcome が undersized（XL）、
+  62 ファイル・128 ターンになった（分析役の見込みは「繰り返しそう: いいえ」で、この型の根拠は 2 件）。
   根拠はこの 1 チケットだけで、束のほかの 36 件が同じ型かは確かめていない。
 scope:
   work: [plan.route, dev.build]
@@ -22,11 +24,14 @@ evidence:
   - pr: 246
   - pr: 247
   - event: "case.analyzed:522825"
+  - case: C-0015
+  - pr: 995
+  - event: "case.analyzed:776002"
 status: active
 verified_at: 2026-11-08
 review_by: 2026-12-08
 confidentiality: product
-related: [K-0018, K-0010]
+related: [K-0018, K-0010, K-0035]
 invalidate_when:
   - "投入の前にチケットの大きさを見積もり、ターン予算の近くの大きさのものを deps 付きの子チケットに分けて投入するようになった"
   - "同じ大きさ（領域の数・契約や schema の差分・行数）のチケットが、たいてい 1 ジョブで途中終了せずに終わると分かった"
