@@ -1,0 +1,32 @@
+id: K-0035
+theme: 6
+kind: causal
+statement: >-
+  デザインの正本を変える Issue が、正本・カタログに加えて両アプリのテーマと部品の実装まで含むのに、plan が design_system の 1 段だけで
+  小さく見積もられると、XL の変更が 1 つの PR に集まる（C-0015 では plan.outcome が undersized と判定し、62 ファイル・128 ターンの PR になった）。
+  さらに Issue に貼られた正本の版（0.3.0）が、リポジトリの specs/design/ の版（0.4.0）と合っているかを plan の時点で照らさないと、
+  版の番号と範囲を実装役が仮決めすることになる（8 件）。差し戻しの直接の原因は本文の受け渡し（K-0025）で、この知見の寄与は間接的（本文が長く欠けが大きくなった、という推測）。
+  分析役の提案の向きは、planner の定義に、design_system の段の後に両アプリの実装が続くときは段を分けるか XL として見積もる決まりを足し、
+  あわせて正本の版の照合を plan の時点で行わせること。分析役の見込みは「繰り返しそう: いいえ」で、根拠はこの 1 件だけ。
+  大きさを投入の前に測って分ける線は K-0017、契約と複数のアプリを 1 枚にまとめない順番の規約は K-0018 が書き、この知見は、デザインの正本の変更に
+  両アプリの実装が付いてくる型と、Issue の正本の版の照合に絞る。
+scope:
+  work: [plan.workflow, dev.design.system]
+  artifacts: [Plan, DesignSystemSpec]
+  request_form: [ticket]
+  roles: [plan, design_system]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 995
+  - issue: 981
+  - event: "case.analyzed:776002"
+status: draft
+verified_at: 2026-11-12
+review_by: 2026-12-12
+confidentiality: product
+related: [K-0017, K-0018, K-0025]
+invalidate_when:
+  - "planner の定義に、design_system の段の後に両アプリの実装が続くときの段の分け方か XL の見積もりと、Issue の正本の版の照合が入った"
+  - "デザインの正本の変更で 1 段の plan が undersized と判定されない例が続き、C-0015 が例外だと分かった"

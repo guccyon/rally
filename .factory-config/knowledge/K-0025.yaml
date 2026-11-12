@@ -7,6 +7,7 @@ statement: >-
   本文の指摘と直しを生む（C-0012 では実装役の会話の記録の最後の文が ## 概要 から始まるのに、summary.md と PR 本文は箇条書きの途中から始まっていた）。
   どこで落ちたかは確かめていない。分析役は最後の文が複数のテキストの塊に分かれ後ろの塊だけを拾ったと推測し、2026-11-11 の手元の Engine（34a53af）の
   orchestrator/worker/entrypoint.sh は報告を tail -80 で切っている（80 行を超える報告は頭が落ちる）。ジョブが動いた時点の Engine が同じだったかは確かめていない。
+  C-0015（PR #995）でも summary.md が ## 補足 の見出しより後の箇条書きから始まり、同じ型が再現した（実装役の最後の文には見出しがそろっていた）。
 scope:
   work: [dev.describe]
   artifacts: [PR.body]
@@ -18,11 +19,14 @@ evidence:
   - case: C-0012
   - pr: 982
   - event: "case.analyzed:644507"
+  - case: C-0015
+  - pr: 995
+  - event: "case.analyzed:776002"
 status: active
 verified_at: 2026-11-11
 review_by: 2026-12-11
 confidentiality: product
-related: [K-0016, K-0011, K-0009]
+related: [K-0016, K-0011, K-0009, K-0033]
 invalidate_when:
   - "summary.md を作るときに実装役の最後の文を切らずに全部渡し、PR 本文の見出しの組を元の文と機械で照らすようになった"
   - "ジョブが動いた時点の Engine と取り出しの記録を確かめ、欠けが取り出しの側ではなかった（実装役の最後の文そのものが欠けていた）と分かった"

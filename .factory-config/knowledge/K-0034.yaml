@@ -1,0 +1,28 @@
+id: K-0034
+theme: 4
+kind: causal
+statement: >-
+  デザインの正本（specs/design/）や Issue で、「secondary」が色の役割（ライム）とボタンの種類（副のボタン）の両方の意味で
+  書き分けられずに使われていると、実装役と判定役が読み方を推し量ることになり、人によって読み方が分かれて仮決めが増える
+  （C-0015 では「secondary の塗り」が色の名前なのかボタンの種類なのか分かれた）。分析役の提案の向きは、色の役割は「color.secondary」、
+  ボタンの種類は「button の secondary の種類（副のボタン）」と書き分ける決まりを governance.yaml の用語の注に足すこと。
+  根拠はこの 1 件で、同じ語の食い違いがほかの PR でも起きたかは確かめていない。
+scope:
+  work: [dev.design.system, dev.build]
+  artifacts: [DesignSystemSpec]
+  request_form: [ticket]
+  roles: [design_system, implement, judge]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 995
+  - event: "case.analyzed:776002"
+status: draft
+verified_at: 2026-11-12
+review_by: 2026-12-12
+confidentiality: product
+related: [K-0003, K-0019, K-0021]
+invalidate_when:
+  - "governance.yaml の用語の注か specs/design/ に、色の役割とボタンの種類の書き分けの決まりが入った"
+  - "書き分けた後でも、同じ語の読み方の割れが仮決めに出た（原因は語の書き方ではなかった）"

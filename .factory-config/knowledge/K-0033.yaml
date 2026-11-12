@@ -1,0 +1,29 @@
+id: K-0033
+theme: 4
+kind: causal
+statement: >-
+  同じ「PR 本文」でも、実装役は自分が書いた文、検査役と判定役は handoff の summary.md から作られた文を見ていて、
+  その 2 つが食い違うことを判定役が知る入力がないと、受け渡しの欠陥を実装役の欠陥として裁き、責任の置き場所を間違える
+  （C-0015 では実装役の最後の文に ## 概要 から ## 補足 までの見出しがそろっていたのに、summary.md は ## 補足 の後の箇条書きから始まり、
+  検査役と判定役は欠けた本文を前提に PR-002 を adopt した）。分析役の提案の向きは、判定役の入力に実装役の最後の文と実際の PR 本文の
+  両方を渡し、食い違いは受け渡しの欠陥として分類させること。まだ試しておらず、どこで落ちたかも確かめていない。
+  本文が欠ける仕組みそのものは K-0025・K-0016 が書く。この知見は、食い違いを判定役が受け渡しの欠陥として分けられるかに絞る。
+scope:
+  work: [dev.describe, dev.review.judge]
+  artifacts: [PR.body, Judgment]
+  request_form: [ticket]
+  roles: [implement, inspect, judge]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 995
+  - event: "case.analyzed:776002"
+status: draft
+verified_at: 2026-11-12
+review_by: 2026-12-12
+confidentiality: product
+related: [K-0011, K-0016, K-0025]
+invalidate_when:
+  - "判定役のジョブの入力に実装役の最後の文と実際の PR 本文の両方が入り、食い違いが受け渡しの欠陥として分類されるようになった"
+  - "実装役の最後の文と summary.md を突き合わせ、欠けが実装役の書き出しの側だったと分かった"
