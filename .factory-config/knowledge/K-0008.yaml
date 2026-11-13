@@ -7,6 +7,9 @@ statement: >-
   judge の推奨が「PR のまま」のときに限り、衝突の解消を判断待ちと並行して起こせば、この待ちを減らせると見られる。
   ただし判断待ちの間も main が速く進むと、並行で解いてもまた衝突し、continue を繰り返す費用が待ちの短縮を上回るおそれがある。
   判断の後まで continue が起きなかった理由（supervisor の仕組み）は確かめていない。
+  K-0010 の担保（.factory-config/continuation.yaml の conflict）との関係: 判断待ちと並行して解く回も、エージェントを呼び出して解けば
+  同じ PR につき 3 回までの上限（max_attempts_per_pr。機械的に解いた回は数えない）に数える。並行で解いたあとにまた衝突すると上限に早く届き、
+  衝突の停止（人の判断待ち）に上がって、待ちを減らすねらいと逆の結果になりうる（どちらが勝つかは確かめていない）。
 scope:
   work: [dev.review.judge]
   roles: [supervisor]
@@ -17,7 +20,7 @@ evidence:
   - event: "case.analyzed:113588"
   - pr: 534
 status: draft
-verified_at: 2026-11-04
-review_by: 2026-12-04
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
-related: [K-0002, K-0013]
+related: [K-0002, K-0010, K-0013]

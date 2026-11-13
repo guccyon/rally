@@ -4,7 +4,10 @@ kind: causal
 statement: >-
   採用した PR 本文の指摘を直す body_fix（本文だけの直し）が終わる前に supervisor が承認（inspector_approved）を出し、
   直した本文の再検査をマージの条件に入れないと、PR は直していない本文か、直したが再検査していない本文のままマージされうる。
-  直しが漏れたり失敗したりしていても、マージの前に止める段がない（根拠の 2 件では、直し漏れが残った記録はまだない）。
+  直しが漏れたり失敗したりしていても、マージの前に止める段がない。根拠の 3 件では、C-0005 は採用済みの本文の指摘が残ったまま、
+  本文の直し（pr.body_amended 20:08:50）の 7 秒前の 20:08:43 にマージされた（マージと本文の直しの時刻のずれの記録。マージされた本文が直し漏れだったとまでは言わない）。
+  C-0003 は最後の本文の直し（job 572）のあと検査をもう一度通さずに、C-0006 は直しの約 1 秒後に再検査なしでマージされた。
+  直しが失敗したまま直らずに残った記録はまだない。
 scope:
   work: [dev.describe, dev.review.inspect]
   artifacts: [PR.body]
@@ -18,14 +21,17 @@ evidence:
   - case: C-0005
   - pr: 659
   - event: "case.analyzed:274379"
+  - case: C-0003
+  - pr: "396"
+  - event: "case.analyzed:40381"
 status: active
-verified_at: 2026-11-07
-review_by: 2026-12-07
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
 related: [K-0004, K-0006]
 invalidate_when:
   - "supervisor.merged が、採用した PR 本文の指摘を直す body_fix の終わりと、直した本文の再検査（少なくとも見出しの機械的な確認）を待つようになった"
-  - "本文だけの直し（pr.body_amended）もマージ前の必須チェックで確かめられるようになった"
+  - "本文だけの直し（pr.body_amended）もマージ前の必須チェックで確かめられるようになった（K-0006 の issue 906 の解決策の本文の検査が、本文だけの直しのあとにも走るよう配線された）"
 enforcement:
   level: deterministic
   solutions:
@@ -47,6 +53,7 @@ enforcement:
       decided_by: committee:D-0033
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0050（Issue #1131 の起票時の番号は D-0048。PR #1128）の 1 つ目の ci_check の案を入れた。recheck.test.mjs に事例 C-0003（PR #396）の列を足した。
@@ -197,6 +204,7 @@ enforcement:
       decided_by: committee:D-0074
       wired: false
       verified: false
+      requires_check: []
     - kind: test
       what: >-
         議決 D-0105（PR #1280）の 1 つ目の test の案を入れた。これまで engine.test.mjs の (12) は Engine に body_recheck_pending がなければ
@@ -264,6 +272,7 @@ enforcement:
       decided_by: committee:D-0109
       wired: false
       verified: false
+      requires_check: []
     - kind: test
       what: >-
         議決 D-0110（PR #1292）の test の案を入れた。recheck.mjs の isBodyCheck を、本文を見た gate.evaluated のうち通ったものだけを数える形にした
@@ -284,6 +293,7 @@ enforcement:
       decided_by: committee:D-0110
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0106（PR #1282）の ci_check の案（建設者が tools/pr-body-check/ci/pr-body-engine.yml を .github/workflows/pr-body-engine.yml に写して
