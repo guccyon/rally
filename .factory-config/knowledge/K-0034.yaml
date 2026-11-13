@@ -1,0 +1,29 @@
+id: K-0034
+theme: 6
+kind: causal
+statement: >-
+  承認（inspector_approved）からマージまでの待ちが長いと、その間に既定ブランチが進んで PR が衝突し、conflict の続きのジョブが回数の上限なしに
+  繰り返される（C-0015 の PR #461 では judge の終了 00:32:40 から inspector_approved 02:01:26 まで約 90 分、承認の 38 秒後に pr.conflicted、
+  conflict の continue は 9 回）。上限なしの tier-large は K-0010、解く時機は K-0013、投入の並べ方は K-0024、承認からマージまでの順番は K-0029 が
+  書き、この知見は承認までの待ちの長さと、continue（conflict）に回数の上限（分析役の案は 3 回）を置いて超えたら指示役へ上げるという向きに絞る。
+  分析役の案の「承認の後すぐマージする」は、承認の 38 秒後の衝突を見るとマージの待ちだけでは説明できず、待ちの中身（検査の待ち行列か、
+  同じファイルを触る別の PR か）は材料にない。根拠はこの束の 1 つの PR だけ。
+scope:
+  work: [dev.build, dev.review.inspect]
+  artifacts: [PR.code]
+  request_form: [ticket]
+  roles: [supervisor, implement]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 461
+  - event: "case.analyzed:1004009"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0010, K-0013, K-0024, K-0029]
+invalidate_when:
+  - "continue（conflict）に回数の上限と、超えたときに指示役へ上げる仕組みが入った"
+  - "上限を入れても、同じ PR の衝突の解消が減らなかった（待ちではなく共有ファイルの作りが原因だった）"

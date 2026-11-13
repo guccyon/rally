@@ -1,0 +1,29 @@
+id: K-0035
+theme: 4
+kind: causal
+statement: >-
+  「PR 本文」を、実装役は衝突解消などの作業記録を足していく場所として、検査役は読み手向けの決まった構成（概要→背景→問題→対応内容）の文書として
+  使い分けているので、同じ言葉の役割がずれて、衝突を直す続きのジョブのたびに本文が崩れ、検査役の同じ指摘と body_fix が繰り返される
+  （C-0015 では PR #461 に job 805 から 1153 まで 8 回分の取り込みの記録が節として残り、body_fix 1161・1177 が呼ばれた）。
+  本文の重なりは K-0001、その時点の要約として書き直す向きは K-0030 が書き、この知見は「PR 本文」と「作業記録」を用語として分けて定義し、
+  続きのジョブへの指示に置き場（handoff か PR コメント）を明記するという欠けに絞る。置き場が決まっていなかったというのは推測
+  （session.txt と handoff/ に記録がない）。根拠はこの束の 1 つの PR だけ。
+scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
+  roles: [implement, body_fix, inspect]
+acts_on: context
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 461
+  - event: "case.analyzed:1004009"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0001, K-0030, K-0005, K-0006]
+invalidate_when:
+  - "specs/glossary.yaml か続きのジョブへの指示で、PR 本文と作業記録の置き場が分けて定義された"
+  - "定義されたあとも、衝突の解消のたびの本文の指摘と body_fix が出続けた（定義ではなく機械的な関所が要った）"

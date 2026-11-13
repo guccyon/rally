@@ -1,0 +1,29 @@
+id: K-0033
+theme: 6
+kind: causal
+statement: >-
+  並列に流れるチケットがどれも apps/admin-web/README.md の同じ場所に追記すると、admin-web を触るチケットの数とともに衝突の解消のジョブが増える
+  （C-0015 では apps/admin-web/README.md の束が 14 チケットに 19 件・14.18 USD、前の窓は 0 件。例の PR #461 は CHANGELOG.md の衝突のあと
+  job 1015 から README が加わり、解消の続きのジョブが 9 回、1 回 4〜5 USD かかった）。共有ファイル一般の型は K-0022、根の README.md の表の
+  1 行は K-0031、CHANGELOG は K-0002 が書き、この知見はアプリの README（apps/admin-web/README.md）にも同じ型が広がったという再現を足す。
+  ただし CHANGELOG.md の衝突が断片方式（2026-11-03）の前の PR のものかは材料にない。merge=union（分析役の応急策）は、1 行を両方が書き換える
+  衝突では行が重なる見込みで（K-0031 の推測。試していない）、手当として効くかは確かめていない。
+scope:
+  work: [dev.build]
+  artifacts: [PR.code]
+  files: [apps/admin-web/README.md, CHANGELOG.md]
+  request_form: [ticket]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 461
+  - event: "case.analyzed:1004009"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0022, K-0031, K-0002, K-0024]
+invalidate_when:
+  - "apps/admin-web/README.md の画面や機能の一覧が生成物か、チケットごとの断片に分かれた"
+  - "分けたあとも apps/admin-web/README.md の衝突の束が減らなかった（原因はファイルの作りではなく並べ方だった）"

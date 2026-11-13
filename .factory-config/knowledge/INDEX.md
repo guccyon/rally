@@ -16,6 +16,7 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0021 | 4 | causal | hypothesis | active | context | 2026-11-09 | 2026-12-09 | Issue が「いまの絞り込み」「ほかの期間の欄」のように今の画面を前提にした言葉で書かれているのに、指示役が前提にしている既存の欄や 手本の画面をファイル名で |
 | K-0025 | 4 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 実装役の報告（最後の文）から handoff の summary.md を作り PR 本文に渡す取り出しが、報告の一部しか拾わないと、実装役が ## 概要 から |
 | K-0030 | 4 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 衝突を解く続きのジョブが、PR 本文を「その時点の要約」（概要・対応内容・動作確認）として書き直さずに、回ごとの取り込みの記録を本文の節として 足していくと、本 |
+| K-0035 | 4 | causal | hypothesis | draft | context | 2026-11-13 | 2026-12-13 | 「PR 本文」を、実装役は衝突解消などの作業記録を足していく場所として、検査役は読み手向けの決まった構成（概要→背景→問題→対応内容）の文書として 使い分けてい |
 | K-0027 | 5 | hypothesis_test | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 事実: 観点 flow（利用者の流れ。Engine の definitions/qa.yaml の viewpoints）の Defect が、マージの後（QA |
 | K-0002 | 6 | causal | hypothesis | active | deterministic | 2026-11-08 | 2026-12-08 | 並列で進む PR がすべて CHANGELOG.md の [Unreleased] の同じ場所に 1 行ずつ足す運用だと、コードに関係のない衝突が起きやすく、  |
 | K-0004 | 6 | causal | hypothesis | active | deterministic | 2026-11-01 | 2026-12-01 | supervisor が差し戻し（sendback）を「直っていない採用欠陥（defect が null でなく、verdict が adopt）があるか」では |
@@ -36,3 +37,5 @@ core-gates/knowledge_check.py --index で作り直す。期限は review_by。
 | K-0029 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | supervisor がマージを決めた（supervisor.merge_decided）あとも、検査（inspect・judge）が終わってマージするまでの間 |
 | K-0031 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | リポジトリの根の README.md の「## 構成」の表で、アプリの行（apps/admin-web/・apps/student-app/）の 1 つのセルに |
 | K-0032 | 6 | causal | hypothesis | active | context | 2026-11-11 | 2026-12-11 | 同じファイルに触る PR が同時にマージを待っていると、1 回のマージで待っている複数の PR が同時に衝突し、それぞれに衝突の解消の 続きのジョブが積まれるこ |
+| K-0033 | 6 | causal | hypothesis | draft | context | 2026-11-13 | 2026-12-13 | 並列に流れるチケットがどれも apps/admin-web/README.md の同じ場所に追記すると、admin-web を触るチケットの数とともに衝突の解消 |
+| K-0034 | 6 | causal | hypothesis | draft | context | 2026-11-13 | 2026-12-13 | 承認（inspector_approved）からマージまでの待ちが長いと、その間に既定ブランチが進んで PR が衝突し、conflict の続きのジョブが回数の |
