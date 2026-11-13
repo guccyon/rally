@@ -38,6 +38,7 @@ jobs:
         if: steps.changed.outputs.yes == 'true'
         with:
           channel: stable
+          flutter-version: 3.47.9   # stable の新しい版で material.dart が非推奨になり analyze が落ちる（2026-11-13）。上げるときは移行と一緒に
           cache: true
       - name: pub get
         if: steps.changed.outputs.yes == 'true'
