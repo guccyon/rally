@@ -19,7 +19,8 @@ use crate::{
 /// コーチがいるかを profile に問い合わせ（[`SlotCoachAccountLookup`]。いなければ [`CoachLeaveError::CoachNotFound`]）、
 /// 期間（[`calendar_day::days`]）の枠と予約とそのコーチのお休みの記録を読んで、domain の [`CoachLeave::start`] で期間の予約を
 /// すべて本部のキャンセルにし、枠をすべて取り下げ、お休みの記録とともに 1 つにまとめて保存する（全部か何もしないか。
-/// ここでは判定しない）。保存したら、キャンセルした予約ごとに境界間イベント `BookingCancelled`（`cancelled_by` は本部。回数の
+/// ここでは判定しない）。キャンセルした予約には、理由（コーチのお休み）とキャンセル規定の判定も残る（どちらも domain の
+/// [`domain::scheduling::Booking::cancel_by_headquarters`] が決める）。保存したら、キャンセルした予約ごとに境界間イベント `BookingCancelled`（`cancelled_by` は本部。回数の
 /// 判定はキャンセル規定のとおり消費しない）を発行する。entitlement は確定で使った枠を戻し、notification は予約した生徒に
 /// 知らせる。拒否・保存の失敗では何も発行しない。
 ///
@@ -120,8 +121,8 @@ mod tests {
         identity::{Account, AccountId, Email, Role},
         profile::DisplayName,
         scheduling::{
-            BookingId, BookingStatus, CoachLeaveNote, SchedulingError, Slot, SlotCapacity, SlotId,
-            SlotStatus,
+            BookingCancelReason, BookingId, BookingStatus, CoachLeaveNote, SchedulingError, Slot,
+            SlotCapacity, SlotId, SlotStatus,
         },
     };
     use time::{Date, Month};
@@ -291,6 +292,20 @@ mod tests {
         assert_eq!(bookings.coach_leaves(), vec![leave.clone()]);
         assert_eq!(status_of(&bookings, ids[0]).await, BookingStatus::Cancelled);
         assert_eq!(status_of(&bookings, ids[1]).await, BookingStatus::Cancelled);
+        for id in &ids[..2] {
+            let cancelled = bookings.find(*id).await.unwrap().unwrap();
+            assert_eq!(
+                cancelled.cancel_reason(),
+                Some(BookingCancelReason::CoachLeave),
+                "理由を残す"
+            );
+            assert_eq!(
+                cancelled.cancellation_decision(),
+                Some(CancellationDecision {
+                    consumes_quota: false
+                })
+            );
+        }
         assert_eq!(
             status_of(&bookings, ids[2]).await,
             BookingStatus::Confirmed,

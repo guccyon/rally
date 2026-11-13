@@ -1,6 +1,7 @@
 //! `PgBookingRepository` の `CoachLeaveRepository`（`scheduling.coach_leaves`・`scheduling.coach_leave_bookings` と、お休みで
 //! 変える予約と枠）の検証。期間の枠と予約の読み取り、お休みにする操作の保存（予約のキャンセル・キャンセルした人・枠の
-//! 取り下げ・記録）と、断ったときに何も保存しないこと、キャンセルした予約からのお休みの記録の読み取り。
+//! 取り下げ・記録・キャンセルの理由と判定）と、断ったときに何も保存しないこと、キャンセルした予約からのお休みの記録の
+//! 読み取り（理由を残し始める前のキャンセルも、本部が見る予約の詳細 `GetBooking` でお休みのキャンセルとして読めること）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -9,15 +10,20 @@ mod support;
 
 use std::collections::BTreeSet;
 
-use application::scheduling::{BookingRepository, CoachLeaveRepository, SaveCoachLeaveError};
+use application::{
+    profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
+    scheduling::{
+        BookingRepository, CoachLeaveRepository, GetBooking, SaveCoachLeaveError, booking_id_uuid,
+    },
+};
 use domain::{
     identity::Role,
     scheduling::{
-        BookingCanceller, BookingPeriod, BookingStatus, CoachLeave, CoachLeaveNote,
-        CoachLeaveRequest, SchedulingError, SlotStatus,
+        BookingCancelReason, BookingCanceller, BookingPeriod, BookingStatus, CancellationDecision,
+        CoachLeave, CoachLeaveNote, CoachLeaveRequest, SchedulingError, SlotStatus,
     },
 };
-use infra::PgBookingRepository;
+use infra::{PgAccountRepository, PgBookingRepository};
 use sqlx::PgPool;
 use support::{at, coach, confirmed_booking, open_slot, register, student};
 
@@ -76,6 +82,24 @@ async fn starting_a_leave_saves_the_cancellations_withdrawals_and_the_record(poo
         cancelled.cancelled_by(),
         Some(BookingCanceller::Headquarters)
     );
+    assert_eq!(
+        cancelled.cancel_reason(),
+        Some(BookingCancelReason::CoachLeave)
+    );
+    assert_eq!(
+        cancelled.cancellation_decision(),
+        Some(CancellationDecision {
+            consumes_quota: false
+        })
+    );
+    let columns: (Option<String>, Option<bool>) = sqlx::query_as(
+        "SELECT cancel_reason, consumes_quota FROM scheduling.bookings WHERE booking_id = $1",
+    )
+    .bind(booking_id_uuid::to_uuid(booking.id()))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(columns, (Some("coach_leave".to_string()), Some(false)));
     assert_eq!(
         bookings.find(kept.id()).await.unwrap().unwrap().status(),
         BookingStatus::Confirmed
@@ -195,18 +219,14 @@ async fn a_student_cancel_is_read_back_as_the_student(pool: PgPool) {
         .unwrap();
     let value: Option<String> =
         sqlx::query_scalar("SELECT cancelled_by FROM scheduling.bookings WHERE booking_id = $1")
-            .bind(application::scheduling::booking_id_uuid::to_uuid(
-                booking.id(),
-            ))
+            .bind(booking_id_uuid::to_uuid(booking.id()))
             .fetch_one(&pool)
             .await
             .unwrap();
     assert_eq!(value.as_deref(), Some("student"));
     // 列を足す前のキャンセル（NULL）も生徒として読む
     sqlx::query("UPDATE scheduling.bookings SET cancelled_by = NULL WHERE booking_id = $1")
-        .bind(application::scheduling::booking_id_uuid::to_uuid(
-            booking.id(),
-        ))
+        .bind(booking_id_uuid::to_uuid(booking.id()))
         .execute(&pool)
         .await
         .unwrap();
@@ -219,4 +239,66 @@ async fn a_student_cancel_is_read_back_as_the_student(pool: PgPool) {
             .cancelled_by(),
         Some(BookingCanceller::Student)
     );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_leave_cancel_without_the_reason_column_is_read_as_the_leave(pool: PgPool) {
+    let (student, coach) = (student(&pool).await, coach(&pool).await);
+    let headquarters = register(&pool, Role::Headquarters, vec![]).await;
+    let slot = open_slot(&pool, coach, 30, 31).await;
+    let booking = confirmed_booking(&pool, student, &slot).await;
+    let bookings = PgBookingRepository::new(pool.clone());
+    let request = CoachLeaveRequest {
+        coach_id: coach,
+        period: period(),
+        note: CoachLeaveNote::new("").unwrap(),
+        requested_by: headquarters,
+        expected_booking_ids: BTreeSet::from([booking.id()]),
+    };
+    let id = bookings.next_coach_leave_id();
+    let leave = bookings
+        .start_coach_leave(coach, period(), |slots, bookings, existing| {
+            CoachLeave::start(id, &request, at(2), slots, bookings, existing)
+                .map(|(leave, _)| leave)
+        })
+        .await
+        .unwrap();
+    // 理由・判定の列を足す前に（または古い版のアプリが）お休みでキャンセルした予約
+    sqlx::query(
+        "UPDATE scheduling.bookings SET cancel_reason = NULL, consumes_quota = NULL
+         WHERE booking_id = $1",
+    )
+    .bind(booking_id_uuid::to_uuid(booking.id()))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let read = bookings.find(booking.id()).await.unwrap().unwrap();
+    assert_eq!(read.cancel_reason(), None);
+    assert_eq!(read.cancellation_decision(), None);
+
+    let accounts = PgAccountRepository::new(pool.clone());
+    let detail = GetBooking::new(
+        bookings,
+        ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ProfileStudentDisplayNameLookup::new(accounts),
+    )
+    .execute(booking.id())
+    .await
+    .unwrap();
+    assert_eq!(
+        detail.coach_leave,
+        Some(leave),
+        "お休みの記録との結びつきから読む"
+    );
+    let cancelled = *detail.booking.status_changes().last().unwrap();
+    assert_eq!(
+        cancelled.cancelled_by(),
+        Some(BookingCanceller::Headquarters)
+    );
+    assert_eq!(
+        cancelled.cancel_reason(),
+        Some(BookingCancelReason::CoachLeave)
+    );
+    assert_eq!(cancelled.cancellation_decision(), None, "判定の記録はない");
 }

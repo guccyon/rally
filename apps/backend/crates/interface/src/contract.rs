@@ -20,7 +20,8 @@ use domain::{
     messaging::{MessageAuthor, MessageKind, MessageSender, Stamp},
     profile::{CoachProfileField, DisplayNameQuery},
     scheduling::{
-        BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus, SlotSupplyStatus,
+        BookingCancelReason, BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus,
+        SlotSupplyStatus,
     },
 };
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
@@ -165,6 +166,13 @@ pub(crate) const fn booking_canceller_to_contract(canceller: BookingCanceller) -
         BookingCanceller::Student => "student",
         BookingCanceller::Coach => "coach",
         BookingCanceller::Headquarters => "headquarters",
+    }
+}
+
+/// admin-web の `BookingCancelReason` の値（`BookingStatusChange.cancel_reason`）。
+pub(crate) const fn booking_cancel_reason_to_contract(reason: BookingCancelReason) -> &'static str {
+    match reason {
+        BookingCancelReason::CoachLeave => "coach_leave",
     }
 }
 
@@ -465,6 +473,14 @@ mod tests {
             "in_progress"
         );
         assert_eq!(session_status_to_contract(SessionStatus::Ended), "ended");
+    }
+
+    #[test]
+    fn booking_cancel_reasons_are_coach_leave() {
+        assert_eq!(
+            [BookingCancelReason::CoachLeave].map(booking_cancel_reason_to_contract),
+            ["coach_leave"]
+        );
     }
 
     #[test]

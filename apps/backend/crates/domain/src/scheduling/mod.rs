@@ -5,7 +5,7 @@
 //! 体験予約も予約の 1 つ（`is_trial`）。予約の状態が変わった記録（確定・キャンセル）は [`BookingStatusChange`]。予約は予約した時点の枠のレッスンメニューの写し（[`BookingLessonMenu`]）を持つ。キャンセルで回数を消費するかの判定（キャンセル規定）と、
 //! キャンセルする前の見込み（[`CancellationPreview`]）は [`CancellationPolicy`] の 1 か所だけに置く（docs/adr/0002 Q2）。スポーツごとの予約枠の需給
 //! （枠が足りているか）の数え方と判定は [`SlotSupply`] の 1 か所だけに置く。本部が見る予約の一覧（開始の日付で・キャンセルした日付で）の期間の規則は [`BookingPeriod`]。キャンセルした人は
-//! [`BookingCanceller`]（[`Booking::cancelled_by`]）。本部が見るレッスンメニューごとの直近の予約の数の数え方は
+//! [`BookingCanceller`]（[`Booking::cancelled_by`]）、キャンセルした理由は [`BookingCancelReason`]（[`Booking::cancel_reason`]）。本部が見るレッスンメニューごとの直近の予約の数の数え方は
 //! [`RecentLessonMenuBookings`] の 1 か所（生徒ごとの数 [`RecentStudentBookings`] も同じ期間を使う）。直近に予約のないメニューに絞る条件は
 //! [`UnbookedLessonMenuFilter`]。本部が見る生徒の一覧で、生徒がそのコーチを予約したことがあるかの数え方は
 //! [`CoachBookedStudents`] の 1 か所。本部が見るコーチ 1 人の直近にキャンセルされた予約の数の数え方は
@@ -18,6 +18,7 @@
 //! [`SchedulingError`]。
 
 mod booking;
+mod booking_cancel_reason;
 mod booking_canceller;
 mod booking_id;
 mod booking_lesson_menu;
@@ -53,6 +54,7 @@ mod slot_supply_status;
 mod unbooked_lesson_menu_filter;
 
 pub use booking::Booking;
+pub use booking_cancel_reason::BookingCancelReason;
 pub use booking_canceller::BookingCanceller;
 pub use booking_id::BookingId;
 pub use booking_lesson_menu::BookingLessonMenu;
