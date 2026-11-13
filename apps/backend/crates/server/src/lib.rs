@@ -288,6 +288,15 @@ pub fn with_app_version(router: Router, var: impl Fn(&str) -> Option<String>) ->
     router.merge(interface::version::router(var(APP_VERSION_VAR).as_deref()))
 }
 
+/// `router` のすべての応答の `Date` ヘッダーを `clock` の時刻で付ける（[`interface::server_date`]）。画面はこの `Date` で
+/// サーバーの時刻に合わせるので、触れる環境で時計を進めたとき（`CLOCK_OFFSET_SECONDS`）も画面と API が食い違わない。
+pub fn with_server_date<C>(router: Router, clock: C) -> Router
+where
+    C: Clock + Clone + 'static,
+{
+    interface::server_date::with_server_date(router, clock)
+}
+
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。コーチの受付の保存先も、スロットの検索と
 /// 予約の作成が読むのと同じ中身を読み書きする。
 struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
