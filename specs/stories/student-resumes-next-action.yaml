@@ -1,0 +1,76 @@
+type: UserStory
+id: student-resumes-next-action
+title: "生徒が予約やレッスンの途中で画面を離れても、ホームの「次にやること」から同じ次の操作に戻れる"
+actor: student
+goal: "アプリを閉じたりほかの画面を見たりしても、ホームを開けば続きができる。確定待ちのまま枠を押さえ続けたり、完了の記録や月額契約に進めなくなったりすると、一周（登録 → 体験予約 → 確定 → レッスン → 完了 → 月額契約）の途中で離れてしまう"
+reader: [student]
+entry: "登録した生徒が体験予約を作り、予約の確定待ちの画面で確定せずにアプリバーのホームへ移る（またはアプリを閉じる）"
+exit: "一周の各段で離れてもホームの「次にやること」から続きに進み、月額契約を始めたあとのホームで「次にやること」が消え、今月のビデオ通話の残りの回数が出ている"
+preconditions:
+  - "生徒はゴルフ以外のスポーツで登録していて、月額契約はまだない"
+  - "予約できる体験予約のスロット（同期レッスン）がある"
+time:
+  - "予約したスロットの開始 5 分前・開始時刻・終了時刻をまたぐ（端末の時計ではなく、サーバーに合わせた時計で判断する）"
+  - "途中でアプリを開き直す（ログインし直しは #1404 の後。それまでは同じ生徒のままアプリの段の状態を捨ててホームを開く）"
+steps:
+  - where: "student-app ホーム"
+    do: "体験予約を確定せずにホームを開く"
+    sees: "あいさつのすぐ下の「次にやること」に、確定待ちのタグ・「体験予約がまだ確定していません」・予約の日時とメニューとコーチ・確定するまでスロットを押さえたままになる旨・「内容を確かめて確定する」"
+  - where: "student-app ホーム"
+    do: "「内容を確かめて確定する」を押す"
+    sees: "予約の確定待ちの画面が、予約の ID でサーバーから読み直して開く。予約の内容・「予約を確定する」・「この予約をキャンセルする」"
+  - where: "student-app 予約の確定待ち"
+    do: "「予約を確定する」を押し、受け方を選ばずにホームへ戻る"
+    sees: "「次にやること」に確定済みのタグ・「体験予約のレッスンを受けましょう」と「ビデオ通話で受ける」。開始 5 分前より前は押せず、下に入室前チェックができる時刻が出る。体験予約なので文字のボタン「動画を送って添削を受ける」もある"
+  - where: "student-app ホーム（開始 5 分前を過ぎた）"
+    do: "ホームを開いたまま開始 5 分前を過ぎ、「ビデオ通話で受ける」を押す"
+    sees: "開き直さなくても「ビデオ通話で受ける」が押せるようになり、押すと入室前チェック（student-prejoin-check のまま）が開く。開始時刻からビデオ通話に入れる"
+  - where: "student-app ホーム（通話を終えたあと）"
+    do: "通話を終え、完了を記録せずにホームへ戻る（またはアプリを開き直す）"
+    sees: "「次にやること」に「ビデオ通話が終わりました」・通話の日時とコーチ・「完了の記録へ進む」"
+  - where: "student-app ホーム"
+    do: "「完了の記録へ進む」を押し、完了を記録する"
+    sees: "レッスンの完了の画面が、通話セッションの ID を渡して開く。中身は今のまま。記録したあと、月額契約へ進む入口がある"
+  - where: "student-app ホーム（完了の記録のあと）"
+    do: "月額契約へ進まずにホームへ戻る（またはアプリを開き直す）"
+    sees: "「次にやること」に「月額契約で、続けて教わりましょう」と「月額契約へ進む」。プロフィールにも「月額契約へ進む」の行がある"
+  - where: "student-app ホーム"
+    do: "「月額契約へ進む」を押し、プランを選んで「月額契約を始める」を押してホームへ戻る"
+    sees: "月額契約の画面は今のまま。ホームに戻ると「次にやること」は欄ごと消え、今月のビデオ通話に契約したプランと残りの回数が出る"
+must_not:
+  - "次の操作が、その段の直後の画面にしかない（その画面を離れると、ホームからも自分の予約からも同じ操作に戻れない）"
+  - "アプリを開き直す、または同じ生徒のままアプリの段の状態を捨てると、次の操作が消える・変わる（次の操作はサーバーの記録だけから出す。ADR 0010）"
+  - "アプリが「次にやること」の並びを数え直す・並べ替える、または完了の記録の有無や初回かどうかをアプリで数え直す（サーバーが返した順のまま出す。ADR 0006）"
+  - "確定待ちの予約を確定もキャンセルもできないまま、スロットを押さえ続ける"
+  - "添削待ちのように押して進む操作がないときに、primary のボタンを出す"
+  - "続きの画面を開いたとき、すでに状態が変わった予約（確定済み・キャンセル済み）に「予約を確定する」を出す、または同じレッスンの完了を二重に記録する"
+  - "ほかの生徒の予約・動画・通話の次の操作が見える"
+  - "「次にやること」を読めないときに、ホームのほかの欄の表示を止める"
+touches:
+  apps: [student-app]
+  contexts: [scheduling, live-lesson, async-lesson, entitlement]
+  terms: [booking, slot, live_lesson_session, prejoin_check, video_review, lesson_completion, subscription, entitlement]
+  operations:
+    - student-app.getMyNextActions
+    - student-app.listMyBookings
+    - student-app.confirmBooking
+    - student-app.cancelBooking
+    - student-app.startLiveLessonSession
+    - student-app.endLiveLessonSession
+    - student-app.getVideoReview
+    - student-app.recordLessonCompletion
+    - student-app.startSubscription
+    - student-app.getMyEntitlement
+  events: [booking.confirmed, call.started, lesson.completed, subscription.started]
+origin:
+  issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431"]
+  note: "生徒アプリで「次の操作がその直後の画面にしかなく、一度離れると戻れない」不具合がまとまって見つかり、1 件ずつ当て布をせずサーバーの状態から次の操作を出すことにした（ADR 0010。画面は specs/ux/issue-1436.yaml）"
+  retro: false
+known_gaps:
+  - step: 1
+    note: "getMyNextActions は契約だけで、バックエンドとホームの「次にやること」はまだない（#1436 の後続のタスクで実装する）。今は予約の確定待ちの画面を離れると、確定待ちの予約に戻る道がない（#1425・#1430）"
+  - step: 5
+    note: "完了の記録へ進む入口は、通話の終了か添削の返却の直後の画面にしかない（#1423・#1432 の残り）"
+  - step: 7
+    note: "月額契約へ進む入口は、レッスンの完了の画面にしかない（#1431）"
+status: active

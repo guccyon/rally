@@ -1,0 +1,817 @@
+prd:
+  goal: 生徒「予約やレッスンの途中でアプリを閉じたり、ほかの画面を見たりしても、ホームを開けば続きができるようにしたい。確定待ちのまま枠を押さえ続けたり、完了の記録や月額契約に進めなくなったりしたくない」
+  scope:
+    in:
+    - '生徒アプリのホーム: 先頭に「次にやること」の欄（新）。中身は GET /me/next-actions（getMyNextActions）の順のまま'
+    - '予約の確定待ち・予約が確定しました・レッスンの完了・添削結果: アプリの段に持っている予約や動画ではなく、ID からサーバーの記録を読み直して開く（読み込み中・失敗・もう状態が変わった、を持つ）'
+    - '予約の確定待ち: 「この予約をキャンセルする」（確認のダイアログ）を足し、確定しない予約で枠を押さえ続けない道を作る'
+    - 'プロフィール: 「月額契約」の欄（新）。契約がなければ「月額契約へ進む」の行'
+    - 'ホームの「今月のビデオ通話」: 契約がないときに「月額契約へ進む」の文字のボタンを足す'
+    - '自分の予約: 確定待ちの予約に「内容を確かめて確定する」を足す'
+    - '契約: GET /me/next-actions と schema NextAction を足す（既存の操作は変えない）'
+    out:
+    - ログインし直し（#1404 の後）
+    - 決済・月額契約の処理そのもの（月額契約の画面の中身は変えない）
+    - コーチの画面・本部の画面
+    - 入室前チェック（#1040）とビデオ通話の画面の中身
+    - 確定待ちの予約に期限を設けてサーバーが自動で解放すること（open_questions の 3）
+    - レッスンの評価を次にやることに入れること（open_questions の 6）
+    - 下のタブへのナビゲーションの移し替え（patterns の navigation の proposed のまま）
+  source: 'Issue guccyon/rally#1436（まとめる不具合 #1425・#1430・#1424・#1429・#1423・#1431）と、その中のプランナーの要件（factory-requirements
+    v1・Plan 14640）。ユーザーストーリー specs/stories/student-books-after-first-lesson.yaml・student-prejoin-check.yaml・student-subscription-persists.yaml（守る・変える）と、新しく書く
+    student-resumes-next-action。新しい ADR「生徒アプリの次の操作はサーバーの状態から出す」。PRD の文書は specs/ にない。'
+  success: 予約の確定待ち・予約が確定しました・コーチが添削しています・レッスンの完了のどの画面を離れても、またアプリを開き直しても、ホームの「次にやること」から同じ次の操作に進める。月額契約へはホームとプロフィールから進める。その結果、登録
+    → 体験予約 → 確定 → レッスン → 完了 → 月額契約の一周が、途中で離れても通る。
+notes:
+- 動くプロトタイプの入口は a.html。モックの下の「モックの注記」（点線の枠。製品には出さない）とボタンで、a → a-pending →（予約を確定する）a-confirmed
+  →（アプリバーのホーム）a-join →（動画を送って添削を受ける）a-waiting → a-complete →（完了の記録へ進む）a-subscribe
+  → a-profile とたどれる。a-pending の「この予約をキャンセルする」は HTML の中の小さなスクリプトで確認のダイアログを開閉するだけ（通信・保存なし）
+- 入室前チェック・ビデオ通話・動画の送付・レッスンの完了・月額契約の画面は中身を変えないのでモックを作らず、注記で「今のまま」と書いてつないだ（a-join の「ビデオ通話で受ける」は通話を終えた後のホームの代わりに
+  a-complete へつないだ）
+- サンプルの名前と時刻は架空（体験予約は 10/28（水）12:00〜12:30、テニス、コーチ 山田 花子）
+- '実装役へ: 新しいストーリー student-resumes-next-action は、states の studentHome の行（状態ごとに見えるもの）と
+  user_flow を steps に、「段ごとの画面にしか次の操作がない」「開き直すと消える」を must_not に書くと QA の判定に使える'
+states:
+- 'studentHome 代表（確定待ちの予約がある）: 次にやることのカードに「体験予約がまだ確定していません」と「内容を確かめて確定する」（a.html）'
+- 'studentHome 確定済み・5 分前より前: 「ビデオ通話で受ける」が disabled で、下に「10/28（水）11:55 から入室前チェックができます（開始
+  5 分前から）。」'
+- 'studentHome 確定済み・5 分前を過ぎた: 「ビデオ通話で受ける」が押せる。開いたまま切り替わる（frame a/join）'
+- 'studentHome 添削待ち: 「コーチが添削しています」と「送った動画を見る」。primary はない（frame a/waiting）'
+- 'studentHome 完了の記録がない: 「添削が返ってきました」か「ビデオ通話が終わりました」と「完了の記録へ進む」（frame a/complete）'
+- 'studentHome 月額契約がない: 「月額契約で、続けて教わりましょう」と「月額契約へ進む」。次のレッスンの欄は secondary のボタン（frame
+  a/subscribe）'
+- 'studentHome 次にやることが 2 件以上: 1 件目をカード、2 件目からを list_row'
+- 'studentHome 空（次にやることが 0 件）: 欄ごと出さない'
+- 'studentHome 読み込み中: 欄に「次にやることを読み込んでいます…」。前に出した内容があれば読み直すあいだ残す'
+- 'studentHome 失敗: 欄に notice（danger）「次にやることを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。」、ほかの欄はそのまま（frame
+  a/error）'
+- 'studentHome 送信中: 起きない（次にやることのボタンは移るだけで API を送らない）。移るあいだは busy で押せない'
+- 'studentHome 権限がない: 401 はアカウント登録へ（今のまま）。他人の分はサーバーが返さない'
+- 'studentBookingPending 読み込み中（ID で開いた）: loading の bar と「予約を読み込んでいます…」'
+- 'studentBookingPending 代表: 予約の内容・「予約を確定する」・「この予約をキャンセルする」（frame a/pending）'
+- 'studentBookingPending 送信中: 「予約を確定する」に spinner、押せない'
+- 'studentBookingPending 確認: 「この予約をキャンセルする」で confirm_dialog（danger）。キャンセルの送信中は「キャンセルする」に
+  spinner'
+- 'studentBookingPending 失敗（読めない）: notice（danger）と「ホームに戻る」'
+- 'studentBookingPending 失敗（確定できない）: 409 live_lesson_quota_exceeded などサーバーの文言を notice（danger）。予約は確定待ちのまま'
+- 'studentBookingPending もう確定待ちでない: 確定済みなら studentBookingConfirmed に切り替え、キャンセル済み・見つからないなら
+  notice（info）と「ホームに戻る」'
+- 'studentBookingPending 権限がない: 他人の予約は listMyBookings に出ないので「見つからない」と同じ。401 は登録へ'
+- 'studentBookingConfirmed 代表（5 分前より前）: #1040 のまま（frame a/confirmed）。読み込み中・失敗は studentBookingPending
+  と同じ'
+- 'studentVideoReview 返却済み・完了の記録なし: 「完了の記録へ進む」（どこから開いても、開き直しても）。返却待ち・記録済みは出さない'
+- 'studentLessonCompletion 記録済みだった（409）: サーバーの文言と、記録済みの表示（評価・月額契約への入口）'
+- 'studentProfile 契約なし: 月額契約の行「月額契約へ進む」（frame a/profile）。契約あり: 「月額契約」とプラン・開始の日'
+- 'studentProfile 月額契約を読み込み中・失敗: 「月額契約を読み込んでいます…」／error_text。表示名は使えるまま'
+- 'studentMyBookings 確定待ちの予約: カードに「内容を確かめて確定する」'
+ticket: guccyon/rally#1436
+changes:
+- kind: changed
+  after: あいさつのすぐ下に「次にやること」の欄。サーバーが返した 1 件目をカード（状態のタグ・何の予約か・ひとこと・primary のボタン）で大きく出し、2
+    件目からは一覧の行で出す。主なボタンは 1 画面にこの 1 つにし、「次のレッスンを予約する」「添削を依頼する」は secondary にする。契約がないときの「今月のビデオ通話」に「月額契約へ進む」の文字のボタン
+  before: これからの予約・今月のビデオ通話・コーチとのやり取りなどを読むだけ。予約の確定・ビデオ通話・完了の記録・月額契約へ進む入口がなく、続きの画面を一度離れると戻れない。主なボタン（FilledButton）が「次のレッスンを予約する」「添削を依頼する」の
+    2 つある
+  screen: studentHome
+- kind: changed
+  after: ホーム・自分の予約からも、予約の ID でサーバーから読み直して開く。題を見出しに、予約の中身をラベルと値の並びに。「この予約をキャンセルする」（確認のダイアログ）を足す。もう確定待ちでないときはそのことと「ホームに戻る」
+  before: 体験予約を作った直後にだけ開く。予約はアプリの中にだけ持っていて、離れると二度と開けない（#1425・#1430）
+  screen: studentBookingPending
+- kind: changed
+  after: '画面の中身は #1040 のまま。ホームの「次にやること」にも同じ「ビデオ通話で受ける」と「動画を送って添削を受ける」が出るので、この画面に戻らなくても入室前チェックへ進める'
+  before: 確定した直後にだけ開く。「ビデオ通話で受ける」（開始 5 分前から）はここにしかない（#1424・#1429）
+  screen: studentBookingConfirmed
+- kind: changed
+  after: 「完了の記録へ進む」を出すかは、サーバーの記録（添削が返っていて、その動画の完了の記録がない）で決める。ホームの「次にやること」からも同じ先へ進める
+  before: 「完了の記録へ進む」は、アプリを開いているあいだの状態（myVideoReviewCompletesFlow）で決めていて、開き直すと出ない（#1423・#1432
+    の残り）
+  screen: studentVideoReview
+- kind: changed
+  after: ホームの「完了の記録へ進む」から、通話セッションか動画の ID を渡して開く。中身は今のまま
+  before: 通話の終了か添削の返却の直後にだけ開く。「月額契約へ進む」はここにしかない（#1431）
+  screen: studentLessonCompletion
+- kind: changed
+  after: 「月額契約」の欄を足す。契約がなければ「月額契約へ進む」の行、あれば「月額契約」とプラン・開始の日の行（どちらも押すと月額契約の画面）
+  before: 表示名とスポーツだけ。月額契約の入口がない（#1431）
+  screen: studentProfile
+- kind: changed
+  after: 確定待ちの予約のカードに「内容を確かめて確定する」（文字のボタン）を足し、予約の確定待ちの画面を開く
+  before: 確定待ちの予約もキャンセルしかできない
+  screen: studentMyBookings
+- kind: changed
+  after: 画面の中身は変えない。入口がホームの「次にやること」・今月のビデオ通話の欄・プロフィールに増える（ストーリー student-subscription-persists
+    を変える）
+  before: レッスンの完了の画面からだけ開く
+  screen: studentSubscription
+screens:
+- id: studentHome
+  new: false
+  more:
+    copy:
+      terms: 予約（確定待ち・確定済み）・スロット・体験予約・ビデオ通話・入室前チェック・動画添削・完了したレッスン・月額（月額契約）は glossary
+        と content の glossary_mapping の語
+      buttons:
+      - 内容を確かめて確定する
+      - ビデオ通話で受ける
+      - 動画を送って添削を受ける
+      - 送った動画を見る
+      - 完了の記録へ進む
+      - 月額契約へ進む
+      loading: 次にやることを読み込んでいます…
+      load_failed: 次にやることを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。
+      section_title: 次にやること（glossary に語がないので、next_action を足す提案。open_questions の 2）
+    analytics: 新しい行動イベントは足さない。進んだ先で今のイベント（booking.confirmed・booking.cancelled・call.started・video.submitted・lesson.completed・subscription.started）が今までどおり出る。入口ごとの計測は
+      open_questions の 7
+    accessibility:
+    - 欄は section と aria-labelledby で「次にやること」。カードは状態のタグ・題・日時・ボタンの順に読む
+    - 押せない「ビデオ通話で受ける」は aria-disabled と aria-describedby で開ける時刻の文と結ぶ
+    - 失敗は role=alert、読み込み中と 5 分前になったことは role=status
+    - ボタンは 56px・幅いっぱい。文字 200% でも題と日時は折り返し、横に動かさない
+    contract_needs:
+    - 'GET /me/next-actions（operationId getMyNextActions。生徒だけ。他人の分は返さない。401・403）→
+      {next_actions: NextAction[]}。並びがそのまま優先の順（サーバーが決める）、3 件まで'
+    - 'NextAction.kind: confirm_booking | join_live_lesson | video_review_in_progress
+      | record_lesson_completion | start_subscription'
+    - 'NextAction の項目（kind で持つものが変わる）: booking_id・video_id・session_id・lesson_type・is_trial・starts_at・ends_at・sport・lesson_menu（名前と
+      1 回の時間の写し）・coach_display_name（null 可）・submitted_at・returned_at'
+    - '決め方（サーバー）: 確定待ちの予約 → confirm_booking。確定済みで終わっていない同期レッスンの予約（いちばん近い 1 件）→ join_live_lesson。動画を送って返却待ち
+      → video_review_in_progress。返却済みか通話セッションが終わっていて完了の記録がない → record_lesson_completion。完了したレッスンがあり受講権がない
+      → start_subscription'
+    - '続きの画面を開くための読み直しは今の操作で足りる: listMyBookings（予約の ID で探す）・getVideoReview・getMyEntitlement。完了の記録は
+      recordLessonCompletion に session_id か video_id'
+    microinteractions:
+    - 'きっかけ: ホームを開く・前に戻る。ルール: サーバーの順の 1 件目だけを大きく出す。フィードバック: 終えた操作は次に開いたとき消える（動きは付けない）。繰り返し:
+      開くたびに読み直す'
+    - '開始 5 分前の切り替えは #1040 と同じ時計（サーバーに合わせた時計）。毎秒は読み上げない'
+  route: student-app の FlowStep.home（登録後に最初に開く。アプリを開き直したときも最初）
+  purpose: 練習の合間に開いて、次に何をすればよいかをすぐ知り、そのまま続きの画面へ進む。一周のどの段から離れても戻ってくる入口（ADR 新「次の操作はサーバーの状態から出す」の入口）。
+  audience: 生徒（登録済み）
+  elements:
+  - name: 次にやること（欄の見出し）
+    note: あいさつのすぐ下、ほかの欄より上。API が 0 件を返したら欄ごと出さない。読み込み中・失敗のときは見出しと旨を出す
+    source: 固定
+    content: 「次にやること」
+    required: false
+    component: 欄の見出し（title）
+  - name: 次にやることのカード（1 件目）
+    note: 並びはサーバーの順のまま（アプリで並べ替えない）。ライムの日付のコマは使わない（これからの予約の次のレッスンに 1 つだけ）
+    source: GET /me/next-actions の next_actions[0]
+    content: 種類ごとの中身（下の 5 行）
+    required: false
+    component: card（plain。中に status_tag・title・figure_sm・body・button）
+  - name: └ 確定待ちの予約（confirm_booking）
+    note: '日時は content の datetime.range。名前がないときは「コーチ: （名前を表示できません）」'
+    source: NextAction の booking_id・starts_at・ends_at・sport・lesson_menu・coach_display_name・is_trial
+    content: '「体験予約がまだ確定していません」（体験でなければ「予約がまだ確定していません」）・「10/28（水）12:00〜12:30」・「テニス・メニュー:
+      フォアハンドの基礎（30 分）・コーチ: 山田 花子」・「確定するまで、このスロットは押さえたままになり、ほかのスロットで体験予約を取り直すこともできません。」（体験でなければ後半を省く）・ボタン「内容を確かめて確定する」'
+    required: false
+    component: status_tag（確定待ち・warning）・title・figure_sm・body・button（primary）
+  - name: └ 確定済みの予約（join_live_lesson）
+    note: 開始 5 分前より前は button の disabled（面 surface・文字 text_muted）と理由の文を aria-describedby
+      で結ぶ。#1040 の studentBookingConfirmed と同じ文言
+    source: NextAction の booking_id・starts_at・is_trial。開ける時刻は starts_at − prejoinCheckLeadTime（5
+      分。1 か所の定数）をサーバーに合わせた時計で比べる
+    content: 「体験予約のレッスンを受けましょう」（体験でなければ「次のレッスンを受けましょう」）・日時とメニュー・ボタン「ビデオ通話で受ける」・その下に、開始
+      5 分前より前は「10/28（水）11:55 から入室前チェックができます（開始 5 分前から）。」、過ぎたら「入室前チェックでカメラとマイクを確かめてから、開始時刻
+      12:00 に入室します。」・体験予約のときだけ文字のボタン「動画を送って添削を受ける」
+    required: false
+    component: status_tag（確定済み・success）・title・figure_sm・button（primary）・small・button（text）
+  - name: └ 添削待ち（video_review_in_progress）
+    note: 押して進む操作がないので primary を出さない（待つだけの状態）
+    source: NextAction の video_id・submitted_at・coach_display_name
+    content: '「コーチが添削しています」・「10/28（水）12:10 に送った動画・コーチ: 山田 花子」・「添削が返ってくると、ここから完了の記録へ進めます。」・文字のボタン「送った動画を見る」'
+    required: false
+    component: title・small・body・button（text）
+  - name: └ 完了の記録がない（record_lesson_completion）
+    note: 完了の記録の有無はサーバーの記録だけで決める（ADR 0006。アプリで数え直さない）
+    source: NextAction の lesson_type・video_id か session_id・returned_at か starts_at/ends_at・coach_display_name
+    content: '動画: 「添削が返ってきました」・「返却: 10/29（木）9:30・コーチ: 山田 花子」。通話: 「ビデオ通話が終わりました」・「10/28（水）12:00〜12:30・コーチ:
+      山田 花子」。共通: 「添削を読んだら、レッスンの完了を記録しましょう。」（通話は「レッスンを受け終えたら、完了を記録しましょう。」）・ボタン「完了の記録へ進む」'
+    required: false
+    component: title・small・body・button（primary）
+  - name: └ 月額契約がない（start_subscription）
+    note: 説明の文はレッスンの完了の画面の今の文と同じ。決済がモックであることは月額契約の画面で出す（ここでは請求を思わせる語を使わない）
+    source: NextAction（完了したレッスンがあり、受講権がないときにサーバーが返す）
+    content: 「月額契約で、続けて教わりましょう」・「動画とチャットは送り放題、ビデオ通話は選んだプランの回数まで毎月受けられます。」・ボタン「月額契約へ進む」
+    required: false
+    component: title・body・button（primary）
+  - name: 次にやることの行（2 件目から）
+    note: サーバーは 3 件まで返す。行を押すとカードのボタンと同じ行き先
+    source: next_actions[1..]
+    content: 題は種類ごとのボタンの文言（「内容を確かめて確定する」など）、subtitle は日時かコーチ名
+    required: false
+    component: list_row
+  - name: 次のレッスン（今のまま）
+    note: 主なボタンを 1 つにするため、FilledButton を secondary に変える（文言と出す条件は変えない。student-books-after-first-lesson
+      を守る）
+    source: listMyLessonCompletions（今のまま）
+    content: 今の文言と「次のレッスンを予約する」
+    required: false
+    component: 欄・body・button（secondary）
+  - name: これからの予約（今のまま）
+    note: 次にやることのカードと同じ予約がここにも並ぶ（ここは一覧として残す）
+    source: listMyBookings
+    content: 今のまま
+    required: true
+    component: card（booking）
+  - name: 今月のビデオ通話
+    note: student-subscription-persists の入口（「まだ月額契約はありません」を見て契約の画面を開く）
+    source: getMyEntitlement（404 は受講権なし）
+    content: 契約がなければ今の文と、文字のボタン「月額契約へ進む」（新）。契約があれば今のまま
+    required: true
+    component: 欄・body・button（text）／score_panel
+  - name: 動画の添削（今のまま）
+    note: 主なボタンを 1 つにするため secondary に変える。押せないときの理由の文は今のまま
+    source: listMessageThreads
+    content: 「添削を依頼する」
+    required: true
+    component: 欄・body・button（secondary）
+  behaviors:
+  - action: 開く（起動・ホームへ戻る・アプリが前に戻る）
+    result: GET /me/next-actions をほかの欄と並べて読む。前に出していた内容は読み直すまで残し、読み終えたら差し替える。端末には残さない（開き直しも同じ
+      API の結果で出す）
+    target: 画面
+    condition: 登録済み
+  - action: 読み込み中
+    result: 見出しの下に「次にやることを読み込んでいます…」（loading の section_text・role=status）。300ms より速ければ出さない
+    target: 次にやること
+    condition: 最初に開いたとき（前の内容がない）
+  - action: 読み込みに失敗
+    result: 欄に notice（danger・role=alert）「次にやることを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。」。ほかの欄はそのまま出す
+    target: 次にやること
+    condition: API が失敗した（通信・5xx）
+  - action: 0 件
+    result: 欄ごと出さない（ほかの欄がそれぞれの空の表示を持つ）
+    target: 次にやること
+    condition: サーバーが空の一覧を返した
+  - action: 押す
+    result: studentBookingPending へ移り、booking_id で予約を読み直す。API の確定はこの画面では呼ばない（回数を使うことがあるので、中身を見せた画面で押す）
+    target: 内容を確かめて確定する
+    condition: confirm_booking
+  - action: 押す
+    result: studentPrejoinCheck（#1040）へ booking_id を渡して移る
+    target: ビデオ通話で受ける
+    condition: 今の時刻（サーバーに合わせた時計）≥ 開始 5 分前
+  - action: 押す
+    result: 押せない（disabled）。読み上げはボタンと開ける時刻の文を続けて読む
+    target: ビデオ通話で受ける
+    condition: 開始 5 分前より前
+  - action: 開いたまま待つ
+    result: 開き直さずに押せるようにし、文を「入室前チェックでカメラとマイクを確かめてから…」に替え、「入室前チェックができるようになりました」を role=status
+      で 1 回読む
+    target: ビデオ通話で受ける
+    condition: 開始 5 分前になった
+  - action: 押す
+    result: 動画の送付（今のまま）へ。送り先は予約のコーチ
+    target: 動画を送って添削を受ける
+    condition: join_live_lesson で is_trial
+  - action: 押す
+    result: studentLessonCompletion へ session_id か video_id を渡して移る（記録はその画面の「完了を記録する」）
+    target: 完了の記録へ進む
+    condition: record_lesson_completion
+  - action: 押す
+    result: studentSubscription（今のまま）へ
+    target: 月額契約へ進む
+    condition: start_subscription・今月のビデオ通話の欄
+  - action: 続けて 2 回押す
+    result: 2 回目は無視する（busy のあいだ押せない）。移った先の読み込みは 1 回だけ
+    target: 次にやることのボタン・行
+    condition: 移る途中・ほかの API を呼んでいる（busy）
+  - action: 戻ってくる
+    result: '開くたびに読み直すので、終えた操作は消え、次の操作が 1 件目になる（例: 確定 → 「体験予約のレッスンを受けましょう」）'
+    target: 次にやること
+    condition: 続きの画面で操作を終えた・やめた
+  - action: 押す
+    result: 次にやることを含む全部の欄を読み直す（今のまま）
+    target: ホームを更新する
+    condition: いつでも
+  transitions:
+    exits:
+    - to: studentBookingPending
+      data: booking_id
+      action: 「内容を確かめて確定する」（confirm_booking）
+    - to: studentPrejoinCheck
+      data: booking_id
+      action: 「ビデオ通話で受ける」（join_live_lesson。開始 5 分前を過ぎてから）
+    - to: studentVideoSubmit
+      data: booking_id
+      action: 「動画を送って添削を受ける」（join_live_lesson で体験予約のとき）
+    - to: studentVideoReview（読むだけ）
+      data: video_id
+      action: 「送った動画を見る」（video_review_in_progress）
+    - to: studentLessonCompletion
+      data: session_id か video_id
+      action: 「完了の記録へ進む」（record_lesson_completion）
+    - to: studentSubscription
+      data: なし
+      action: 「月額契約へ進む」（start_subscription・今月のビデオ通話の欄）
+    - to: その行の種類の行き先（上と同じ）
+      action: 2 件目からの行を押す
+    - to: 今のまま
+      action: ほかの欄・アプリバー
+    entries:
+    - data: なし。開くたびに GET /me/next-actions とほかの欄の API を読み直す
+      from: 登録の完了・アプリの起動・アプリバーの「ホーム」・各画面を閉じたとき
+      condition: 登録済み（アクセストークンがある）
+- id: studentBookingPending
+  new: false
+  more:
+    analytics: booking.confirmed・booking.cancelled（今のまま）
+    contract_needs:
+    - listMyBookings（ID で探す）・confirmBooking・cancelBooking（今のまま）
+  route: student-app の FlowStep.bookingPending（予約の ID を持って開く）
+  purpose: 確定待ちの予約の中身を確かめて確定する（または確定せずにキャンセルして枠を返す）。体験予約の直後と、ホーム・自分の予約から戻ってきたときの両方の着地点。
+  audience: 生徒（その予約の本人）
+  elements:
+  - name: 見出し
+    note: アプリバーの題は空にし、見出しを本文に置く（入口のアイコンが 7 つでアプリバーに題が収まらないため）
+    source: Booking.is_trial
+    content: 「体験予約」（体験でなければ「予約」）と「予約の確定待ち」
+    required: true
+    component: small 700 と headline
+  - name: 予約の内容
+    note: 値がない項目は「—」、名前がないときは「（名前を表示できません）」
+    source: listMyBookings の該当の予約（MyBooking）
+    content: 開始「10/28（水）12:00〜12:30」・スポーツ・レッスンメニュー（あれば）・コーチ・今の状態（status_tag 確定待ち）
+    required: true
+    component: description_list（stacked）
+  - name: 案内の文
+    note: 回数を使うことは本文の大きさで書く（patterns の confirm）
+    source: 固定・getMyEntitlement
+    content: 「予約はまだ確定していません。内容を確かめて確定してください。」。月額契約があり同期レッスンなら続けて「確定すると、今月のビデオ通話の枠を
+      1 回使います（残り 2 回）。」
+    required: true
+    component: body
+  - name: 予約を確定する
+    note: 今のまま
+    source: 固定
+    content: 「予約を確定する」
+    required: true
+    component: button（primary）
+  - name: この予約をキャンセルする（新）
+    note: 確定待ちはキャンセル規定で回数を使わないので、そのことは書かない（使うときは自分の予約の今の文言を出す）
+    source: 固定・予約の中身
+    content: 題「予約をキャンセルしますか？」、本文「10/28（水）12:00〜12:30 のテニスの体験予約をキャンセルします。押さえていたスロットはほかの生徒も予約できるようになります。」、「やめる」「キャンセルする」
+    required: true
+    component: button（text）と confirm_dialog（danger）
+  - name: 失敗の知らせ
+    note: ボタンの上に出す
+    source: API の誤り
+    content: サーバーの文言（書き換えない）
+    required: false
+    component: notice（danger）
+  behaviors:
+  - action: ID で開く
+    result: loading の bar と「予約を読み込んでいます…」。読めたら中身を出す
+    target: 画面
+    condition: ホーム・自分の予約から
+  - action: 読み込みに失敗
+    result: notice（danger）「予約を読み込めませんでした。「ホームに戻る」から、もう一度開けます。」と button（secondary）「ホームに戻る」
+    target: 画面
+    condition: 通信・5xx
+  - action: 読み直したら確定待ちでない
+    result: studentBookingConfirmed に切り替える（ほかの端末で確定していた）
+    target: 画面
+    condition: 確定済み
+  - action: 読み直したら確定待ちでない
+    result: notice（info）「この予約はもう確定待ちではありません。ホームで次にやることを確かめてください。」と「ホームに戻る」。確定とキャンセルのボタンは出さない
+    target: 画面
+    condition: キャンセル済み・見つからない（他人の予約・消えた）
+  - action: 押す
+    result: confirmBooking。押したら loading（spinner・押せない）。成功で studentBookingConfirmed
+    target: 予約を確定する
+    condition: 確定待ち
+  - action: 続けて 2 回押す
+    result: 2 回目は送らない（loading のあいだ押せない）。届いてしまっても 409 で、画面は読み直して確定済みを出す
+    target: 予約を確定する
+    condition: 送っているあいだ
+  - action: 押す
+    result: notice（danger）でサーバーの文言。予約は確定待ちのまま。キャンセルの道は残す
+    target: 予約を確定する
+    condition: 409 live_lesson_quota_exceeded
+  - action: 押す
+    result: 予約を読み直し、上の「確定待ちでない」の振る舞い
+    target: 予約を確定する
+    condition: 409 invalid_booking_state
+  - action: 押す
+    result: confirm_dialog を開く（フォーカスは題へ）
+    target: この予約をキャンセルする
+    condition: 確定待ち
+  - action: 「やめる」・外を押す・戻る
+    result: 閉じて元のボタンにフォーカスを戻す。何も送らない
+    target: 確認のダイアログ
+    condition: —
+  - action: 「キャンセルする」
+    result: cancelBooking。成功でホームへ戻り、toast「予約をキャンセルしました」。失敗はダイアログを閉じて notice（danger）でサーバーの文言
+    target: 確認のダイアログ
+    condition: —
+  transitions:
+    exits:
+    - to: studentBookingConfirmed
+      action: 「予約を確定する」が成功
+    - to: studentHome
+      action: 「この予約をキャンセルする」→ 確認で「キャンセルする」が成功
+    - to: その画面（予約は確定待ちのまま。ホームの次にやることに残る）
+      action: アプリバーのホーム・ほかの入口
+    - to: その場で旨を出し、「ホームに戻る」で studentHome
+      action: もう確定待ちでない（409 invalid_booking_state・読み直したら確定済みかキャンセル済み）
+    entries:
+    - data: 作った予約（Booking）
+      from: createBooking の成功
+      condition: 作った予約が確定待ち
+    - data: booking_id。開いたら listMyBookings で読み直す
+      from: studentHome の「内容を確かめて確定する」・studentMyBookings の同じボタン
+      condition: その予約が確定待ち（サーバーの記録）
+- id: studentBookingConfirmed
+  new: false
+  route: student-app の FlowStep.bookingPending（確定済みの表示）
+  purpose: 確定した予約の初回レッスンの受け方を選ぶ（#1040 のまま）。今回は、ここを離れてもホームから同じ 2 つの操作に進めるようにするだけ。
+  audience: 生徒（その予約の本人）
+  elements:
+  - name: 見出し・予約の内容
+    note: studentBookingPending と同じ形にそろえる
+    source: listMyBookings
+    content: 「予約が確定しました」と予約の内容（状態は確定済み）
+    required: true
+    component: headline・description_list
+  - name: ビデオ通話で受ける・開ける時刻の案内・動画を送って添削を受ける
+    note: 変えない
+    source: '#1040 のまま'
+    content: '#1040 のまま'
+    required: true
+    component: button（primary・secondary）・small
+  behaviors:
+  - action: ID で開く
+    result: studentBookingPending と同じ読み込み・失敗の振る舞い
+    target: 画面
+    condition: ホームから戻った
+  - action: 押す・待つ
+    result: '#1040 のまま（5 分前より前は押せず、開いたまま 5 分前になると押せる）'
+    target: ビデオ通話で受ける
+    condition: —
+  transitions:
+    exits:
+    - to: studentPrejoinCheck
+      action: 「ビデオ通話で受ける」（開始 5 分前から）
+    - to: studentVideoSubmit
+      action: 「動画を送って添削を受ける」
+    - to: その画面。ホームの次にやることに「体験予約のレッスンを受けましょう」が残る
+      action: 離れる
+    entries:
+    - data: 予約（サーバーから読み直したもの）
+      from: studentBookingPending の確定の成功・ID で開いて確定済みだった
+      condition: 予約が確定済み
+- id: studentVideoReview
+  new: false
+  route: student-app の FlowStep.videoReview・myVideoReview
+  purpose: 送った動画の添削を読む。添削が返っていて完了の記録がなければ、完了の記録へ進む（#1423 の残り）。
+  audience: 生徒（動画を送った本人）
+  elements:
+  - name: 完了の記録へ進む
+    note: アプリを開いているあいだの状態（myVideoReviewCompletesFlow）では決めない。どこから開いても、開き直しても同じ
+    source: 出す条件は GET /me/next-actions にその video_id の record_lesson_completion があること
+    content: 「完了の記録へ進む」
+    required: false
+    component: button（primary）
+  - name: そのほか
+    note: 変えない
+    source: getVideoReview
+    content: 今のまま
+    required: true
+    component: 今のまま
+  behaviors:
+  - action: 押す
+    result: studentLessonCompletion へ video_id を渡す
+    target: 完了の記録へ進む
+    condition: 返却済みで完了の記録がない
+  - action: 出さない
+    result: ボタンを出さない（読めないときは添削は読めるまま）
+    target: 完了の記録へ進む
+    condition: 返却待ち・完了を記録済み・次にやることを読めない
+  transitions:
+    exits:
+    - to: studentLessonCompletion
+      data: video_id
+      action: 「完了の記録へ進む」
+    - to: 開いた画面
+      action: 閉じる
+    entries:
+    - data: video_id。getVideoReview で読む
+      from: 動画の送付の成功・自分の動画・ホームの返ってきた添削・ホームの「送った動画を見る」
+      condition: 自分の動画
+- id: studentLessonCompletion
+  new: false
+  route: student-app の FlowStep.lessonCompletion
+  purpose: 受け終えたレッスンの完了を記録し、評価や月額契約へ進む（中身は今のまま）。
+  audience: 生徒
+  elements:
+  - name: 画面の中身
+    note: 変えない
+    source: 渡された ID・recordLessonCompletion
+    content: 今のまま（「通話が終わりました。」か「添削が返されました。」は渡された ID の種類で出し分ける）
+    required: true
+    component: 今のまま
+  behaviors:
+  - action: 押す
+    result: recordLessonCompletion（session_id か video_id）。続けて押しても 1 回（loading）
+    target: 完了を記録する
+    condition: —
+  - action: 押す
+    result: サーバーの文言を notice で出し、記録済みの表示（評価・月額契約への入口）に切り替える
+    target: 完了を記録する
+    condition: 409（もう記録済み）
+  transitions:
+    exits:
+    - to: studentLessonReview（今のまま）
+      action: 「レッスンを評価する」
+    - to: studentSubscription
+      action: 「月額契約へ進む」
+    - to: その画面。契約がなければホームの次にやることに「月額契約で、続けて教わりましょう」
+      action: 離れる
+    entries:
+    - data: session_id か video_id（アプリの段の session・video に頼らない）
+      from: 通話の終了・添削結果の「完了の記録へ進む」・ホームの「完了の記録へ進む」
+      condition: 完了の記録がない
+- id: studentProfile
+  new: false
+  more:
+    contract_needs:
+    - getMyEntitlement（今のまま）
+  route: student-app の FlowStep.profile
+  purpose: 表示名を見て変える（今のまま）。今回、月額契約の入口をここにも置き、ホームのほかに契約へ進む道を作る（#1431）。
+  audience: 生徒
+  elements:
+  - name: 表示名・スポーツ・保存する
+    note: 押せないときの理由「表示名を変えると保存できます。」を足す（button の disabled の決まり）
+    source: getMyStudentProfile
+    content: 今のまま
+    required: true
+    component: 今のまま（text_field・button primary）
+  - name: 月額契約（欄の見出し・新）
+    note: 表示名の欄の下
+    source: 固定
+    content: 「月額契約」
+    required: true
+    component: 欄の見出し（title）
+  - name: 月額契約の行（新）
+    note: 押すとどちらも studentSubscription（契約後は中身を見る画面）
+    source: getMyEntitlement（404 は契約なし）
+    content: '契約なし: 題「月額契約へ進む」・subtitle「まだ月額契約はありません」。契約あり: 題「月額契約」・subtitle「プラン:
+      スタンダード・10/30（金）から」'
+    required: true
+    component: list_row
+  behaviors:
+  - action: 読み込み中
+    result: 行の代わりに「月額契約を読み込んでいます…」（section_text）
+    target: 月額契約の行
+    condition: —
+  - action: 読み込みに失敗
+    result: 行を出さず error_text「月額契約を読み込めませんでした。プロフィールを開き直すと、もう一度読み込めます。」。表示名の欄はそのまま使える
+    target: 月額契約の行
+    condition: 通信・5xx
+  - action: 押す
+    result: studentSubscription へ。閉じるとプロフィールに戻る
+    target: 月額契約の行
+    condition: 読めた
+  - action: 続けて 2 回押す
+    result: 2 回目は無視する
+    target: 月額契約の行
+    condition: busy
+  transitions:
+    exits:
+    - to: studentSubscription
+      action: 月額契約の行を押す
+    - to: 開いた画面（今のまま）
+      action: 閉じる（左上）
+    entries:
+    - data: なし。開いたら getMyStudentProfile と getMyEntitlement を読む
+      from: アプリバーのプロフィール
+      condition: 登録済み
+- id: studentMyBookings
+  new: false
+  route: student-app の FlowStep.myBookings
+  purpose: 自分の予約を見てキャンセルする（今のまま）。確定待ちの予約からも確定の画面に戻れるようにする（脇の画面から段に戻る道）。
+  audience: 生徒
+  elements:
+  - name: 内容を確かめて確定する（新）
+    note: 確定待ちのカードだけ。「この予約をキャンセルする」の上
+    source: MyBooking.booking.status が pending
+    content: 「内容を確かめて確定する」
+    required: false
+    component: button（text）
+  behaviors:
+  - action: 押す
+    result: studentBookingPending へ booking_id を渡す。閉じる先は自分の予約
+    target: 内容を確かめて確定する
+    condition: 確定待ち
+  transitions:
+    exits:
+    - to: studentBookingPending
+      data: booking_id
+      action: 「内容を確かめて確定する」
+    entries:
+    - data: なし
+      from: アプリバーの自分の予約・ホームの「予約をすべて見る」・お知らせ
+      condition: 登録済み
+summary: 生徒アプリのホームの先頭に「次にやること」の欄を足し、サーバーが返す次の操作（予約を確定する・ビデオ通話で受ける・完了の記録へ進む・月額契約へ進む）をいつでもそこから開けるようにします。続きの画面（予約の確定待ち・予約が確定しました・レッスンの完了）はアプリの段ではなくサーバーの予約・動画・通話セッションから読み直して開き、プロフィールと自分の予約にも入口を足します。
+judgments:
+- kind: ui
+  note: あいさつのすぐ下に「次にやること」の欄。1 件目をカード、2 件目からを行。案 b・c と比べて案 a を推す（rationale）
+  question: 次の操作をホームのどこに置くか
+- kind: ui
+  note: 次にやることのボタンだけを primary にし、「次のレッスンを予約する」「添削を依頼する」は secondary に落とす。添削待ちのように押す操作がないときも、ほかを
+    primary に上げない（並びで画面が揺れないため）
+  question: 主なボタンが 1 画面に 1 つの決まりと、今のホームの FilledButton 2 つ
+- kind: system_interface
+  note: サーバー（GET /me/next-actions）。アプリは返った順のまま出し、数え直さない（ADR 0006・新 ADR）。続きの画面は ID
+    で今の API から読み直し、新しい API は next-actions の 1 つだけ
+  question: 次の操作をどこで決めるか
+- kind: system_interface
+  note: 呼ばない。予約の確定待ちの画面へ移り、そこで確定する（回数を使う場合の説明を見せてから押す。確定の処理を 1 か所に保つ）
+  question: ホームから確定を直接呼ぶか
+- kind: error_handling
+  note: 読み直して今の状態の画面に切り替える（確定済みなら予約が確定しました）。キャンセル済み・見つからないときは notice（info）と「ホームに戻る」。押したあとの
+    409 も同じ扱い
+  question: 開いた続きの画面の予約が、もうその状態でないとき
+- kind: error_handling
+  note: その欄だけに notice（danger）で「ホームを更新する」を案内し、ほかの欄は出す（patterns の states）。続きの画面の「完了の記録へ進む」は、読めないときは出さない（記録の二重を避ける）
+  question: 次にやることを読めないとき
+- kind: scope
+  note: 予約の確定待ちの画面にキャンセル（confirm_dialog）を足す。期限での自動解放はサーバーの決まりの変更なので今回は入れない（open_questions
+    の 3）
+  question: 確定待ちの予約を確定しない生徒の枠をどう返すか
+- kind: scope
+  note: 受け入れ条件のホームとプロフィールに加え、ホームの「今月のビデオ通話」の契約なしの文の下にも文字のボタンを置く（ストーリー student-subscription-persists
+    の入口の文と合わせる）。月額契約の画面の中身は変えない
+  question: 月額契約の入口をどこに足すか
+- kind: ui
+  note: 入口のアイコン 7 つで題が入らないので、題を本文の headline に移す（アプリバーのアイコンは今のまま）。下のタブへの移し替えは patterns
+    の proposed のままで、今回はしない
+  question: 続きの画面のアプリバーの題
+prototype: true
+rationale:
+  why: 不具合の根は「次の操作がその段の画面にしかない」ことで、直すには、どの状態の生徒にも決まった 1 か所の入口が要ります。案 a はホームの先頭を入口にし、中身はサーバーの
+    GET /me/next-actions の順のまま出すので、どこから戻っても、開き直しても同じ操作に届きます（新しい ADR の決定どおり）。1 件目だけを大きくして主なボタンを
+    1 つにするので、principles の next-move-first（次の一手を一番前に）にも合います。続きの画面は ID でサーバーから読み直すので、ホームから入っても直後に入っても同じ画面になります。見た目は今の部品とトークンだけで、新しい色や書体は決めていないので
+    brand_impact は false です。
+  rejected:
+  - idea: '案 b: それぞれの欄の中に置く（b.html）'
+    reason: 新しい語は増えないが、何を先にやるかを欄の並びが決めてしまい、サーバーの判断（優先の順）が画面に出ない。primary が欄ごとに出て 1
+      画面 1 つにならない。月額契約や完了の記録は「これからの予約」のように置き場の欄がない
+  - idea: '案 c: 開いたら「続きから」の画面を先に出す（c.html）'
+    reason: '最も速いが、開くたびにホームの前に挟まり、閉じたことを覚えるには端末に状態を残すことになる（ADR の「とらなかった案: アプリ内の状態を端末に保存する」に当たる）。2
+      件目以降が見えない'
+  - idea: 段ごとに当て布をする（各画面の「戻る」先を直す・#1432 の延長）
+    reason: プランナーの ADR でとらなかった案。開き直しで消え、同じ型の不具合がまた出る
+  - idea: 次にやることを score_panel（濃い面）で見せる
+    reason: 数字の主役ではなく、契約後は今月のビデオ通話の score_panel と濃い面が 2 つになり one-hot-spot に反する
+  - idea: ホームから直接 confirmBooking を呼ぶ（「予約を確定する」をホームに置く）
+    reason: 月額契約の生徒では確定でビデオ通話の枠を使うので、予約の中身と回数を見せた画面で押すほうが安全（patterns の confirm）。確定の処理も
+      1 か所にまとまる
+  - idea: お知らせの一覧を次の操作の入口にする
+    reason: お知らせは出来事の記録で、操作が済んでも残る。今の状態から出す入口にはホームのほうが合う。お知らせの行の行き先は今のまま
+  requirement_map:
+  - how: ホームの次にやること（confirm_booking）の「内容を確かめて確定する」→ ID で読み直した studentBookingPending
+      の「予約を確定する」。確定しないなら同じ画面の「この予約をキャンセルする」で枠を返す。自分の予約からも同じ画面へ（a.html → a-pending）
+    requirement: 予約の確定待ちの画面を離れても、ホームから「予約を確定する」に進め、枠を止めたままにならない（#1425・#1430）
+  - how: ホームの次にやること（join_live_lesson）の「ビデオ通話で受ける」（開始 5 分前から。#1040 の決まりのまま）と「動画を送って添削を受ける」（frame
+      a/join）
+    requirement: 「予約が確定しました」の画面を離れても、ホームから入室前チェック・ビデオ通話に進める（#1424・#1429）
+  - how: 添削待ちは次にやることに「コーチが添削しています」、返却後は「完了の記録へ進む」（record_lesson_completion）。添削結果の画面のボタンもサーバーの記録で出す（frame
+      a/waiting・a/complete）
+    requirement: 「コーチが添削しています」を離れても、開き直しても、完了の記録へ進める（#1423）
+  - how: ホームの次にやること（start_subscription）と今月のビデオ通話の欄の「月額契約へ進む」、プロフィールの月額契約の行（frame a/subscribe・a/profile）
+    requirement: レッスンの完了を離れても、ホームとプロフィールから月額契約へ進める（#1431）
+  - how: どの段で離れても、ホームの次にやることの 1 件目が次の段の画面を開く（user_flow）。プロトタイプは a.html から a-subscribe
+      までつながる
+    requirement: 一周（登録 → 体験予約 → 確定 → レッスン → 完了 → 月額契約）が途中で離れても通る
+  - how: '次にやることは開くたびに API から読み、続きの画面は ID でサーバーから読み直す。端末にもアプリの段にも頼らない（ログインし直しは #1404
+      の後）'
+    requirement: アプリを開き直しても同じ
+  - how: 'contract_needs の「決め方」と user_flow が、新しいストーリー student-resumes-next-action
+      の steps の下書きになる（状態ごとに where: student-app ホーム・do・sees）'
+    requirement: どの状態の利用者がどこから次の操作に入るかを specs/stories/ に書き、QA で通す
+  - how: 入室前チェックの中身と 5 分前の決まりは変えない。「次のレッスンを予約する」は文言と出す条件を変えず secondary にするだけ。月額契約の画面の中身は変えず、入口を増やす
+    requirement: '守る: student-prejoin-check・student-books-after-first-lesson、変える:
+      student-subscription-persists'
+user_flow:
+- to: studentBookingPending
+  from: studentSlotSearch
+  action: スロットを選んで体験予約する（createBooking）
+- to: 'studentHome（次にやること: 体験予約がまだ確定していません）'
+  from: studentBookingPending
+  action: 確定せずに離れる（アプリバーのホーム・アプリを閉じる）
+- to: studentBookingPending（予約の ID でサーバーから読み直す）
+  from: studentHome
+  action: 「内容を確かめて確定する」を押す
+- to: studentBookingConfirmed
+  from: studentBookingPending
+  action: 「予約を確定する」を押す（confirmBooking）
+- to: studentHome（次にやることから消える）
+  from: studentBookingPending
+  action: 「この予約をキャンセルする」→ 確認で「キャンセルする」（cancelBooking）
+- to: 'studentHome（次にやること: 体験予約のレッスンを受けましょう）'
+  from: studentBookingConfirmed
+  action: 受け方を選ばずに離れる
+- to: studentPrejoinCheck（#1040 のまま）→ studentLiveLesson
+  from: studentHome
+  action: 開始 5 分前を過ぎてから「ビデオ通話で受ける」を押す
+- to: studentVideoSubmit → studentVideoReview（コーチが添削しています）
+  from: studentHome
+  action: 「動画を送って添削を受ける」を押す
+- to: 'studentHome（次にやること: コーチが添削しています。押す操作なし）'
+  from: studentVideoReview
+  action: 返却を待たずに離れる・アプリを開き直す
+- to: 'studentHome（次にやること: 添削が返ってきました）'
+  from: studentHome
+  action: 添削が返ったあとに開く・「ホームを更新する」
+- to: 'studentHome（次にやること: ビデオ通話が終わりました）'
+  from: studentLiveLesson
+  action: 通話を終えて完了を記録せずに離れる
+- to: studentLessonCompletion（通話セッションか動画の ID を渡す）
+  from: studentHome
+  action: 「完了の記録へ進む」を押す
+- to: 'studentHome（次にやること: 月額契約で、続けて教わりましょう）'
+  from: studentLessonCompletion
+  action: 「完了を記録する」のあと、月額契約へ進まずに離れる
+- to: studentSubscription（今のまま）
+  from: studentHome・studentProfile
+  action: 「月額契約へ進む」を押す
+- to: studentHome（次にやることから消え、今月のビデオ通話が残りの回数になる）
+  from: studentSubscription
+  action: 「月額契約を始める」のあとホームへ
+brand_impact: false
+open_questions:
+- 1. 【とくに見てほしい】次にやることの優先の順。仮は サーバーで 確定待ち（confirm_booking）→ 入室前チェックを開ける時刻を過ぎた予約（join_live_lesson）→
+  完了の記録がない（record_lesson_completion）→ まだ早い確定済みの予約（join_live_lesson）→ 添削待ち → 月額契約、の順で
+  3 件まで。月額契約を「次のレッスンを予約する」より上に出す（1 件目の primary になる）ことも、事業として良いか決めてください
+- 2. 欄の名前「次にやること」は glossary にない語です。glossary に next_action（ja「次にやること」、定義「サーバーの状態から決まる、生徒が次にできる操作」）を足す前提で書きました。別の語がよければ指示ください
+- 3. 確定待ちの予約に期限を設け、確定されなければサーバーが自動で解放するか。仮は今回入れない（画面に確定とキャンセルの道を作るだけ）。入れるなら別のタスクで、カードに「10/27（火）18:00
+  までに確定してください」を足す
+- 4. 体験予約で「動画を送って添削を受ける」を選んだあとも、その予約の「ビデオ通話で受ける」を次にやることに出し続けるか。仮は、動画を送ったら添削の流れ（添削待ち
+  → 完了の記録）を優先し、通話の予約は開始 5 分前を過ぎたときだけ出す（サーバーの決め方で吸収）
+- '5. 「開き直しても同じ」の確かめ方。生徒アプリは今ログインの状態を端末に残さないので、仮は同じ生徒のまま画面を読み直したとき（アプリの段の状態を捨ててホームを開く）で確かめる。本当の開き直しは
+  #1404 の後'
+- 6. レッスンの評価（完了したのに評価していない）を次にやることに入れるか。仮は入れない（一周の外。今のまま完了の画面から）
+- 7. 次にやることからの入口を計測するか。仮は行動イベントを足さない（進んだ先の今のイベントで足りる）。入口の効き目を見たいなら next_action.opened（kind
+  つき）を events.yaml に足す
+- 8. 予約の確定待ちの画面に「この予約をキャンセルする」を足すのは、「枠を止めたままにならない」のための小さな範囲の追加と判断しました。外すなら、キャンセルは自分の予約からだけになります
+design_system_gaps: []
+design_system_constraints:
+- 色・余白・角丸・文字の段は specs/design/tokens.yaml（0.5.0）の名前だけを使った。out/rally.css はトークンと components.yaml
+  の preview_css を写したもの
+- 次にやることのカードは components の card（plain）の parts（status_tag・title・meta・action）で組んだ。カード全体は押せず、押せる場所はボタン
+  1 つ（card の behavior）
+- 主なボタン（primary）は 1 画面に 1 つ（button の rule）。そのため今のホームの「次のレッスンを予約する」「添削を依頼する」を secondary
+  に落とす。添削待ちのときは primary を出さない
+- ライム（secondary）は、これからの予約の次のレッスンの日付のコマだけ（usage_rules）。次にやることのカードには日付のコマを置かない。濃い面は契約後の
+  score_panel だけ
+- 状態は status_tag の点と glossary の呼び名（確定待ち・確定済み）。失敗は notice の inline（danger）、もう状態が変わったは
+  notice（info）、キャンセルの確認は confirm_dialog（danger）
+- 欄ごとの読み込み中・失敗は patterns の states（読めた欄はそのまま出す）。予約の確定待ちの画面の項目は description_list の stacked（600px
+  未満）
+- '文言は content.yaml: ボタンは動詞で終える、誤りは何が起きたかとどうすればよいかの 2 文、サーバーの文言は書き換えない、日時は「10/28（水）12:00〜12:30」'
+- アプリバーの入口のアイコンは今の FlowScaffold のまま。題が入らない続きの画面は、題を本文の headline に置いた（common_layout
+  の「画面の見出し headline 32px」）
+- アイコンは iconography の Material Symbols の線の形を、モックでは同じ形の SVG を手で描いて代わりにした。書体は Noto Sans
+  CJK JP と Barlow Condensed を font-family で指定するだけで、外の資源は読まない
+variant:
+  id: a
+  axis: flow
+  name: ホームの先頭に「次にやること」をまとめる
+  frames:
+  - id: pending
+    state: 代表（確定待ち）
+    screen: studentBookingPending
+    caption: ホームの「内容を確かめて確定する」を押した（予約をサーバーから読み直した確定待ちの画面）
+  - id: confirmed
+    state: 5 分前より前
+    screen: studentBookingConfirmed
+    caption: 「予約を確定する」を押した（開始 5 分前より前）
+  - id: join
+    state: 確定済み・5 分前を過ぎた
+    screen: studentHome
+    caption: 確定の画面を離れ、開始 5 分前を過ぎてホームを開いた
+  - id: waiting
+    state: 添削待ち
+    screen: studentHome
+    caption: 「動画を送って添削を受ける」で動画を送り、返却を待たずにホームへ来た
+  - id: complete
+    state: 完了の記録がない
+    screen: studentHome
+    caption: コーチが添削を返したあとにホームを開いた
+  - id: subscribe
+    state: 月額契約がない
+    screen: studentHome
+    caption: 完了を記録したあと、月額契約へ進まずにホームへ来た
+  - id: profile
+    state: 契約なし
+    screen: studentProfile
+    caption: アプリバーのプロフィールを開いた（契約なし）
+  - id: error
+    state: 失敗
+    screen: studentHome
+    caption: ホームを開いたが、次にやることを読めなかった
+  height: 1500
+  tradeoff: どの段から離れても、ホームの同じ場所の 1 枚で続きに戻れ、順もサーバーが決めるので迷わないが、ホームに欄が 1 つ増え、同じ予約がカードと「これからの予約」に
+    2 回出る
+  viewport: mobile
