@@ -2,9 +2,10 @@ id: K-0005
 theme: 4
 kind: causal
 statement: >-
-  PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002）・リポジトリの決まり（CLAUDE.md の PR の説明の見出し）の
-  3 つで 1 つに揃っていないと、決まりに沿って書いた本文が、rubric にだけある見出し（背景・問題）の欠けで差し戻されたり、判定役が同じ指摘を
-  決まりの外として退けたりして、PR ごとに判断が割れる。実装役の報告の型だけを rubric に合わせても解けない（どれを正にするかを先に決める）。
+  PR 本文の見出しの定義が、実装役の報告の型・検査役の rubric（Engine の PR-002・OV-001）・リポジトリの決まり（CLAUDE.md の PR の説明の見出し）の
+  3 か所に分かれていて 1 つに揃っていないと、決まりに沿って書いた本文に rubric にだけある見出し（背景・問題）の欠けの指摘が出て、
+  同じ種類の指摘が PR によって採られたり退けられたりして判断が割れる。実装役の報告の型だけを rubric に合わせても解けない（どれを正本にするかを先に決める）。
+  主張は見出しの定義が 3 か所に分かれていることに絞る。判定役の入力に rubric の本文が渡らないことは K-0011 の主張。
 scope:
   work: [dev.describe, dev.review.inspect, dev.review.judge]
   artifacts: [PR.body]
@@ -23,10 +24,13 @@ evidence:
   - pr: 821
   - event: "case.analyzed:370935"
 status: active
-verified_at: 2026-11-07
-review_by: 2026-12-07
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
 related: [K-0001, K-0006, K-0011]
+invalidate_when:
+  - "実装役の報告の型・Engine の PR-002 と OV-001 の check・CLAUDE.md の見出しが、見出しの正本（tools/pr-body-check/template.json。Issue #936 でオーナーが決めた）にすべて揃った"
+  - "見出しの定義が揃ったあとも、背景・問題の欠けの指摘が PR によって採られたり退けられたりした（判断が割れる原因は定義の分かれではなかった）"
 enforcement:
   level: deterministic
   solutions:

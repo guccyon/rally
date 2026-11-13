@@ -8,6 +8,7 @@
 //!
 //! `CLOCK_OFFSET_SECONDS`（既定 0）は、サーバーの時計を実際より進める秒数（[`application::offset_clock::OffsetClock`]）。
 //! 触れる環境（staging）で QA が「翌日」をまたぐ流れを確かめるために、工場の shipper だけが渡す。本番では渡さない。
+//! 応答の `Date` ヘッダーもこの時計で付ける（[`server::with_server_date`]。画面が `Date` でサーバーの時刻に合わせるため）。
 //!
 //! 起動できないとき（設定の値が知らないもの・時計を進める秒数が 0 以上の整数でない・DB につなげない・マイグレーションを当てられない）は、原因を標準エラー出力に
 //! 書いて 0 以外で終わる。
@@ -51,6 +52,8 @@ async fn run() -> Result<(), String> {
         Err(_) => server::router_with_video_call(clock, analytics, video),
     };
     let router = server::with_app_version(router, |name| env::var(name).ok());
+    // 応答の Date も進めた時計で付ける（画面がサーバーの時刻に合わせるため。本番は進めないので実際の時刻）
+    let router = server::with_server_date(router, clock);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|error| format!("{addr} で待ち受けられない: {error}"))?;

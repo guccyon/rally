@@ -11,7 +11,7 @@ import '../ui/labels.dart';
 /// AI の一次フィードバック（glossary の ai_feedback）があれば、コーチの添削とは別の枠に出す。
 /// 動画を送ったときにレッスンメニューを選んでいれば、その名前（送った時点の写し）を出す。
 /// 自分の動画の一覧かホームの「返ってきた添削」から開いたとき（[FlowStep.myVideoReview]）は、その動画の添削を読むだけの画面にする
-/// （一周シナリオの完了記録には進まず、閉じると開いた画面に戻る）。
+/// （閉じると開いた画面に戻る）。ただし一周シナリオで送ってまだ完了を記録していない動画なら、そこから完了の記録へ進める。
 class VideoReviewScreen extends ConsumerWidget {
   const VideoReviewScreen({super.key});
 
@@ -23,6 +23,8 @@ class VideoReviewScreen extends ConsumerWidget {
     final review = fromMyVideos ? state.myVideoReview : state.review;
     final returned = review?.status == VideoReviewStatus.returned;
     final aiComment = review?.aiFeedback?.comment.trim() ?? '';
+    // 一周シナリオで送った動画なら、一覧やホームから開いても完了の記録へ進める（#1423）
+    final completesFlow = fromMyVideos && notifier.myVideoReviewCompletesFlow;
     return FlowScaffold(
       title: '添削結果',
       leading: fromMyVideos
@@ -51,10 +53,14 @@ class VideoReviewScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             AiFeedbackCard(comment: aiComment),
           ],
-          if (!fromMyVideos) ...[
+          if (!fromMyVideos || completesFlow) ...[
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: state.busy ? null : notifier.goToCompletion,
+              onPressed: state.busy
+                  ? null
+                  : fromMyVideos
+                  ? notifier.goToCompletionFromMyVideoReview
+                  : notifier.goToCompletion,
               child: const Text('完了の記録へ進む'),
             ),
           ],

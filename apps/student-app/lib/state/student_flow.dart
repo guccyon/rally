@@ -916,6 +916,28 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
+  /// 開いた添削結果が、一周シナリオで送ったまま完了を記録していない動画のものか。
+  /// 返却を待つ画面を離れてから一覧・ホーム・受けたレッスンで開いたとき、ここから完了の記録へ進めるようにする（#1423）
+  bool get myVideoReviewCompletesFlow {
+    final review = state.myVideoReview;
+    final video = state.video;
+    return review != null &&
+        video != null &&
+        review.videoId == video.videoId &&
+        review.status == VideoReviewStatus.returned &&
+        state.session == null &&
+        state.lesson == null;
+  }
+
+  /// 開いた添削結果（一周シナリオで送った動画のもの）を一周シナリオの添削として持ち、完了の記録へ進む
+  void goToCompletionFromMyVideoReview() {
+    if (!myVideoReviewCompletesFlow) return;
+    state = state.copyWith(
+      review: state.myVideoReview,
+      step: FlowStep.lessonCompletion,
+    );
+  }
+
   /// 開いた添削結果を閉じて、開いた画面（自分の動画の一覧・ホーム・受けたレッスン）に戻る
   void closeMyVideoReview() => state = state.copyWith(
     step: state.videoReviewReturnStep ?? FlowStep.myVideos,

@@ -3,8 +3,10 @@ theme: 4
 kind: causal
 statement: >-
   判定役（judge）のジョブの入力に、検査役の指摘が根拠として引く rubric（PR-002・OV-001 など）の本文が入っていないと、
-  判定役は指摘の根拠を確かめられず、手元にあるリポジトリの決まり（CLAUDE.md など）だけで裁いて、
-  rubric にだけある要求（PR 本文の背景・問題など）を決まりの外として退け、検査役と判定役で同じ成果物の正しい形の基準が割れる。
+  判定役は指摘の根拠を確かめられず、手元にあるリポジトリの決まり（CLAUDE.md など）だけで裁いて、rubric にだけある要求
+  （PR 本文の背景・問題など）を決まりの外として退けることがある（C-0006 の OV-001）。本文が渡らなくても必ず退けるわけではなく、
+  C-0003 では OV-001 の本文が渡らないまま同じ種類の指摘（PR-002）が採られた。C-0003 は同じ欠けを OV-001 と PR-002 が 2 重に数えた別の結果で、
+  退けた根拠ではない。主張は判定役に rubric の本文が渡らないことに絞る。見出しの定義が 3 か所に分かれていること自体は K-0005 の主張。
 scope:
   work: [dev.review.judge]
   roles: [judge, inspect]
@@ -18,13 +20,14 @@ evidence:
   - pr: "396"
   - event: "case.analyzed:40381"
 status: active
-verified_at: 2026-11-07
-review_by: 2026-12-07
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
 related: [K-0005]
 invalidate_when:
   - "judge のジョブの入力に、指摘が引く rubric_id の本文が添えられるようになった"
   - "rubric の本文を入力に持つ判定役でも、rubric にだけある要求を同じように決まりの外として退けた（原因は rubric の本文が渡らないことではなく、K-0005 の定義の分かれだけだった）"
+  - "rubric の本文を入力に持たない判定役が、rubric にだけある要求を C-0003 の PR-002 のように採る事例が続き、退けた事例は本文が渡らないこと以外の理由でも説明できた（C-0001・PR #546 でも判定役が OV-001 を決まりの外として reject しており、本文が渡らないことだけが退ける原因とは言えなかった）"
 enforcement:
   level: deterministic
   solutions:

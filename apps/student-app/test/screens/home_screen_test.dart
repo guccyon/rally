@@ -558,6 +558,85 @@ void main() {
     expect(find.text('返ってきた添削'), findsOneWidget);
   });
 
+  testWidgets('初回レッスンの添削を待つ画面を離れても、返ってきた添削から完了を記録できる（#1423）', (tester) async {
+    tester.view.physicalSize = const Size(800, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final flowVideo = Fixtures.myVideo(
+      videoId: Fixtures.videoId,
+      submittedAgo: const Duration(hours: 3),
+      reviewStatus: VideoReviewStatus.returned,
+      coachDisplayName: '高橋',
+    );
+    final api = FakeStudentApi(
+      myVideos: [flowVideo],
+      videoReviews: {Fixtures.videoId: Fixtures.reviewReturned},
+    );
+    // 体験予約から動画を送り、添削待ちのままアプリバーのホームで離れた状態
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: home.copyWith(
+        booking: Fixtures.bookingConfirmed,
+        video: Fixtures.video,
+        review: Fixtures.reviewInProgress,
+      ),
+    );
+    await container.read(studentFlowProvider.notifier).refreshHome();
+    await tester.pumpAndSettle();
+    api.calls.clear();
+
+    await tapText(tester, '高橋 コーチ');
+    expect(container.read(studentFlowProvider).step, FlowStep.myVideoReview);
+    expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
+
+    await tapText(tester, '完了の記録へ進む');
+    var state = container.read(studentFlowProvider);
+    expect(state.step, FlowStep.lessonCompletion);
+    expect(state.review?.status, VideoReviewStatus.returned);
+
+    await tapText(tester, '完了を記録する');
+    state = container.read(studentFlowProvider);
+    expect(api.calls, ['getVideoReview', 'recordLessonCompletion']);
+    final body = api.requests.last as AsyncLessonCompletion;
+    expect(body.videoId, Fixtures.videoId);
+    expect(state.lesson, isNotNull);
+    expect(find.text('初回レッスンを完了しました'), findsOneWidget);
+  });
+
+  testWidgets('完了を記録した後に同じ動画の添削を開いても、完了の記録へは進めない', (tester) async {
+    tester.view.physicalSize = const Size(800, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final flowVideo = Fixtures.myVideo(
+      videoId: Fixtures.videoId,
+      submittedAgo: const Duration(hours: 3),
+      reviewStatus: VideoReviewStatus.returned,
+      coachDisplayName: '高橋',
+    );
+    final api = FakeStudentApi(
+      myVideos: [flowVideo],
+      videoReviews: {Fixtures.videoId: Fixtures.reviewReturned},
+    );
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: home.copyWith(
+        video: Fixtures.video,
+        review: Fixtures.reviewReturned,
+        lesson: Fixtures.asyncLesson,
+      ),
+    );
+    await container.read(studentFlowProvider.notifier).refreshHome();
+    await tester.pumpAndSettle();
+
+    await tapText(tester, '高橋 コーチ');
+    expect(container.read(studentFlowProvider).step, FlowStep.myVideoReview);
+    expect(find.text('完了の記録へ進む'), findsNothing);
+  });
+
   testWidgets('返ってきた添削の添削結果を読めなければホームに留まり、失敗の文言を出す', (tester) async {
     final api = FakeStudentApi()..videoReviewFailures.add('video-returned');
     final container = await pumpHome(tester, api);
