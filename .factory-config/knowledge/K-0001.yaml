@@ -2,21 +2,24 @@ id: K-0001
 theme: 4
 kind: causal
 statement: >-
-  続きのジョブ（continue。既定ブランチとの衝突の解消など）の報告が、既存の PR 本文への追記になることが実装役に伝わらず、
-  Engine も見出しの階層を変えずに本文の末尾に足すと、新しい PR と同じ見出しの組（## 概要・## 対応内容 など）が本文に 2 回出て、
-  検査・判定・本文の修正のジョブを使う差し戻しになりやすい。
+  続きのジョブ（continue。既定ブランチとの衝突の解消など）の報告を、実装役が新しい PR と同じ ## の見出しの組で書き、
+  Engine もその見出しの階層を下げずに既存の PR 本文の末尾に足すと、同じ見出しの組（## 概要・## 対応内容 など）が本文に 2 回以上出て、
+  検査役の指摘（PR-002）と本文の修正のジョブを使う差し戻しになりやすい。主張は実装役と Engine が報告の見出しの階層を下げないことに絞る。
+  採用済みの指摘と本文の決まりが続きのジョブの入力に渡らないことは K-0009、本文全体を組み直す持ち主がいないことは K-0006 の主張。
 scope:
   work: [dev.describe]
   artifacts: [PR.body]
   request_form: [ticket]
-  roles: [implement, inspect, judge, body_fix]
+  roles: [implement, inspect, body_fix]
 acts_on: context
 confidence: hypothesis
 evidence:
   - case: C-0001
-  - case: C-0003
   - pr: 546
   - event: "case.analyzed:113682"
+  - case: C-0003
+  - pr: "396"
+  - event: "case.analyzed:40381"
   - case: C-0004
   - pr: 534
   - event: "case.analyzed:113588"
@@ -27,13 +30,13 @@ evidence:
   - pr: 290
   - event: "case.analyzed:370939"
 status: active
-verified_at: 2026-11-08
-review_by: 2026-12-08
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
-related: [K-0003, K-0004, K-0009, K-0010, K-0014]
+related: [K-0003, K-0004, K-0006, K-0009, K-0010, K-0014]
 enforcement:
   level: deterministic
   solutions:
@@ -48,6 +51,7 @@ enforcement:
       decided_by: committee:D-0001
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         本文の更新の前の関所 tools/pr-body-check/gate.mjs を足した。続きのジョブの summary を組み込んだ本文（gh pr edit の前の NEW_BODY）を
@@ -63,6 +67,7 @@ enforcement:
       decided_by: committee:D-0013
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0019 の ci_check の案のうち、ワーカーの権限で入れられる分を入れた。tools/pr-body-check/engine/pr-body-gate.patch が Engine に当てる差分で、
@@ -80,6 +85,7 @@ enforcement:
       decided_by: committee:D-0019
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0032（Issue #1037 の起票時の番号は D-0030。PR #1036）の ci_check の案（建設者が engine/pr-body-gate.patch を Engine に入れて
@@ -100,6 +106,9 @@ enforcement:
       decided_by: committee:D-0032
       wired: false
       verified: false
+      requires_check:
+        - runs: tools/sendback-check/engine.test.mjs
+          workflow: .github/workflows/sendback-engine.yml
     - kind: test
       what: >-
         議決 D-0032（Issue #1038 の起票時の番号は D-0030。PR #1036）の test の案を入れた。通る側の写しとして、c0005.mjs が C-0005 と同じ 21 回の
@@ -118,6 +127,9 @@ enforcement:
       decided_by: committee:D-0032
       wired: false
       verified: false
+      requires_check:
+        - runs: tools/pr-body-check/gate.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
     - kind: ci_check
       what: >-
         議決 D-0044 の ci_check の案（建設者が engine/pr-body-gate.patch を Engine に入れて ENGINE_REF を上げ、ci/pr-body-engine.yml を写して
@@ -158,6 +170,9 @@ enforcement:
       decided_by: committee:D-0044
       wired: false
       verified: false
+      requires_check:
+        - runs: tools/pr-body-check/engine.test.mjs
+          workflow: .github/workflows/pr-body-engine.yml
     - kind: test
       what: >-
         議決 D-0045（PR #1108）の test の案を入れた。tools/pr-body-check/engine.test.mjs の (10) を、engine/pr-body-gate.patch を当てた Engine の写しではなく、
@@ -175,6 +190,7 @@ enforcement:
       decided_by: committee:D-0045
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0045 の ci_check の案（建設者が ci/pr-body-engine.yml を .github/workflows/ に写して pr-body-engine-test を必須のチェックにするとき、
@@ -190,6 +206,7 @@ enforcement:
       decided_by: committee:D-0045
       wired: false
       verified: false
+      requires_check: []
     - kind: test
       what: >-
         議決 D-0068（Issue #1180 の起票時の番号は D-0066。PR #1176）の test の案を入れた。ci.test.mjs は写しがひな形と同じかを見るだけで、
@@ -206,6 +223,7 @@ enforcement:
       decided_by: committee:D-0068
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0068（Issue #1179 の起票時の番号は D-0066。PR #1176）の ci_check の案（K-0004 の test_engine_patch.py と同じ形で、engine/pr-body-gate.patch を
@@ -270,6 +288,7 @@ enforcement:
       decided_by: committee:D-0070
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0099（Issue #1187 の起票時の番号は D-0069。PR #1184）の ci_check の案（D-0045 の案どおり、ci.test.mjs で pr-body-engine-test のジョブの node --test が gate.test.mjs と
@@ -290,6 +309,7 @@ enforcement:
       decided_by: committee:D-0099
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0093（Issue #1262 の起票時の番号は D-0089。PR #1257）の ci_check の案（tools/knowledge-enforcement-check/check.py の REQUIRED_SCHEDULE に
@@ -306,6 +326,7 @@ enforcement:
       decided_by: committee:D-0093
       wired: false
       verified: false
+      requires_check: []
     - kind: ci_check
       what: >-
         議決 D-0094（Issue #1265 の起票時の番号は D-0090。PR #1261）の ci_check の案（建設者が tools/pr-body-check/ci/pr-body-engine.yml を .github/workflows/ に写して

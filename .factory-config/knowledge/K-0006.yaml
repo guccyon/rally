@@ -2,9 +2,10 @@ id: K-0006
 theme: 6
 kind: causal
 statement: >-
-  差し戻しの直しで PR 本文を末尾への追記だけで直し、テンプレートの順に本文全体を組み直す持ち主がいないと、
-  見出しの順と階層が崩れて新しい差し戻しを生む。同じ本文を複数のジョブ（body_fix と続きの implement）が並列に書き換えると、
-  この崩れは重くなる（並列は主な原因ではなく、悪化させる条件）。
+  差し戻しの直しで PR 本文を末尾への追記だけで直し、K-0005 で決める正本の見出しの順に本文全体を組み直す持ち主がいないと、
+  見出しの順が崩れて新しい差し戻しを生む。同じ本文を複数のジョブ（body_fix と続きの implement）が並列に書き換えると、
+  この崩れは重くなる（並列は主な原因ではなく、悪化させる条件）。主張は本文全体を組み直す持ち主がいないことに絞る。
+  続きのジョブの報告の見出しの階層が下がらずに重なることは K-0001、採用済みの指摘と本文の決まりが続きのジョブの入力に渡らないことは K-0009 の主張。
 scope:
   work: [dev.describe]
   artifacts: [PR.body]
@@ -20,10 +21,10 @@ evidence:
   - pr: 659
   - event: "case.analyzed:274379"
 status: active
-verified_at: 2026-11-05
-review_by: 2026-12-05
+verified_at: 2026-11-11
+review_by: 2026-12-11
 confidentiality: product
-related: [K-0001, K-0005, K-0009]
+related: [K-0001, K-0005, K-0009, K-0012]
 decided_by: committee:D-0006
 enforcement:
   level: deterministic
@@ -35,7 +36,10 @@ enforcement:
         必須の見出し（概要・対応内容）の欠け、定義の順の違い、同じ ## 見出しの重複、定義の外の見出し（工場の記録・続きのジョブの報告など）が
         定義の見出しの最後より前にあることを見る決定論の検査（K-0001 向けの tools/pr-body-check/check.mjs を広げた）。
         pull_request の edited や pr.body_amended でも起動させて、head_sha の変わらない本文だけの直しもマージ前の必須チェックにする想定。
-        ワークフローと必須チェックの配線は建設者の権限なのでまだ入っておらず、効き目はまだ確かめていない
+        ワークフローと必須チェックの配線は建設者の権限なのでまだ入っておらず、効き目はまだ確かめていない。
+        Issue #906 の題は起票したときの番号で「K-0004 を ci_check で決定論にする」だが、中身は議決 D-0006（PR #570）の K-0006 の ci_check の案で、
+        この知見の担保にあたる（K-0004 の担保ではない）。本文だけの直しをマージ前の必須チェックにする部分は K-0012 の invalidate_when の 2 つ目にもあたるが、
+        この項目は K-0012 には写さず、K-0012 からは related と invalidate_when で指す
       issue: 906
       at: 2026-11-05
       decided_by: committee:D-0006
@@ -56,3 +60,4 @@ enforcement:
       decided_by: committee:D-0071
       wired: false
       verified: false
+      requires_check: []
