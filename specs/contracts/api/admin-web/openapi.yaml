@@ -83,6 +83,10 @@ info:
     - 各操作の `x-context` は `specs/context-map.yaml` の context id。複数のコンテキストの事実を扱う操作だけ id の配列にする（student-app と同じ規約）
     - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
     - 認証は student-app と同じモックのトークンを `bearerAuth` として置く（不透明なトークン）
+    - 入口の分け直し（docs/adr/0011-entrance-split-coach-app-admin-web.md）: admin-web の入口は本部だけにし、コーチは coach-app
+      （`specs/contracts/api/coach-app/openapi.yaml`）から入る。移行中は、admin-web のログイン（`getMyAccount` で役割を確かめる）が
+      コーチの役割を受けるところを `x-deprecated-roles` で deprecated にして 90 日残す（2026-11-11 から。消すのは 2027-02-09 以降で、
+      コーチの画面が coach-app に移り終わったあと）。それまでコーチは admin-web のコーチの入口（PC）から今までどおり使える
 
     ## 互換ポリシー
 
@@ -624,11 +628,20 @@ paths:
         - トークンがない・無効なら 401。トークンが示すアカウントが存在しないときと、アカウントの役割がトークンの役割と
           合わないときも、無効なトークンとして 401
         - 照会だけで、何も保存しない
+        - admin-web のログインで、コーチの役割（`role` が `coach`）を受けるところは deprecated（`x-deprecated-roles`）。
+          本部の入口はコーチを受けず、移行中のコーチの入口（PC）だけが受ける。消すまでは今のまま `coach` も返す
 
         行動イベントは発火しない。
       tags: [identity]
       x-context: identity
       x-analytics-events: []
+      x-deprecated-roles:
+        - role: coach
+          x-deprecated-at: "2026-11-11"
+          description: |
+            admin-web のログインでコーチの役割を受けるのは移行中だけ（docs/adr/0011-entrance-split-coach-app-admin-web.md）。
+            コーチの入口は coach-app（`specs/contracts/api/coach-app/openapi.yaml` の `requestCoachLoginCode` / `verifyCoachLoginCode`）。
+            90 日（2027-02-09）たち、コーチの画面が coach-app に移り終わったら、admin-web のコーチの入口とあわせて消す
       responses:
         "200":
           description: 本人のアカウント

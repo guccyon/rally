@@ -11,8 +11,8 @@ actors:
   - id: coach
     ja: "コーチ"
     term: coach
-    apps: [admin-web]
-    note: "Gen1 は admin-web にコーチのロールでログインする（docs/adr/0002 Q3）"
+    apps: [coach-app, admin-web]
+    note: "coach-app（モバイル）に生徒と同じ形の入口（メールアドレスと確認コード）でログインする。予約枠の登録・添削の返却・通話・チャットなどのコーチの画面が coach-app に移るまでは、admin-web のコーチの入口（PC。/coach/login。移行中だけ）からログインして使う（docs/adr/0011）"
   - id: headquarters
     ja: "本部（運営）"
     term: null

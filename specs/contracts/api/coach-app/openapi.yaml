@@ -1,0 +1,320 @@
+openapi: 3.1.0
+info:
+  title: Rally coach-app API
+  version: 0.1.0
+  description: |
+    coach-app（コーチのモバイルアプリ。iOS / Android）が呼ぶ API。生徒とコーチはモバイルの同じ形の入口から、
+    本部は admin-web の独立した入口から入る（docs/adr/0011-entrance-split-coach-app-admin-web.md）。
+    最初は入口（ログイン）だけを書く。コーチの画面（予約枠の登録・添削の返却・通話への参加・チャットなど）は、
+    coach-app に移す後続のチケットで、admin-web の同じ操作と同じ形で足す。それまでコーチはそれらを admin-web の
+    コーチの入口（PC。移行中だけ）から使う。
+
+    ログインは student-app のログイン（#1404。メールのワンタイムコード）に倣い、同じ形にする。
+    1. `requestCoachLoginCode`（`POST /login-codes`）: メールアドレスに 6 桁の確認コードを送る（Gen1 はメールの送信をモックにする）
+    2. `verifyCoachLoginCode`（`POST /sessions`）: 確認コードを確かめ、アクセストークンと本人のアカウントを返す
+    3. `getMyAccount`（`GET /me`）: アプリを開いたときに、保存したトークンが使えるかと表示名を確かめる（admin-web の `getMyAccount` と同じ形）
+    4. `revokeCoachSession`（`DELETE /sessions/current`）: ログアウトでトークンを無効にする
+
+    ロールは利用者に選ばせない。入口（coach-app）がコーチの入口であることを決め、コーチ以外のアカウントは確認コードを確かめたあとに
+    403 `account_role_mismatch` で断る。メールアドレスを入れた段では、登録の有無も役割も答えを変えない（調べられないように）。
+
+    - 用語・スキーマ名は `specs/glossary.yaml` の id に揃える
+    - 各操作の `x-context` は `specs/context-map.yaml` の context id（ログインは identity）
+    - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く（ログインのイベントはまだない）
+    - 認証は student-app・admin-web と同じモックのトークンを `bearerAuth` として置く（不透明なトークン）
+
+    ## 互換ポリシー
+
+    `.factory-config/manifest.yaml` の `compat.api` と一致させる（`specs/contracts/README.md`）。
+
+    - N-2: モバイルアプリは最新から 2 つ前の版まで（N-2）をこの API が支える。
+      支える版のアプリが送るリクエスト・読むレスポンスを壊す変更（必須項目の追加、項目の削除・改名・型変更、
+      enum の値の削除）はしない
+    - 90 日: 廃止する操作・項目は `deprecated: true` と `x-deprecated-at` を付けてから 90 日は残す
+servers:
+  - url: /
+    description: ホストは環境ごとに決める（P1 はローカルの Docker Compose、本番相当の環境は P2）
+security:
+  - bearerAuth: []
+tags:
+  - name: identity
+    description: アカウント・権限（コーチのログイン・ログアウトと、ログイン中の本人のアカウント）
+
+paths:
+  /login-codes:
+    post:
+      operationId: requestCoachLoginCode
+      summary: ログインの確認コードを送る（コーチ）
+      description: |
+        メールアドレスに 6 桁の確認コードを送る（Gen1 はメールの送信をモックにする）。ログインの 1 段目。
+
+        - 登録のないメールアドレス・コーチでないアカウントのメールアドレスでも、同じ 202 を返す（登録の有無と役割を明かさない）。
+          そのときは何も送らない
+        - 確認コードの有効期限は送ってから 10 分。送り直すと、前に送ったコードは使えなくなる
+        - 同じメールアドレスへの送り直しは、前に送ってから 60 秒たつまで 429 `too_many_requests`（`Retry-After` に待つ秒数）
+        - メールアドレスの形が違う・空なら 422 `validation_failed`
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestCoachLoginCodeRequest"
+      responses:
+        "202":
+          description: 受け付けた（登録の有無と役割で変えない）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestCoachLoginCodeResponse"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /sessions:
+    post:
+      operationId: verifyCoachLoginCode
+      summary: 確認コードを確かめてログインする（コーチ）
+      description: |
+        `requestCoachLoginCode` で送った確認コードを確かめ、アクセストークンと本人のアカウントを返す。ログインの 2 段目。
+
+        - コードが違う・そのメールアドレスに送ったコードがないなら 401 `login_code_invalid`。期限（送ってから 10 分）が過ぎたなら
+          401 `login_code_expired`
+        - 1 つのコードで 5 回間違えると、そのコードは使えなくなり、以後は 429 `too_many_requests`（送り直せば新しいコードで続けられる）
+        - コードが正しく、アカウントがコーチでない（生徒・本部）ときは、トークンを出さずに 403 `account_role_mismatch`。
+          本文の `role` にそのアカウントの役割を載せる（メールアドレスを持っている本人にだけ種類を明かし、行き先を案内するため）
+        - 確かめたコードは使えなくなる（同じコードで 2 回ログインできない）
+        - メールアドレスの形が違う・コードが 6 桁の数字でないなら 422 `validation_failed`
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyCoachLoginCodeRequest"
+      responses:
+        "200":
+          description: ログインした。アクセストークンと本人のアカウント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AccountRoleMismatch"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /sessions/current:
+    delete:
+      operationId: revokeCoachSession
+      summary: ログアウトする（コーチ）
+      description: |
+        リクエストのトークンを無効にする。以後そのトークンで呼ぶと 401。クライアントは結果にかかわらず端末のトークンを消す。
+
+        - トークンがない・無効（無効にしたあとを含む）なら 401
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      responses:
+        "204":
+          description: 無効にした
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me:
+    get:
+      operationId: getMyAccount
+      summary: ログイン中の本人のアカウント（コーチ）
+      description: |
+        トークンが示す本人のアカウントの ID・役割・表示名を返す（admin-web の `getMyAccount` と同じ形）。coach-app を開いたときに、
+        保存したトークンが使えるかと表示名を確かめるのに使う。役割では絞らず、有効なトークンなら誰でも呼べる（403 はない）。
+        コーチのときだけ、自己紹介文 `bio`（書いていなければ空文字列）も返す。
+
+        - トークンがない・無効（`revokeCoachSession` で無効にしたものを含む）なら 401。トークンが示すアカウントが存在しないときと、
+          アカウントの役割がトークンの役割と合わないときも、無効なトークンとして 401
+        - 照会だけで、何も保存しない
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 本人のアカウント
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        アカウント ID と役割を載せた不透明なトークン（`CoachSession.access_token`。student-app・admin-web と同じ方式）。
+        クライアントは中身を解釈しない。Gen1 は署名なしのモックで、本番では署名付きの方式に差し替える
+        （形式が変わってもクライアントへの影響はない）。トークンがない・無効なら 401、役割が操作に合わなければ 403。
+
+  responses:
+    Unauthorized:
+      description: トークンがない・無効、または確認コードが違う・期限切れ（`login_code_invalid` / `login_code_expired`）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AccountRoleMismatch:
+      description: 確認コードは正しいが、アカウントがコーチでない（`account_role_mismatch`）。トークンは出さない
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AccountRoleMismatchError"
+    UnprocessableEntity:
+      description: リクエストの内容が不正
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: 回数が多い（送り直しの待ち・確認コードの間違いの上限）
+      headers:
+        Retry-After:
+          description: 次に試せるまでの秒数
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    AccountRole:
+      type: string
+      description: "アカウントの役割。student: 生徒 / coach: コーチ / headquarters: 本部（coach-app に入れるのはコーチだけ）"
+      enum: [student, coach, headquarters]
+
+    Account:
+      type: object
+      description: ログイン中の本人のアカウント（admin-web の `Account` と同じ形）
+      required: [account_id, role, display_name]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+          description: アカウントの ID（コーチなら他の操作の `coach_id` と同じ値）
+        role:
+          $ref: "#/components/schemas/AccountRole"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: アカウントの表示名
+        bio:
+          type: string
+          maxLength: 400
+          description: コーチの自己紹介文（コーチのときだけ載る。書いていなければ空文字列）。本部・生徒には載らない
+
+    RequestCoachLoginCodeRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: ログインするコーチのメールアドレス
+
+    RequestCoachLoginCodeResponse:
+      type: object
+      description: 受け付けた確認コードの送り先と待ち時間（登録の有無と役割で変えない）
+      required: [email, expires_in_seconds, resend_after_seconds]
+      properties:
+        email:
+          type: string
+          format: email
+          description: 送り先として受け付けたメールアドレス（リクエストのまま）
+        expires_in_seconds:
+          type: integer
+          description: 確認コードの有効期限（秒。今は 600）
+        resend_after_seconds:
+          type: integer
+          description: 送り直せるまでの秒数（今は 60）
+
+    VerifyCoachLoginCodeRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+          description: "`requestCoachLoginCode` に送ったメールアドレス"
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: メールに届いた 6 桁の確認コード
+
+    CoachSession:
+      type: object
+      description: ログインの結果。アクセストークンと本人のアカウント
+      required: [access_token, account]
+      properties:
+        access_token:
+          type: string
+          description: "モックのトークン。以後のリクエストで `Authorization: Bearer <access_token>` に使う。端末に保存し、開き直したら `getMyAccount` で確かめる"
+        account:
+          $ref: "#/components/schemas/Account"
+
+    ErrorCode:
+      type: string
+      description: |
+        機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
+      enum:
+        - unauthorized
+        - forbidden
+        - validation_failed
+        - login_code_invalid
+        - login_code_expired
+        - too_many_requests
+        - account_role_mismatch
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          description: 人間向けの説明（表示用ではない）
+
+    AccountRoleMismatchError:
+      type: object
+      description: "`account_role_mismatch` の本文。`Error` の項目に、ログインしようとしたアカウントの役割を足す"
+      required: [code, message, role]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          description: 人間向けの説明（表示用ではない）
+        role:
+          $ref: "#/components/schemas/AccountRole"

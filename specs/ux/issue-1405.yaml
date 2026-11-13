@@ -1,0 +1,845 @@
+prd:
+  goal: コーチ「スマホのアプリから、生徒と同じやり方でログインしたい。本部用のロールを選ぶ画面で迷いたくない」。 本部「PC の管理画面に、本部だけの入口から入りたい。コーチ用の選択肢を間違えて選びたくない」。
+  scope:
+    in:
+    - 'coach-app: ログイン（メールアドレス・確認コードの 2 段。新）'
+    - 'coach-app: ログインしたあとのホーム（新。今は移行中の案内とログアウトだけ）'
+    - 'coach-app: 生徒・本部のアカウントでログインしたときの案内（確認コードを確かめたあとに出す）'
+    - 'admin-web: ログイン画面（/）を本部だけの入口にする。ロールの選択をなくし、アカウントの役割を getMyAccount で確かめる'
+    - 'admin-web: コーチの入口（PC。/coach/login。新・移行中だけ）。コーチの画面のログアウトと権限がないときの戻り先をここにする'
+    out:
+    - 本部を別のバックエンド・別の DB にすること（ADR 0008 は見送りのまま）
+    - スロットの公開・動画添削の返却・ビデオ通話・チャットなどのコーチの画面の coach-app への移行（後続のチケット）
+    - 生徒のログインそのもの（#1404）。coach-app はその形に倣う
+    - コーチのアカウント登録・メールアドレスの変更（今はない。本部かシードで作る前提のまま）
+    - 本物の認証の基盤（Gen1 は admin-web はモックのトークンのまま）
+    - ADR と契約の本文（実装役が同じ PR で書く。この仕様は画面に要る項目だけを contract_needs に書く）
+  source: 'Issue guccyon/rally#1405（プランナーの要件とユーザーストーリー、Plan 14456）。関係: #1404（生徒のログイン）、#1374（ロールの選び間違い）、
+    docs/adr/0002-gen1-open-questions.md の Q3、docs/adr/0008-backoffice-separation.md。守るストーリー
+    specs/stories/student-subscription-persists.yaml・ coach-prejoin-check.yaml・coach-replies-to-new-message.yaml。今の画面は
+    apps/admin-web/src/app/page.tsx・components/LoginForm.tsx・RoleGate.tsx・session/session.ts。
+    PRD の文書は specs/ にない。'
+  success: コーチが coach-app を開き、メールアドレスと確認コードでログインしてコーチのホームに着ける。 本部は admin-web の本部の入口からログインでき、そこにロールの選択もコーチの選択肢もない。コーチのトークンを本部の入口に入れても本部の画面には入らず、
+    行き先（コーチの入口）が分かる。コーチの 3 画面（スロットの公開・動画添削の返却・ビデオ通話）は、移るまで PC の「コーチの入口」から今までどおり使える。
+notes:
+- 動くプロトタイプの入口は a.html。「確認コードを送る」→ a-code.html →「ログインする」→ a-busy.html →「ログインする」→ a-home.html。どのコマも下の点線の「モックの注記」（製品には出さない）から案
+  a のほかのコマへ移れる。スクリプトは使っていない
+- b.html は desktop（1280×900）、a と c は mobile（390 幅）。a のコマは縦に長いので撮る高さを 960 にした
+- サンプルの名前・メールアドレス・トークン・URL（admin.rally.example）は架空
+- '実装役へ: 守るストーリーの actors.yaml の coach の apps と note（admin-web にコーチのロールでログイン）は、coach-app
+  を足して書き直す。coach-prejoin-check・coach-replies-to-new-message の entry は「コーチの入口（PC）からログインした
+  admin-web のコーチの画面」と読める'
+states:
+- 'coachLogin ふつう: メールアドレスの欄と「確認コードを送る」（案 a の代表 a.html）'
+- 'coachLogin 入力の誤り: 欄を離れたとき・送るときに error_text（形が違う・空）'
+- 'coachLogin 送信中: 「確認コードを送る」に spinner、押せない'
+- 'coachLogin 失敗: 通信の失敗・429 は notice（danger）。値は残す'
+- 'coachLogin アカウントの種類が違う: 生徒か本部のアカウントで確認コードまで進んだ。notice（warning）と「Rally のアプリを開く」（生徒だけ）・「ほかのメールアドレスでログインする」（frame
+  a/wrongrole）'
+- 'coachLogin ログインの期限が切れた: coachHome から 401 で戻った。notice（warning）「ログインの期限が切れました。もう一度ログインしてください。」'
+- 'coachLogin 読み込み中: アプリを開いて保存したトークンを確かめるあいだは、端末の起動の画面のまま（この画面を一瞬出さない）'
+- 'coachLoginCode ふつう: 送った先・確認コードの欄・「ログインする」・待ち中の「コードを送り直す」（frame a/code）'
+- 'coachLoginCode 送信中: bar と spinner、欄は disabled、「ログインしています…」（frame a/busy）'
+- 'coachLoginCode コードが違う: error_text（frame a/codeerr）。期限切れ・間違いが続いた（429）は文を替える'
+- 'coachLoginCode 送り直した: toast「新しい確認コードを送りました」、欄を空に'
+- 'coachLoginCode 失敗: 通信の失敗は notice（danger）'
+- 'coachHome ふつう: 名前・PC の管理画面で使うもの・ログアウト（frame a/home）'
+- 'coachHome 読み込み中: bar（300ms を超えたときだけ）'
+- 'coachHome 失敗: アカウントを読めない notice（danger）と「ホームを更新する」。ほかの欄は出す'
+- 'coachHome 権限がない: 401 で coachLogin へ（期限切れの知らせ）'
+- 'coachHome 空: 起きない（使える画面がまだないことを、案内の欄で常に示す）'
+- 'coachHome 確認: 起きない（ログアウトは取り消せる操作なので確認しない）'
+- 'hqLogin ふつう: ロールの選択なし（frame a/hq）'
+- 'hqLogin 入力の誤り: 空・401 は error_text'
+- 'hqLogin 送信中: 「ログインする」に spinner'
+- 'hqLogin 役割が違う: コーチのトークン（frame a/hqcoach）・生徒のトークンは notice（danger）。値は残す'
+- 'hqLogin 失敗: 通信の失敗は notice（danger）'
+- 'hqLogin 読み込み中: 保存したセッションを読むあいだは何も出さない（今の useSession のまま）'
+- 'coachWebLogin ふつう: 移行中の知らせ（info）とトークンの欄（frame a/webcoach）。誤り・送信中・役割が違う・失敗は hqLogin
+  と同じ形'
+- 'adminCoachHome 権限がない: RoleGate が「読み込み中…」のあと /coach/login へ'
+- どの画面も 空のデータ・確認のダイアログ は起きない（ログインの画面は一覧を持たず、取り消せない操作がない）
+ticket: guccyon/rally#1405
+changes:
+- kind: new
+  after: coach-app の最初の画面。見出し「ログイン」・メールアドレスの欄・「確認コードを送る」の 1 画面。下に「生徒の方は Rally のアプリから、本部の方は
+    PC の管理画面から」の 1 文。 生徒・本部のアカウントで確認コードまで進んだときは、この画面に戻して行き先を案内する。
+  screen: coachLogin
+- kind: new
+  after: 送った先のメールアドレス・確認コードの欄（6 桁）・「ログインする」・「コードを送り直す」（60 秒後から）・「メールアドレスを変える」。
+  screen: coachLoginCode
+- kind: new
+  after: ログインした名前と、「スロットの公開・動画添削の返却・ビデオ通話は、アプリに移るまで PC の管理画面のコーチの入口から使う」の案内、 PC で開くアドレスとそのコピー、ログアウト。コーチの画面が移ってきたら、ここに足していく。
+  screen: coachHome
+- kind: changed
+  after: 見出し「本部の管理画面にログイン」。ロールの選択をなくし、アクセストークンの欄（見えるラベルと helper）と「ログインする」だけ。押すと getMyAccount
+    で役割を確かめ、 本部なら本部の画面へ。コーチ・生徒のトークンなら入れずに、知らせで行き先を示す。下にコーチ向けの 1 文と「コーチの入口（PC）」へのリンク。
+  before: 見出し「Rally 管理画面にログイン」。ロール（コーチ／本部）のラジオとアクセストークンの欄。選んだロールのまま保存し、トークンの役割は確かめない（#1374
+    の選び間違いが起きる）。 placeholder「POST /accounts の access_token」がラベルの代わりになっている。
+  screen: hqLogin
+- kind: new
+  after: admin-web の /coach/login。見出し「コーチの画面にログイン（PC）」・移行中の入口だという知らせ・アクセストークンの欄・「ログインする」。ロールは選ばず、
+    getMyAccount でコーチと確かめる。コーチの 3 画面が coach-app に移ったら消す（消す日は ADR に書く）。
+  screen: coachWebLogin
+- kind: changed
+  after: 戻り先を /coach/login にする。画面の中身は変えない（3 画面の移行は後続）。
+  before: ログアウトと、ログインしていない・コーチでないときの戻り先が、本部と同じ /（ロールの選択のあるログイン）。
+  screen: adminCoachHome
+screens:
+- id: coachLogin
+  new: true
+  more:
+    copy:
+      lead: コーチとして登録したメールアドレスに、ログインの確認コードを送ります。
+      title: ログイン
+      action: 確認コードを送る
+      others: 生徒の方は Rally のアプリから、本部の方は PC のブラウザーで本部の管理画面からログインします。
+    analytics: なし（specs/analytics/events.yaml にログインのイベントがない。足すなら別のタスク。open_questions）
+    accessibility:
+    - 見える「メールアドレス」のラベルを欄に結ぶ（placeholder で代えない）。helper と error_text は aria-describedby
+    - 知らせ（アカウントの種類が違う・送れなかった）は role=alert。出たらフォーカスを知らせの先頭へ
+    - 文字 200% でも横に動かない（ボタンの文言は折り返してよい）
+    contract_needs:
+    - 'coach-app.requestCoachLoginCode（POST）: request {email}。202（登録の有無で変えない）・422（形が違う）・429（回数が多い。Retry-After）'
+  route: coach-app の最初の画面（ログインしていないとき）
+  purpose: コーチがスマホで、生徒と同じ形の入口からログインを始める。1 段目でメールアドレスを入れて確認コードを受け取る。フローの入口で、 アカウントの種類が違ったときの戻り先も兼ねる。ロールは選ばない（アプリが入口を決める）。
+  audience: コーチ（スマホ。iOS / Android）
+  elements:
+  - name: アプリバー
+    note: 戻るのアイコンは出さない（入口なので）
+    source: 固定（アプリ名は仮。open_questions）
+    content: 「Rally コーチ」
+    required: true
+    component: patterns.common_layout.student_app のアプリバー
+  - name: 見出し
+    source: 固定
+    content: 「ログイン」
+    required: true
+    component: 画面の見出し（headline 32px 900）
+  - name: 説明
+    source: 固定
+    content: 「コーチとして登録したメールアドレスに、ログインの確認コードを送ります。」
+    required: true
+    component: 本文（body）
+  - name: アカウントの種類が違う知らせ
+    note: 確認コードを確かめたあとだけ出す（メールアドレスを持っている本人にだけ種類を明かす）。出ているときは説明と欄の代わりに、下の 2 つの操作を出す
+    source: verifyCoachLoginCode の 403 account_role_mismatch の role
+    content: '生徒: 「{メールアドレス} は生徒のアカウントです。このアプリはコーチ用です。生徒の方は Rally のアプリからログインしてください。」／本部:
+      「{メールアドレス} は本部のアカウントです。本部の画面は、PC のブラウザーで本部の管理画面からログインします。」'
+    required: false
+    component: notice（inline・warning）
+  - name: メールアドレス
+    note: type=email・inputmode=email・autocomplete=email。前後の空白は送る前に除く。254 文字まで
+    source: 入力。戻ってきたときは前の値
+    content: ラベル「メールアドレス」・helper「コーチとして登録したメールアドレス」
+    required: true
+    component: text_field（single_line）
+  - name: 確認コードを送る
+    note: 画面の primary はこれ 1 つ（アカウントの種類が違う知らせが出ているときは「Rally のアプリを開く」が primary）
+    source: 固定
+    content: 「確認コードを送る」
+    required: true
+    component: button（primary・幅いっぱい・56px）
+  - name: Rally のアプリを開く
+    note: 生徒のアカウントのときだけ。本部のアカウントのときは出さない（PC の画面なので開く先がない）
+    source: 固定
+    content: 「Rally のアプリを開く」
+    required: false
+    component: button（primary）
+  - name: ほかのメールアドレスでログインする
+    note: アカウントの種類が違う知らせが出ているときだけ
+    source: 固定
+    content: 「ほかのメールアドレスでログインする」
+    required: false
+    component: button（text）
+  - name: ほかの利用者への案内
+    note: 押せるものにしない（行き先の URL を生徒・本部に見せる必要がない）。#1374 の選び間違いの手前で気づけるように置く
+    source: 固定
+    content: 「生徒の方は Rally のアプリから、本部の方は PC のブラウザーで本部の管理画面からログインします。」
+    required: true
+    component: 本文（small text_muted）
+  behaviors:
+  - action: 欄を離れる
+    result: 輪郭 danger 2px と error_text「メールアドレスの形になっていません。name@example.com の形で入れてください。」。打っている途中には出さない。直すと消える
+    target: メールアドレス
+    condition: 空でなく、@ を含む name@domain の形でない
+  - action: 押す
+    result: error_text「メールアドレスが入っていません。コーチとして登録したメールアドレスを入れてください。」を出し、欄へフォーカス。送らない
+    target: 確認コードを送る
+    condition: メールアドレスが空
+  - action: 押す
+    result: ボタンを loading（spinner・押せない）にして requestCoachLoginCode を呼ぶ。サーバーは登録の有無にかかわらず受け付けたと返す（202）。
+      受け付けたら coachLoginCode へ（メールアドレスを渡す）。二度押しでは 1 回だけ送る
+    target: 確認コードを送る
+    condition: メールアドレスの形が正しい
+  - action: 押す
+    result: ボタンの上に notice（inline・danger）でサーバーの文言（例「確認コードを送る回数が多すぎます。しばらく待ってから、もう一度送ってください。」）。入れた値は消さない
+    target: 確認コードを送る
+    condition: 429（同じメールアドレスに短い間に何度も送った）
+  - action: 押す
+    result: notice（inline・danger）「確認コードを送れませんでした。通信のよい場所で、もう一度「確認コードを送る」を押してください。」。入れた値は消さない。ボタンは押せるまま
+    target: 確認コードを送る
+    condition: 通信に失敗した・5xx
+  - action: 押す
+    result: student-app を開く（入っていなければストアのページ）。coach-app のトークンは保存していないので、戻ってもログインしていない
+    target: Rally のアプリを開く
+    condition: 生徒のアカウントの知らせが出ている
+  - action: 押す
+    result: 知らせを消し、メールアドレスを空にして欄へフォーカス
+    target: ほかのメールアドレスでログインする
+    condition: アカウントの種類が違う知らせが出ている
+  - action: アプリを開く
+    result: この画面を出さず coachHome へ（開き直すたびにログインし直させない。student-subscription-persists の
+      known_gaps と同じ問題をコーチで起こさない）
+    target: 画面
+    condition: 端末に保存したトークンがあり、getMyAccount が coach を返す
+  transitions:
+    exits:
+    - to: coachLoginCode
+      data: メールアドレス
+      action: 「確認コードを送る」が受け付けられた
+    - to: student-app（入っていなければストア）。coach-app は coachLogin のまま
+      action: 「Rally のアプリを開く」（生徒のアカウントのとき）
+    - to: アプリを閉じる（戻る先はない）
+      action: 端末の戻る
+    entries:
+    - data: なし
+      from: アプリを開く
+      condition: 端末にトークンがない、または getMyAccount が 401
+    - data: 入れていたメールアドレス
+      from: coachLoginCode の「メールアドレスを変える」・戻る
+      condition: いつでも
+    - data: メールアドレスと役割（案内の文に使う）。トークンは保存しない
+      from: coachLoginCode の「ログインする」
+      condition: 確認コードは正しいが、役割が student か headquarters
+    - data: なし
+      from: coachHome の「ログアウトする」
+      condition: いつでも
+- id: coachLoginCode
+  new: true
+  more:
+    copy:
+      sent: '{メールアドレス} に 6 桁の確認コードを送りました。届いてから 10 分のあいだ使えます。'
+      title: 確認コード
+      resent: 新しい確認コードを送りました
+      expired: 確認コードの期限が切れました。「コードを送り直す」で新しいコードを受け取ってください。
+      invalid: 確認コードが違います。メールに届いた 6 桁の数字を、もう一度入れてください。
+    analytics: なし（ログインのイベントは events.yaml にない）
+    accessibility:
+    - 確認コードの欄は 1 つ（6 つの箱に分けない。読み上げと貼り付けで崩れない）
+    - disabled の「コードを送り直す」は aria-disabled と aria-describedby で理由の文に結ぶ
+    - 押せる部品は 48px 以上。「コードを送り直す」と「メールアドレスを変える」のあいだは sm 8px 以上
+    contract_needs:
+    - 'coach-app.verifyCoachLoginCode（POST）: request {email, code}。200 {access_token,
+      account: {account_id, role, display_name}}。401 login_code_invalid / login_code_expired。429。403
+      account_role_mismatch（body に role。コードが正しいときだけ）'
+    - 'coach-app.getMyAccount（GET /me）: アプリを開いたときにトークンが使えるかと表示名を確かめる（admin-web の getMyAccount
+      と同じ形）'
+    microinteractions:
+    - 'きっかけ: 端末がメールの確認コードを候補に出す。ルール: 選ぶと欄に入るだけで、自動では送らない（押し間違いの送信と 429 を避ける）。フィードバック:
+      なし'
+    - 'きっかけ: 送ってから 60 秒。ルール: 「コードを送り直す」を押せるようにする。フィードバック: role=status で 1 回。繰り返し:
+      送り直すたびに 60 秒から'
+  route: coach-app のログインの 2 段目
+  purpose: メールに届いた確認コードを入れてログインを終える。フローの 2 段目で、ここで初めてアカウントの役割が分かる。
+  audience: コーチ（スマホ）
+  elements:
+  - name: アプリバー
+    source: 固定
+    content: 戻るのアイコン（aria-label「戻る」）と「Rally コーチ」
+    required: true
+    component: patterns.common_layout.student_app のアプリバー
+  - name: 見出し
+    source: 固定
+    content: 「確認コード」
+    required: true
+    component: 画面の見出し（headline）
+  - name: 送った先
+    source: 前の画面のメールアドレス。10 分は契約の有効期限（仮。open_questions）
+    content: 「{メールアドレス} に 6 桁の確認コードを送りました。届いてから 10 分のあいだ使えます。」
+    required: true
+    component: 本文（body）
+  - name: 確認コード
+    note: inputmode=numeric・autocomplete=one-time-code（端末がメールから差し込める）。数字以外と空白は入れたときに除く。6
+      桁まで。値は tnum
+    source: 入力
+    content: ラベル「確認コード」・helper「メールに届いた 6 桁の数字」
+    required: true
+    component: text_field（single_line）
+  - name: ログインする
+    source: 固定
+    content: 「ログインする」
+    required: true
+    component: button（primary・幅いっぱい）
+  - name: コードを送り直す
+    note: 送ってから 60 秒は disabled（押せない理由を下の文で）。押せるようになったら文の「60 秒たつと」を消す
+    source: 固定
+    content: 「コードを送り直す」
+    required: true
+    component: button（text）
+  - name: メールアドレスを変える
+    source: 固定
+    content: 「メールアドレスを変える」
+    required: true
+    component: button（text）
+  - name: 届かないときの案内
+    source: 固定
+    content: 「メールが届かないときは、60 秒たつと送り直せます（迷惑メールのフォルダーも確かめてください）。」
+    required: true
+    component: 本文（small text_muted）
+  - name: 読み込みの表示
+    note: 「ログインする」を押してから 300ms を超えたときだけ
+    source: 固定
+    content: アプリバーの下の 4px の bar と「ログインしています…」（role=status）
+    required: false
+    component: loading（bar）
+  behaviors:
+  - action: 押す
+    result: error_text「確認コードは 6 桁の数字です。メールに届いたコードを入れてください。」と欄へフォーカス。送らない
+    target: ログインする
+    condition: 確認コードが 6 桁でない（空を含む）
+  - action: 押す
+    result: ボタンを loading・欄を disabled にし verifyCoachLoginCode を呼ぶ。二度押しでは 1 回だけ送る。200
+      で役割が coach なら、トークンを端末の安全な保存場所 （iOS の Keychain・Android の Keystore）に置き、coachHome
+      へ置き換えて移る
+    target: ログインする
+    condition: 6 桁
+  - action: 押す
+    result: 欄の輪郭 danger 2px と error_text「確認コードが違います。メールに届いた 6 桁の数字を、もう一度入れてください。」（role=alert）。入れた値は残して全体を選んだ状態にする
+    target: ログインする
+    condition: 確認コードが違う（401 login_code_invalid）
+  - action: 押す
+    result: error_text「確認コードの期限が切れました。「コードを送り直す」で新しいコードを受け取ってください。」。「コードを送り直す」は 60
+      秒を待たずに押せるようにする
+    target: ログインする
+    condition: 期限切れ（401 login_code_expired）
+  - action: 押す
+    result: notice（inline・danger）でサーバーの文言（例「確認コードを続けて間違えたため、このコードは使えなくなりました。新しいコードを送り直してください。」）。欄と「ログインする」は押せないままにし、「コードを送り直す」だけ押せる
+    target: ログインする
+    condition: 間違いが続いた（429）
+  - action: 押す
+    result: トークンを保存せず coachLogin へ戻し、アカウントの種類が違う知らせを出す
+    target: ログインする
+    condition: 役割が student か headquarters（403 account_role_mismatch）
+  - action: 押す
+    result: notice（inline・danger）「ログインできませんでした。通信のよい場所で、もう一度「ログインする」を押してください。」。コードは残す（期限の内ならそのまま使える）
+    target: ログインする
+    condition: 通信に失敗した・5xx
+  - action: 押す
+    result: requestCoachLoginCode をもう一度呼ぶ（ボタンを loading）。受け付けたら toast「新しい確認コードを送りました」（4
+      秒・role=status）、前のコードは使えなくなる。欄を空にしてフォーカス。60 秒の待ちをやり直す
+    target: コードを送り直す
+    condition: 送ってから 60 秒たった、または期限切れ
+  - action: 押す
+    result: 押せない（disabled）。理由は下の文で出す。残りの秒は数えて見せない（読み上げがうるさくなるため。押せるようになったときだけ role=status
+      で「コードを送り直せます」を 1 回）
+    target: コードを送り直す
+    condition: 60 秒の前
+  - action: 押す
+    result: coachLogin へ（メールアドレスを残す）。送ったコードは期限まで残るが、新しく送れば使えなくなる。確認はしない（取り消せる操作）
+    target: メールアドレスを変える
+    condition: いつでも
+  transitions:
+    exits:
+    - to: coachHome
+      data: トークン（端末の安全な保存場所へ）・表示名。戻る履歴は消す（戻るでログインの画面に戻らない）
+      action: 「ログインする」・役割が coach
+    - to: coachLogin
+      data: メールアドレスと役割。トークンは保存しない
+      action: 「ログインする」・役割が student か headquarters
+    - to: coachLogin
+      data: メールアドレス（残す）
+      action: 「メールアドレスを変える」・アプリバーの戻る・端末の戻る
+    - to: この画面のまま（戻ってきたら入れた値を残す）
+      action: アプリを離れてメールを読む
+    entries:
+    - data: メールアドレス
+      from: coachLogin の「確認コードを送る」
+      condition: requestCoachLoginCode が 202
+- id: coachHome
+  new: true
+  more:
+    copy:
+      copied: アドレスをコピーしました
+      logout: ログアウトする
+      notice: スロットの公開・動画添削の返却・ビデオ通話は、このアプリに移るまで、PC のブラウザーで管理画面のコーチの入口から使います。
+    analytics: なし
+    accessibility:
+    - 見出し → 欄の見出しの順（h1 → h2）
+    - info の知らせは role=status にしない（開くたびに読み上げない。ふつうの文として読む）
+    contract_needs:
+    - coach-app.getMyAccount（上と同じ）
+    - 'coach-app.revokeCoachSession（DELETE /sessions/current）: 204。トークンを無効にする。なければ端末から消すだけにする（open_questions）'
+  route: coach-app のログインしたあとの最初の画面
+  purpose: ログインできたことと、だれでログインしているかを確かめる。コーチの 3 画面がアプリに移るまでのあいだ、PC のどこで続けて使うかを知る。 フローの終わり。後続のチケットで、移ってきた画面の入口をここに足す。
+  audience: コーチ（スマホ・ログイン済み）
+  elements:
+  - name: アプリバー
+    source: 固定
+    content: 「ホーム」
+    required: true
+    component: patterns.common_layout.student_app のアプリバー
+  - name: 見出しとログイン中の名前
+    note: 表示名が読めないときは「（名前を表示できません）」
+    source: getMyAccount の display_name
+    content: 「ホーム」と「{表示名}（コーチ）としてログインしています」
+    required: true
+    component: 画面の見出し（headline）と本文（small text_muted）
+  - name: PC の管理画面で使うもの
+    note: 移った画面から文を減らす。全部移ったら欄ごと消す
+    source: 固定
+    content: 見出し「PC の管理画面で使うもの」と「スロットの公開・動画添削の返却・ビデオ通話は、このアプリに移るまで、PC のブラウザーで管理画面のコーチの入口から使います。」
+    required: true
+    component: 欄の見出し（title）・notice（inline・info）
+  - name: PC で開くアドレス
+    note: アドレスは環境（開発・デモ・本番）で変わる。画面に直書きしない
+    source: 環境ごとの設定（admin-web の URL）
+    content: '「PC で開くアドレス: admin.rally.example/coach/login」「ログインに使うもの: これまでと同じアクセストークン（ロールは選びません）」'
+    required: true
+    component: card（plain）の中に description_list（stacked）
+  - name: アドレスをコピーする
+    source: 固定
+    content: 「アドレスをコピーする」
+    required: true
+    component: button（secondary）
+  - name: ログアウトする
+    source: 固定
+    content: 「ログアウトするまで、この端末ではログインしたままです。」と「ログアウトする」
+    required: true
+    component: 欄の見出し「アカウント」・本文（small text_muted）・button（secondary）
+  behaviors:
+  - action: 開く
+    result: getMyAccount を読むあいだ loading の bar（300ms を超えたときだけ）。読めたら名前を出す
+    target: 画面
+    condition: アプリを開いたとき（保存したトークンがある）
+  - action: 開く
+    result: 名前の行の代わりに notice（inline・danger）「アカウントを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。」と
+      button（secondary）「ホームを更新する」。PC の案内とログアウトは出す
+    target: 画面
+    condition: getMyAccount が通信の失敗・5xx
+  - action: 押す
+    result: アドレスを端末のクリップボードに入れ、toast「アドレスをコピーしました」（4 秒・role=status）。二度押しは同じ結果（害がない）
+    target: アドレスをコピーする
+    condition: いつでも
+  - action: 押す
+    result: 確認はしない（もう一度ログインすれば戻れる、取り消せる操作）。ボタンを loading にして revokeCoachSession を呼び、結果にかかわらず端末のトークンを消して
+      coachLogin へ置き換えて移る（通信に失敗しても端末からは消す）
+    target: ログアウトする
+    condition: いつでも
+  transitions:
+    exits:
+    - to: coachLogin
+      action: 「ログアウトする」
+    - to: この画面のまま（PC で coachWebLogin を開くのは利用者）
+      action: 「アドレスをコピーする」
+    - to: coachLogin（「ログインの期限が切れました。もう一度ログインしてください。」を notice・warning で）
+      action: getMyAccount が 401（トークンが切れた・無効にされた）
+    - to: アプリを閉じる（ログインの画面には戻らない）
+      action: 端末の戻る
+    entries:
+    - data: トークン・表示名
+      from: coachLoginCode
+      condition: ログインできた
+    - data: 表示名
+      from: アプリを開く
+      condition: 保存したトークンで getMyAccount が coach を返す
+- id: hqLogin
+  new: false
+  more:
+    copy:
+      title: 本部の管理画面にログイン
+      for_coach: 'コーチの方へ: コーチのログインは Rally コーチのアプリに移りました。PC で使う画面は コーチの入口（PC） から開けます。'
+      coach_token: このアクセストークンはコーチのアカウントのものです。本部の管理画面には、本部のアカウントでログインしてください。
+    analytics: なし
+    accessibility:
+    - ロールの radio（fieldset）をなくすので、フォーカスの順は 欄 → ボタン → コーチの入口 のリンク
+    - 知らせは role=alert。admin-web の呼びかけと感嘆符の決まり（content.yaml の coach_admin）に合わせる
+    contract_needs:
+    - 'admin-web.getMyAccount（今のまま）: role で本部かを確かめる'
+    - admin-web のログインで coach の役割を受けるところは deprecated（x-deprecated-at）にし、90 日残す（Issue
+      の契約の差分）。画面は coach を本部の入口では受けない
+  route: admin-web の /
+  purpose: 本部の担当者が、本部だけの入口から本部の画面に入る。ロールは選ばず、トークンの役割で本部かどうかを確かめる。本部のフローの入口。
+  audience: 本部（PC のブラウザー）
+  elements:
+  - name: 見出し
+    note: ページの title も「Rally 本部の管理画面」にする
+    source: 固定
+    content: 「本部の管理画面にログイン」
+    required: true
+    component: 画面の見出し（admin-web の headline 28px）
+  - name: 説明
+    source: 固定
+    content: 「本部のアカウントでログインします。」
+    required: true
+    component: 本文（body）
+  - name: アクセストークン
+    note: 今の placeholder「POST /accounts の access_token」はやめる（ラベルの代わりにしない）。autocomplete=off。前後の空白は除く。等幅の字（font-mono）はやめ、body
+      の sans
+    source: 入力
+    content: ラベル「アクセストークン」・helper「Gen1 は本物の認証がありません。アカウントのモックのアクセストークンを入れます。」
+    required: true
+    component: text_field（single_line）
+  - name: 役割が違う知らせ
+    note: 欄の下、ボタンの上。入れた値は消さない
+    source: getMyAccount の role
+    content: 'コーチ: 「このアクセストークンはコーチのアカウントのものです。本部の管理画面には、本部のアカウントでログインしてください。」と「コーチの画面は
+      コーチの入口（PC） から開けます。」／生徒: 「このアクセストークンは生徒のアカウントのものです。本部の管理画面には、本部のアカウントでログインしてください。」'
+    required: false
+    component: notice（inline・danger）
+  - name: ログインする
+    source: 固定
+    content: 「ログインする」
+    required: true
+    component: button（primary・admin-web 48px）
+  - name: コーチ向けの案内
+    note: '区切り線の下に置く。ロールの選択ではなく、ブックマークで / を開いたコーチの行き先。コーチの入口（coachWebLogin）を消すときに
+      「コーチの方へ: コーチのログインは Rally コーチのアプリからです。」だけにする'
+    source: 固定
+    content: '「コーチの方へ: コーチのログインは Rally コーチのアプリに移りました。PC で使う画面は コーチの入口（PC） から開けます。」'
+    required: true
+    component: 本文（small text_muted）と文の中のリンク
+  behaviors:
+  - action: 押す
+    result: error_text「アクセストークンが入っていません。本部のアカウントのアクセストークンを入れてください。」と欄へフォーカス。送らない
+    target: ログインする
+    condition: アクセストークンが空
+  - action: 押す
+    result: 'ボタンを loading にし、そのトークンで getMyAccount を呼ぶ（二度押しは 1 回）。role が headquarters
+      ならセッションに role: headquarters を 保存して /headquarters へ。ロールは利用者に選ばせず、サーバーの答えで決める'
+    target: ログインする
+    condition: 空でない
+  - action: 押す
+    result: セッションを保存せず、役割が違う知らせを出す。入れた値は残す。フォーカスを知らせへ
+    target: ログインする
+    condition: role が coach か student
+  - action: 押す
+    result: error_text「アクセストークンが使えません。本部のアカウントのアクセストークンを入れ直してください。」
+    target: ログインする
+    condition: 401
+  - action: 押す
+    result: notice（inline・danger）「ログインできませんでした。少し待ってから、もう一度「ログインする」を押してください。」。値は残す
+    target: ログインする
+    condition: 通信に失敗した・5xx
+  - action: 押す
+    result: /coach/login へ。入れた値は持っていかない
+    target: コーチの入口（PC）
+    condition: いつでも
+  transitions:
+    exits:
+    - to: 本部の画面（/headquarters）
+      data: 'セッション {role: headquarters, token}'
+      action: 「ログインする」・役割が headquarters
+    - to: この画面のまま（知らせ）
+      action: 「ログインする」・役割が coach か student
+    - to: coachWebLogin
+      action: 「コーチの入口（PC）」
+    - to: 本部の画面（/headquarters）
+      action: 開いたときに本部のセッションが残っている
+    - to: コーチの画面（/coach）。消さない（移行中は使える）
+      action: 開いたときにコーチのセッションが残っている（移行前に保存したもの）
+    entries:
+    - data: なし
+      from: ブラウザーで admin-web を開く
+      condition: ログインしていない
+    - data: なし
+      from: 本部の画面の「ログアウト」・RoleGate（本部）
+      condition: ログアウトした・セッションが本部でない
+    - data: なし
+      from: coachWebLogin の「本部の管理画面」
+      condition: いつでも
+- id: coachWebLogin
+  new: true
+  more:
+    copy:
+      title: コーチの画面にログイン（PC）
+      migration: コーチのログインは Rally コーチのアプリに移りました。この入口は、コーチの画面がアプリに移るまでのあいだだけ使えます。
+    analytics: なし
+    accessibility:
+    - 知らせ（info）はふつうの文として読み、role=alert にしない
+    contract_needs:
+    - admin-web.getMyAccount（今のまま）
+  route: admin-web の /coach/login（移行中だけ。deprecated）
+  purpose: コーチの 3 画面（スロットの公開・動画添削の返却・ビデオ通話）とチャットなど今のコーチの画面を、coach-app に移るまで PC で使い続ける。
+    本部の入口と切り離した、コーチだけの入口。守るストーリー coach-prejoin-check・coach-replies-to-new-message
+    はここから入る。
+  audience: コーチ（PC のブラウザー）
+  elements:
+  - name: 見出し
+    source: 固定
+    content: 「コーチの画面にログイン（PC）」
+    required: true
+    component: 画面の見出し（admin-web の headline）
+  - name: 説明
+    source: 固定
+    content: 「スロットの公開・動画添削の返却・ビデオ通話など、PC で使うコーチの画面の入口です。」
+    required: true
+    component: 本文（body）
+  - name: 移行中の知らせ
+    note: 閉じるの操作は付けない。終わる日が決まったら「{日付} まで使えます」と足す（ADR）
+    source: 固定
+    content: 「コーチのログインは Rally コーチのアプリに移りました。この入口は、コーチの画面がアプリに移るまでのあいだだけ使えます。」
+    required: true
+    component: notice（inline・info）
+  - name: アクセストークン
+    source: 入力
+    content: hqLogin と同じ
+    required: true
+    component: text_field（single_line）
+  - name: 役割が違う知らせ
+    source: getMyAccount の role
+    content: '本部: 「このアクセストークンは本部のアカウントのものです。本部の方は 本部の管理画面 からログインしてください。」／生徒: 「このアクセストークンは生徒のアカウントのものです。コーチのアカウントのアクセストークンを入れてください。」'
+    required: false
+    component: notice（inline・danger）
+  - name: ログインする
+    source: 固定
+    content: 「ログインする」
+    required: true
+    component: button（primary・48px）
+  - name: 本部への案内
+    source: 固定
+    content: 「本部の方は 本部の管理画面 からログインします。」
+    required: true
+    component: 本文（small text_muted）と文の中のリンク
+  behaviors:
+  - action: 押す
+    result: hqLogin と同じ文の形（「本部の」を「コーチの」に替える）
+    target: ログインする
+    condition: 空・401・通信の失敗
+  - action: 押す
+    result: 'loading・二度押しは 1 回。セッション {role: coach} を保存して /coach へ。今のコーチの画面の中身は変えない'
+    target: ログインする
+    condition: role が coach
+  - action: 押す
+    result: セッションを保存せず役割が違う知らせ。値は残す
+    target: ログインする
+    condition: role が headquarters か student
+  transitions:
+    exits:
+    - to: adminCoachHome（/coach）
+      data: 'セッション {role: coach, token}'
+      action: 「ログインする」・役割が coach
+    - to: この画面のまま（知らせ）
+      action: 「ログインする」・役割が headquarters か student
+    - to: hqLogin
+      action: 「本部の管理画面」
+    - to: adminCoachHome
+      action: 開いたときにコーチのセッションが残っている
+    entries:
+    - data: なし
+      from: hqLogin の「コーチの入口（PC）」・役割が違う知らせのリンク
+      condition: いつでも
+    - data: なし
+      from: coachHome でコピーしたアドレス
+      condition: いつでも
+    - data: なし
+      from: adminCoachHome の「ログアウト」・RoleGate（コーチ）
+      condition: ログアウトした・セッションがコーチでない
+- id: adminCoachHome
+  new: false
+  route: admin-web の /coach（変わる行だけ）
+  purpose: 今のコーチの画面。今回は戻り先だけを変え、守るストーリー（入室前チェック・チャットの返事）の流れを壊さない。
+  audience: コーチ（PC）
+  elements:
+  - name: ログアウト
+    note: 戻り先だけ変える
+    source: 固定
+    content: 「ログアウト」（今のまま）
+    required: true
+    component: button（secondary）
+  behaviors:
+  - action: 押す
+    result: セッションを消して /coach/login へ置き換えて移る
+    target: ログアウト
+    condition: いつでも
+  - action: 開く
+    result: RoleGate が「読み込み中…」のあと /coach/login へ（本部の RoleGate は今までどおり / へ）
+    target: 画面
+    condition: セッションがない・役割が coach でない
+  transitions:
+    exits:
+    - to: coachWebLogin（今は /）
+      action: 「ログアウト」
+    - to: coachWebLogin（今は /）
+      action: RoleGate がセッションなし・本部のセッションを見つけた
+    entries:
+    - data: セッション
+      from: coachWebLogin
+      condition: 役割が coach
+summary: ログインの入口を端末で分け直す。コーチは新しい coach-app（モバイル）に、生徒と同じ形（メールアドレス → 確認コード）のログインを足し、
+  admin-web のログインは本部だけの入口にしてロールの選択をなくす。コーチの 3 画面がアプリに移るまでは、admin-web に別の「コーチの入口（PC）」を残す。
+judgments:
+- kind: ui
+  note: メールアドレスと確認コードを別の画面（2 段）にし、確認コードは text_field 1 つ・自動送信なし。1 画面 1 つの問い（patterns.onboarding）と、送り間違いを減らすため
+  question: coach-app のログインの段の数と、確認コードの入れ方
+- kind: error_handling
+  note: 確認コードを確かめたあと（403 account_role_mismatch）だけ明かす。メールアドレスを入れた段では登録の有無も種類も変えずに 202
+    を返す（調べられないように）。入口の下には、だれにでも出してよい静的な案内の文だけを置いた
+  question: 生徒・本部のアカウントで coach-app に来た人に、いつ種類を明かすか
+- kind: error_handling
+  note: エラーで止めるだけでなく、知らせの中にコーチの入口へのリンクを置く。セッションは保存せず、入れた値は残す（patterns.form）
+  question: 本部の入口にコーチのトークンを入れたとき
+- kind: system_interface
+  note: 利用者に選ばせず、admin-web は getMyAccount の role、coach-app は verifyCoachLoginCode
+    の account.role で決める。保存するセッションの role はサーバーの答えから書く（今の session.ts の「ロールは利用者がログイン時に選ぶ」を変える）
+  question: 役割をどこで決めるか
+- kind: scope
+  note: 画面の移行は後続のチケットなので、ホームは移行中の案内・PC で開くアドレス・ログアウトだけにした。チャットやお知らせを先に入れない
+  question: coach-app のログインのあとに何を出すか
+- kind: scope
+  note: 本部の入口と分けた /coach/login を足し、中身は今のトークンのまま。消すまでの扱いは ADR に書く前提
+  question: 移行中のコーチの PC の入口
+- kind: aesthetic
+  note: coach-app はコーチが見る新しいアプリだが、見た目は student-app のトークンと部品をそのまま写し、色・書体・写真の新しい決めごとはしない。だから
+    false にし、見た目の案は作らなかった。アプリのアイコンとストアの見た目を決めるときは別のタスクで true にする
+  question: brand_impact を true にするか
+- kind: ui
+  note: ロールの選択肢ではなく、区切り線の下の small の文とリンクにした。今 / をブックマークしているコーチが迷わないため。コーチの入口を消すときに文を短くする
+  question: 本部の入口に、コーチ向けの案内を置くか
+prototype: true
+rationale:
+  why: '#1374 の選び間違いは「1 つの画面でロールを選ぶ」形から起きている。案 a は本部・コーチの入口を URL ごと分け、どちらの入口も役割をサーバーの答え（getMyAccount）で
+    確かめるので、選ぶ場面そのものがなくなり、違うアカウントで来た人には行き先を示せる。coach-app は student-app の画面の型と部品のまま
+    （メールアドレス → 確認コード）にしたので、生徒と同じ形という条件を満たし、デザインシステムに足す部品もない。移行中の PC の入口は今の コーチの画面（守るストーリーの入室前チェックとチャット）を中身ごと残すので、回帰の範囲が戻り先の変更だけに収まる。'
+  rejected:
+  - idea: 案 b（admin-web は 1 つの入口のまま、ロールの選択だけをなくしてアカウントで行き先を決める）
+    reason: 選び間違いはなくなるが、「本部は独立した Web の入口」の条件を弱くしか満たさない。コーチの入口を消すときに、本部の入口の文と流れをもう一度変えることになる
+  - idea: 案 c（PC のログインを coach-app で承認する）
+    reason: コーチには一番やさしいが、移行が終われば要らなくなる仕組みに新しい API・期限・画面が要る。3 画面の移行の順が決まってから考えても遅くない（open_questions）
+  - idea: 生徒アプリと 1 つのアプリにして、ログインのあとロールで画面を分ける
+    reason: Issue の判断（新しく残す ADR）でとらなかった案。生徒向けのストアの説明・通知・審査とコーチの業務の画面が混ざる
+  - idea: coach-app のログインの画面で「生徒」「コーチ」を選ばせる、または入口の前に振り分けの画面を置く
+    reason: ロールの選択を別の場所に移すだけで、#1374 と同じ選び間違いが起きる。アプリが入口を決め、違ったときだけ案内する
+  - idea: メールアドレスを入れた時点で「このメールアドレスは生徒のアカウントです」と出す
+    reason: だれでもメールアドレスの登録の有無と種類を調べられてしまう。確認コードを確かめたあと（本人と分かったあと）にだけ種類を明かす
+  - idea: 確認コードを 6 つの箱に分けた入力
+    reason: 読み上げ・貼り付け・端末のコードの候補で崩れやすく、デザインシステムに部品がない。text_field 1 つで足りる
+  - idea: 確認コードを 6 桁入れたら自動でログインする
+    reason: 間違いのまま送って 429 に早く届く。押す操作を 1 つ残す
+  requirement_map:
+  - how: 'coachLogin・coachLoginCode を student-app の画面の型（アプリバー・headline・text_field・primary
+      56px）と同じ 2 段（メールアドレス → 確認コード）で組む。形は #1404 に合わせる（open_questions の 1）'
+    requirement: 生徒とコーチが、同じ形の入口からモバイルアプリでログインできる
+  - how: hqLogin（/）を本部だけの入口にし、coach-app と coachWebLogin（/coach/login）にはロールの選択を置かない。役割は
+      getMyAccount と verifyCoachLoginCode の答えで決める
+    requirement: 本部は admin-web の独立した入口からログインでき、コーチの入口にロールの選択が出ない
+  - how: hqLogin からロールの radio をなくす。コーチのトークンは入れずに知らせで行き先を示す（frame a/hqcoach）。コーチ向けは選択肢ではなく、区切り線の下の案内の文とリンクだけ
+    requirement: admin-web のログイン画面にコーチの選択肢がない
+  - how: 画面に要る操作と項目を contract_needs に書いた（requestCoachLoginCode・verifyCoachLoginCode・getMyAccount・revokeCoachSession）。契約の本文は実装役が書く
+    requirement: coach-app の API が契約にある
+  - how: coachWebLogin を移行中だけの入口として足し、adminCoachHome の戻り先をそこにする。coachHome に PC で開くアドレスを出す。消す時期は
+      ADR に書く（open_questions）
+    requirement: コーチの 3 画面の移行が終わるまでの admin-web の扱い
+  - how: 生徒の画面は変えない。コーチの PC の画面は中身を変えず、入口と戻り先だけを変える。ストーリーの entry「admin-web のコーチの画面」は
+      coachWebLogin から入る形で続く
+    requirement: 守るストーリー（student-subscription-persists・coach-prejoin-check・coach-replies-to-new-message）を壊さない
+user_flow:
+- to: coachLogin
+  from: 端末のホーム画面
+  action: coach-app を開く（ログインしていない）
+- to: coachLoginCode
+  from: coachLogin
+  action: メールアドレスを入れて「確認コードを送る」を押す
+- to: coachHome
+  from: coachLoginCode
+  action: メールに届いた 6 桁を入れて「ログインする」を押す（コーチのアカウント）
+- to: coachLogin（アカウントの種類が違う案内）
+  from: coachLoginCode
+  action: 「ログインする」を押したが、生徒か本部のアカウントだった
+- to: coachLogin（入れたメールアドレスを残す）
+  from: coachLoginCode
+  action: 「メールアドレスを変える」か戻る
+- to: coachHome
+  from: 端末のホーム画面
+  action: coach-app を開く（ログインしたまま）
+- to: coachLogin
+  from: coachHome
+  action: 「ログアウトする」を押す
+- to: coachWebLogin
+  from: coachHome
+  action: 「アドレスをコピーする」を押し、PC のブラウザーで開く
+- to: 本部の画面（/headquarters）
+  from: PC のブラウザー（admin-web の / を開く）
+  action: 本部のアクセストークンを入れて「ログインする」を押す
+- to: hqLogin（コーチのアカウントだという知らせ）→「コーチの入口（PC）」で coachWebLogin
+  from: hqLogin
+  action: コーチのアクセストークンを入れて「ログインする」を押す
+- to: adminCoachHome（/coach。今のコーチの画面）
+  from: coachWebLogin
+  action: コーチのアクセストークンを入れて「ログインする」を押す
+- to: coachWebLogin
+  from: adminCoachHome
+  action: 「ログアウト」を押す、またはセッションが切れる
+brand_impact: false
+open_questions:
+- 【いちばん見てほしい】生徒のログイン（#1404）の形がまだリポジトリにない。coach-app は「メールアドレス → 6 桁の確認コード」を仮に置いた（生徒の登録にパスワードがないため）。#1404
+  がパスワードなど別の形にしたら、coach-app もそれに合わせて画面を直す
+- 確認コードの有効期限 10 分・送り直しの待ち 60 秒・間違いの上限は仮の値。契約（coach-app の openapi）で決める
+- アプリの名前「Rally コーチ」は仮。ストアの名前と、生徒向けの「Rally」との並べ方はプロダクトオーナーに決めてほしい
+- admin-web の PC の入口は、移行中も Gen1 のモックのトークンのまま。coach-app と同じ確認コードにそろえるか（PC でも同じやり方）は、本物の認証を入れるときに決める。案
+  c はその先の形
+- 'コーチの入口（PC）を消す日: 3 画面が移り終わった日か、deprecated から 90 日のどちらか遅いほうを仮にした。ADR に書く'
+- ログアウトでトークンを無効にする API（revokeCoachSession）を coach-app の契約に足すか。足さなければ端末から消すだけになる
+- ログインのイベント（ログインした・確認コードを送った・役割が違った）が specs/analytics/events.yaml にない。#1374 の選び間違いが減ったかを見るなら、役割が違ったときのイベントを足すタスクを切る
+- Issue の契約の差分は「admin-web の login operation の coach role を deprecated」とあるが、今の admin-web
+  の契約にログインの操作はなく、ロールは画面で選んで保存しているだけ（getMyAccount はロールが合わないと 401）。何を deprecated にするかはアーキテクトに確かめてほしい
+design_system_gaps: []
+design_system_constraints:
+- specs/design/ 0.8.0（rally-court・scoreboard）のトークンだけを使った。モックの値は out/rally.css に tokens.yaml
+  の名前で写した（色・余白 4/8/16/24/40・角丸 6/12/999・影なし）
+- '部品: button（primary・secondary・text）、text_field、notice（inline の danger・warning・info）、card（plain）、description_list（stacked）、loading（bar・spinner）、toast（notice
+  の toast）。どれも trial の部品'
+- '画面の型: coach-app は patterns.common_layout.student_app（アプリバー → headline → 欄）と patterns.form（欄は
+  1 段・送るボタンは primary・誤りは欄の下の error_text・送るのに失敗しても値を残す）。admin-web は common_layout.admin_web
+  の reading 768px'
+- coach-app は Flutter のアプリになる前提で、student-app の見た目（RallyTheme・FlowScaffold のアプリバー・ボタン
+  56px）をそのまま写した。coach-app 専用のトークンは作らない（生徒と同じ形の入口のため）
+- 濃い面（inverse_surface）・score_panel・ライム（secondary）は使わない。ログインと移行の案内は行動の主役の数字がない画面なので、熱い場所を置かない（principles
+  の clear-before-hype・admin-calm）
+- admin-web の headline は 28px、ボタンは 48px・700（typography.admin_web・button.size）
+- 文言は content.yaml（動詞で終えるボタン、誤りは何が起きたかとどうすればよいかの 2 文、admin-web は呼びかけと感嘆符なし）。glossary
+  の語（コーチ・生徒・スロット・動画添削・ビデオ通話）を使い、lint の glossary-terms に合わせて「予約枠」を画面の文に使わない
+- モックの admin-web のコマ（a-hq・a-hqcoach・a-webcoach）は、案 a のコマの撮影の幅（390px）に合わせて admin-web
+  の 600px 未満の形（左右 md 16px）で描いた。PC の幅では b.html と同じ 768px の 1 段になる
+- モックの下の点線の「モックの注記」はレビューでコマをたどるためのもので、製品には出さない（border_strong の点線はトークンの色だが、部品ではない）
+variant:
+  id: a
+  axis: flow
+  name: 入口を 3 つに分ける（coach-app・本部の Web・移行中のコーチの Web）
+  frames:
+  - id: code
+    state: ふつう
+    screen: coachLoginCode
+    caption: 「確認コードを送る」を押したあと（確認コードを入れる）
+  - id: codeerr
+    state: コードが違う
+    screen: coachLoginCode
+    caption: 違う確認コードで「ログインする」を押したあと
+  - id: busy
+    state: 送信中
+    screen: coachLoginCode
+    caption: 正しい確認コードで「ログインする」を押した直後
+  - id: home
+    state: ふつう
+    screen: coachHome
+    caption: コーチのアカウントでログインできたあと
+  - id: wrongrole
+    state: アカウントの種類が違う
+    screen: coachLogin
+    caption: 生徒のアカウントのメールアドレスで確認コードまで進んだあと
+  - id: hq
+    state: ふつう
+    screen: hqLogin
+    caption: PC で admin-web の / を開いたとき（本部の入口）
+  - id: hqcoach
+    state: 役割が違う
+    screen: hqLogin
+    caption: 本部の入口にコーチのアクセストークンを入れて「ログインする」を押したあと
+  - id: webcoach
+    state: ふつう
+    screen: coachWebLogin
+    caption: 「コーチの入口（PC）」を開いたとき（移行中だけ）
+  height: 960
+  tradeoff: 本部とコーチの入口が URL から切れてロールの選び間違いが起きなくなり、coach-app は生徒と同じ形になるが、移行中は admin-web
+    に入口が 2 つ並び、 コーチは PC でもう 1 回（トークンで）ログインする手間が残る。
+  viewport: mobile
