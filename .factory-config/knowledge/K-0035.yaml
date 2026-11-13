@@ -1,0 +1,28 @@
+id: K-0035
+theme: 6
+kind: causal
+statement: >-
+  採用した PR 本文の指摘を直す body_fix のあと、直した本文を検査し直さずに（少なくとも見出しの機械的な確認なしで）マージすると、
+  直した結果の正しさが確かめられない。C-0015 では、body_fix（job 5489）のあと 6 秒後の 11:03:13 にマージが決まり、直した本文は
+  検査を通っていない。提案の向きは、pr.body_amended のあとマージの前に直した本文の見出しを機械で確かめる段を手順書に足すこと、
+  少なくとも body_fix の対象になった rubric_id の再照合を記録に残すこと。同じ向きの主張は K-0012 にあり（承認が body_fix の終わりを
+  待たない）、この知見は K-0012 への 1 件の再現の追加で、新しい主張は足さない。根拠はこの事例 1 件で、今回は実害がなかった
+  （直した本文が正しかったかは材料にない）ので、繰り返すかは分からない（分析役の見立ては「繰り返さない」）。
+  scope の軸は分析役が書かなかったので、事例の業務から決めた。
+scope:
+  work: [dev.describe, dev.review.inspect]
+  artifacts: [PR.body]
+  roles: [supervisor, body_fix]
+acts_on: process
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - event: "case.analyzed:1004155"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0012, K-0006]
+invalidate_when:
+  - "マージが、body_fix の終わりと直した本文の再検査（少なくとも見出しの機械的な確認）を待つようになった"
+  - "本文の直しのあとの本文を再検査しなくても、マージされた本文の見出しの欠けが起きなかった（再検査の段は要らなかった）"
