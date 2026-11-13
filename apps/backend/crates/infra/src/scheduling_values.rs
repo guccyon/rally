@@ -1,11 +1,14 @@
 //! scheduling の値と、DB に保存する文字列の対応表。
 //!
 //! `scheduling.slots.status`・`scheduling.bookings.status`・`scheduling.bookings.cancelled_by`・
+//! `scheduling.bookings.cancel_reason`（CHECK なし）・
 //! `scheduling.coach_acceptances.status`（CHECK 制約の値）はこの表だけを通す。キャンセルした人の値は境界間イベント
 //! `BookingCancelled` の `cancelled_by`（[`crate::domain_event_payload`]）も同じ。`sport` は
 //! [`crate::identity_values::sport_value`] と同じ値。CHECK との一致は `tests/schema.rs` が確かめる。
 
-use domain::scheduling::{BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus};
+use domain::scheduling::{
+    BookingCancelReason, BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus,
+};
 
 /// `scheduling.slots.status` の値。
 pub const fn slot_status_value(status: SlotStatus) -> &'static str {
@@ -56,6 +59,20 @@ pub fn booking_canceller_from_value(value: &str) -> Option<BookingCanceller> {
     .find(|canceller| booking_canceller_value(*canceller) == value)
 }
 
+/// `scheduling.bookings.cancel_reason` の値。この列は初版の自由記述の列で値の CHECK を持たない（絞るのは contract）ので、
+/// 書くのも読むのもこの表の値だけにする。
+pub const fn booking_cancel_reason_value(reason: BookingCancelReason) -> &'static str {
+    match reason {
+        BookingCancelReason::CoachLeave => "coach_leave",
+    }
+}
+
+pub fn booking_cancel_reason_from_value(value: &str) -> Option<BookingCancelReason> {
+    [BookingCancelReason::CoachLeave]
+        .into_iter()
+        .find(|reason| booking_cancel_reason_value(*reason) == value)
+}
+
 /// `scheduling.coach_acceptances.status` の値。
 pub const fn coach_acceptance_status_value(status: CoachAcceptanceStatus) -> &'static str {
     match status {
@@ -87,6 +104,17 @@ mod tests {
             );
         }
         assert_eq!(booking_canceller_from_value("system"), None);
+    }
+
+    #[test]
+    fn booking_cancel_reason_values_round_trip() {
+        assert_eq!(
+            booking_cancel_reason_from_value(booking_cancel_reason_value(
+                BookingCancelReason::CoachLeave
+            )),
+            Some(BookingCancelReason::CoachLeave)
+        );
+        assert_eq!(booking_cancel_reason_from_value("payment_failed"), None);
     }
 
     #[test]

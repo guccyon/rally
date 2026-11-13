@@ -1,16 +1,19 @@
 use std::collections::BTreeSet;
 
-use domain::scheduling::BookingId;
+use domain::scheduling::{BookingId, BookingStatus};
 
 use super::{
-    BookingCoachDisplayNameLookup, BookingDetail, BookingRepository, StudentDisplayNameLookup,
+    BookingCoachDisplayNameLookup, BookingDetail, BookingRepository, CoachLeaveRepository,
+    StudentDisplayNameLookup,
 };
 use crate::Unavailable;
 
 /// 本部が見る予約 1 件の詳細のユースケース（admin-web の `getBooking`。本部だけが呼ぶ）。
 ///
-/// 予約（状態を問わない）と予約したスロットを読み、コーチと生徒の表示名を profile に問い合わせて添える。
-/// 予約がなければ [`GetBookingError::NotFound`]。読むだけで何も変えない。
+/// 予約（状態を問わない）と予約したスロットを読み、コーチと生徒の表示名を profile に問い合わせて添える。キャンセル済みの
+/// 予約は、それをキャンセルしたコーチのお休みの記録（[`CoachLeaveRepository::coach_leaves_of_bookings`]）も読んで添え、
+/// 予約に戻す（[`domain::scheduling::Booking::with_restored_coach_leave`]。理由を残し始める前にお休みでキャンセルした予約も
+/// 理由が分かる）。予約がなければ [`GetBookingError::NotFound`]。読むだけで何も変えない。
 pub struct GetBooking<B, K, D> {
     bookings: B,
     coaches: K,
@@ -33,7 +36,7 @@ impl From<Unavailable> for GetBookingError {
 
 impl<B, K, D> GetBooking<B, K, D>
 where
-    B: BookingRepository,
+    B: BookingRepository + CoachLeaveRepository,
     K: BookingCoachDisplayNameLookup,
     D: StudentDisplayNameLookup,
 {
@@ -51,6 +54,19 @@ where
             .find(booking_id)
             .await?
             .ok_or(GetBookingError::NotFound)?;
+        let coach_leave = if booking.status() == BookingStatus::Cancelled {
+            self.bookings
+                .coach_leaves_of_bookings(&BTreeSet::from([booking_id]))
+                .await?
+                .into_iter()
+                .next()
+        } else {
+            None
+        };
+        let booking = match &coach_leave {
+            Some(leave) => booking.with_restored_coach_leave(leave),
+            None => booking,
+        };
         let slot = self
             .bookings
             .find_slot(booking.slot_id())
@@ -69,6 +85,7 @@ where
         Ok(BookingDetail {
             booking,
             slot,
+            coach_leave,
             coach_display_name,
             student_display_name,
         })
@@ -89,11 +106,18 @@ mod tests {
         },
         identity::AccountId,
         profile::DisplayName,
-        scheduling::{Booking, BookingStatus, Slot, SlotId, SlotSeats, SlotStatus},
+        scheduling::{
+            Booking, BookingCancelReason, BookingCanceller, BookingStatus, CancellationDecision,
+            CoachLeave, CoachLeaveId, CoachLeaveNote, CoachLeaveRequest, Slot, SlotId, SlotSeats,
+            SlotStatus,
+        },
     };
 
     use super::*;
-    use crate::in_memory::{InMemoryBookingRepository, InMemorySlotRepository};
+    use crate::{
+        in_memory::{InMemoryBookingRepository, InMemorySlotRepository},
+        scheduling::calendar_day,
+    };
 
     const STUDENT: AccountId = AccountId::from_u128(1);
     const COACH: AccountId = AccountId::from_u128(7);
@@ -228,6 +252,69 @@ mod tests {
                 (BookingStatus::Confirmed, START + HOUR),
                 (BookingStatus::Cancelled, START + 2 * HOUR),
             ]
+        );
+        let cancelled = detail.booking.status_changes()[1];
+        assert_eq!(cancelled.cancelled_by(), Some(BookingCanceller::Student));
+        assert_eq!(
+            cancelled.cancel_reason(),
+            None,
+            "生徒のキャンセルは理由を残さない"
+        );
+        assert_eq!(detail.coach_leave, None);
+    }
+
+    #[tokio::test]
+    async fn a_booking_cancelled_by_a_coach_leave_comes_with_the_leave() {
+        let bookings =
+            InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([slot(1)]));
+        let booked = book(&bookings, 1, false).await;
+        let headquarters = AccountId::from_u128(9);
+        // 枠（3 日目）の日だけのお休み。今は 1 日目
+        let day = calendar_day::of(START + 48 * HOUR);
+        let period = calendar_day::days(day, day).unwrap();
+        let request = CoachLeaveRequest {
+            coach_id: COACH,
+            period,
+            note: CoachLeaveNote::new("ご迷惑をおかけします。").unwrap(),
+            requested_by: headquarters,
+            expected_booking_ids: BTreeSet::from([booked.id()]),
+        };
+        let leave = bookings
+            .start_coach_leave(COACH, period, |slots, existing, leaves| {
+                CoachLeave::start(
+                    CoachLeaveId::from_u128(5),
+                    &request,
+                    START,
+                    slots,
+                    existing,
+                    leaves,
+                )
+                .map(|(leave, _)| leave)
+            })
+            .await
+            .unwrap();
+
+        let detail = GetBooking::new(bookings, Names::default(), Names::default())
+            .execute(booked.id())
+            .await
+            .unwrap();
+        assert_eq!(detail.coach_leave, Some(leave));
+        let changes = detail.booking.status_changes();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].changed_at(), START);
+        assert_eq!(
+            changes[0].cancelled_by(),
+            Some(BookingCanceller::Headquarters)
+        );
+        assert_eq!(
+            changes[0].cancel_reason(),
+            Some(BookingCancelReason::CoachLeave)
+        );
+        assert_eq!(
+            changes[0].cancellation_decision(),
+            Some(CancellationDecision {
+                consumes_quota: false
+            })
         );
     }
 

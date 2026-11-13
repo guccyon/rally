@@ -1,8 +1,9 @@
 use std::time::SystemTime;
 
 use super::{
-    BookingCanceller, BookingId, BookingLessonMenu, BookingStatus, BookingStatusChange,
-    CancellationDecision, CancellationPolicy, SchedulingError, Slot, SlotId,
+    BookingCancelReason, BookingCanceller, BookingId, BookingLessonMenu, BookingStatus,
+    BookingStatusChange, CancellationDecision, CancellationPolicy, CoachLeave, SchedulingError,
+    Slot, SlotId,
 };
 use crate::{
     catalog::{LessonMenu, LessonMenuId},
@@ -32,6 +33,8 @@ pub struct Booking {
     confirmed_at: Option<SystemTime>,
     cancelled_at: Option<SystemTime>,
     cancelled_by: Option<BookingCanceller>,
+    cancel_reason: Option<BookingCancelReason>,
+    cancellation_decision: Option<CancellationDecision>,
     lesson_menu: Option<BookingLessonMenu>,
 }
 
@@ -76,6 +79,8 @@ impl Booking {
             confirmed_at: None,
             cancelled_at: None,
             cancelled_by: None,
+            cancel_reason: None,
+            cancellation_decision: None,
             lesson_menu: None,
         })
     }
@@ -135,6 +140,8 @@ impl Booking {
                 BookingStatus::Cancelled => Some(BookingCanceller::Student),
                 BookingStatus::Pending | BookingStatus::Confirmed => None,
             },
+            cancel_reason: None,
+            cancellation_decision: None,
             lesson_menu: None,
         }
     }
@@ -147,6 +154,36 @@ impl Booking {
             && let Some(canceller) = canceller
         {
             self.cancelled_by = Some(canceller);
+        }
+        self
+    }
+
+    /// 保存先から読んだキャンセル済みの予約に、キャンセルした理由 `reason` とキャンセル規定の判定 `decision` を戻す（保存先の
+    /// 実装用）。保存先が持たない行（理由・判定を残し始める前のキャンセル）は `None` のまま。キャンセルしていない予約には何も
+    /// しない。
+    pub fn with_restored_cancellation(
+        mut self,
+        reason: Option<BookingCancelReason>,
+        decision: Option<CancellationDecision>,
+    ) -> Self {
+        if self.status == BookingStatus::Cancelled {
+            self.cancel_reason = reason;
+            self.cancellation_decision = decision;
+        }
+        self
+    }
+
+    /// お休みの記録 `leave` がこの予約をキャンセルした予約として持っていれば、キャンセルした理由を
+    /// [`BookingCancelReason::CoachLeave`] にする（理由を残し始める前にお休みでキャンセルした予約も、お休みの記録との
+    /// 結びつきから理由が分かる）。本部がキャンセルした予約でないとき・`leave` がこの予約を持たないときは何もしない。
+    pub fn with_restored_coach_leave(mut self, leave: &CoachLeave) -> Self {
+        if self.cancelled_by == Some(BookingCanceller::Headquarters)
+            && leave
+                .cancelled_bookings()
+                .iter()
+                .any(|booking| booking.booking_id() == self.id)
+        {
+            self.cancel_reason = Some(BookingCancelReason::CoachLeave);
         }
         self
     }
@@ -198,27 +235,36 @@ impl Booking {
             return Err(SchedulingError::BookingOfAnotherStudent);
         }
         let decision = CancellationPolicy::decide(self, now);
-        self.cancel_as(BookingCanceller::Student, decision, slot, now)
+        self.cancel_as(BookingCanceller::Student, None, decision, slot, now)
     }
 
     /// 本部が `now` にキャンセルし（コーチのお休み。[`super::CoachLeave::start`] から呼ぶ）、キャンセル規定の判定を返す。
     ///
     /// 判定は [`CancellationPolicy::decide_for_headquarters`] だけが行う（生徒の都合でないので回数を消費しない）。スロットの
-    /// 席の空け方と失敗は [`Self::cancel`] と同じ（生徒は問わない）。キャンセルした人は [`BookingCanceller::Headquarters`]。
+    /// 席の空け方と失敗は [`Self::cancel`] と同じ（生徒は問わない）。キャンセルした人は [`BookingCanceller::Headquarters`]、
+    /// 理由は [`BookingCancelReason::CoachLeave`]。
     pub fn cancel_by_headquarters(
         &mut self,
         slot: &mut Slot,
         now: SystemTime,
     ) -> Result<CancellationDecision, SchedulingError> {
         let decision = CancellationPolicy::decide_for_headquarters(self);
-        self.cancel_as(BookingCanceller::Headquarters, decision, slot, now)
+        self.cancel_as(
+            BookingCanceller::Headquarters,
+            Some(BookingCancelReason::CoachLeave),
+            decision,
+            slot,
+            now,
+        )
     }
 
-    /// `canceller` が `now` にキャンセルし、判定 `decision` を返す。予約したスロット `slot` の席を 1 つ空ける（確定済みなら
-    /// [`Slot::release`]、確定前なら [`Slot::release_hold`]）。失敗したときは予約もスロットも変えない。
+    /// `canceller` が `now` に理由 `reason` でキャンセルし、判定 `decision` を返す（理由と判定は予約に残す）。予約した
+    /// スロット `slot` の席を 1 つ空ける（確定済みなら [`Slot::release`]、確定前なら [`Slot::release_hold`]）。失敗したときは
+    /// 予約もスロットも変えない。
     fn cancel_as(
         &mut self,
         canceller: BookingCanceller,
+        reason: Option<BookingCancelReason>,
         decision: CancellationDecision,
         slot: &mut Slot,
         now: SystemTime,
@@ -234,6 +280,8 @@ impl Booking {
         self.status = BookingStatus::Cancelled;
         self.cancelled_at = Some(now);
         self.cancelled_by = Some(canceller);
+        self.cancel_reason = reason;
+        self.cancellation_decision = Some(decision);
         Ok(decision)
     }
 
@@ -312,6 +360,18 @@ impl Booking {
         self.cancelled_by
     }
 
+    /// キャンセルした理由。キャンセル済みの予約のうち、理由を残したもの（本部のコーチのお休みでのキャンセル）だけが持つ。
+    /// 生徒のキャンセル・キャンセルしていない予約・理由を残し始める前のキャンセルは `None`。
+    pub const fn cancel_reason(&self) -> Option<BookingCancelReason> {
+        self.cancel_reason
+    }
+
+    /// キャンセルしたときのキャンセル規定の判定（[`CancellationDecision`]。回数を消費したか）。キャンセルしていない予約と、
+    /// 判定を残し始める前のキャンセルは `None`。
+    pub const fn cancellation_decision(&self) -> Option<CancellationDecision> {
+        self.cancellation_decision
+    }
+
     /// 一覧を絞るキャンセルした人の指定に当てはまるか。指定があればキャンセルした人（[`Self::cancelled_by`]）がそれと同じ
     /// ときだけ、なければどの予約も当てはまる。キャンセルした人のない予約（キャンセルしていない予約）は、指定があればどの
     /// 指定にも当てはまらない。本部が見るキャンセルされた予約の一覧が使う。
@@ -338,15 +398,21 @@ impl Booking {
 
     /// 状態が変わった記録（確定・キャンセル）を時刻の古い順に返す（同じ時刻は確定、キャンセルの順）。予約が持つ確定・
     /// キャンセルの時刻から組み立て、時刻のない変化（確定せずにキャンセルした予約の確定など）は含めない。作ったばかりの
-    /// 予約は空。作った時刻は [`Self::created_at`]。
+    /// 予約は空。作った時刻は [`Self::created_at`]。キャンセルの記録だけが、キャンセルした人・理由・判定を持つ。
     pub fn status_changes(&self) -> Vec<BookingStatusChange> {
-        let mut changes: Vec<BookingStatusChange> = [
-            (BookingStatus::Confirmed, self.confirmed_at),
-            (BookingStatus::Cancelled, self.cancelled_at),
-        ]
-        .into_iter()
-        .filter_map(|(status, at)| at.map(|at| BookingStatusChange::new(status, at)))
-        .collect();
+        let confirmed = self
+            .confirmed_at
+            .map(|at| BookingStatusChange::new(BookingStatus::Confirmed, at));
+        let cancelled = self.cancelled_at.map(|at| {
+            BookingStatusChange::cancelled(
+                at,
+                self.cancelled_by,
+                self.cancel_reason,
+                self.cancellation_decision,
+            )
+        });
+        let mut changes: Vec<BookingStatusChange> =
+            confirmed.into_iter().chain(cancelled).collect();
         changes.sort_by_key(BookingStatusChange::changed_at);
         changes
     }
@@ -545,6 +611,145 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_cancel_record_keeps_the_canceller_the_reason_and_the_decision() {
+        // 生徒のキャンセルは理由を持たず、判定を残す
+        let mut slot_a = slot(10, SlotStatus::Open);
+        let mut by_student = reserve(1, STUDENT, false, &mut slot_a, &[]).unwrap();
+        by_student.confirm(STUDENT, &mut slot_a, at(1)).unwrap();
+        by_student.cancel(STUDENT, &mut slot_a, at(9)).unwrap();
+        assert_eq!(by_student.cancel_reason(), None);
+        let changes = by_student.status_changes();
+        assert_eq!(changes.len(), 2);
+        let (confirmed, cancelled) = (changes[0], changes[1]);
+        assert_eq!(confirmed.status(), BookingStatus::Confirmed);
+        assert_eq!(confirmed.cancelled_by(), None, "確定の記録は経緯を持たない");
+        assert_eq!(confirmed.cancellation_decision(), None);
+        assert_eq!(cancelled.status(), BookingStatus::Cancelled);
+        assert_eq!(cancelled.changed_at(), at(9));
+        assert_eq!(cancelled.cancelled_by(), Some(BookingCanceller::Student));
+        assert_eq!(cancelled.cancel_reason(), None);
+        assert_eq!(
+            cancelled.cancellation_decision(),
+            Some(CancellationDecision {
+                consumes_quota: true
+            })
+        );
+
+        // 本部のキャンセル（コーチのお休み）は理由 coach_leave と、消費しない判定を残す
+        let mut slot_b = slot(20, SlotStatus::Open);
+        let mut by_headquarters = reserve(2, STUDENT, false, &mut slot_b, &[]).unwrap();
+        by_headquarters
+            .cancel_by_headquarters(&mut slot_b, at(19))
+            .unwrap();
+        assert_eq!(
+            by_headquarters.cancel_reason(),
+            Some(BookingCancelReason::CoachLeave)
+        );
+        let changes = by_headquarters.status_changes();
+        assert_eq!(changes.len(), 1, "確定せずにキャンセルした");
+        assert_eq!(
+            changes[0].cancelled_by(),
+            Some(BookingCanceller::Headquarters)
+        );
+        assert_eq!(
+            changes[0].cancel_reason(),
+            Some(BookingCancelReason::CoachLeave)
+        );
+        assert_eq!(
+            changes[0].cancellation_decision(),
+            Some(CancellationDecision {
+                consumes_quota: false
+            })
+        );
+    }
+
+    #[test]
+    fn the_restored_cancellation_applies_only_to_a_cancelled_booking() {
+        let slot = slot(10, SlotStatus::Open);
+        let restore = |status, cancelled_at| {
+            Booking::restore(
+                BookingId::from_u128(1),
+                STUDENT,
+                &slot,
+                false,
+                status,
+                NOW,
+                None,
+                cancelled_at,
+            )
+        };
+        let decision = Some(CancellationDecision {
+            consumes_quota: false,
+        });
+        let cancelled = restore(BookingStatus::Cancelled, Some(at(2)))
+            .with_restored_cancellation(Some(BookingCancelReason::CoachLeave), decision);
+        assert_eq!(
+            cancelled.cancel_reason(),
+            Some(BookingCancelReason::CoachLeave)
+        );
+        assert_eq!(cancelled.cancellation_decision(), decision);
+        // 理由・判定を残し始める前のキャンセルは None のまま
+        let before =
+            restore(BookingStatus::Cancelled, Some(at(2))).with_restored_cancellation(None, None);
+        assert_eq!(before.cancel_reason(), None);
+        assert_eq!(before.status_changes()[0].cancellation_decision(), None);
+        let pending = restore(BookingStatus::Pending, None)
+            .with_restored_cancellation(Some(BookingCancelReason::CoachLeave), decision);
+        assert_eq!(pending.cancel_reason(), None);
+        assert_eq!(pending.cancellation_decision(), None);
+    }
+
+    #[test]
+    fn a_booking_in_a_coach_leave_was_cancelled_for_the_coach_leave() {
+        use crate::scheduling::{BookingPeriod, CoachLeaveBooking, CoachLeaveId, CoachLeaveNote};
+
+        let slot = slot(10, SlotStatus::Open);
+        let restore = |id: u128, status, cancelled_at| {
+            Booking::restore(
+                BookingId::from_u128(id),
+                STUDENT,
+                &slot,
+                false,
+                status,
+                NOW,
+                None,
+                cancelled_at,
+            )
+        };
+        let leave = CoachLeave::restore(
+            CoachLeaveId::from_u128(5),
+            COACH,
+            BookingPeriod::new(at(0), at(24)).unwrap(),
+            CoachLeaveNote::new("").unwrap(),
+            AccountId::from_u128(9),
+            NOW,
+            vec![CoachLeaveBooking::new(
+                BookingId::from_u128(1),
+                STUDENT,
+                at(10),
+                at(11),
+            )],
+            1,
+        );
+        // 理由を残し始める前に本部がキャンセルした予約（理由の列が NULL）
+        let in_leave = restore(1, BookingStatus::Cancelled, Some(at(2)))
+            .with_restored_canceller(Some(BookingCanceller::Headquarters))
+            .with_restored_coach_leave(&leave);
+        assert_eq!(
+            in_leave.cancel_reason(),
+            Some(BookingCancelReason::CoachLeave)
+        );
+        assert_eq!(in_leave.cancellation_decision(), None, "判定の記録はない");
+        // お休みの記録にない予約・生徒のキャンセルは変えない
+        let other = restore(2, BookingStatus::Cancelled, Some(at(2)))
+            .with_restored_canceller(Some(BookingCanceller::Headquarters))
+            .with_restored_coach_leave(&leave);
+        assert_eq!(other.cancel_reason(), None);
+        let by_student =
+            restore(1, BookingStatus::Cancelled, Some(at(2))).with_restored_coach_leave(&leave);
+        assert_eq!(by_student.cancel_reason(), None);
+    }
     #[test]
     fn cancel_failures_change_nothing() {
         let mut open = slot(10, SlotStatus::Open);
@@ -879,10 +1084,15 @@ mod tests {
     fn status_changes_of_a_booking_cancelled_before_confirmation_have_only_the_cancellation() {
         let mut slot = slot(10, SlotStatus::Open);
         let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
-        booking.cancel(STUDENT, &mut slot, at(3)).unwrap();
+        let decision = booking.cancel(STUDENT, &mut slot, at(3)).unwrap();
         assert_eq!(
             booking.status_changes(),
-            [BookingStatusChange::new(BookingStatus::Cancelled, at(3))]
+            [BookingStatusChange::cancelled(
+                at(3),
+                Some(BookingCanceller::Student),
+                None,
+                Some(decision)
+            )]
         );
     }
 
@@ -902,7 +1112,12 @@ mod tests {
         );
         assert_eq!(
             booking.status_changes(),
-            [BookingStatusChange::new(BookingStatus::Cancelled, at(4))]
+            [BookingStatusChange::cancelled(
+                at(4),
+                Some(BookingCanceller::Student),
+                None,
+                None
+            )]
         );
         // 記録の時刻が前後していても古い順に並べる
         let booking = Booking::restore(
@@ -918,7 +1133,7 @@ mod tests {
         assert_eq!(
             booking.status_changes(),
             [
-                BookingStatusChange::new(BookingStatus::Cancelled, at(4)),
+                BookingStatusChange::cancelled(at(4), Some(BookingCanceller::Student), None, None),
                 BookingStatusChange::new(BookingStatus::Confirmed, at(6)),
             ]
         );

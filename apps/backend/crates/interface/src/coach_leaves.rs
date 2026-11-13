@@ -301,18 +301,23 @@ fn preview_body(preview: &CoachLeavePreview) -> Result<CoachLeavePreviewBody, Ap
     })
 }
 
-fn result_body(leave: &CoachLeave) -> Result<CoachLeaveResultBody, ApiError> {
+/// admin-web の `CoachLeave`（`startCoachLeave` の応答と、`getBooking` の `status_changes[].coach_leave`）。
+pub(crate) fn coach_leave_body(leave: &CoachLeave) -> Result<CoachLeaveBody, ApiError> {
     let (from, to) = calendar_day::dates_of(leave.period());
+    Ok(CoachLeaveBody {
+        coach_leave_id: coach_leave_id_uuid::format(leave.id()),
+        coach_id: account_id_uuid::format(leave.coach_id()),
+        from: date_to_contract(from),
+        to: date_to_contract(to),
+        note: leave.note().as_str().to_string(),
+        created_by: account_id_uuid::format(leave.created_by()),
+        created_at: date_time_to_contract(leave.created_at())?,
+    })
+}
+
+fn result_body(leave: &CoachLeave) -> Result<CoachLeaveResultBody, ApiError> {
     Ok(CoachLeaveResultBody {
-        coach_leave: CoachLeaveBody {
-            coach_leave_id: coach_leave_id_uuid::format(leave.id()),
-            coach_id: account_id_uuid::format(leave.coach_id()),
-            from: date_to_contract(from),
-            to: date_to_contract(to),
-            note: leave.note().as_str().to_string(),
-            created_by: account_id_uuid::format(leave.created_by()),
-            created_at: date_time_to_contract(leave.created_at())?,
-        },
+        coach_leave: coach_leave_body(leave)?,
         cancelled_booking_ids: leave
             .cancelled_bookings()
             .iter()

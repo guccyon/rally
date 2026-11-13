@@ -17,7 +17,8 @@ use domain::{
     catalog::{LessonDuration, LessonMenuId, LessonMenuName},
     identity::AccountId,
     scheduling::{
-        Booking, BookingId, BookingLessonMenu, CoachAcceptance, SchedulingError, Slot, SlotId,
+        Booking, BookingId, BookingLessonMenu, CancellationDecision, CoachAcceptance,
+        SchedulingError, Slot, SlotId,
     },
 };
 use sqlx::{
@@ -31,6 +32,7 @@ use crate::{
     pg_slot_repository::{SlotRow, lock_slot, slot_columns, slot_from_row, slot_row_at},
     pg_support::{lock, timestamp},
     scheduling_values::{
+        booking_cancel_reason_from_value, booking_cancel_reason_value,
         booking_canceller_from_value, booking_canceller_value, booking_status_from_value,
         booking_status_value, slot_status_value,
     },
@@ -63,10 +65,19 @@ type BookingColumns = (
 /// 写しのない予約はどれも NULL（DB の `bookings_lesson_menu_shape`）。
 type LessonMenuColumns = (Option<Uuid>, Option<String>, Option<i16>);
 
-/// 予約の列（[`BookingColumns`]）と、レッスンメニューの写しの列（[`LessonMenuColumns`]）と、キャンセルした人の列
-/// （cancelled_by。NULL は生徒）と、続く予約したスロットの列（[`SlotRow`]）。sqlx のタプルの `FromRow` は 16 列までなので、
+/// キャンセルの経緯の列（cancelled_by, cancel_reason, consumes_quota）。cancelled_by の NULL は生徒、cancel_reason・
+/// consumes_quota の NULL は記録なし。
+type CancellationColumns = (Option<String>, Option<String>, Option<bool>);
+
+/// 予約の列（[`BookingColumns`]）と、レッスンメニューの写しの列（[`LessonMenuColumns`]）と、キャンセルの経緯の列
+/// （[`CancellationColumns`]）と、続く予約したスロットの列（[`SlotRow`]）。sqlx のタプルの `FromRow` は 16 列までなので、
 /// 列の位置で読む（[`select_bookings`] の列の順）。
-pub(crate) struct BookingRow(BookingColumns, LessonMenuColumns, Option<String>, SlotRow);
+pub(crate) struct BookingRow(
+    BookingColumns,
+    LessonMenuColumns,
+    CancellationColumns,
+    SlotRow,
+);
 
 impl<'r> FromRow<'r, PgRow> for BookingRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
@@ -81,8 +92,8 @@ impl<'r> FromRow<'r, PgRow> for BookingRow {
                 row.try_get(6)?,
             ),
             (row.try_get(7)?, row.try_get(8)?, row.try_get(9)?),
-            row.try_get(10)?,
-            slot_row_at(row, 11)?,
+            (row.try_get(10)?, row.try_get(11)?, row.try_get(12)?),
+            slot_row_at(row, 13)?,
         ))
     }
 }
@@ -93,7 +104,7 @@ macro_rules! select_bookings {
         concat!(
             "SELECT b.booking_id, b.student_id, b.is_trial, b.status, b.created_at,
         b.confirmed_at, b.cancelled_at, b.lesson_menu_id, b.lesson_menu_name,
-        b.lesson_menu_duration_minutes, b.cancelled_by, ",
+        b.lesson_menu_duration_minutes, b.cancelled_by, b.cancel_reason, b.consumes_quota, ",
             slot_columns!(),
             " FROM scheduling.bookings b JOIN scheduling.slots s ON s.slot_id = b.slot_id ",
             $where
@@ -116,14 +127,14 @@ impl PgBookingRepository {
         Self::save_slot_status(tx, slot).await
     }
 
-    /// 予約の状態と時刻とキャンセルした人を書く。
+    /// 予約の状態と時刻と、キャンセルの経緯（キャンセルした人・理由・判定）を書く。
     pub(crate) async fn save_booking(
         tx: &mut Transaction<'_, Postgres>,
         booking: &Booking,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             "UPDATE scheduling.bookings SET status = $2, confirmed_at = $3, cancelled_at = $4,
-             cancelled_by = $5
+             cancelled_by = $5, cancel_reason = $6, consumes_quota = $7
              WHERE booking_id = $1",
         )
         .bind(booking_id_uuid::to_uuid(booking.id()))
@@ -131,6 +142,12 @@ impl PgBookingRepository {
         .bind(booking.confirmed_at().map(timestamp))
         .bind(booking.cancelled_at().map(timestamp))
         .bind(booking.cancelled_by().map(booking_canceller_value))
+        .bind(booking.cancel_reason().map(booking_cancel_reason_value))
+        .bind(
+            booking
+                .cancellation_decision()
+                .map(|decision| decision.consumes_quota),
+        )
         .execute(&mut **tx)
         .await?;
         Ok(())
@@ -495,7 +512,7 @@ fn booking_and_slot_from_row(
     BookingRow(
         (booking_id, student_id, is_trial, status, created_at, confirmed_at, cancelled_at),
         lesson_menu,
-        cancelled_by,
+        (cancelled_by, cancel_reason, consumes_quota),
         slot,
     ): BookingRow,
 ) -> Result<(Booking, Slot), Unavailable> {
@@ -520,6 +537,15 @@ fn booking_and_slot_from_row(
                     .ok_or_else(|| Unavailable::new(format!("未知の cancelled_by: {value}")))
             })
             .transpose()?,
+    )
+    .with_restored_cancellation(
+        cancel_reason
+            .map(|value| {
+                booking_cancel_reason_from_value(&value)
+                    .ok_or_else(|| Unavailable::new(format!("未知の cancel_reason: {value}")))
+            })
+            .transpose()?,
+        consumes_quota.map(|consumes_quota| CancellationDecision { consumes_quota }),
     );
     Ok((booking, slot))
 }

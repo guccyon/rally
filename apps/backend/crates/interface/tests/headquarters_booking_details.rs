@@ -1,6 +1,7 @@
 //! `GET /bookings/{booking_id}`（admin-web の `getBooking`。本部が見る予約 1 件の詳細）の統合テスト。レスポンスの形を
 //! admin-web の OpenAPI のスキーマで検査し、予約・予約したスロット（枠の開始と終わり）・状態の移り変わり・コーチと生徒の
-//! 表示名を返すこと、本部だけが呼べること（403）、ない予約と UUID でない ID が 404 であることを確かめる。状態の移り変わりの
+//! 表示名と、キャンセルの記録の経緯（キャンセルした人・回数の消費・開始の何時間前か・理由・コーチのお休みの記録）を返すこと、
+//! 本部だけが呼べること（403）、ない予約と UUID でない ID が 404 であることを確かめる。状態の移り変わりの
 //! 組み立ては domain の `Booking::status_changes`、読み取りはユースケース `GetBooking` のテスト。
 
 use std::time::{Duration, SystemTime};
@@ -9,7 +10,9 @@ use application::{
     identity::{AccountRepository, InvalidToken, TokenClaims, TokenVerifier},
     in_memory::{InMemoryAccountRepository, InMemoryBookingRepository, InMemorySlotRepository},
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
-    scheduling::{BookingRepository, GetBooking, booking_id_uuid},
+    scheduling::{
+        BookingRepository, CoachLeaveRepository, GetBooking, booking_id_uuid, calendar_day,
+    },
 };
 use axum::{
     Router,
@@ -23,7 +26,10 @@ use domain::{
     },
     identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
-    scheduling::{Booking, Slot, SlotId, SlotSeats, SlotStatus},
+    scheduling::{
+        Booking, CoachLeave, CoachLeaveId, CoachLeaveNote, CoachLeaveRequest, Slot, SlotId,
+        SlotSeats, SlotStatus,
+    },
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -233,11 +239,81 @@ async fn headquarters_reads_a_booking_with_its_slot_and_status_changes() {
             },
             "status_changes": [
                 { "status": "confirmed", "changed_at": "2026-10-31T16:00:00Z" },
-                { "status": "cancelled", "changed_at": "2026-10-31T17:00:00Z" },
+                {
+                    "status": "cancelled",
+                    "changed_at": "2026-10-31T17:00:00Z",
+                    // 生徒が開始（10 時）の 8 時間前にキャンセルした。生徒のキャンセルは理由を残さない
+                    "cancelled_by": "student",
+                    "consumes_quota": true,
+                    "hours_before_start": 8,
+                    "cancel_reason": null,
+                    "coach_leave": null,
+                },
             ],
             "coach_display_name": "たなか",
             "student_display_name": "あおき",
         })
+    );
+}
+
+#[tokio::test]
+async fn a_booking_cancelled_by_a_coach_leave_has_the_reason_and_the_leave() {
+    let admin = support::Contract::load("admin-web");
+    let bookings = InMemoryBookingRepository::new(slots());
+    let booking = book(&bookings, 3, 1, false).await;
+    // 本部（1）が 10 月 31 日 12 時（日本時間）に、コーチ（42）の 11 月 1 日をお休みにした
+    let day = calendar_day::of(nov1(Duration::ZERO));
+    let period = calendar_day::days(day, day).unwrap();
+    let request = CoachLeaveRequest {
+        coach_id: AccountId::from_u128(42),
+        period,
+        note: CoachLeaveNote::new("体調不良のためお休みします。").unwrap(),
+        requested_by: AccountId::from_u128(1),
+        expected_booking_ids: [booking.id()].into(),
+    };
+    let now = nov1(Duration::ZERO) - 12 * HOUR;
+    bookings
+        .start_coach_leave(
+            AccountId::from_u128(42),
+            period,
+            |slots, existing, leaves| {
+                CoachLeave::start(
+                    CoachLeaveId::from_u128(5),
+                    &request,
+                    now,
+                    slots,
+                    existing,
+                    leaves,
+                )
+                .map(|(leave, _)| leave)
+            },
+        )
+        .await
+        .unwrap();
+    let app = app(bookings).await;
+
+    let (status, body) = get(&app, &uri(&booking), HEADQUARTERS).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    admin.assert_response("get", PATH, status, &body);
+    assert_eq!(
+        body["status_changes"],
+        json!([{
+            "status": "cancelled",
+            "changed_at": "2026-10-31T03:00:00Z",
+            "cancelled_by": "headquarters",
+            "consumes_quota": false,
+            "hours_before_start": 22,
+            "cancel_reason": "coach_leave",
+            "coach_leave": {
+                "coach_leave_id": "00000000-0000-0000-0000-000000000005",
+                "coach_id": "00000000-0000-0000-0000-00000000002a",
+                "from": "2026-11-01",
+                "to": "2026-11-01",
+                "note": "体調不良のためお休みします。",
+                "created_by": "00000000-0000-0000-0000-000000000001",
+                "created_at": "2026-10-31T03:00:00Z",
+            },
+        }])
     );
 }
 

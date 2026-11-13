@@ -33,7 +33,8 @@ use domain::{
     },
     identity::{AccountId, Coach},
     scheduling::{
-        Booking, BookingLessonMenu, BookingStatus, SchedulingError, Slot, SlotCapacity, SlotStatus,
+        Booking, BookingCanceller, BookingLessonMenu, BookingStatus, CancellationDecision,
+        SchedulingError, Slot, SlotCapacity, SlotStatus,
     },
 };
 use infra::{
@@ -98,8 +99,63 @@ async fn booking_round_trips_through_confirm_and_cancel(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(cancelled.cancelled_at(), Some(at(3)));
+    assert_eq!(
+        cancelled.cancel_reason(),
+        None,
+        "生徒のキャンセルは理由を残さない"
+    );
+    assert!(cancelled.cancellation_decision().is_some());
     assert_eq!(bookings.find(booking.id()).await.unwrap(), Some(cancelled));
     assert_eq!(slot_status(&pool, &slot).await, "open");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn cancellation_decision_is_saved_and_missing_records_are_read_as_none(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let student = support::student(&pool).await;
+    let slot = support::open_slot(&pool, support::coach(&pool).await, 30, 31).await;
+    let booking = reserve(&bookings, student, &slot, false).await.unwrap();
+    bookings
+        .update(booking.id(), |booking, slot| {
+            booking.confirm(student, slot, at(2))?;
+            // 開始（30 時）の 1 時間前。回数を消費する
+            booking.cancel(student, slot, at(29)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let id = application::scheduling::booking_id_uuid::to_uuid(booking.id());
+    let columns: (Option<String>, Option<String>, Option<bool>) = sqlx::query_as(
+        "SELECT cancelled_by, cancel_reason, consumes_quota FROM scheduling.bookings
+         WHERE booking_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(columns, (Some("student".to_string()), None, Some(true)));
+    assert_eq!(
+        bookings
+            .find(booking.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .cancellation_decision(),
+        Some(CancellationDecision {
+            consumes_quota: true
+        })
+    );
+
+    // 判定を残し始める前のキャンセル（NULL）は記録なし
+    sqlx::query("UPDATE scheduling.bookings SET consumes_quota = NULL WHERE booking_id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let read = bookings.find(booking.id()).await.unwrap().unwrap();
+    assert_eq!(read.cancellation_decision(), None);
+    assert_eq!(read.cancel_reason(), None);
+    assert_eq!(read.cancelled_by(), Some(BookingCanceller::Student));
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

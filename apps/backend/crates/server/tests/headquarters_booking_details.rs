@@ -170,7 +170,16 @@ async fn headquarters_reads_a_booking_and_its_status_changes_from_postgres(pool:
         body["status_changes"],
         json!([
             { "status": "confirmed", "changed_at": "2026-10-26T01:00:00Z" },
-            { "status": "cancelled", "changed_at": "2026-10-26T02:00:00Z" },
+            {
+                "status": "cancelled",
+                "changed_at": "2026-10-26T02:00:00Z",
+                // 生徒が開始の 49 時間前にキャンセルした（回数を消費しない）。生徒のキャンセルは理由を残さない
+                "cancelled_by": "student",
+                "consumes_quota": false,
+                "hours_before_start": 49,
+                "cancel_reason": null,
+                "coach_leave": null,
+            },
         ])
     );
     assert_eq!(body["coach_display_name"], "tanaka");
