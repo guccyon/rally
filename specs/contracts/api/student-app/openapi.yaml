@@ -1260,6 +1260,45 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /me/next-actions:
+    get:
+      operationId: getMyNextActions
+      summary: 自分の次の操作の照会（生徒）
+      description: |
+        認証した生徒が次にできる操作（`NextAction`）を、サーバーの記録（予約の状態と時刻・通話セッションの終了・動画の添削の状態・
+        完了したレッスンの記録・受講権）から決めて、優先の順に 3 件まで返す（ADR 0010「生徒アプリの次の操作はサーバーの状態から出す」）。
+        アプリの中の段や端末の状態は使わないので、どの画面を離れても、アプリを開き直しても同じ操作が返る。生徒だけが呼べる
+        （それ以外の役割は 403）。返すのは本人の分だけ。
+
+        決め方（同じ種類が複数あれば、予約は開始時刻の近い順、動画は送った・返った時刻の古い順）:
+
+        1. 確定待ち（`pending`）の予約 → `confirm_booking`
+        2. 確定済みで終わっていない同期レッスンの予約のうち、入室前チェックを開ける時刻（開始の 5 分前）を過ぎたもの → `join_live_lesson`
+        3. 添削が返った動画か、終了した通話セッションで、完了の記録（`recordLessonCompletion`）がない → `record_lesson_completion`
+        4. 確定済みで終わっていない同期レッスンの予約のうち、まだ開始の 5 分前より前のいちばん近い 1 件 → `join_live_lesson`
+        5. 送って添削が返っていない動画 → `video_review_in_progress`
+        6. 完了したレッスンがあり、受講権がない → `start_subscription`
+
+        - 次の操作がなければ `next_actions` は空の配列（200）
+        - トークンがない・無効なら 401
+        - 照会だけで、何も保存しない。枠も消費しない
+
+        行動イベントは発火しない（進んだ先の操作が今までどおり発火する）。
+      tags: [scheduling, live-lesson, async-lesson, catalog, entitlement]
+      x-context: [scheduling, live-lesson, async-lesson, entitlement]
+      x-analytics-events: []
+      responses:
+        "200":
+          description: 生徒の次の操作（優先の順）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NextActionList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2657,6 +2696,96 @@ components:
           description: 作った時刻の新しい順
           items:
             $ref: "#/components/schemas/Notification"
+
+    NextActionKind:
+      type: string
+      description: |
+        生徒の次の操作の種類（`NextAction.kind`）。サーバーの記録から決める（決め方は `getMyNextActions` の説明）。
+        値は今後足すことがある（足すのは互換を保つ変更）。クライアントは知らない値の行を出さない
+
+        - `confirm_booking`: 確定待ちの予約を確定する（`confirmBooking`）
+        - `join_live_lesson`: 確定済みの同期レッスンの予約で、入室前チェックとビデオ通話に進む
+        - `video_review_in_progress`: 送った動画をコーチが添削している（待つだけで、押して進む操作はない）
+        - `record_lesson_completion`: 添削が返った、または通話セッションが終わったのに、完了の記録がない（`recordLessonCompletion`）
+        - `start_subscription`: 完了したレッスンがあり、受講権（月額契約）がない（`startSubscription`）
+      enum: [confirm_booking, join_live_lesson, video_review_in_progress, record_lesson_completion, start_subscription]
+
+    NextAction:
+      type: object
+      description: |
+        生徒が次にできる操作の 1 件（ADR 0010「生徒アプリの次の操作はサーバーの状態から出す」）。`kind` によって載る項目が変わる。
+        その `kind` で使わない項目は載らない。続きの画面は、ここに載る ID で今の操作（`listMyBookings`・`getVideoReview`・
+        `getMyEntitlement` など）から読み直して開く
+
+        | kind | 載る項目 |
+        |---|---|
+        | `confirm_booking` | `booking_id`・`is_trial`・`starts_at`・`ends_at`・`sport`・`lesson_menu`・`coach_display_name` |
+        | `join_live_lesson` | `booking_id`・`is_trial`・`starts_at`・`ends_at`・`sport`・`lesson_menu`・`coach_display_name` |
+        | `video_review_in_progress` | `video_id`・`submitted_at`・`coach_display_name` |
+        | `record_lesson_completion` | `lesson_type`・`coach_display_name`。同期は `session_id`・`starts_at`・`ends_at`、非同期は `video_id`・`returned_at` |
+        | `start_subscription` | なし（`kind` だけ） |
+      required: [kind]
+      properties:
+        kind:
+          $ref: "#/components/schemas/NextActionKind"
+        booking_id:
+          type: string
+          format: uuid
+          description: 予約（`confirm_booking`・`join_live_lesson`）
+        is_trial:
+          type: boolean
+          description: 体験予約か（`confirm_booking`・`join_live_lesson`）
+        starts_at:
+          type: string
+          format: date-time
+          description: 予約したスロットの開始時刻（`confirm_booking`・`join_live_lesson`・同期の `record_lesson_completion`）
+        ends_at:
+          type: string
+          format: date-time
+          description: 予約したスロットの終了時刻（`confirm_booking`・`join_live_lesson`・同期の `record_lesson_completion`）
+        sport:
+          $ref: "#/components/schemas/Sport"
+        lesson_menu:
+          description: |
+            予約した時点のレッスンメニューの写し（`confirm_booking`・`join_live_lesson`。`Booking.lesson_menu` と同じ）。
+            メニューのない枠の予約なら null
+          oneOf:
+            - $ref: "#/components/schemas/BookingLessonMenu"
+            - type: "null"
+        coach_display_name:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 50
+          description: 予約・動画・通話のコーチのアカウントの表示名。コーチのアカウントが引けないときは null（`start_subscription` では載らない）
+        video_id:
+          type: string
+          format: uuid
+          description: 動画（`video_review_in_progress`・非同期の `record_lesson_completion`）
+        session_id:
+          type: string
+          format: uuid
+          description: 終了した通話セッション（同期の `record_lesson_completion`）
+        lesson_type:
+          $ref: "#/components/schemas/LessonType"
+        submitted_at:
+          type: string
+          format: date-time
+          description: 動画を送った時刻（`video_review_in_progress`）
+        returned_at:
+          type: string
+          format: date-time
+          description: 添削が返った時刻（非同期の `record_lesson_completion`）
+
+    NextActionList:
+      type: object
+      required: [next_actions]
+      properties:
+        next_actions:
+          type: array
+          description: 並びがそのまま優先の順（サーバーが決める。クライアントは並べ替えない）。0〜3 件
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/NextAction"
 
     ErrorCode:
       type: string
