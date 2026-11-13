@@ -1,0 +1,30 @@
+id: K-0033
+theme: 6
+kind: causal
+statement: >-
+  admin-web の契約ファイル（specs/contracts/api/admin-web/openapi.yaml）のような共有の契約ファイルに触る複数のチケットを、
+  ファイルの重なりを見ずに並列に投入すると、同じ契約ファイルに複数の PR が同時に変更を入れ、衝突の続きのジョブが
+  チケットごとに積まれる（C-0015 では 10 チケット・12 件・19.58 USD の新しい束で、#497 と #499 が 1 時間のうちに続けて衝突した）。
+  投入のときに触る契約ファイルを見て同じファイルの PR を同時に 1 本までにすること、契約だけの小さなチケットを先に出してすぐ
+  マージすることが分析役の提案の向きである。ただし Engine にはすでに、よく衝突するファイルに触る見込みのタスクを並べて投入する段
+  （K-0024 が書く serialize.py）があり、この束の窓でその段がこのファイルを見ていたか、見込みのファイルが外れたのかは材料にない。
+  投入規則が重なりを見なかったというのは分析役の推測である。根拠はこの束 1 つだけ。
+scope:
+  work: [plan.workflow, dev.build]
+  artifacts: [Plan]
+  files: [specs/contracts/api/admin-web/openapi.yaml]
+  request_form: [ticket]
+  roles: [supervisor]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - event: "case.analyzed:776108"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0018, K-0022, K-0024, K-0013]
+invalidate_when:
+  - "Engine の投入の段が、この契約ファイルに触るチケットを直列にしていたのに、この束の衝突が起きていたと分かった（原因は投入の並べ方ではなかった）"
+  - "契約に触るチケットの同時投入を 1 本までにしたあとも、この束の件数が減らなかった"

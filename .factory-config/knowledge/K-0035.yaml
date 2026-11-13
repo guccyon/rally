@@ -1,0 +1,30 @@
+id: K-0035
+theme: 4
+kind: causal
+statement: >-
+  衝突を直す続きのジョブが PR 本文に見出し付き（## 概要・## 対応内容 など）の取り込みの記録を足していくと、PR テンプレートの
+  検査（gate.evaluated の process の欠陥）→ judge の採用 → body_fix が衝突のたびに繰り返される（C-0015 の PR #394 は 7 回の
+  衝突の続きの間に body_fix が 3 回、本文に「## 概要」が 6 回）。繰り返しの 1 回分は body_fix が 0.11〜0.12 USD、
+  そのための inspect・judge が 0.4〜0.5 USD で、衝突 1 回につき約 1 USD の二次的な費用になる（衝突の続きのジョブ自体は 6.7〜7.0 USD）。
+  向きは、続きのジョブへの指示に取り込みの記録を PR のコメントに書き本文の見出しを増やさないと明記することで、K-0030 の向き
+  （本文はその時点の要約として書き直し、記録は本文の外に置く）と同じである。K-0001・K-0006・K-0009・K-0030 の再現であり、
+  新しい主張は繰り返しの費用の大きさだけ。続きのジョブへの指示の文は材料にないので、指示が決めていなかったかは確かめていない。
+scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  request_form: [ticket]
+  roles: [implement, body_fix, inspect]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 394
+  - event: "case.analyzed:776108"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0001, K-0006, K-0009, K-0030]
+invalidate_when:
+  - "続きのジョブへの指示が取り込みの記録を PR のコメントに書かせるようになったあとも、衝突のたびの本文の指摘と body_fix が同じ回数出た"
+  - "K-0030 の向きが配線され、衝突の続きのジョブが本文に見出しを足さなくなった"

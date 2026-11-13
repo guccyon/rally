@@ -1,0 +1,29 @@
+id: K-0034
+theme: 6
+kind: causal
+statement: >-
+  分けるべき大きさ（plan.outcome が judgment=undersized で、reasons に layers と turns が出る。層 3 つ以上または 20 ファイル以上）と
+  判定された L サイズのチケットを、事前に分けずに 1 本のまま進めると、PR がマージまで開いている時間が長くなり、衝突の続きの
+  ジョブが何度も起きる（C-0015 の #367 は band L・28 ファイル・4 層で planned=false、continues.conflict=7）。
+  K-0017 は同じ「分ける段が働かない」ことの害を途中終了として書き、この知見は開いている時間が延びて衝突が繰り返される害に絞る。
+  衝突の回数が大きさだけで決まるわけではなく（開いている間にほかの PR がどれだけマージされたかにもよる）、事前の分割が
+  働かなかった理由は材料にない。根拠は 1 つの PR だけで、束のほかの 11 件が同じ型かは確かめていない。
+scope:
+  work: [plan.route, dev.build]
+  artifacts: [Ticket]
+  request_form: [ticket]
+  roles: [supervisor, implement]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - pr: 394
+  - event: "case.analyzed:776108"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0017, K-0018, K-0010]
+invalidate_when:
+  - "undersized と判定されたチケットを層ごとに分けて投入するようになったあとも、分けた子チケットの PR で衝突の続きが同じ回数起きた"
+  - "例の PR #394 の衝突の多くが、PR の大きさではなく開いていた時間帯（ほかの PR のマージの集中）によるものだと分かった"
