@@ -13,16 +13,21 @@ import 'support/pump.dart';
 /// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）を画面遷移でたどる。
 /// 今の時刻は端末の時計のまま（見本のスロットの開始時刻より後なので、入室前チェックを開けて入室できる）。端末のカメラ・マイクは作り物。
 void main() {
-  Future<void> pumpApp(WidgetTester tester, FakeStudentApi api) =>
-      tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            studentApiProvider.overrideWithValue(api),
-            localMediaProvider.overrideWithValue(FakeLocalMedia()),
-          ],
-          child: const StudentApp(),
-        ),
-      );
+  /// [now] を渡すと、端末の時計の代わりにその時刻にする
+  Future<void> pumpApp(
+    WidgetTester tester,
+    FakeStudentApi api, {
+    DateTime? now,
+  }) => tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        studentApiProvider.overrideWithValue(api),
+        localMediaProvider.overrideWithValue(FakeLocalMedia()),
+        if (now != null) clockProvider.overrideWithValue(() => now),
+      ],
+      child: const StudentApp(),
+    ),
+  );
 
   Future<void> registerAndBook(WidgetTester tester) async {
     expect(find.text('アカウント登録'), findsOneWidget);
@@ -154,6 +159,57 @@ void main() {
       ]);
     },
   );
+
+  /// 自分の予約を開き、一覧の先頭（いま体験予約した予約）をキャンセルして閉じる（キャンセルできるよう、開始より前の時刻で描いておく）
+  Future<void> cancelTrialInMyBookings(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('自分の予約'));
+    await tester.pumpAndSettle();
+    final cancel = find.text('この予約をキャンセルする').first;
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    await tapText(tester, 'キャンセルする');
+    expect(find.text('状態: キャンセル済み'), findsOneWidget);
+    await tester.tap(find.byTooltip('自分の予約を閉じる'));
+    await tester.pumpAndSettle();
+  }
+
+  void expectCancelledBooking(WidgetTester tester) {
+    expect(find.text('状態: キャンセル済み'), findsOneWidget);
+    expect(find.textContaining('この予約はもう確定待ちではありません。'), findsOneWidget);
+    expect(find.text('ホームに戻る'), findsOneWidget);
+    expect(find.text('予約が確定しました'), findsNothing);
+    expect(find.text('ビデオ通話で受ける'), findsNothing);
+    expect(find.text('動画を送って添削を受ける'), findsNothing);
+  }
+
+  testWidgets('確定した予約を自分の予約でキャンセルして閉じると、元の画面はキャンセル済みを出し、レッスンに進めない（#1364）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(myBookings: []);
+    await pumpApp(tester, api, now: Fixtures.now);
+
+    await registerAndBook(tester);
+    await cancelTrialInMyBookings(tester);
+
+    expectCancelledBooking(tester);
+    expect(api.calls.last, 'listMyBookings');
+    await tapText(tester, 'ホームに戻る');
+    expect(find.text('ホーム'), findsOneWidget);
+  });
+
+  testWidgets('動画の送付を開いてから自分の予約でキャンセルして閉じると、送付に戻らずキャンセル済みを出す', (tester) async {
+    final api = FakeStudentApi(myBookings: []);
+    await pumpApp(tester, api, now: Fixtures.now);
+
+    await registerAndBook(tester);
+    await tapText(tester, '動画を送って添削を受ける');
+    expect(find.text('動画を送る'), findsOneWidget);
+    await cancelTrialInMyBookings(tester);
+
+    expectCancelledBooking(tester);
+    expect(api.calls, isNot(contains('submitVideo')));
+  });
 
   testWidgets(
     '途中で離れる一周: 登録 → 体験予約 → 自分の予約から確定 → ホームの次にやることからレッスン → 完了の記録 → 今月のビデオ通話から月額契約',

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../api/models.dart';
 import '../device/local_media.dart';
 import 'student_flow.dart';
 
@@ -130,8 +129,11 @@ class PrejoinCheckNotifier extends Notifier<PrejoinCheckState> {
   void open() {
     final flow = ref.read(studentFlowProvider);
     final booking = flow.booking;
-    // 入室は読み直した確定済みの予約からだけ（キャンセル済み・確定待ちからは開かない）
-    if (booking == null || booking.status != BookingStatus.confirmed) return;
+    // 入室は読み直した確定済みの予約からだけ（キャンセル済み・確定待ち・読み直す前の予約からは開かない。#1364）
+    if (booking == null ||
+        !ref.read(studentFlowProvider.notifier).canChooseLesson) {
+      return;
+    }
     if (!canOpenPrejoinCheck(booking.startsAt, ref.read(clockProvider)())) {
       return;
     }

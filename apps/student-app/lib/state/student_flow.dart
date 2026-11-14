@@ -817,9 +817,14 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   bool canConfirm(Booking booking) =>
       booking.status == BookingStatus.pending && canCancel(booking);
 
+  /// 受け方を選べるか（サーバーから読み直した予約が確定済みのときだけ。キャンセル済みの予約のレッスンには進めない。#1364）
+  bool get canChooseLesson =>
+      state.bookingLookup == BookingLookup.ready &&
+      state.booking?.status == BookingStatus.confirmed;
+
   /// 初回レッスンを動画の送付で受ける（確定済みの予約だけ。キャンセルした予約からは送らない。#1364）
   void chooseVideo() {
-    if (state.booking?.status != BookingStatus.confirmed) return;
+    if (!canChooseLesson) return;
     state = state.copyWith(step: FlowStep.videoSubmit);
   }
 
@@ -875,6 +880,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     String? lessonMenuId,
   }) async {
     var result = VideoReviewRequestResult.failed;
+    if (!canChooseLesson) {
+      // 送付の画面を開いたあとに自分の予約でキャンセルした（送らずに確定待ちの画面へ戻し、キャンセル済みを出す）
+      state = state.copyWith(step: FlowStep.bookingPending);
+      return result;
+    }
     await run(() async {
       final booking = state.booking!;
       final video = await submitVideoForReview(
@@ -1042,9 +1052,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 自分の予約の一覧を読み直す
   Future<void> refreshMyBookings() => run(_loadMyBookings);
 
-  /// 自分の予約の一覧を閉じて、開いた段に戻る
-  void closeMyBookings() =>
-      returnTo(state.bookingsReturnStep ?? FlowStep.slotSearch);
+  /// 自分の予約の一覧を閉じて、開いた段に戻る。動画の送付から開いてその予約をキャンセルしていたら、
+  /// 予約の確定待ちの画面に戻す（読み直してキャンセル済みを出す。キャンセルした予約のレッスンには進めない）
+  void closeMyBookings() {
+    final back = state.bookingsReturnStep ?? FlowStep.slotSearch;
+    final leftLesson =
+        back == FlowStep.videoSubmit &&
+        state.booking?.status == BookingStatus.cancelled;
+    returnTo(leftLesson ? FlowStep.bookingPending : back);
+  }
 
   /// キャンセルのボタンを出すか。キャンセル済みでなく、まだ始まっていない予約だけ
   bool canCancel(Booking booking) =>
