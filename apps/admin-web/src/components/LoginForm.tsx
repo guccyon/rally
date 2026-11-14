@@ -91,7 +91,7 @@ export function LoginForm({ getAccount = getAccountByToken }: { getAccount?: Get
           className="mt-1 block w-full rounded-md border px-2 py-1 font-mono"
           value={token}
           onChange={(event) => setToken(event.target.value)}
-          placeholder="POST /accounts の access_token"
+          placeholder="受け取ったアクセストークンを貼り付け"
         />
       </label>
       {error && (
