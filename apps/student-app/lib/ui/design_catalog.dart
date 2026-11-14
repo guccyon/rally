@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../api/models.dart';
 import 'components/booking_card.dart';
 import 'components/confirm_dialog.dart';
 import 'components/description_list.dart';
@@ -9,13 +10,16 @@ import 'components/level_meter.dart';
 import 'components/list_row.dart';
 import 'components/media_toggle.dart';
 import 'components/notice.dart';
+import 'components/rally_app_bar.dart';
 import 'components/rally_button.dart';
 import 'components/rally_camera_preview.dart';
 import 'components/rally_card.dart';
+import 'components/rally_choice_chips.dart';
 import 'components/score_panel.dart';
 import 'components/section_loading.dart';
 import 'components/status_tag.dart';
 import 'components/timeline.dart';
+import 'labels.dart';
 import 'theme/rally_tokens.dart';
 
 /// カタログの 1 枠。[component]・[variant]・[state] は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
@@ -43,8 +47,7 @@ class CatalogEntry {
 const notInStudentCatalog = <String, String>{
   'date_field':
       'components.yaml の not_for に student-app では今は使わないとある（admin-web の一覧の絞り込み）',
-  'select':
-      'components.yaml の not_for に student-app では今は使わないとある（絞り込みは patterns の search_filter のチップ）',
+  'select': 'components.yaml の not_for に student-app では今は使わないとある（絞り込みは patterns の search_filter のチップ）',
   'data_table':
       'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
   'kpi_figure':
@@ -195,10 +198,7 @@ final _bookingDetailItems = [
   const DescriptionItem('種類'),
   DescriptionItem(
     '今の状態',
-    value: StatusTag(
-      label: '確定済み',
-      status: RallyBookingState.confirmed.status,
-    ),
+    value: StatusTag(label: '確定済み', status: RallyBookingState.confirmed.status),
   ),
 ];
 
@@ -223,8 +223,60 @@ final _bookingHistory = [
   ),
 ];
 
+/// アプリバーの見本。top はホーム（入口からホームを除き、チャットに count・お知らせに dot のしるし）、back は脇の画面とフローの続き
+Widget _appBar(String variant, String state) => variant == 'top'
+    ? RallyAppBar(
+        title: 'ホーム',
+        actions: [
+          for (final entry in RallyAppBarEntry.values.skip(1))
+            RallyAppBarAction(
+              entry,
+              onPressed: _noop,
+              unreadCount: entry == RallyAppBarEntry.chat ? 3 : 0,
+              hasUnread: entry == RallyAppBarEntry.notifications,
+            ),
+        ],
+      )
+    : RallyAppBar(
+        title: state == 'default' ? '自分の予約' : 'ログイン',
+        onBack: _noop,
+        busy: state == 'disabled' || state == 'loading',
+        loading: state == 'loading',
+      );
+
+/// チップの選択肢（登録の「習いたいスポーツ」）。呼び名は labels.dart の語
+final _sportOptions = [
+  for (final sport in Sport.values) RallyChipOption(sport, sportLabel(sport)),
+];
+
+Widget _chips(String state) => RallyChoiceChips<Sport>(
+  label: '習いたいスポーツ',
+  options: state == 'failed' ? const [] : _sportOptions,
+  selected: state == 'error' ? null : Sport.tennis,
+  onSelected: (_) {},
+  disabled: state == 'disabled',
+  error: switch (state) {
+    'error' => RallyChoiceChips.notSelectedMessage('習いたいスポーツ'),
+    // 選択肢を読めないときは chip を出さず、select の load_failed の文言
+    'failed' => 'スポーツの一覧を読めませんでした。画面を更新すると、もう一度読み込めます。',
+    _ => null,
+  },
+);
+
 /// 部品 × 種類 × 状態の見本。components.yaml に部品や種類を足したら、ここにも足す。
 final designCatalog = <CatalogEntry>[
+  for (final (variant, state) in const [
+    ('top', 'default'),
+    ('back', 'default'),
+    ('back', 'disabled'),
+    ('back', 'loading'),
+  ])
+    CatalogEntry(
+      'app_bar',
+      (_) => _appBar(variant, state),
+      variant: variant,
+      state: state,
+    ),
   for (final variant in RallyButtonVariant.values)
     for (final state in const ['default', 'disabled', 'loading'])
       CatalogEntry(
@@ -241,6 +293,26 @@ final designCatalog = <CatalogEntry>[
         variant: variant,
         state: state,
       ),
+  for (final state in const ['default', 'disabled', 'error', 'failed'])
+    CatalogEntry('chip', (_) => _chips(state), variant: 'choice', state: state),
+  // 選択肢を読んでいるあいだは chip を出さず loading の section_text
+  CatalogEntry(
+    'chip',
+    (_) => const SectionLoading(message: 'スポーツの一覧を読み込んでいます…'),
+    variant: 'choice',
+    state: 'loading',
+  ),
+  CatalogEntry(
+    'chip',
+    (_) => RallyChoiceChips<Sport>(
+      label: 'スポーツ',
+      options: _sportOptions,
+      selected: Sport.baseball,
+      onSelected: (_) {},
+    ),
+    variant: 'filter',
+    state: 'default',
+  ),
   CatalogEntry(
     'card',
     (_) => RallyCard(
@@ -441,10 +513,7 @@ final designCatalog = <CatalogEntry>[
   // 画面の幅 600px 未満では inline も上下に積むので、スマホのカタログでは inline と stacked が同じ形になる
   CatalogEntry(
     'description_list',
-    (_) => DescriptionList(
-      semanticsLabel: '予約の詳細',
-      items: _bookingDetailItems,
-    ),
+    (_) => DescriptionList(semanticsLabel: '予約の詳細', items: _bookingDetailItems),
     variant: 'inline',
     state: 'default',
   ),
@@ -469,10 +538,7 @@ final designCatalog = <CatalogEntry>[
       items: [
         DescriptionItem('表示名', text: '鈴木 一郎'),
         DescriptionItem('スポーツ', loading: true),
-        DescriptionItem(
-          '残りの回数',
-          error: '回数を読めませんでした。画面を更新すると、もう一度読み込めます。',
-        ),
+        DescriptionItem('残りの回数', error: '回数を読めませんでした。画面を更新すると、もう一度読み込めます。'),
       ],
     ),
     variant: 'inline',
