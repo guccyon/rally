@@ -12,6 +12,8 @@ use application::{
 };
 use domain::notification::PushNotification;
 
+use crate::notification_values::lesson_reminder_timing_value;
+
 /// [`PushSender`] のモック。実際の端末には届けず、送った通知を記録して（[`MockPushSender::sent`]）、
 /// `push_notification <受け取るアカウントの ID> <種類> <対象の ID>` の 1 行で標準出力に書く（対象は予約・動画・
 /// スレッド・本部からのお知らせ）。
@@ -64,6 +66,16 @@ impl MockPushSender {
             } => format!(
                 "push_notification {recipient} announcement {}",
                 announcement_id_uuid::format(announcement_id)
+            ),
+            PushNotification::LessonReminder {
+                booking_id, timing, ..
+            }
+            | PushNotification::CoachLessonReminder {
+                booking_id, timing, ..
+            } => format!(
+                "push_notification {recipient} lesson_reminder {} {}",
+                booking_id_uuid::format(booking_id),
+                lesson_reminder_timing_value(timing)
             ),
         }
     }

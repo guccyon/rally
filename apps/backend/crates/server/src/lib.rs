@@ -7,9 +7,12 @@ pub use infra::AnalyticsDestination;
 // 通話基盤の選択は配信先の選択と同じく infra に置き、ここでも公開する
 pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
 
+mod app;
 mod assembly;
 mod features;
 mod ports;
+
+pub use app::{App, LESSON_REMINDER_INTERVAL};
 
 use application::{
     analytics::AnalyticsSink,
@@ -35,11 +38,13 @@ use application::{
     notification::{
         AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
         NotificationSettingsRepository, PushNotificationSubscriber, PushSender,
+        SendLessonReminders,
     },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
     scheduling::{
-        BookingRepository, CoachAcceptanceRepository, CoachLeaveRepository, SlotRepository,
+        BookingRepository, CoachAcceptanceRepository, CoachLeaveRepository,
+        SchedulingLessonReminderTargetLookup, SlotRepository,
     },
 };
 use axum::Router;
@@ -143,6 +148,11 @@ pub fn router() -> Router {
 /// 受付の状態はスロットの検索と予約の作成が同じ中身を読み、コーチの一覧（`GET /coaches`）は scheduling に問い合わせて
 /// 添える・除く（`SchedulingCoachAcceptanceLookup`）。インメモリの組み立てではスロットの保存先と中身を共有する。
 ///
+/// レッスンのリマインド（確定した同期レッスンの予約の、開始の前日と 1 時間前の生徒とコーチへのお知らせ）は、ルーターと
+/// 同じ保存先・時計・送り先で組み立てた定期の処理（[`App::lesson_reminders`]。`SendLessonReminders`）が作る。対象の予約は
+/// 予約の保存先から読む（`SchedulingLessonReminderTargetLookup`）。ルーターだけを返すこの関数たちは定期の処理を捨てる
+/// （`main` は [`app_with_video_call`]・[`app_with_postgres_and_video_call`] で両方を受け取って回す）。
+///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
 where
@@ -162,6 +172,17 @@ where
 
 /// [`router_with_analytics`] の通話基盤を `video` に替えたルーター（`main` は [`VideoCallBackend`] で選ぶ）。
 pub fn router_with_video_call<C, A, V>(clock: C, analytics: A, video: V) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+{
+    app_with_video_call(clock, analytics, video).router
+}
+
+/// [`router_with_video_call`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理（`DATABASE_URL` がないときの
+/// `main` が使う）。
+pub fn app_with_video_call<C, A, V>(clock: C, analytics: A, video: V) -> App
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
@@ -190,6 +211,7 @@ where
         push,
         VideoCallBackend::default(),
     )
+    .router
 }
 
 /// 保存先をすべてインメモリにした集約ごとの保存先。
@@ -244,14 +266,29 @@ where
     router_with_postgres_and_video_call(pool, clock, analytics, VideoCallBackend::default())
 }
 
-/// [`router_with_postgres`] の通話基盤を `video` に替えたルーター（`DATABASE_URL` があるときの `main` が
-/// [`VideoCallBackend`] で選んで使う）。
+/// [`router_with_postgres`] の通話基盤を `video` に替えたルーター（[`VideoCallBackend`] で選ぶ）。
 pub fn router_with_postgres_and_video_call<C, A, V>(
     pool: PgPool,
     clock: C,
     analytics: A,
     video: V,
 ) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+{
+    app_with_postgres_and_video_call(pool, clock, analytics, video).router
+}
+
+/// [`router_with_postgres_and_video_call`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理
+/// （`DATABASE_URL` があるときの `main` が使う）。
+pub fn app_with_postgres_and_video_call<C, A, V>(
+    pool: PgPool,
+    clock: C,
+    analytics: A,
+    video: V,
+) -> App
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
@@ -323,7 +360,7 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。境界間イベントのバスを作り、機能ごとの組み立て（[`features`]）に
-/// ポートの実装をまとめて渡す。
+/// ポートの実装をまとめて渡す。レッスンのリマインドの定期の処理も同じ保存先・時計・送り先で組み立てる。
 #[allow(clippy::type_complexity)]
 fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
@@ -331,7 +368,7 @@ fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V>(
     analytics: A,
     push: P,
     video: V,
-) -> Router
+) -> App
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
@@ -366,12 +403,20 @@ where
             ),
         ),
     ));
-    features::router(&Assembly {
+    let reminders = SendLessonReminders::new(
+        SchedulingLessonReminderTargetLookup::new(repositories.bookings.clone()),
+        repositories.notification_settings.clone(),
+        repositories.notifications.clone(),
+        push.clone(),
+        clock.clone(),
+    );
+    let router = features::router(&Assembly {
         repositories,
         clock,
         analytics,
         video_call: video,
         push,
         events,
-    })
+    });
+    App::new(router, reminders)
 }

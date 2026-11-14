@@ -765,7 +765,7 @@ mod tests {
             self.notifications.next_id()
         }
 
-        async fn insert(&self, notification: Notification) -> Result<(), Unavailable> {
+        async fn insert(&self, notification: Notification) -> Result<bool, Unavailable> {
             if *self.down.lock().unwrap() {
                 return Err(Unavailable::new("notification store is down"));
             }

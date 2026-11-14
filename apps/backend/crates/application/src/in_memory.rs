@@ -1802,15 +1802,16 @@ impl NotificationRepository for InMemoryNotificationRepository {
         notification_id_uuid::from_uuid(uuid::Uuid::new_v4())
     }
 
-    async fn insert(&self, notification: Notification) -> Result<(), Unavailable> {
+    async fn insert(&self, notification: Notification) -> Result<bool, Unavailable> {
         let mut notifications = self.notifications.lock().unwrap();
-        if !notifications
+        if notifications
             .iter()
             .any(|n| n.push() == notification.push())
         {
-            notifications.push(notification);
+            return Ok(false);
         }
-        Ok(())
+        notifications.push(notification);
+        Ok(true)
     }
 
     async fn find_by_recipient(
