@@ -35,6 +35,9 @@ String errorMessageOf(Object error) {
       'この通話は運営が終了したため、レッスンの完了を記録できません。',
     ErrorCode.slotNotStarted =>
       'この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。',
+    ErrorCode.loginCodeInvalid => '確認コードが違います。メールに届いた 6 桁のコードを確かめてください。',
+    ErrorCode.loginCodeExpired => '確認コードの有効期限が切れました。コードを送り直してください。',
+    ErrorCode.tooManyRequests => '試した回数が多すぎます。しばらく待ってからやり直してください。',
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
 }
