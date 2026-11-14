@@ -467,10 +467,18 @@ async fn starting_and_ending_records_the_session_and_the_four_metrics() {
         }]
     );
 
-    // 同じ予約の 2 回目の開始は、コーチからでも 409
-    let (status, body) = app.start(COACH, &booking_id).await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert_eq!(body["code"], "invalid_session_state");
+    // 生徒が先に入ったあとのコーチの開始は、同じセッションに 201 で入る（Issue #1471）。call.started は増えない
+    let (status, joined) = app.start(COACH, &booking_id).await;
+    assert_eq!(status, StatusCode::CREATED, "{joined}");
+    assert_eq!(joined["session_id"], session_id.as_str());
+    assert_eq!(joined["status"], "in_progress");
+    assert_eq!(joined["started_at"], "2026-11-01T10:00:00Z");
+    assert!(
+        joined["room_token"]
+            .as_str()
+            .is_some_and(|t| !t.is_empty() && t != started["room_token"])
+    );
+    assert_eq!(app.call_events().len(), 1);
 
     // 50 分 15 秒後にコーチが終了する
     let ended_at = nov1_10() + Duration::from_secs(50 * 60 + 15);
@@ -515,6 +523,14 @@ async fn starting_and_ending_records_the_session_and_the_four_metrics() {
     let (status, body) = app.end(STUDENT, &session_id).await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "invalid_session_state");
+    assert_eq!(app.call_events().len(), 2);
+
+    // 終了したセッションの予約には、生徒からもコーチからも入れない
+    for token in [STUDENT, COACH] {
+        let (status, body) = app.start(token, &booking_id).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["code"], "invalid_session_state");
+    }
     assert_eq!(app.call_events().len(), 2);
 }
 

@@ -317,23 +317,39 @@ async fn students_of_a_group_lesson_each_record_their_own_completion(pool: PgPoo
 async fn a_one_to_one_lesson_is_started_and_completed_as_before(pool: PgPool) {
     let coach = tennis_coach(&pool).await;
     let analytics = RecordingAnalyticsSink::default();
-    let router = server::router_with_postgres(pool, ManualClock::new(nov1()), analytics.clone());
+    let clock = ManualClock::new(nov1());
+    let router = server::router_with_postgres(pool, clock.clone(), analytics.clone());
     let student = subscribed_student(&router, 1).await;
     let slot = publish(&router, &coach, None).await;
     let (status, booking) = book(&router, &student, &slot).await;
     assert_eq!(status, StatusCode::CREATED, "{booking}");
     confirm(&router, &student, &booking).await;
 
+    // スロットの開始時刻（2026-12-01T01:00:00Z）から始められる
+    clock.set(nov1() + Duration::from_secs(30 * 86_400 + 3600));
     let (status, session) = start(&router, &student, &booking).await;
     assert_eq!(status, StatusCode::CREATED, "{session}");
     assert_eq!(booking_ids(&session), vec![booking["booking_id"].clone()]);
-    // 同じ予約の 2 回目の開始は、コーチからでも今までどおり 409
-    let (status, body) = start(&router, &coach, &booking).await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert_eq!(body["code"], "invalid_session_state");
+    // 生徒が先に入ったあとのコーチの開始は、同じセッションに 201 で入る（Issue #1471）
+    let (status, joined) = start(&router, &coach, &booking).await;
+    assert_eq!(status, StatusCode::CREATED, "{joined}");
+    assert_eq!(joined["session_id"], session["session_id"]);
+    assert_eq!(booking_ids(&joined), vec![booking["booking_id"].clone()]);
+    let call_started = analytics
+        .events()
+        .into_iter()
+        .filter(|event| matches!(event, AnalyticsEvent::CallStarted { .. }))
+        .count();
+    assert_eq!(call_started, 1, "call.started は最初の開始の 1 回だけ");
 
     let (status, ended) = end(&router, &coach, &session).await;
     assert_eq!(status, StatusCode::OK, "{ended}");
+    // 終了したら、生徒からもコーチからも入れない
+    for account in [&student, &coach] {
+        let (status, body) = start(&router, account, &booking).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["code"], "invalid_session_state");
+    }
     let (status, lesson) = complete(&router, &student, &session).await;
     assert_eq!(status, StatusCode::CREATED, "{lesson}");
     assert_eq!(lesson["student_id"], booking["student_id"]);
@@ -341,5 +357,7 @@ async fn a_one_to_one_lesson_is_started_and_completed_as_before(pool: PgPool) {
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "lesson_already_completed");
     assert_eq!(completed_students(&analytics).len(), 1);
+    // 受講権は確定した月（11 月）に 1 回だけ消費する（2 人目の入室では増えない）
+    clock.set(nov1());
     assert_eq!(quota_used(&router, &student).await, 1);
 }

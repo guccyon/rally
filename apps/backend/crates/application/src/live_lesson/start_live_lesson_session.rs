@@ -16,7 +16,7 @@ pub struct StartLiveLessonSessionCommand {
     pub booking_id: BookingId,
 }
 
-/// 開始した（グループレッスンでは、入った）セッションと、そのアカウントが通話ルームに参加するためのトークン
+/// 開始した（すでに通話中なら、入った）セッションと、そのアカウントが通話ルームに参加するためのトークン
 /// （通話基盤が発行する）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct StartedLiveLessonSession {
@@ -29,7 +29,7 @@ pub enum StartLiveLessonSessionError {
     /// 予約がない
     BookingNotFound,
     /// 開始がドメインの不変条件を満たさない（予約の参加者でない、確定した予約でない、
-    /// その予約のセッションがすでにあり、入れるグループレッスンの通話中のセッションでもない）
+    /// その予約のセッションがすでにあり、入れる通話中のセッションでもない）
     Invalid(DomainError),
     /// 保存先・通話基盤の障害
     Unavailable(Unavailable),
@@ -43,8 +43,8 @@ pub enum StartLiveLessonSessionError {
 /// `call.started` を 1 回発火する。拒否・失敗では発火しない。
 ///
 /// 予約がすでにセッションに結び付いていれば、新しく開始せず、[`LiveLessonSession::ensure_can_join`] が通れば
-/// （グループレッスンの通話中のセッション）同じセッションと、そのアカウントの参加のトークンを返す（保存も
-/// `call.started` の発火もしない）。マンツーマンのセッションの 2 回目の開始は今までどおり拒否する。
+/// （通話中のセッション。マンツーマンで相手が先に入室したときも。Issue #1471）同じセッションと、そのアカウントの
+/// 参加のトークンを返す（保存も `call.started` の発火もしない）。終了したセッションへの開始は今までどおり拒否する。
 ///
 /// 同じ予約の開始が並行して両方 domain の判定を通っても、保存先が後の方を拒む（そのとき作ったルームは閉じる）。
 pub struct StartLiveLessonSession<S, B, V, A, C> {
@@ -338,24 +338,74 @@ mod tests {
         );
         assert!(use_case.sessions().all().is_empty());
         assert!(use_case.analytics().events().is_empty());
+    }
 
-        // 同じ予約の 2 回目の開始は、コーチからでも拒否する
-        use_case
+    #[tokio::test]
+    async fn the_coach_joins_the_one_to_one_session_the_student_started() {
+        let (use_case, booking) = use_case(true).await;
+
+        let started = use_case
             .execute(command(STUDENT, booking.id()))
             .await
             .unwrap();
-        let result = use_case.execute(command(COACH, booking.id())).await;
+        // あとから入るコーチは同じセッションに入る。保存もイベントも増えない（Issue #1471）
+        let joined = use_case
+            .execute(command(COACH, booking.id()))
+            .await
+            .unwrap();
+        assert_eq!(joined.session, started.session);
+        assert!(
+            joined
+                .room_token
+                .ends_with(&crate::identity::account_id_uuid::format(COACH))
+        );
+        assert_eq!(use_case.sessions().all(), vec![started.session.clone()]);
+        assert_eq!(use_case.video().open_rooms(), vec![started.session.id()]);
+        assert_eq!(use_case.analytics().events().len(), 1);
+        // 予約の参加者でなければ入れない
+        let result = use_case.execute(command(OTHER_STUDENT, booking.id())).await;
         assert!(
             matches!(
                 result,
                 Err(StartLiveLessonSessionError::Invalid(
-                    DomainError::LiveLessonSessionAlreadyStarted
+                    DomainError::NotASessionParticipant
                 ))
             ),
             "{result:?}"
         );
-        assert_eq!(use_case.sessions().all().len(), 1);
-        assert_eq!(use_case.video().open_rooms().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_ended_one_to_one_session_cannot_be_started_again() {
+        let (use_case, booking) = use_case(true).await;
+        let started = use_case
+            .execute(command(COACH, booking.id()))
+            .await
+            .unwrap();
+        use_case
+            .sessions()
+            .update(started.session.id(), |session| {
+                session.end(
+                    COACH,
+                    now(),
+                    domain::live_lesson::ConnectionQuality::new(0.5, 12, 80, 0).unwrap(),
+                )
+            })
+            .await
+            .unwrap();
+
+        for account in [STUDENT, COACH] {
+            let result = use_case.execute(command(account, booking.id())).await;
+            assert!(
+                matches!(
+                    result,
+                    Err(StartLiveLessonSessionError::Invalid(
+                        DomainError::LiveLessonSessionAlreadyStarted
+                    ))
+                ),
+                "{result:?}"
+            );
+        }
         assert_eq!(use_case.analytics().events().len(), 1);
     }
 

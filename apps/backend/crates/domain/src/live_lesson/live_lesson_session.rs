@@ -45,7 +45,7 @@ impl LiveLessonSession {
     /// - 予約したスロットの開始時刻より前には開始できない（[`DomainError::LiveLessonSessionBeforeSlotStart`]。開始時刻
     ///   ちょうどからは開始できる）。完了したレッスンはセッションの終了の後にしか記録できないので、枠の開始より前に
     ///   完了したレッスンはできない（Issue #899）
-    /// - 同じ予約のセッションは 1 つ（[`DomainError::LiveLessonSessionAlreadyStarted`]。既存のグループレッスンの
+    /// - 同じ予約のセッションは 1 つ（[`DomainError::LiveLessonSessionAlreadyStarted`]。既存の通話中の
     ///   セッションに入るのは [`LiveLessonSession::ensure_can_join`]）
     pub fn start(
         id: SessionId,
@@ -124,10 +124,11 @@ impl LiveLessonSession {
 
     /// 参加者 `participant` が予約 `booking` で、このセッション（開始済み）の通話に入れるかを確かめる。
     ///
-    /// グループレッスン（結び付いた予約が 2 つ以上）の通話中のセッションには、結び付いた予約の生徒かコーチが
-    /// どの予約からでも入れる（同じセッションを返す）。判定は [`LiveLessonSession::start`] と同じ順で、
+    /// 通話中のセッションには、結び付いた予約の生徒かコーチが入れる（同じセッションを返す）。マンツーマンの
+    /// セッションでは先に入室した相手のあとから入る側（Issue #1471）、グループレッスン（結び付いた予約が 2 つ以上）
+    /// では結び付いた予約のどれからでも入れる。判定は [`LiveLessonSession::start`] と同じ順で、
     /// 予約の生徒かコーチでなければ [`DomainError::NotASessionParticipant`]、確定した予約でなければ
-    /// [`DomainError::BookingNotConfirmed`]。マンツーマンのセッション・終了したセッション・結び付いていない予約は
+    /// [`DomainError::BookingNotConfirmed`]。終了したセッション・結び付いていない予約は
     /// 今までどおり [`DomainError::LiveLessonSessionAlreadyStarted`]（同じ予約のセッションは 1 つ）。
     pub fn ensure_can_join(
         &self,
@@ -142,7 +143,7 @@ impl LiveLessonSession {
                 status: booking.status(),
             });
         }
-        if !self.is_group() || self.ended_at.is_some() || !self.links(booking.id()) {
+        if self.ended_at.is_some() || !self.links(booking.id()) {
             return Err(DomainError::LiveLessonSessionAlreadyStarted);
         }
         Ok(())
@@ -933,13 +934,21 @@ mod tests {
     }
 
     #[test]
-    fn a_one_to_one_session_is_not_joined_again() {
+    fn the_other_participant_joins_a_one_to_one_session_in_progress() {
         let booking = confirmed();
         let session =
             LiveLessonSession::start(SESSION, STUDENT, &booking, &[], None, at(600)).unwrap();
+        assert!(!session.is_group());
+        // 生徒が先に入ったあとから、コーチ（と入り直す生徒）は同じセッションに入れる（Issue #1471）
+        for participant in [COACH, STUDENT] {
+            session.ensure_can_join(participant, &booking).unwrap();
+        }
+        // 終了したら入れない
+        let mut ended = session.clone();
+        ended.end(STUDENT, at(650), quality()).unwrap();
         for participant in [STUDENT, COACH] {
             assert_eq!(
-                session.ensure_can_join(participant, &booking),
+                ended.ensure_can_join(participant, &booking),
                 Err(DomainError::LiveLessonSessionAlreadyStarted)
             );
         }
