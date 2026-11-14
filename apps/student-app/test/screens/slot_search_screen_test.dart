@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/slot_search_screen.dart';
@@ -44,7 +44,7 @@ void main() {
     expect(state.booking!.status, BookingStatus.pending);
   });
 
-  group('体験予約か通常の予約かはサーバーの trial_available で決める（#1505・#1594）', () {
+  group('体験予約か通常の予約かはサーバーの trial_available で決める（#1505・#1518・#1594）', () {
     /// スロットを探す画面を開き直す（ホームの「次のレッスンを予約する」などと同じく、自分の予約を読み直す）
     Future<ProviderContainer> openSlotSearch(
       WidgetTester tester,
@@ -84,6 +84,31 @@ void main() {
           FlowStep.bookingPending,
         );
         expect(container.read(studentFlowProvider).errorMessage, isNull);
+      },
+    );
+
+    testWidgets(
+      '受け終えた体験予約をキャンセルした生徒（trial_available false）には「予約する」を出し、押すと通常の予約になる',
+      (tester) async {
+        // キャンセルされていない予約はないが、受けたレッスンがあるのでサーバーは false を返す
+        final api = FakeStudentApi(
+          myBookings: [
+            for (final item in Fixtures.myBookings)
+              if (item.booking.status == BookingStatus.cancelled) item,
+          ],
+        );
+        expect(api.lessonCompletions, isNotEmpty);
+        await openSlotSearch(tester, api);
+
+        expect(find.text('予約する'), findsOneWidget);
+        expect(find.text('体験予約する'), findsNothing);
+        await tapText(tester, '予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': false,
+        });
       },
     );
 

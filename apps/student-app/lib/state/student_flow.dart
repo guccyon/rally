@@ -733,7 +733,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     }
   }
 
-  /// `createBooking`。体験予約をまだ使っていなければ体験予約（[StudentFlowState.canBookTrial]）、使っていれば通常の予約。
+  /// `createBooking`。サーバーの判定で体験予約できれば体験予約（[StudentFlowState.canBookTrial]）、できなければ通常の予約。
   /// 作成直後は pending なので確定待ちへ。409 `trial_already_used`（読んだ予約が古かった）なら、失敗の文言を出したうえで
   /// 自分の予約を読み直し、ボタンを通常の予約に切り替える
   /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは何もしない
@@ -1170,7 +1170,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
-  /// 読んだら、応答の Date で時計のずれを合わせ直す（予約の確定と入室前チェックの時刻の判断に使う）
+  /// 読んだら、応答の Date で時計のずれを合わせ直し（予約の確定と入室前チェックの時刻の判断に使う）、
+  /// 体験予約できるかをサーバーの判定 `trial_available` で置き換える（載っていなければ false）
   Future<void> _loadMyBookings() async {
     final list = await _api.listMyBookings();
     ref.read(serverClockProvider.notifier).adjust(list.clockOffset);
