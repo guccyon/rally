@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import type { Result } from "@/api/call";
 import type { Schemas } from "@/api/client";
@@ -57,6 +57,8 @@ type Props = {
   initial?: AnnouncementInput;
   /** 開いたらすぐに確かめに進む（下書きの一覧の「送る」）。入力に問題があれば項目の下に理由を出して入力に留まる。 */
   reviewOnOpen?: boolean;
+  /** 入力が変わるたびに（開いたときも）今の入力を知らせる。書きかけを捨てる前の確認に使う。 */
+  onInputChange?: (input: AnnouncementInput) => void;
 };
 
 /**
@@ -66,8 +68,11 @@ type Props = {
  * 送れなければ入力を残して文言を出す。「下書きに保存」（`saveDraft`）は長すぎる入力だけを断り（空でも保存できる）、
  * 保存しても入力は残す。
  */
-export function AnnouncementForm({ send, onSent, saveDraft, initial = EMPTY_INPUT, reviewOnOpen = false }: Props) {
+export function AnnouncementForm({ send, onSent, saveDraft, initial = EMPTY_INPUT, reviewOnOpen = false, onInputChange }: Props) {
   const [input, setInput] = useState<AnnouncementInput>(initial);
+  useEffect(() => {
+    onInputChange?.(input);
+  }, [input, onInputChange]);
   const [errors, setErrors] = useState<AnnouncementInputErrors>(() =>
     reviewOnOpen ? validateAnnouncement(initial) : {},
   );
