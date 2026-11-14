@@ -8,6 +8,7 @@ import '../state/prejoin_check.dart';
 import '../state/student_flow.dart';
 import '../ui/components/confirm_dialog.dart';
 import '../ui/components/notice.dart';
+import '../ui/components/rally_button.dart';
 import '../ui/components/section_loading.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
@@ -17,6 +18,8 @@ import '../ui/ticking_now.dart';
 /// 予約の確定待ち（`confirmBooking`）。確定したら初回レッスンの受け方を選ぶ。
 /// 「ビデオ通話で受ける」は開始 5 分前から押せ、押すと入室前チェックを開く（それより早いときは開ける時刻を出す）。
 /// 予約した時点のレッスンメニューの写し（`Booking.lesson_menu`）があれば、その名前と 1 回の時間も出す。
+/// 体験予約の直後のほか、ホームの「次にやること」や自分の予約から予約の ID で開く（`listMyBookings` から読み直す。[StudentFlowState.bookingLookup]）。
+/// 確定待ちなら「この予約をキャンセルする」（確認のダイアログ）で確定せずに枠を返せる。
 /// 出すのはサーバーの記録の予約（作った・確定した・キャンセルした応答か、予約の ID で `listMyBookings` から読み直したもの。ADR 0010）。
 /// キャンセル済み・見つからない予約は info の知らせと「ホームに戻る」だけで、確定・入室・動画の送付の道は出さない。
 class BookingPendingScreen extends ConsumerWidget {
@@ -31,9 +34,10 @@ class BookingPendingScreen extends ConsumerWidget {
     final notifier = ref.read(studentFlowProvider.notifier);
     final booking = state.booking;
     final lookup = state.bookingLookup;
-    final backHome = OutlinedButton(
+    final backHome = RallyButton(
+      label: 'ホームに戻る',
+      variant: RallyButtonVariant.secondary,
       onPressed: state.busy ? null : notifier.goHome,
-      child: const Text('ホームに戻る'),
     );
     if (lookup == BookingLookup.failed) {
       return FlowScaffold(
@@ -90,9 +94,11 @@ class BookingPendingScreen extends ConsumerWidget {
             onPressed: state.busy ? null : notifier.confirmBooking,
             child: const Text('予約を確定する'),
           ),
-          TextButton(
+          const SizedBox(height: 8),
+          RallyButton(
+            label: 'この予約をキャンセルする',
+            variant: RallyButtonVariant.text,
             onPressed: state.busy ? null : () => _confirmCancel(context, ref),
-            child: const Text('この予約をキャンセルする'),
           ),
         ] else ...[
           const Text('初回レッスンの受け方を選んでください。'),
