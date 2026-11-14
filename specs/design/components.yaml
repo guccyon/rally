@@ -47,14 +47,10 @@ components:
       good: 「スロットを探して予約する」が primary、「予約をすべて見る」が text
       bad: 青いピル型の主ボタンと、灰の線に青い字の副ボタンが並ぶ
     preview:
-      - label: "primary"
-        html: '<div class="pv"><span class="btn btn-primary">スロットを探して予約する</span></div>'
       - label: "押下・フォーカス"
         html: '<div class="pv row-x"><span class="btn btn-pressed">予約する</span><span class="btn btn-primary is-focus">予約する</span></div>'
       - label: "secondary・text"
         html: '<div class="pv row-x"><span class="btn btn-secondary">コーチを探す</span><span class="btn btn-text">予約をすべて見る</span></div>'
-      - label: "読み込み中"
-        html: '<div class="pv"><span class="btn btn-primary" aria-busy="true"><i class="spin"></i>予約する</span></div>'
       - label: "無効"
         html: '<div class="pv"><span class="btn btn-disabled" aria-disabled="true">予約する</span><p class="type-small hint">スロットを選ぶと予約できます。</p></div>'
 
@@ -83,8 +79,6 @@ components:
       good: ラベル「一言」・helper「200 文字まで」・counter「12 / 200」
       bad: placeholder「一言を入力」だけ
     preview:
-      - label: "通常"
-        html: '<div class="pv tf"><label class="type-small">表示名</label><div class="field type-body">山田 太郎</div><div class="help type-small"><span>1〜20 文字</span><span>5 / 20</span></div></div>'
       - label: "誤り"
         html: '<div class="pv tf err"><label class="type-small">表示名</label><div class="field type-body"></div><div class="etext type-small" role="alert"><i class="ic">!</i>表示名は 1〜20 文字で入れてください。</div></div>'
 
@@ -126,8 +120,6 @@ components:
       good: 「期間」の下に「開始日 2026/10/28 〜 終了日 2026/11/03」
       bad: ラベルのない日付の欄が 2 つで、誤りは「入力が正しくありません」だけ
     preview:
-      - label: "通常（date_range）"
-        html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf"><label class="type-small">終了日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div></div><div class="help type-small"><span>31 日まで選べます</span></div></fieldset></div>'
       - label: "誤り（終わりが始まりより前）"
         html: '<div class="pv df"><fieldset class="dr"><legend class="type-small">期間</legend><div class="dr-row"><div class="tf"><label class="type-small">開始日</label><div class="field type-body">2026/11/03<i class="cal"></i></div></div><span class="sep type-body">〜</span><div class="tf err"><label class="type-small">終了日</label><div class="field type-body">2026/10/28<i class="cal"></i></div></div></div><div class="etext type-small" role="alert"><i class="ic">!</i>終了日が開始日より前です。終了日は開始日と同じか、それより後の日付にしてください。</div></fieldset></div>'
 
@@ -178,8 +170,6 @@ components:
     preview:
       - label: "通常"
         html: '<div class="pv tf sl"><label class="type-small">コーチ</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div></div>'
-      - label: "失敗（選択肢を読めない）"
-        html: '<div class="pv tf sl off"><label class="type-small">レッスンメニュー</label><div class="field type-body"><span class="v">すべて</span><i class="chev"></i></div><div class="etext type-small" role="alert"><i class="ic">!</i>レッスンメニューの一覧を読めませんでした。画面を更新すると、もう一度読み込めます。</div></div>'
       - label: "誤り（必須の欄を選んでいない）"
         html: '<div class="pv tf sl err"><label class="type-small">スポーツ</label><div class="field type-body" aria-invalid="true"><span class="v muted">選んでください</span><i class="chev"></i></div><div class="etext type-small" role="alert"><i class="ic">!</i>スポーツが選ばれていません。一覧から 1 つ選んでください。</div></div>'
 
@@ -187,7 +177,7 @@ components:
     ja: カード
     lifecycle: trial
     use: 1 件のまとまり（予約・コーチ・添削）を囲む
-    not_for: 文 1 行だけ → list_row。主役の数字 → score_panel
+    not_for: 文 1 行だけ → list_row。主役の数字 → score_panel。指標の今月と前月 → kpi_figure（0.9.0）
     parts: [container, date_block（予約だけ）, title, meta, status_tag（任意）, action（任意）]
     variants:
       plain:   {container: background, border: border 1px, radius: md, padding_px: 16, gap_px: 8, title: title}
@@ -223,8 +213,6 @@ components:
       good: 「コーチから返事が届きました」・「10/27 18:04」・未読のしるし
       bad: 未読を太字だけで示す。行ごとに灰の面で囲う
     preview:
-      - label: "通常"
-        html: '<div class="pv row"><div class="main"><div class="type-body t">本部からのお知らせ</div><div class="type-small muted">10/27 9:00</div></div><span class="muted">›</span></div>'
       - label: "未読"
         html: '<div class="pv row unread"><div class="main"><div class="type-body t"><span class="badge type-caption">未読</span> コーチから返事が届きました</div><div class="type-small muted">10/27 18:04</div></div><span class="muted">›</span></div>'
 
@@ -236,7 +224,7 @@ components:
     parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）]
     variants:
       text: {align: left, wrap: しない, note: 日時・名前・状態・種類など短い値}
-      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）}
+      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）。指標の値は kpi_figure の cell（0.9.0）}
       long_text: {align: left, wrap: 文節で折る（word-break auto-phrase）, min_width: 12em, max_width: 40em, note: 一言・題など文の列だけ}
     style:
       wrapper: {overflow_x: auto, max_width: 100%, container: background（0.5.0 で surface の面をやめた）}
@@ -281,8 +269,6 @@ components:
     preview:
       - label: "PC 幅（wide）と急ぎの行"
         html: '<div class="pv tblw"><div class="tbl-wrap"><table class="tbl type-small" aria-label="10/28（水）の予約"><thead><tr><th scope="col">開始</th><th scope="col">状態</th><th scope="col">コーチ</th><th scope="col">生徒</th><th scope="col">レッスンメニュー</th></tr></thead><tbody><tr class="hl"><td><span class="lnk">9:00</span></td><td><span class="tag"><i class="d d-warning"></i>確定待ち</span> <span class="tag tag-urgent"><i class="d d-danger"></i>開始まで 24 時間以内</span></td><td>佐藤 健</td><td>田中 美咲</td><td>バッティングの基本（30 分）</td></tr><tr><td><span class="lnk">12:00</span></td><td><span class="tag"><i class="d d-success"></i>確定済み</span></td><td>山田 花子</td><td>鈴木 一郎</td><td>フォアハンドの基礎（30 分）</td></tr></tbody></table></div></div>'
-      - label: "狭い幅・数字の列"
-        html: '<div class="pv w"><div class="tbl-wrap" role="region" aria-label="コーチごとの予約枠の需給" tabindex="0"><table class="tbl type-small"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">公開した枠</th><th scope="col" class="num">予約された枠</th><th scope="col" class="num">埋まった割合</th></tr></thead><tbody><tr><td>山田 花子</td><td class="num">12 件</td><td class="num">9 件</td><td class="num">75%</td></tr></tbody></table></div></div>'
 
   - id: description_list
     ja: ラベルと値の並び
@@ -315,8 +301,6 @@ components:
     preview:
       - label: "通常（inline・予約の詳細）"
         html: '<div class="pv dlw"><dl class="dl" aria-label="予約の詳細"><div class="it"><dt class="type-small">レッスンメニュー</dt><dd class="type-body">フォアハンドの基礎（30 分）</dd></div><div class="it"><dt class="type-small">枠の時刻</dt><dd class="type-body">10/28（水）12:00〜12:30</dd></div><div class="it"><dt class="type-small">種類</dt><dd class="type-body">—</dd></div><div class="it"><dt class="type-small">今の状態</dt><dd class="type-body"><span class="tag type-small"><i class="d d-success"></i>確定済み</span></dd></div></dl></div>'
-      - label: "狭い幅（stacked・600px 未満）"
-        html: '<div class="pv w"><dl class="dl st"><div class="it"><dt class="type-small">コーチ</dt><dd class="type-body">山田 花子</dd></div><div class="it"><dt class="type-small">点の平均（1〜5）</dt><dd class="type-body">4.8 <a class="lnk type-small">コーチの評価を見る</a></dd></div><div class="it"><dt class="type-small">本文</dt><dd class="type-body">11/3（火）は設備の点検のため、ビデオ通話を使えません。</dd></div></dl></div>'
       - label: "読み込み中・失敗（項目ごと）"
         html: '<div class="pv dlw"><dl class="dl"><div class="it"><dt class="type-small">表示名</dt><dd class="type-body">鈴木 一郎</dd></div><div class="it"><dt class="type-small">スポーツ</dt><dd class="type-small muted" role="status">読み込み中…</dd></div><div class="it"><dt class="type-small">返却待ち</dt><dd class="type-small etx" role="alert"><i class="ic">!</i>件数を読めませんでした。画面を更新すると、もう一度読み込めます。</dd></div></dl></div>'
 
@@ -353,10 +337,6 @@ components:
     preview:
       - label: "通常（予約の状態が変わった記録）"
         html: '<div class="pv w"><ol class="tl" aria-label="状態が変わった記録"><li><i class="d d-warning"></i><div><p class="type-small muted">10/20（火）9:12</p><span class="tag type-small">確定待ち</span></div></li><li><i class="d d-success"></i><div><p class="type-small muted">10/21（水）8:30</p><span class="tag type-small">確定済み</span></div></li><li><i class="d d-neutral"></i><div><p class="type-small muted">10/27（火）18:04</p><span class="tag type-small muted">キャンセル済み</span><p class="type-small muted">理由: コーチのお休み</p></div></li></ol></div>'
-      - label: "対応のない出来事（お知らせの取り下げ）"
-        html: '<div class="pv w"><ol class="tl" aria-label="お知らせの経緯"><li><i class="d d-neutral"></i><div><p class="type-small muted">11/2（月）10:00</p><p class="type-body b">送った</p></div></li><li><i class="d d-neutral"></i><div><p class="type-small muted">11/2（月）10:25</p><p class="type-body b">取り下げた</p></div></li></ol></div>'
-      - label: "失敗"
-        html: '<div class="pv w notice n-danger type-body" role="alert"><i class="ic">!</i><p>状態が変わった記録を読めませんでした。画面を更新すると、もう一度読み込めます。</p></div>'
 
   - id: badge
     ja: しるし
@@ -371,8 +351,6 @@ components:
     preview:
       - label: "count"
         html: '<div class="pv"><span class="entry type-body">チャット <span class="badge type-caption" aria-label="未読 3 件">3</span></span></div>'
-      - label: "dot"
-        html: '<div class="pv"><span class="entry type-body">お知らせ <span class="dot" aria-label="未読あり"></span></span></div>'
 
   - id: status_tag
     ja: 状態のタグ
@@ -397,8 +375,6 @@ components:
     preview:
       - label: "確定待ち（warning）"
         html: '<div class="pv"><span class="tag type-small"><i class="d d-warning"></i>確定待ち</span></div>'
-      - label: "キャンセル済み（neutral）"
-        html: '<div class="pv"><span class="tag type-small muted"><i class="d d-neutral"></i>キャンセル済み</span></div>'
       - label: "スロットの状態（slot_state: open・booked・closed）"
         html: '<div class="pv tags"><span class="tag type-small"><i class="d d-info"></i>公開中</span><span class="tag type-small"><i class="d d-success"></i>予約済み</span><span class="tag type-small muted"><i class="d d-neutral"></i>終了</span></div>'
 
@@ -425,6 +401,56 @@ components:
     preview:
       - label: "残りの回数"
         html: '<div class="pv w panel dark" aria-label="今月のビデオ通話、残り 2 回、月 2 回のうち"><i class="band"></i><div class="eb type-small">今月のビデオ通話</div><div class="numrow"><span class="type-small">残り</span><span class="num type-display">2</span><span class="type-title">回</span></div><div class="note note-d type-small">月 2 回のうち（プラン: スタンダード）</div></div>'
+
+  - id: kpi_figure
+    ja: 指標の値の組
+    lifecycle: trial   # 0.9.0（#1462）
+    use: admin-web で 1 つの指標（specs/analytics/kpi.yaml）の今月と前月の値を、単位・見方（良い向き）・出せないときの「—」と理由まで 1 組で出す
+    not_for: 指標でないまとめの件数（本部とコーチのホーム）→ card に figure。student-app の主役の数字 → score_panel。前月からの向き → trend_indicator（まだない。governance の requests）
+    parts: [label（kpi.yaml の ja）, value（今月）, unit, previous（「前月 58.1%」）, direction（「見方: 高いほど良い」）, reason（出せないときだけ）]
+    variants:
+      hero: {container: card の plain, label: title, value: figure・text, unit: title, previous: small・text_muted で value の右に baseline・間 md, direction: small・text_muted, note: 北極星だけ}
+      cell: {container: data_table の numeric のセル, value: small・tnum・text, previous: 前月の列は text_muted, direction: 見方の列（text_muted）}
+    states:
+      default: 今月と前月の値がある
+      pressed: 押せない部品。詳しく見る操作は card の text のボタンか link のセル
+      disabled: 使わない。出せない値は unavailable
+      loading: hero は label を残し、value の場所に「読み込み中…」（small・text_muted・role=status）。「—」を使わない。cell は data_table の loading
+      error: hero は card の中に error_text（role=alert）。cell は data_table の error
+      unavailable: value を「—」（U+2014）にして理由を添える。hero は small・text の 1 文、cell は「—」の右に 10 字までの語（text_muted）を 1 行で。前月は「前月 —」
+    wording:
+      number: 割合は小数 1 桁に「%」（「62.4%」）、時間は「18.5 時間」、単位のない値は小数 3 桁（「0.012」）。今月と前月は同じ桁
+      direction: kpi.yaml の up_is_good は「高いほど良い」、down_is_good は「低いほど良い」
+      reasons: {too_few: "hero「対象が 5 件未満のため、出せません。」cell「5 件未満」", none: "hero「対象が 0 件のため、出せません。」cell「対象 0 件」", not_yet: "hero「集計の期間が終わっていないため、11/30（月）に出ます。」cell「11/30 に出ます」"}
+      error: 「今月の値を読めませんでした。画面を更新すると、もう一度読み込めます。」
+    a11y: hero は role=group と aria-label で 1 文に読む（「初回レッスン後の 1 ヶ月継続率、今月 62.4%、前月 58.1%、高いほど良い」）。「—」は「出せません」と読む
+    rules:
+      - level: should
+        statement: 値を出せないときは 0 や空欄にせず、「—」と理由を出す
+        why: 0 は最も悪い値に読め、空欄は読み込みの失敗と見分けられない
+        check: design_inspector
+      - level: should
+        statement: 前月の値は今月より小さく text_muted で出し、「前月」の語か列の見出しを添える
+        why: 2 つの数字が並んでも、今月の値を取り違えない
+        check: design_inspector
+      - level: should
+        statement: 良い向きは値の色で示さず「見方」の文字で出す。値の色は text のまま（trend_indicator を足すまで）
+        why: 継続率は高いほど、分散は低いほど良い。色だけでは向きを読み違え、色の見分けが難しい人に届かない
+        check: design_inspector
+      - level: should
+        statement: hero は 1 画面に 1 つ（北極星だけ）。ほかの指標は cell の表に並べる
+        why: 大きな数字が並ぶと、どれが北極星か分からない（one-hot-spot）
+        check: deterministic
+    examples: {good: "「62.4%」を figure、右に「前月 58.1%」を text_muted", bad: 出せない値を「0%」で出す。下がった値を赤い字にするだけ}
+    preview:
+      - label: "hero・通常（北極星）"
+        html: '<div class="pv w card kf" role="group" aria-label="初回レッスン後の 1 ヶ月継続率、今月 62.4%、前月 58.1%、高いほど良い"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><div class="vr"><span class="v"><span class="type-figure">62.4</span><span class="type-title">%</span></span><span class="type-small muted">前月 58.1%</span></div><div class="type-small muted">見方: 高いほど良い</div></div>'
+      - label: "hero・出せない（unavailable）"
+        html: '<div class="pv w card kf" role="group"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><div class="vr"><span class="type-figure" aria-label="出せません">—</span><span class="type-small muted">前月 58.1%</span></div><p class="type-small">集計の期間が終わっていないため、11/30（月）に出ます。</p><div class="type-small muted">見方: 高いほど良い</div></div>'
+      - label: "hero・読み込み中・失敗"
+        html: '<div class="pv kfs"><div class="card kf"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><p class="type-small muted" role="status">読み込み中…</p></div><div class="card kf"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><p class="type-small etx" role="alert"><i class="ic">!</i>今月の値を読めませんでした。画面を更新すると、もう一度読み込めます。</p></div></div>'
+      - label: "cell（data_table の数字の列）・出せない"
+        html: '<div class="pv kt"><div class="tbl-wrap"><table class="tbl type-small" aria-label="ほかの指標"><thead><tr><th scope="col">指標</th><th scope="col">見方</th><th scope="col" class="num">今月</th><th scope="col" class="num">前月</th></tr></thead><tbody><tr><td>コーチの予約枠充足率</td><td class="muted">高いほど良い</td><td class="num">74.0%</td><td class="num muted">71.5%</td></tr><tr><td>コーチ別継続率の分散</td><td class="muted">低いほど良い</td><td class="num"><span aria-label="出せません">—</span> <span class="muted">5 件未満</span></td><td class="num muted">0.012</td></tr><tr><td>添削の返却リードタイム</td><td class="muted">低いほど良い</td><td class="num">18.5 時間</td><td class="num muted">21.0 時間</td></tr></tbody></table></div></div>'
 
   - id: notice
     ja: 知らせ
@@ -476,8 +502,6 @@ components:
     preview:
       - label: "screen（ほかに primary がない）"
         html: '<div class="pv empty empty-screen"><p class="type-body">まだこれからの予約はありません。コーチを探して始めましょう</p><span class="btn btn-primary">コーチを探す</span></div>'
-      - label: "section（画面に primary がある）"
-        html: '<div class="pv empty empty-section"><p class="type-body">まだこれからの予約はありません。</p><span class="btn btn-secondary">コーチを探す</span></div>'
 
   - id: loading
     ja: 読み込み中
@@ -492,8 +516,6 @@ components:
     preview:
       - label: "bar（画面全体）"
         html: '<div class="pv"><div class="bar" role="progressbar" aria-label="ホームを読み込んでいます"><i></i></div><div class="type-headline">ホーム</div></div>'
-      - label: "section_text（欄ごと）"
-        html: '<div class="pv sect"><h4 class="type-title">お気に入りのコーチ</h4><p class="type-small muted" role="status">お気に入りのコーチを読み込んでいます…</p></div>'
 
   - id: confirm_dialog
     ja: 確認のダイアログ
@@ -542,8 +564,6 @@ components:
     preview:
       - label: "切・押下"
         html: '<div class="pv w mt2"><span class="btn btn-secondary"><i class="mi mic"><b></b></i>マイクを入れる</span><span class="btn btn-secondary is-pressed"><i class="mi vc"><b></b></i>カメラを入れる</span></div>'
-      - label: "読み込み中・無効"
-        html: '<div class="pv w mt2"><span class="btn btn-secondary" aria-busy="true"><i class="spin"></i>カメラを切る</span><span class="btn btn-disabled" aria-disabled="true"><i class="mi mic"><b></b></i>マイクを入れる</span></div>'
 
   - id: camera_preview
     ja: カメラの映りの枠
@@ -576,8 +596,6 @@ components:
     preview:
       - label: "通常（映っている。左右反転）"
         html: '<div class="pv cpw"><div class="cam" role="img" aria-label="自分のカメラの映り（左右反転）"><i class="vid"></i></div><p class="type-small muted">映像はこの端末の中だけで映し、送りも残しもしません</p></div>'
-      - label: "無効（切）"
-        html: '<div class="pv cpw"><div class="cam off"><i class="mi lg vc"><b></b></i><p class="type-title">カメラを切っています</p><p class="type-small s">入室したあとも切ったままです</p></div></div>'
       - label: "失敗（admin-web 16:9・使えない）"
         html: '<div class="pv cpa"><div class="cam wide off" role="status"><i class="mi lg vc"><b></b></i><p class="type-title">カメラが使えません</p><p class="type-small s">ブラウザーの設定で許可すると確かめられます。入室は開始時刻からできます。</p></div></div>'
 
@@ -605,8 +623,6 @@ components:
     preview:
       - label: "通常（届いている）"
         html: '<div class="pv lmw"><p class="type-small" role="status">音が届いています</p><div class="lm l6" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>'
-      - label: "無効（切）"
-        html: '<div class="pv lmw"><p class="type-small" role="status">マイクを切っています</p><div class="lm stop" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>'
 
   - id: join_bar
     ja: 入室の帯
@@ -636,10 +652,6 @@ components:
     preview:
       - label: "無効（開始時刻の前）"
         html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="cd"><span class="type-small b">あと</span> <span class="type-figure-sm">2:48</span></span></div><p class="type-small muted">開始時刻になると入室できます</p><span class="btn btn-disabled" aria-disabled="true">入室する</span></div>'
-      - label: "失敗"
-        html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span></div><div class="notice n-danger type-small" role="alert"><i class="ic">!</i><p>この予約の開始時刻になっていないため、ビデオ通話を始められません。開始時刻になってから、もう一度始めてください。</p></div><span class="btn btn-primary">入室する</span></div>'
-      - label: "admin-web（768px・読み込み中）"
-        html: '<div class="pv jb jba"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="type-small muted">田中 美咲・フォアハンドの基礎（30 分）</span></div><div class="acts"><span class="btn btn-secondary btn-adm">予約の一覧に戻る</span><span class="btn btn-primary btn-adm" aria-busy="true"><i class="spin"></i>入室する</span></div></div>'
 
 preview_css: |
   .pv,.pv *{box-sizing:border-box}
@@ -672,9 +684,9 @@ preview_css: |
   .koma.next{background:var(--color-secondary);color:var(--color-on-secondary)}
   .bd{display:flex;flex-direction:column;gap:var(--space-xs)}
   .tag{display:inline-flex;align-items:center;gap:var(--space-xs);font-weight:700;white-space:nowrap;align-self:flex-start}
-  .d,.dot{display:inline-block;width:8px;height:8px;border-radius:var(--radius-pill);flex:none}
+  .d{display:inline-block;width:8px;height:8px;border-radius:var(--radius-pill);flex:none}
   .d-success{background:var(--color-success-fg)}.d-warning{background:var(--color-warning-fg)}
-  .d-danger,.dot{background:var(--color-danger-fg)}.d-neutral{background:var(--color-border-strong)}
+  .d-danger{background:var(--color-danger-fg)}.d-neutral{background:var(--color-border-strong)}
   .tag-urgent{color:var(--color-danger-fg)}
   .row{display:flex;align-items:center;gap:var(--space-md);min-height:56px;padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--color-border)}
   .row.unread{border-left:4px solid var(--color-primary)}
@@ -729,7 +741,6 @@ preview_css: |
   .sl .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sl .chev{position:absolute;right:var(--space-md);top:50%;width:8px;height:8px;margin-top:-6px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg)}
   .sl.off .chev{color:var(--color-text-muted)}
-  .btn-adm{min-height:48px;font-weight:700}
   .mt2{display:flex;gap:var(--space-sm)}.mt2 .btn{flex:1;min-width:0;padding:0 var(--space-sm)}
   .mi{flex:none;position:relative;width:20px;height:20px}
   .mi::before,.mi::after{content:"";position:absolute;box-sizing:border-box}
@@ -750,13 +761,13 @@ preview_css: |
   .lmw{display:flex;flex-direction:column;gap:var(--space-xs)}
   .lm{display:flex;align-items:center;gap:var(--space-xs);height:24px}
   .lm i{flex:1;height:8px;border-radius:var(--radius-pill);background:var(--color-primary-container)}
-  .l6 i:nth-child(-n+6){background:var(--color-primary)}.lm.stop i{background:var(--color-surface)}
+  .l6 i:nth-child(-n+6){background:var(--color-primary)}
   .pv.jb{width:360px;border-top:1px solid var(--color-border);padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
   .jb .tr{display:flex;align-items:baseline;gap:var(--space-sm)}.jb .b{font-weight:700}.jb .cd{margin-left:auto}
-  .jb > .btn{width:100%}.pv.jba{width:768px;padding:var(--space-md) 0}
+  .jb > .btn{width:100%}
   .pv.dlw{width:560px}.dl{margin:0}
   .dl .it{display:grid;grid-template-columns:10em 1fr;column-gap:var(--space-md);align-items:baseline;padding:var(--space-sm) 0;border-top:1px solid var(--color-border)}
-  .dl .it:first-child{border-top:0}.dl.st .it{grid-template-columns:1fr;row-gap:var(--space-xs)}
+  .dl .it:first-child{border-top:0}
   .dl dt{font-weight:700;color:var(--color-text-muted)}.dl dt,.dl dd{word-break:auto-phrase}
   .dl dd{margin:0;font-variant-numeric:tabular-nums}.dl .lnk{margin-left:var(--space-md)}
   .etx{display:flex;gap:var(--space-xs);align-items:flex-start;color:var(--color-danger-fg)}
@@ -764,3 +775,5 @@ preview_css: |
   .tl li{position:relative;display:flex;gap:var(--space-sm);padding-bottom:var(--space-md)}.tl li:last-child{padding-bottom:0}
   .tl li>.d{margin:var(--space-sm) var(--space-xs) 0}.tl li>div{display:flex;flex-direction:column;gap:var(--space-xs)}
   .tl li:not(:last-child)::before{content:"";position:absolute;left:calc(var(--space-sm) - 1px);top:var(--space-md);bottom:calc(-1 * var(--space-sm));width:2px;background:var(--color-border)}
+  .kf .vr{display:flex;align-items:baseline;gap:var(--space-md);flex-wrap:wrap}.kf .v{display:flex;align-items:baseline;gap:var(--space-xs)}
+  .pv.kfs{width:360px;display:flex;flex-direction:column;gap:var(--space-md)}.pv.kt{width:640px}

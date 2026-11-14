@@ -94,7 +94,7 @@
   --text-headline: 28px;
   --text-headline--line-height: 1.2;
   --text-headline--letter-spacing: -0.02em;
-  --text-figure: 32px; /* figure。本部のホームとコーチのホームのまとめの数だけ（font-numeric） */
+  --text-figure: 32px; /* figure。本部のホームとコーチのホームのまとめの数と、指標の北極星（kpi_figure の hero）だけ（font-numeric） */
   --text-figure--line-height: 1;
   --text-figure--letter-spacing: 0em;
   --text-figure-sm: 22px; /* figure_sm */
