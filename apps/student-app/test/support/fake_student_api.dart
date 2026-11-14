@@ -26,9 +26,11 @@ class FakeStudentApi implements StudentApi {
     this.videoReviews = const {},
     List<MyLessonCompletion>? lessonCompletions,
     this.bookingLessonMenu,
+    List<NextAction>? nextActions,
     this.failures = const {},
     Student? student,
   }) : student = student ?? Fixtures.student,
+       nextActions = List.of(nextActions ?? const []),
        slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
        myVideos = List.of(myVideos ?? Fixtures.myVideos),
@@ -131,6 +133,12 @@ class FakeStudentApi implements StudentApi {
 
   /// `createBooking` / `confirmBooking` が返す予約に載せる、予約した時点のレッスンメニューの写し（null ならメニューなし）
   final BookingLessonMenu? bookingLessonMenu;
+
+  /// 生徒の次の操作（`getMyNextActions` が並びのまま返す。既定は 0 件。テストで書き換えて「サーバーの状態が変わった」を表す）
+  final List<NextAction> nextActions;
+
+  /// 入れておくと、`getMyNextActions` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
+  Completer<void>? nextActionsGate;
 
   /// `getVideoReview` だけを、動画の ID ごとに失敗させる
   final Set<String> videoReviewFailures = {};
@@ -561,6 +569,15 @@ class FakeStudentApi implements StudentApi {
       });
 
   @override
+  Future<NextActionList> getMyNextActions() async {
+    await nextActionsGate?.future;
+    return _answer(
+      'getMyNextActions',
+      () => NextActionList(nextActions: [...nextActions]),
+    );
+  }
+
+  @override
   Future<Student> getMyStudentProfile() =>
       _answer('getMyStudentProfile', () => student);
 
@@ -854,6 +871,61 @@ abstract final class Fixtures {
       coachDisplayName: '鈴木',
     ),
   ];
+
+  /// 次の操作: 確定待ちの体験予約（[bookingPending]。山田 花子 コーチ）を確定する
+  static final nextConfirmBooking = NextAction(
+    kind: NextActionKind.confirmBooking,
+    bookingId: bookingId,
+    isTrial: true,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    sport: Sport.tennis,
+    lessonMenu: bookingLessonMenu,
+    coachDisplayName: '山田 花子',
+  );
+
+  /// 次の操作: 確定済みの体験予約（[bookingConfirmed]）のビデオ通話を受ける
+  static final nextJoinLiveLesson = NextAction(
+    kind: NextActionKind.joinLiveLesson,
+    bookingId: bookingId,
+    isTrial: true,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    sport: Sport.tennis,
+    coachDisplayName: '山田 花子',
+  );
+
+  /// 次の操作: 送った動画（[video]）をコーチが添削している
+  static final nextVideoReviewInProgress = NextAction(
+    kind: NextActionKind.videoReviewInProgress,
+    videoId: videoId,
+    submittedAt: now.subtract(const Duration(hours: 1)),
+    coachDisplayName: '山田 花子',
+  );
+
+  /// 次の操作: 添削が返った動画（[video]）の完了を記録する
+  static final nextRecordAsyncCompletion = NextAction(
+    kind: NextActionKind.recordLessonCompletion,
+    lessonType: LessonType.asyncLesson,
+    videoId: videoId,
+    returnedAt: now,
+    coachDisplayName: '山田 花子',
+  );
+
+  /// 次の操作: 終わった通話（[sessionEnded]）の完了を記録する
+  static final nextRecordLiveCompletion = NextAction(
+    kind: NextActionKind.recordLessonCompletion,
+    lessonType: LessonType.liveLesson,
+    sessionId: sessionId,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    coachDisplayName: '山田 花子',
+  );
+
+  /// 次の操作: 月額契約を始める
+  static const nextStartSubscription = NextAction(
+    kind: NextActionKind.startSubscription,
+  );
 
   static final sessionInProgress = LiveLessonSession(
     sessionId: sessionId,

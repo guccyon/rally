@@ -87,6 +87,7 @@ void main() {
       'listMyNotifications',
       'listFavoriteCoaches',
       'listMyLessonCompletions',
+      'getMyNextActions',
       'listMyBookings',
       'searchSlots',
       'getCoachReviewSummary',
@@ -118,6 +119,8 @@ void main() {
 
       expect(find.text('添削結果'), findsOneWidget);
       expect(find.text('コーチが添削しています。返却されるまでお待ちください。'), findsOneWidget);
+      // コーチが添削を返した（サーバーの次の操作に、その動画の完了の記録が出る）
+      api.nextActions.add(Fixtures.nextRecordAsyncCompletion);
       await tapText(tester, '添削結果を確かめる');
       expect(find.text('テイクバックをもう少し早く'), findsOneWidget);
       await tapText(tester, '完了の記録へ進む');
@@ -132,6 +135,7 @@ void main() {
         'listMyNotifications',
         'listFavoriteCoaches',
         'listMyLessonCompletions',
+        'getMyNextActions',
         'listMyBookings',
         'searchSlots',
         'getCoachReviewSummary',
@@ -141,6 +145,7 @@ void main() {
         'submitVideo',
         'getVideoReview',
         'getVideoReview',
+        'getMyNextActions',
         'recordLessonCompletion',
         'submitLessonReview',
         'listSubscriptionPlans',

@@ -272,6 +272,10 @@ class HttpStudentApi implements StudentApi {
     await _send('PATCH', '/me/profile', body: body.toJson()),
   );
 
+  @override
+  Future<NextActionList> getMyNextActions() async =>
+      NextActionList.fromJson(await _send('GET', '/me/next-actions'));
+
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {

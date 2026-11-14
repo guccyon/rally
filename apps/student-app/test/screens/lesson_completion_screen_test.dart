@@ -14,6 +14,7 @@ void main() {
     bookedSlot: Fixtures.slot,
     booking: Fixtures.bookingConfirmed,
     session: Fixtures.sessionEnded,
+    completing: const LiveLessonCompletion(sessionId: Fixtures.sessionId),
   );
 
   testWidgets('通話のあとは live_lesson で完了を記録し、初回なら初回と出して月額契約に進める', (tester) async {
@@ -72,6 +73,7 @@ void main() {
         booking: Fixtures.bookingConfirmed,
         video: Fixtures.video,
         review: Fixtures.reviewReturned,
+        completing: const AsyncLessonCompletion(videoId: Fixtures.videoId),
       ),
     );
 
