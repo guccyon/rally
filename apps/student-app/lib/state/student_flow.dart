@@ -1072,6 +1072,25 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// プロフィールを閉じて、開いた段に戻る
   void closeProfile() => returnTo(state.profileReturnStep ?? FlowStep.home);
 
+  /// ログアウト（プロフィールの「ログアウトする」）。端末に残した登録の結果（[sessionStoreProvider]）を消し、
+  /// 前の生徒の状態（トークン・生徒・予約・チャット・契約・お知らせなど）を捨てて登録の画面にする。
+  /// サーバーには何も送らない（トークンを失効させる API はない）。次の生徒のホームはサーバーから読み直す（ADR 0010）
+  void logout() {
+    ref.read(sessionStoreProvider).clear();
+    ref
+      ..invalidate(chatProvider)
+      ..invalidate(subscriptionProvider)
+      ..invalidate(favoriteCoachesProvider)
+      ..invalidate(nextActionsProvider)
+      ..invalidate(notificationsProvider)
+      ..invalidate(lessonCompletionsProvider)
+      ..invalidate(coachSearchProvider)
+      ..invalidate(coachProfileProvider)
+      ..invalidate(lessonReviewProvider)
+      ..invalidate(prejoinCheckProvider);
+    state = StudentFlowState();
+  }
+
   /// `updateMyStudentProfile`。表示名を [displayName] に変え、応答の生徒で [StudentFlowState.student] を置き換える
   /// （ホームなどの表示もこれで変わる）。保存できたら true。422 はサーバーの文言を出す（[profileErrorMessageOf]）
   Future<bool> saveDisplayName(String displayName) async {
