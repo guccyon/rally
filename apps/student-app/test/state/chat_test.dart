@@ -409,4 +409,38 @@ void main() {
     expect(messages, hasLength(Fixtures.messages.length + 1));
     expect(() => messages.clear(), throwsUnsupportedError);
   });
+  test('送る前の本文はスレッドごとに覚え、空にしたら消す', () {
+    final container = containerOf(
+      FakeStudentApi(),
+      flow: home.copyWith(step: FlowStep.messages),
+      chat: ChatState(thread: Fixtures.thread),
+    );
+    final chat = container.read(chatProvider.notifier);
+
+    chat.saveDraft('相談です');
+    expect(container.read(chatProvider).drafts, {Fixtures.threadId: '相談です'});
+
+    chat.saveDraft('');
+    expect(container.read(chatProvider).drafts, isEmpty);
+  });
+
+  test('月額契約の画面からスレッドへ戻ると、既読にして読み直してから開き、チャットを閉じたときに戻る段は変えない（#1565）', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      flow: home.copyWith(step: FlowStep.subscription),
+      chat: ChatState(
+        returnStep: FlowStep.home,
+        threads: [Fixtures.thread],
+        thread: Fixtures.thread,
+      ),
+    );
+
+    await container.read(chatProvider.notifier).returnFromSubscription();
+
+    expect(api.calls, ['markMessageThreadRead', 'listMessages']);
+    expect(container.read(studentFlowProvider).step, FlowStep.messages);
+    expect(container.read(chatProvider).messages, isNotNull);
+    expect(container.read(chatProvider).returnStep, FlowStep.home);
+  });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/app.dart';
 import 'package:rally_student_app/device/local_media.dart';
 import 'package:rally_student_app/state/student_flow.dart';
@@ -374,6 +375,102 @@ void main() {
       'sendMessage',
       'listMessageThreads',
     ]);
+  });
+
+  /// 月額契約の前（送ると 403 chat_not_entitled）の生徒として、体験予約を確定してチャットの担当コーチを開き、[draft] を書いて送る。
+  /// 送れずに「月額契約へ進む」が出たところで返す。返した失敗の表から sendMessage を外すと、契約の後として送れる
+  Future<Map<String, StudentApiException>> writeBeforeSubscription(
+    WidgetTester tester,
+    String draft,
+  ) async {
+    final failures = <String, StudentApiException>{
+      'sendMessage': const StudentApiException(
+        statusCode: 403,
+        error: ApiError(
+          code: ErrorCode.chatNotEntitled,
+          message: 'not entitled',
+        ),
+      ),
+    };
+    await pumpApp(
+      tester,
+      FakeStudentApi(myBookings: const [], failures: failures),
+    );
+    await registerAndBook(tester);
+    await tester.tap(find.byTooltip('チャット'));
+    await tester.pumpAndSettle();
+    await tapText(tester, '担当コーチ');
+    await tester.enterText(find.byType(TextField), draft);
+    await tester.pump();
+    await tapText(tester, '送信する');
+    expect(find.text('チャットは月額契約を始めると使えます。'), findsOneWidget);
+    return failures;
+  }
+
+  String messageField(WidgetTester tester) =>
+      tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+  testWidgets(
+    'チャットから月額契約を始めると、完了の画面の「チャットへ戻る」で同じスレッドに戻り、書いた相談がそのまま送れる（#1565）',
+    (tester) async {
+      final failures = await writeBeforeSubscription(tester, 'フォームの相談です');
+
+      await tapText(tester, '月額契約へ進む');
+      await tapText(tester, '月額契約を始める');
+      expect(find.text('月額契約を開始しました'), findsOneWidget);
+      failures.remove('sendMessage');
+
+      await tapText(tester, 'チャットへ戻る');
+      expect(find.text('担当コーチとのチャット'), findsOneWidget);
+      expect(messageField(tester), 'フォームの相談です');
+      expect(find.text('チャットは月額契約を始めると使えます。'), findsNothing);
+      expect(find.text('月額契約へ進む'), findsNothing);
+
+      // チャットを閉じると、チャットを開いた段（予約の確定）に戻る（契約の画面には戻らない）
+      await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('チャットを閉じる'));
+      await tester.pumpAndSettle();
+      expect(find.text('予約が確定しました'), findsOneWidget);
+
+      // 開き直しても書いた相談は残っていて、そのまま送れる
+      await tester.tap(find.byTooltip('チャット'));
+      await tester.pumpAndSettle();
+      await tapText(tester, '担当コーチ');
+      expect(messageField(tester), 'フォームの相談です');
+      await tapText(tester, '送信する');
+      expect(find.text('フォームの相談です'), findsOneWidget);
+      expect(messageField(tester), '');
+
+      // 送ったら下書きは消える
+      await tester.tap(find.byTooltip('スレッドの一覧へ戻る'));
+      await tester.pumpAndSettle();
+      await tapText(tester, '担当コーチ');
+      expect(messageField(tester), '');
+    },
+  );
+
+  testWidgets('チャットから月額契約を始めたあと、アプリバーからチャットを開き直しても書いた相談が残っている（#1565）', (
+    tester,
+  ) async {
+    await writeBeforeSubscription(tester, 'フォームの相談です');
+
+    await tapText(tester, '月額契約へ進む');
+    await tapText(tester, '月額契約を始める');
+    await tester.tap(find.byTooltip('チャット'));
+    await tester.pumpAndSettle();
+    await tapText(tester, '担当コーチ');
+    expect(messageField(tester), 'フォームの相談です');
+  });
+
+  testWidgets('ホームから月額契約を始めたときは「チャットへ戻る」を出さない', (tester) async {
+    await pumpApp(tester, FakeStudentApi(myBookings: const []));
+    await registerAndBook(tester);
+    await tapText(tester, 'ビデオ通話で受ける');
+    await tapText(tester, '入室する');
+    await tapText(tester, '通話を終了する');
+    await recordAndSubscribe(tester);
+    expect(find.text('チャットへ戻る'), findsNothing);
   });
 
   test('自分の予約は copyWith で読み取り専用にして持ち、外から書き換えられない', () {

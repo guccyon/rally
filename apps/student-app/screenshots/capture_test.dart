@@ -306,6 +306,32 @@ final screens = <Screen>[
     await _tapTooltip(t, 'チャット');
     await tapText(t, '担当コーチ');
   }),
+  // チャットで送れず（月額契約の前）「月額契約へ進む」から始めた後の完了の画面（「チャットへ戻る」を出す。#1565）
+  Screen(
+    'subscription-from-chat',
+    '月額契約: チャットから始めた後',
+    (t) async {
+      await _register(t);
+      await _tapTooltip(t, 'チャット');
+      await tapText(t, '担当コーチ');
+      await t.enterText(find.byType(TextField), 'フォームの相談です');
+      await t.pump();
+      await tapText(t, '送信する');
+      await tapText(t, '月額契約へ進む');
+      await tapText(t, '月額契約を始める');
+    },
+    api: () => _api(
+      failures: const {
+        'sendMessage': StudentApiException(
+          statusCode: 403,
+          error: ApiError(
+            code: ErrorCode.chatNotEntitled,
+            message: 'not entitled',
+          ),
+        ),
+      },
+    ),
+  ),
   Screen('notifications', 'お知らせ', (t) async {
     await _register(t);
     await _tapTooltip(t, 'お知らせ');
