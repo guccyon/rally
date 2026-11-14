@@ -1221,10 +1221,12 @@ paths:
 
         - お知らせはプッシュ通知を送るときに作る（予約の確定・動画の添削の返却・担当コーチからのメッセージ・
           本部からのお知らせ（admin-web の `sendAnnouncement`。生徒全員か、生徒のスポーツに送ったもの）・
-          コーチのお休みで本部が予約をキャンセルしたこと（admin-web の `startCoachLeave`））。
+          コーチのお休みで本部が予約をキャンセルしたこと（admin-web の `startCoachLeave`）・
+          初回レッスンのあとのフォロー（作る条件は `NotificationKind` の `first_lesson_followup_3d` の説明））。
           通知の受け取り設定（`updateMyNotificationSettings`）で false の種類も、プッシュ通知を送らないだけで
           お知らせには残る
-        - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ・同じ本部からのお知らせ）のお知らせは 1 件
+        - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ・同じ本部からのお知らせ・同じ生徒の同じ日数のフォロー）のお知らせは 1 件
+        - 開く先（`destination`）があるお知らせは、クライアントが開いたときにその先へ進める
         - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める。本部からのお知らせ（`announcement`）は、
           本部が書いた題と本文を改行（`\n`）でつないだもの
         - 本部が取り下げた本部からのお知らせ（admin-web の `withdrawAnnouncement`）は載せない（既読かを問わない）
@@ -2650,6 +2652,12 @@ components:
         announcement:
           type: boolean
           description: 本部からのお知らせ（メンテナンスやキャンペーンの知らせ）の通知を受け取るか
+        first_lesson_followup:
+          type: boolean
+          description: |
+            初回レッスンのあとのフォローのお知らせ（`NotificationKind` の `first_lesson_followup_3d`・`first_lesson_followup_7d`。
+            2 つをこの 1 項目でまとめて切り替える）の通知を受け取るか。既定は true。
+            この項目を返さないサーバーの版もあるので、クライアントは欠けていれば true として扱う
 
     UpdateNotificationSettingsRequest:
       type: object
@@ -2670,6 +2678,9 @@ components:
         announcement:
           type: boolean
           description: 本部からのお知らせの通知を受け取るか
+        first_lesson_followup:
+          type: boolean
+          description: 初回レッスンのあとのフォローのお知らせ（3 日後・7 日後の 2 種類をまとめて）の通知を受け取るか
 
     NotificationKind:
       type: string
@@ -2677,7 +2688,51 @@ components:
         お知らせ・プッシュ通知の種類（`NotificationSettings` の項目名と同じ綴り）。値は追加しうる（クライアントは未知の値を
         汎用のお知らせとして扱う）。`booking_confirmed` は予約の確定の知らせ。`booking_cancelled_by_headquarters` は
         コーチのお休みで本部が予約をキャンセルしたことの知らせ（本文「コーチのお休みで予約をキャンセルしました」から始まる）。
-      enum: [booking_confirmed, booking_cancelled_by_headquarters, video_review_returned, message_received, announcement]
+        フォローのお知らせの 2 種類だけは項目名と綴りが違い、どちらも `NotificationSettings` の `first_lesson_followup` に従う。
+
+        - `first_lesson_followup_3d` / `first_lesson_followup_7d`: 初回レッスンのあとのフォローのお知らせ。
+          完了したレッスン（glossary の lesson_completion）のうち `is_first_lesson: true` のものの記録の時刻から
+          3 日（72 時間）後・7 日（168 時間）後の時点で、その生徒に次の予約がなければ、それぞれ 1 件だけ作る
+          - 初回かどうかは完了の記録の `is_first_lesson` だけで決め、数え直さない（ADR 0006）
+          - 「次の予約」は、その時点でキャンセルされていない（確定待ちか確定済みの）その生徒の予約のうち、初回レッスンの
+            完了の記録より後に作ったもの。サーバーの記録から決める（ADR 0010）。あれば、その日数の分は作らない。
+            3 日後のあとに予約を取れば 7 日後の分は作らない
+          - 同じ生徒に同じ日数の分は 2 件作らない。3 日・7 日のほかの日数の分や、初回でないレッスンのあとの分は作らない
+          - 通知の受け取り設定の `first_lesson_followup` が false でも、お知らせは作る（プッシュ通知を送らないだけ）
+          - 開く先（`Notification.destination`）を必ず持つ。3 日後は生徒のスポーツのスロット検索（`slot_search`）、
+            7 日後は初回レッスンを担当したコーチの紹介（`coach_profile`）。そのコーチが受付を止めている・生徒のスポーツを
+            もう提供していないときは、7 日後もスロット検索にする
+          - 本文の方針: です・ます調の 1〜2 文で、次のレッスンの予約をすすめる。3 日後と 7 日後で違う文にする。
+            割引・期限・「残りわずか」など急かす言葉や、空き枠の有無を言い切る言葉は使わない。
+            3 日後は「初回レッスンおつかれさまでした。忘れないうちに、次のレッスンを予約しませんか」、
+            7 日後は「初回レッスンから 1 週間です。{コーチの表示名}コーチと続きのレッスンを予約しませんか」
+            （開く先がスロット検索なら「初回レッスンから 1 週間です。続きのレッスンを予約しませんか」）
+      enum: [booking_confirmed, booking_cancelled_by_headquarters, video_review_returned, message_received, announcement,
+             first_lesson_followup_3d, first_lesson_followup_7d]
+
+    NotificationDestinationKind:
+      type: string
+      description: |
+        お知らせを開いたときに進む先の種類（`NotificationDestination.kind`）。値は追加しうる（クライアントは未知の値を
+        開く先のないお知らせとして扱う）
+
+        - `slot_search`: スロットを探す画面（`searchSlots`）。`sport` で絞る
+        - `coach_profile`: コーチの紹介（`getCoachProfile`）。`coach_id` のコーチ
+      enum: [slot_search, coach_profile]
+
+    NotificationDestination:
+      type: object
+      description: |
+        お知らせを開いたときに進む先。`kind` が `slot_search` なら `sport` を、`coach_profile` なら `coach_id` を必ず載せる
+      required: [kind]
+      properties:
+        kind:
+          $ref: "#/components/schemas/NotificationDestinationKind"
+        sport:
+          $ref: "#/components/schemas/Sport"
+        coach_id:
+          type: string
+          format: uuid
 
     Notification:
       type: object
@@ -2703,6 +2758,11 @@ components:
         is_read:
           type: boolean
           description: 既読か（`markMyNotificationsRead` で既読にする）
+        destination:
+          $ref: "#/components/schemas/NotificationDestination"
+          description: |
+            開いたときに進む先。今はフォローのお知らせ（`first_lesson_followup_3d`・`first_lesson_followup_7d`）だけが持ち、
+            ほかの種類のお知らせには載せない（任意の項目。載っていなければ開く先はない）
 
     NotificationList:
       type: object
