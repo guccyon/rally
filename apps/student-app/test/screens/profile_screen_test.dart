@@ -6,6 +6,8 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/state/subscription.dart';
+import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_student_api.dart';
 import '../support/pump.dart';
@@ -48,7 +50,7 @@ void main() {
 
     await openProfile(tester);
 
-    expect(api.calls, ['getMyStudentProfile']);
+    expect(api.calls, ['getMyStudentProfile', 'getMyEntitlement']);
     expect(find.text('プロフィール'), findsOneWidget);
     // サーバーから読み直した表示名を出す
     expect(fieldText(tester), 'やまだ');
@@ -91,7 +93,11 @@ void main() {
       saving.complete();
       await tester.pumpAndSettle();
 
-      expect(api.calls, ['getMyStudentProfile', 'updateMyStudentProfile']);
+      expect(api.calls, [
+        'getMyStudentProfile',
+        'getMyEntitlement',
+        'updateMyStudentProfile',
+      ]);
       expect((api.requests.single as UpdateStudentProfileRequest).toJson(), {
         'display_name': '山田 太郎',
       });
@@ -171,7 +177,131 @@ void main() {
     await tester.pump();
     await tapText(tester, '保存する');
 
-    expect(api.calls, ['getMyStudentProfile', 'updateMyStudentProfile']);
+    expect(api.calls, [
+      'getMyStudentProfile',
+      'getMyEntitlement',
+      'updateMyStudentProfile',
+    ]);
     expect(find.text('表示名を保存しました。'), findsOneWidget);
+  });
+
+  testWidgets('月額契約がなければ月額契約の欄に「月額契約へ進む」の行を出し、押すと月額契約の画面を開く', (tester) async {
+    final api = FakeStudentApi();
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: atHome,
+    );
+    await openProfile(tester);
+
+    expect(find.text('月額契約'), findsOneWidget);
+    expect(find.text('まだ月額契約はありません'), findsOneWidget);
+    // 表示名の欄はそのまま使える
+    expect(fieldText(tester), '山田');
+
+    await tapText(tester, '月額契約へ進む');
+
+    expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+    expect(find.text('月額契約を始める'), findsOneWidget);
+  });
+
+  testWidgets('この端末で月額契約を始めたあとは、月額契約の欄にプランと開始の日を出し、「月額契約へ進む」を出さない', (
+    tester,
+  ) async {
+    final started = Fixtures.subscriptionStartedWith(SubscriptionPlan.plus);
+    final api = FakeStudentApi(entitlement: started.entitlement);
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: atHome,
+      subscription: SubscriptionState(
+        subscription: started.subscription,
+        entitlement: started.entitlement,
+      ),
+    );
+    await openProfile(tester);
+
+    expect(find.text('月額契約へ進む'), findsNothing);
+    expect(
+      find.text(
+        subscriptionSummaryLabel(
+          SubscriptionPlan.plus,
+          startedAt: started.subscription.startedAt,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('プラン: プラス・'), findsOneWidget);
+
+    // 押すと契約の中身を見る画面
+    await tester.tap(find.textContaining('プラン: プラス・'));
+    await tester.pumpAndSettle();
+    expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+    expect(find.text('月額契約を開始しました'), findsOneWidget);
+  });
+
+  testWidgets('サーバーの受講権だけがある（開き直した）ときはプランを出し、行は押せない（契約の前の画面に戻さない）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      entitlement: Fixtures.subscriptionStarted.entitlement,
+    );
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: atHome,
+    );
+    await openProfile(tester);
+
+    expect(find.text('月額契約へ進む'), findsNothing);
+    expect(find.text('プラン: スタンダード'), findsOneWidget);
+    final row = tester.widget<ListTile>(
+      find.ancestor(
+        of: find.text('プラン: スタンダード'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    expect(row.onTap, isNull);
+  });
+
+  testWidgets('受講権を読めなければ月額契約の欄にだけその旨を出し、表示名は使えるまま', (tester) async {
+    final api = FakeStudentApi(
+      failures: {'getMyEntitlement': Fixtures.unreachable},
+    );
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: atHome,
+    );
+    await openProfile(tester);
+
+    expect(
+      find.text('月額契約を読み込めませんでした。プロフィールを開き直すと、もう一度読み込めます。'),
+      findsOneWidget,
+    );
+    expect(find.text('月額契約へ進む'), findsNothing);
+    // 失敗の文言は出さない（欄にだけ旨を出す）
+    expect(container.read(studentFlowProvider).errorMessage, isNull);
+
+    await tester.enterText(find.byType(TextField), 'やまだ');
+    await tester.pump();
+    await tapText(tester, '保存する');
+    expect(find.text('表示名を保存しました。'), findsOneWidget);
+  });
+
+  testWidgets('受講権をまだ読めていないあいだは、月額契約の欄に「月額契約を読み込んでいます…」を出す', (tester) async {
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: FakeStudentApi(),
+      initial: atHome.copyWith(step: FlowStep.profile),
+    );
+
+    expect(find.text('月額契約を読み込んでいます…'), findsOneWidget);
+    expect(find.text('月額契約へ進む'), findsNothing);
   });
 }

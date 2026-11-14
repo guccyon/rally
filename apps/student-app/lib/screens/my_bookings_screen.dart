@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/student_flow.dart';
+import '../ui/components/rally_button.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 import '../ui/pop_once.dart';
@@ -48,11 +49,12 @@ class MyBookingsScreen extends ConsumerWidget {
                   Text('状態: ${bookingStatusLabel(item.booking.status)}'),
                   if (notifier.canConfirm(item.booking)) ...[
                     const SizedBox(height: 8),
-                    FilledButton(
+                    RallyButton(
+                      label: '内容を確かめて確定する',
+                      variant: RallyButtonVariant.text,
                       onPressed: state.busy
                           ? null
                           : () => notifier.openBooking(item.booking.bookingId),
-                      child: const Text('内容を確かめて確定する'),
                     ),
                   ],
                   if (notifier.canCancel(item.booking)) ...[
