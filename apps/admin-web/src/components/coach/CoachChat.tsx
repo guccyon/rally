@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
@@ -61,6 +61,8 @@ export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThrea
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(initialThreadId ?? null);
 
+  const threadViewRef = useRef<HTMLDivElement>(null);
+
   const fetchThreads = useCallback(async (): Promise<ListState> => {
     const [threads, names] = await Promise.all([api.listMessageThreads(), fetchStudentNames(api)]);
     if (!threads.ok) return { kind: "failed", message: threads.message };
@@ -97,6 +99,12 @@ export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThrea
         : current,
     );
   }, []);
+
+  // スレッドを選んだら、一覧が長くても会話と返事の欄が見える位置まで送る（一覧が出たあと、選んだスレッドの欄ができてから）。
+  const listReady = list.kind === "loaded";
+  useEffect(() => {
+    if (listReady && selectedId) threadViewRef.current?.scrollIntoView?.({ block: "start" });
+  }, [listReady, selectedId]);
 
   if (list.kind === "loading") return <p className="text-sm text-text-muted">読み込み中…</p>;
   if (list.kind === "failed") return <ResultMessage result={{ ok: false, message: list.message }} />;
@@ -152,14 +160,16 @@ export function CoachChat({ api, initialThreadId }: { api: ChatApi; initialThrea
         })}
       </ul>
       {selected && (
-        <MessageThreadView
-          key={selected.thread_id}
-          api={api}
-          threadId={selected.thread_id}
-          studentName={nameOf(selected)}
-          onRead={onRead}
-          onChanged={reloadThreads}
-        />
+        <div ref={threadViewRef} className="scroll-mt-2">
+          <MessageThreadView
+            key={selected.thread_id}
+            api={api}
+            threadId={selected.thread_id}
+            studentName={nameOf(selected)}
+            onRead={onRead}
+            onChanged={reloadThreads}
+          />
+        </div>
       )}
     </div>
   );
