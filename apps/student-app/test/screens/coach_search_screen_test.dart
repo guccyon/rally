@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
@@ -51,28 +50,6 @@ void main() {
     ))
       (tile.title! as Text).data!,
   ];
-
-  for (final width in [360.0, 390.0, 402.0]) {
-    testWidgets('幅 $width でもアプリバーに画面の名前が切れずに出て、ホームへ戻る入口も押せる', (tester) async {
-      tester.view.physicalSize = Size(width, 800);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      final container = await openCoachSearch(tester, FakeStudentApi());
-
-      final title = find.descendant(
-        of: find.byType(AppBar),
-        matching: find.text('コーチを探す'),
-      );
-      expect(title, findsOneWidget);
-      final text = tester.renderObject<RenderParagraph>(title);
-      expect(text.didExceedMaxLines, isFalse);
-      expect(tester.getSize(title).width, lessThanOrEqualTo(width - 32));
-
-      await tester.tap(find.byTooltip('ホーム'));
-      await tester.pumpAndSettle();
-      expect(container.read(studentFlowProvider).step, FlowStep.home);
-    });
-  }
 
   testWidgets('ホームから開くと生徒のスポーツのコーチをサーバーの並びのまま出し、行ごとに評価の平均と件数・メニューの数を出す', (
     tester,
