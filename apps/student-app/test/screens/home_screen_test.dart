@@ -467,6 +467,23 @@ void main() {
     );
   });
 
+  testWidgets('お気に入りのコーチの提供するスポーツが空でも、生徒のスポーツで紹介を開く', (tester) async {
+    final suzuki = Fixtures.coachListings[1];
+    final api = FakeStudentApi(
+      myVideos: const [],
+      favoriteCoaches: [Fixtures.favoriteCoach(sports: const [])],
+    );
+    final container = await pumpHome(tester, api);
+
+    await tapText(tester, '鈴木 コーチ');
+
+    expect(container.read(coachProfileProvider).coach?.sport, Sport.tennis);
+    expect(
+      api.requests,
+      contains((coachId: suzuki.coachId, sport: Sport.tennis)),
+    );
+  });
+
   testWidgets('お気に入りのコーチがいなければ、お気に入りのコーチの欄を出さない', (tester) async {
     final api = FakeStudentApi();
     await pumpHome(tester, api);
@@ -856,7 +873,7 @@ void main() {
     expect(find.text('担当コーチとのチャット'), findsOneWidget);
     expect(find.text('動画の添削を依頼する'), findsOneWidget);
     expect(container.read(chatProvider).promptVideoReviewRequest, isFalse);
-    await tapText(tester, '動画を選ぶ（モック）');
+    await tapText(tester, '動画を選ぶ');
     await tapText(tester, '依頼する');
 
     expect(api.calls, [

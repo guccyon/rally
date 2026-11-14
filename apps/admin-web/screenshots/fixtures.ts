@@ -133,6 +133,19 @@ const BOOKINGS: Schemas["CoachBooking"][] = [
   ),
 ];
 
+/** 入室前チェックから入室したときの通話セッション（coach-live-in-call。入室前チェックの予約に、開始時刻ちょうどに入った）。 */
+export const PREJOIN_STARTED_SESSION: Schemas["LiveLessonSession"] = {
+  session_id: id("5555", 1),
+  booking_id: BOOKINGS[3]!.booking.booking_id,
+  student_id: SATO.id,
+  coach_id: COACH_ID,
+  status: "in_progress",
+  started_at: PREJOIN_STARTS_AT.toISOString(),
+  ended_at: null,
+  duration_sec: null,
+  room_token: "mock-room",
+};
+
 // 本部の予約の一覧（今日から 7 日）。確定待ちのまま 24 時間以内に始まる予約・確定済み・確定待ち・キャンセル済みを混ぜる。
 const HQ_BOOKINGS: Schemas["HeadquartersBooking"][] = [
   {
@@ -503,6 +516,13 @@ export const FIXTURES: Fixture[] = [
     path: "/live-lesson-sessions",
     status: 409,
     body: { code: "slot_not_started", message: "予約したスロットの開始時刻より前です" } satisfies Schemas["Error"],
+  },
+  {
+    // 予約枠の「枠を公開」で過去の開始を入れたとき（coach-slots-publish-past）。サーバーは 422 で断る
+    method: "POST",
+    path: "/slots",
+    status: 422,
+    body: { code: "validation_failed", message: "starts_at is in the past" } satisfies Schemas["Error"],
   },
   { method: "GET", path: "/coaches/me/videos", body: { videos: VIDEOS } satisfies Schemas["CoachVideoList"] },
   {

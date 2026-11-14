@@ -15,6 +15,8 @@ use crate::catalog::Sport;
 pub enum SchedulingError {
     /// スロットの開始が終了より前でない
     SlotEndsBeforeItStarts,
+    /// 公開する枠の開始が現在時刻以前（過去かちょうど現在）
+    SlotStartsInThePast,
     /// 同じコーチの時間を占める枠（`existing`）と期間が重なる
     SlotOverlaps { existing: SlotId },
     /// 別のコーチの枠をコーチのカレンダーに入れようとした、または別のコーチの枠を取り下げようとした

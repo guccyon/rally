@@ -13,6 +13,12 @@ dependencies:
   http: ^1.6.0
   # 応答の Date ヘッダーを読む（lib/api/server_clock.dart。http が使っているもの）
   http_parser: ^4.1.2
+  # 入室前チェックの iOS 版で端末のカメラ・マイク・スピーカーを使い、許可を断ったときにこのアプリの設定を開く
+  # （lib/device/ios_local_media.dart。camera は映すだけ・record は音の大きさを計るだけで、録らない・残さない）
+  camera: ^0.12.2
+  record: ^7.2.0
+  audioplayers: ^6.8.1
+  url_launcher: ^6.3.3
   # 入室前チェックの Web 版でブラウザーのカメラ・マイク・Web Audio を使う（lib/device/web_local_media.dart）。
   # 登録の結果をブラウザーの localStorage に残すのにも使う（lib/session/session_store_web.dart）
   web: ^1.1.2
@@ -35,3 +41,5 @@ flutter:
           weight: 800
   assets:
     - assets/fonts/OFL.txt
+    # 入室前チェックの iOS 版の試し音（3 秒。660Hz と 880Hz を 0.5 秒ごとに 6 回。Web 版が Web Audio で作る音と同じ形）
+    - assets/sounds/test_tone.wav

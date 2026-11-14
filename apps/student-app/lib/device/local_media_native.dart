@@ -1,9 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
+import 'ios_local_media.dart';
 import 'local_media.dart';
 
-/// Web 版のほか（iOS / Android のビルドはまだない）の [LocalMedia]。カメラ・マイクはないものとして扱い、試し音は鳴らせない。
-LocalMedia createLocalMedia() => _UnsupportedLocalMedia();
+/// Web 版のほかの [LocalMedia]。iOS は端末の本物（[IosLocalMedia]）。
+/// それ以外（Android の端末の部品はまだない）はカメラ・マイクはないものとして扱い、試し音は鳴らせない。
+LocalMedia createLocalMedia() => defaultTargetPlatform == TargetPlatform.iOS
+    ? IosLocalMedia()
+    : _UnsupportedLocalMedia();
 
 class _UnsupportedLocalMedia implements LocalMedia {
   @override
