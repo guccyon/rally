@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../pop_once.dart';
 import '../theme/rally_tokens.dart';
 import 'rally_button.dart';
 
@@ -31,14 +32,14 @@ Future<bool> showConfirmDialog(
         RallyButton(
           label: cancelLabel,
           variant: RallyButtonVariant.secondary,
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => popOnce(context, false),
         ),
         RallyButton(
           label: confirmLabel,
           variant: danger
               ? RallyButtonVariant.danger
               : RallyButtonVariant.primary,
-          onPressed: () => Navigator.of(context).pop(true),
+          onPressed: () => popOnce(context, true),
         ),
       ],
     ),

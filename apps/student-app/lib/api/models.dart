@@ -124,6 +124,27 @@ enum LessonType {
       _fromWire(values, value, (e) => e.wire);
 }
 
+/// `NextActionKind`（生徒の次の操作の種類。決め方はサーバーの `getMyNextActions`）。
+/// 値は今後足されることがあり、このアプリの版が知らない値の行は [NextActionList.fromJson] で落とす（出さない）
+enum NextActionKind {
+  confirmBooking('confirm_booking'),
+  joinLiveLesson('join_live_lesson'),
+  videoReviewInProgress('video_review_in_progress'),
+  recordLessonCompletion('record_lesson_completion'),
+  startSubscription('start_subscription');
+
+  const NextActionKind(this.wire);
+  final String wire;
+
+  /// 知らない値は null
+  static NextActionKind? tryFromWire(String value) {
+    for (final kind in values) {
+      if (kind.wire == value) return kind;
+    }
+    return null;
+  }
+}
+
 /// `MessageSenderRole`（スレッドのどちらの当事者が送ったか。[system] はシステムが流したもので、当事者のどちらでもない）
 enum MessageSenderRole {
   student('student'),
@@ -1936,6 +1957,114 @@ class NotificationList {
             ApiNotification.fromJson(e as Map<String, dynamic>),
         ],
       );
+}
+
+/// `NextAction`（生徒が次にできる操作の 1 件。ADR 0010）。[kind] によって載る項目が変わり、使わない項目は null
+class NextAction {
+  const NextAction({
+    required this.kind,
+    this.bookingId,
+    this.isTrial,
+    this.startsAt,
+    this.endsAt,
+    this.sport,
+    this.lessonMenu,
+    this.coachDisplayName,
+    this.videoId,
+    this.sessionId,
+    this.lessonType,
+    this.submittedAt,
+    this.returnedAt,
+  });
+
+  final NextActionKind kind;
+
+  /// 予約（`confirm_booking`・`join_live_lesson`）
+  final String? bookingId;
+
+  /// 体験予約か（`confirm_booking`・`join_live_lesson`）
+  final bool? isTrial;
+
+  /// 予約したスロットの開始・終了（`confirm_booking`・`join_live_lesson`・同期の `record_lesson_completion`）
+  final DateTime? startsAt;
+  final DateTime? endsAt;
+  final Sport? sport;
+
+  /// 予約した時点のレッスンメニューの写し（メニューのない枠の予約は null）
+  final BookingLessonMenu? lessonMenu;
+
+  /// コーチの表示名。引けないときと `start_subscription` は null
+  final String? coachDisplayName;
+
+  /// 動画（`video_review_in_progress`・非同期の `record_lesson_completion`）
+  final String? videoId;
+
+  /// 終了した通話セッション（同期の `record_lesson_completion`）
+  final String? sessionId;
+  final LessonType? lessonType;
+
+  /// 動画を送った時刻（`video_review_in_progress`）
+  final DateTime? submittedAt;
+
+  /// 添削が返った時刻（非同期の `record_lesson_completion`）
+  final DateTime? returnedAt;
+
+  /// `record_lesson_completion` で完了を記録する対象（同期は通話セッション、非同期は動画）。ほかの種類と、ID が載っていないときは null
+  RecordLessonCompletionRequest? get completion {
+    if (kind != NextActionKind.recordLessonCompletion) return null;
+    if (lessonType == LessonType.liveLesson) {
+      if (sessionId case final id?) return LiveLessonCompletion(sessionId: id);
+      return null;
+    }
+    if (videoId case final id?) return AsyncLessonCompletion(videoId: id);
+    return null;
+  }
+
+  /// [kind] がこのアプリの版の知らない値なら null
+  static NextAction? tryFromJson(Map<String, dynamic> json) {
+    final kind = NextActionKind.tryFromWire(json['kind'] as String);
+    if (kind == null) return null;
+    return NextAction(
+      kind: kind,
+      bookingId: json['booking_id'] as String?,
+      isTrial: json['is_trial'] as bool?,
+      startsAt: _dateTimeOrNull(json['starts_at']),
+      endsAt: _dateTimeOrNull(json['ends_at']),
+      sport: json['sport'] == null
+          ? null
+          : Sport.fromWire(json['sport'] as String),
+      lessonMenu: json['lesson_menu'] == null
+          ? null
+          : BookingLessonMenu.fromJson(
+              json['lesson_menu'] as Map<String, dynamic>,
+            ),
+      coachDisplayName: json['coach_display_name'] as String?,
+      videoId: json['video_id'] as String?,
+      sessionId: json['session_id'] as String?,
+      lessonType: json['lesson_type'] == null
+          ? null
+          : LessonType.fromWire(json['lesson_type'] as String),
+      submittedAt: _dateTimeOrNull(json['submitted_at']),
+      returnedAt: _dateTimeOrNull(json['returned_at']),
+    );
+  }
+}
+
+/// `NextActionList`
+class NextActionList {
+  /// [nextActions] は書き換えられない写しにして持つ
+  NextActionList({required List<NextAction> nextActions})
+    : nextActions = List.unmodifiable(nextActions);
+
+  /// 並びがそのまま優先の順（サーバーが決める。並べ替えない）。0〜3 件。知らない種類の行は除いてある
+  final List<NextAction> nextActions;
+
+  factory NextActionList.fromJson(Map<String, dynamic> json) => NextActionList(
+    nextActions: [
+      for (final e in json['next_actions'] as List<dynamic>)
+        ?NextAction.tryFromJson(e as Map<String, dynamic>),
+    ],
+  );
 }
 
 /// `Error`

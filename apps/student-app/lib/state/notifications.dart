@@ -132,7 +132,7 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
   });
 
   /// お知らせの画面を閉じて、開いた段に戻る
-  void close() => _flow.moveTo(state.returnStep ?? FlowStep.home);
+  void close() => _flow.returnTo(state.returnStep ?? FlowStep.home);
 
   /// [notification] の行から進めるか（本部からのお知らせは本文がすべてで行き先がなく、このアプリの版が知らない種類も
   /// 進めない）

@@ -161,7 +161,7 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
 
-    expect(api.calls, ['listMyVideos', 'getVideoReview']);
+    expect(api.calls, ['listMyVideos', 'getVideoReview', 'getMyNextActions']);
     expect(api.requests.single, returned.videoId);
     final state = container.read(studentFlowProvider);
     expect(state.step, FlowStep.myVideoReview);

@@ -5,7 +5,7 @@ actor: student
 goal: "1 回受けて終わりにせず、次のレッスンを続けて予約できる。次の行動が示されないと 1 回で離れてしまう（KPI first_lesson_retention_1m）"
 reader: [student]
 entry: "初回レッスン（通話か動画添削）の完了を記録した生徒が、生徒アプリのホームを開く"
-exit: "生徒がスロットを探す画面で、自分のスポーツの予約できるスロットを見ている"
+exit: "生徒がスロットを探す画面で自分のスポーツの予約できるスロットを見て、そこから 2 回目の予約（体験予約ではない通常の予約）を作り、予約の確定待ちを見ている"
 preconditions:
   - "生徒の完了したレッスン（lesson_completion）が 1 件以上ある"
 steps:
@@ -14,12 +14,17 @@ steps:
     sees: "「次のレッスン」の欄に、次のレッスンも予約しておくようすすめる一言と「次のレッスンを予約する」。月額契約の欄（契約したプランと今月のビデオ通話の残りの回数、契約がなければ「まだ月額契約はありません」）は今までどおり"
   - where: "student-app ホーム"
     do: "「次のレッスンを予約する」を押す"
-    sees: "スロットを探す画面が開き、自分のスポーツの予約できるスロットが並ぶ"
+    sees: "スロットを探す画面が開き、自分のスポーツの予約できるスロットが並ぶ。体験予約を使っている（キャンセルされていない予約がある）ので、スロットのボタンは「体験予約する」ではなく「予約する」"
+  - where: "student-app スロットを探す"
+    do: "スロットの「予約する」を押す"
+    sees: "予約の確定待ちが開く（`createBooking` は `is_trial: false`。「体験予約はすでに使っています。」で断られない）"
 must_not:
   - "完了したレッスンがまだない生徒に「次のレッスンを予約する」を出す"
   - "初回かどうかをアプリで数え直す（初回の判定はサーバーの完了記録の is_first_lesson だけ。ADR 0006）"
   - "入口を出すために月額契約の欄・プラン・残りの回数の表示を変える、または月額契約や決済の処理を変える"
   - "受けたレッスンを読めなかったときに、失敗の文言を出す、またはほかの欄の表示を止める（入口を出さないだけにする）"
+  - "体験予約を使った生徒のスロットに「体験予約する」だけを出し、2 回目の予約に進めなくする（体験予約か通常の予約かは、サーバーの自分の予約 `listMyBookings` にキャンセルされていない予約があるかで決める）"
+  - "予約がまだない（またはキャンセル済みだけの）生徒から「体験予約する」を外す"
 touches:
   apps: [student-app]
   contexts: [scheduling, live-lesson, async-lesson]
@@ -27,8 +32,10 @@ touches:
   operations:
     - student-app.listMyLessonCompletions
     - student-app.searchSlots
+    - student-app.listMyBookings
+    - student-app.createBooking
 origin:
-  issues: ["guccyon/rally#1360"]
+  issues: ["guccyon/rally#1360", "guccyon/rally#1505"]
   note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから"
   retro: false
 known_gaps:

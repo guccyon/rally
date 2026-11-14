@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/student_flow.dart';
+import '../state/subscription.dart';
+import '../ui/components/list_row.dart';
+import '../ui/components/notice.dart';
+import '../ui/components/section_loading.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
+import '../ui/theme/rally_tokens.dart';
 
 /// 自分のプロフィール（`getMyStudentProfile` / `updateMyStudentProfile`）。表示名を見て変え、「保存する」で保存する。
 /// 表示名の規則はサーバーが判定し、断られたら（422）サーバーの文言を出す。スポーツは見るだけ（変えられない）。
+/// 表示名の欄の下に月額契約の欄（`getMyEntitlement`。契約の有無はサーバーの受講権から出す。ADR 0010）。
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -93,6 +99,55 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           child: Text(_saving ? '保存しています…' : '保存する'),
         ),
         if (_saved) ...[const SizedBox(height: 8), const Text('表示名を保存しました。')],
+        const SizedBox(height: 24),
+        const _SubscriptionSection(),
+      ],
+    );
+  }
+}
+
+/// 月額契約の欄。受講権がなければ（404）「月額契約へ進む」の行（押すと月額契約の画面）、あれば「月額契約」とプラン（この端末で始めた契約なら開始の日も）の行。
+/// 契約したあとの行は、この端末で始めた契約（[SubscriptionState.subscription]）があるときだけ押せる
+/// （月額契約の画面は契約の中身をそれで出し、ないと契約の前の画面になるため）
+class _SubscriptionSection extends ConsumerWidget {
+  const _SubscriptionSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
+    final state = ref.watch(subscriptionProvider);
+    final flow = ref.read(studentFlowProvider.notifier);
+    final subscription = state.subscription;
+    final plan = state.entitlement?.plan ?? subscription?.plan;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: RallySpacing.sm),
+          child: Text('月額契約', style: Theme.of(context).textTheme.titleMedium),
+        ),
+        if (state.entitlementFailed)
+          const Notice(
+            message: '月額契約を読み込めませんでした。プロフィールを開き直すと、もう一度読み込めます。',
+            status: RallyStatus.danger,
+          )
+        else if (state.noEntitlement)
+          ListRow(
+            title: '月額契約へ進む',
+            subtitle: 'まだ月額契約はありません',
+            onTap: busy ? null : flow.goToSubscription,
+          )
+        else if (plan != null)
+          ListRow(
+            title: '月額契約',
+            subtitle: subscriptionSummaryLabel(
+              plan,
+              startedAt: subscription?.startedAt,
+            ),
+            onTap: busy || subscription == null ? null : flow.goToSubscription,
+          )
+        else if (state.entitlementLoading)
+          const SectionLoading(message: '月額契約を読み込んでいます…'),
       ],
     );
   }

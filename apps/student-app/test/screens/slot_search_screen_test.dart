@@ -41,6 +41,86 @@ void main() {
     expect(state.booking!.status, BookingStatus.pending);
   });
 
+  group('体験予約を使ったあと（#1505）', () {
+    final booked = registered.copyWith(myBookings: Fixtures.myBookings);
+
+    testWidgets('キャンセルされていない予約がある生徒には「予約する」を出し、押すと通常の予約で確定待ちに進む', (
+      tester,
+    ) async {
+      final api = FakeStudentApi();
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: booked,
+      );
+
+      await tapText(tester, 'テニス');
+      expect(find.text('予約する'), findsOneWidget);
+      expect(find.text('体験予約する'), findsNothing);
+
+      await tapText(tester, '予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+      expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
+      expect(container.read(studentFlowProvider).errorMessage, isNull);
+    });
+
+    testWidgets('予約がキャンセル済みだけなら、今までどおり「体験予約する」で体験予約する', (tester) async {
+      final api = FakeStudentApi();
+      await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered.copyWith(
+          myBookings: [
+            for (final item in Fixtures.myBookings)
+              if (item.booking.status == BookingStatus.cancelled) item,
+          ],
+        ),
+      );
+
+      await tapText(tester, 'テニス');
+      expect(find.text('予約する'), findsNothing);
+      await tapText(tester, '体験予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': true});
+    });
+
+    testWidgets('体験予約が 409 trial_already_used なら文言を出し、予約を読み直して「予約する」に切り替える', (
+      tester,
+    ) async {
+      final api = FakeStudentApi(
+        failures: {
+          'createBooking': const StudentApiException(
+            statusCode: 409,
+            error: ApiError(
+              code: ErrorCode.trialAlreadyUsed,
+              message: 'trial already used',
+            ),
+          ),
+        },
+      );
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+
+      await tapText(tester, 'テニス');
+      await tapText(tester, '体験予約する');
+
+      expect(find.text('体験予約はすでに使っています。'), findsOneWidget);
+      expect(api.calls.last, 'listMyBookings');
+      expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
+      expect(find.text('予約する'), findsOneWidget);
+      expect(find.text('体験予約する'), findsNothing);
+    });
+  });
+
   testWidgets('そのスポーツのスロットがなければその旨を出す', (tester) async {
     final api = FakeStudentApi();
     await pumpScreen(
@@ -497,9 +577,7 @@ void main() {
       expect(find.text(newer.comment), findsOneWidget);
     });
 
-    testWidgets('メニューのあるレッスンへの評価は点の下・一言の上にメニューを出し、ない評価には出さない', (
-      tester,
-    ) async {
+    testWidgets('メニューのあるレッスンへの評価は点の下・一言の上にメニューを出し、ない評価には出さない', (tester) async {
       await pumpScreen(
         tester,
         const SlotSearchScreen(),
@@ -526,10 +604,7 @@ void main() {
         menuTop,
         greaterThan(tester.getTopLeft(find.text('5 点（5 点満点）')).dy),
       );
-      expect(
-        menuTop,
-        lessThan(tester.getTopLeft(find.text(newer.comment)).dy),
-      );
+      expect(menuTop, lessThan(tester.getTopLeft(find.text(newer.comment)).dy));
       // メニューのない評価は、点の次に一言が来る（これまでどおり）
       expect(
         tester.getTopLeft(find.text('4 点（5 点満点）')).dy,

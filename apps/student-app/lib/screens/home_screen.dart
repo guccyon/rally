@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
@@ -6,15 +7,23 @@ import '../state/chat.dart';
 import '../state/coach_search.dart';
 import '../state/favorite_coaches.dart';
 import '../state/lesson_completions.dart';
+import '../state/next_actions.dart';
+import '../state/prejoin_check.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
 import '../ui/components/booking_card.dart';
+import '../ui/components/list_row.dart';
+import '../ui/components/notice.dart';
+import '../ui/components/rally_button.dart';
+import '../ui/components/rally_card.dart';
+import '../ui/components/section_loading.dart';
 import '../ui/components/status_tag.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 import '../ui/theme/rally_tokens.dart';
+import '../ui/ticking_now.dart';
 
-/// ホーム（登録後に最初に開く）。これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
+/// ホーム（登録後に最初に開く）。先頭の「次にやること」（`getMyNextActions`。サーバーが返した順のまま）・これからの予約（`listMyBookings`）・今月のビデオ通話の残り（`getMyEntitlement`）・
 /// お気に入りのコーチ（`listFavoriteCoaches`）・コーチとのやり取り（`listMessageThreads`）・返ってきた添削（`listMyVideos`）と、コーチを探す画面・添削の依頼・受けたレッスンの入口と、
 /// レッスンを受け終えた生徒への次のレッスンの予約の入口（`listMyLessonCompletions`）を 1 画面に並べる。
 /// 欄ごとに別の API を読み、読めなかった欄にだけその旨を出す（ほかの欄はそのまま出す）。
@@ -31,6 +40,7 @@ class HomeScreen extends ConsumerWidget {
         if (state.student case final student?)
           Text('${student.displayName}さん、こんにちは'),
         const SizedBox(height: 16),
+        const _NextActionsSection(),
         const _NextLessonSection(),
         const _BookingsSection(),
         const SizedBox(height: 24),
@@ -85,6 +95,267 @@ class _SectionFailure extends StatelessWidget {
   );
 }
 
+/// 次にやること（`getMyNextActions`。ADR 0010）。サーバーが返した順のまま、1 件目をカード（主なボタンはこの 1 つ）、2 件目からを一覧の行で出す
+/// （並べ替え・数え直しをしない。ADR 0006）。0 件なら欄ごと出さない。読み込み中・読めなかったときは見出しと旨を出す（ほかの欄はそのまま）
+class _NextActionsSection extends ConsumerWidget {
+  const _NextActionsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
+    final state = ref.watch(nextActionsProvider);
+    final actions = state.actions;
+    if (!state.failed && actions != null && actions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final notifier = ref.read(nextActionsProvider.notifier);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Semantics(
+        container: true,
+        label: '次にやること',
+        explicitChildNodes: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SectionTitle('次にやること'),
+            if (state.failed)
+              const Notice(
+                message: '次にやることを読み込めませんでした。「ホームを更新する」でもう一度読み込めます。',
+                status: RallyStatus.danger,
+              )
+            else if (actions == null)
+              const SectionLoading(message: '次にやることを読み込んでいます…')
+            else ...[
+              _NextActionCard(actions.first, busy: busy),
+              for (final action in actions.skip(1))
+                ListRow(
+                  title: _nextActionButtonLabel(action),
+                  subtitle: _nextActionRowSubtitle(action),
+                  onTap: busy ? null : () => notifier.open(action),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 次の操作のボタン（2 件目からの行の題も同じ）
+String _nextActionButtonLabel(NextAction action) => switch (action.kind) {
+  NextActionKind.confirmBooking => '内容を確かめて確定する',
+  NextActionKind.joinLiveLesson => 'ビデオ通話で受ける',
+  NextActionKind.videoReviewInProgress => '送った動画を見る',
+  NextActionKind.recordLessonCompletion => '完了の記録へ進む',
+  NextActionKind.startSubscription => '月額契約へ進む',
+};
+
+/// 次の操作のコーチ（名前がないときは表示できない旨）
+String _nextActionCoachLabel(NextAction action) =>
+    'コーチ: ${action.coachDisplayName ?? '（名前を表示できません）'}';
+
+/// 予約の日時。例: `10/28（水）12:00〜12:30`
+String? _nextActionRange(NextAction action) =>
+    switch ((action.startsAt, action.endsAt)) {
+      (final start?, final end?) => formatTimeRange(start, end),
+      (final start?, null) => formatDateTime(start),
+      _ => null,
+    };
+
+/// 2 件目からの行の subtitle（日時かコーチ）
+String? _nextActionRowSubtitle(NextAction action) => switch (action.kind) {
+  NextActionKind.confirmBooking ||
+  NextActionKind.joinLiveLesson => _nextActionRange(action),
+  NextActionKind.videoReviewInProgress ||
+  NextActionKind.recordLessonCompletion => _nextActionCoachLabel(action),
+  NextActionKind.startSubscription => null,
+};
+
+/// 次にやることの 1 件目（components.yaml の card の plain。カード全体は押せず、押せるのは中のボタン）
+class _NextActionCard extends ConsumerWidget {
+  const _NextActionCard(this.action, {required this.busy});
+
+  final NextAction action;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(nextActionsProvider.notifier);
+    final trial = action.isTrial ?? false;
+    final muted = RallyTypography.small.copyWith(color: RallyColors.textMuted);
+    Widget title(String text) => Text(text, style: RallyTypography.title);
+    // 主なボタンはカードの幅いっぱい
+    Widget primary() => SizedBox(
+      width: double.infinity,
+      child: RallyButton(
+        label: _nextActionButtonLabel(action),
+        onPressed: busy ? null : () => notifier.open(action),
+      ),
+    );
+    final bookingMeta = [
+      if (action.sport case final sport?) sportLabel(sport),
+      if (action.lessonMenu case final menu?) bookingLessonMenuLabel(menu),
+      _nextActionCoachLabel(action),
+    ].join('・');
+    final children = switch (action.kind) {
+      NextActionKind.confirmBooking => [
+        StatusTag(
+          label: bookingStatusLabel(BookingStatus.pending),
+          status: RallyBookingState.pending.status,
+        ),
+        title(trial ? '体験予約がまだ確定していません' : '予約がまだ確定していません'),
+        if (_nextActionRange(action) case final range?)
+          Text(range, style: RallyTypography.figureSm),
+        Text(bookingMeta, style: muted),
+        Text(
+          trial
+              ? '確定するまで、このスロットは押さえたままになり、ほかのスロットで体験予約を取り直すこともできません。'
+              : '確定するまで、このスロットは押さえたままになります。',
+        ),
+        primary(),
+      ],
+      NextActionKind.joinLiveLesson => [
+        StatusTag(
+          label: bookingStatusLabel(BookingStatus.confirmed),
+          status: RallyBookingState.confirmed.status,
+        ),
+        title(trial ? '体験予約のレッスンを受けましょう' : '次のレッスンを受けましょう'),
+        if (_nextActionRange(action) case final range?)
+          Text(range, style: RallyTypography.figureSm),
+        Text(bookingMeta, style: muted),
+        if (action.startsAt case final startsAt?)
+          _NextLiveLessonEntry(
+            key: ValueKey(startsAt),
+            startsAt: startsAt,
+            onPressed: busy ? null : () => notifier.open(action),
+          ),
+        if (trial && action.bookingId != null)
+          RallyButton(
+            label: '動画を送って添削を受ける',
+            variant: RallyButtonVariant.text,
+            onPressed: busy
+                ? null
+                : () => ref
+                      .read(studentFlowProvider.notifier)
+                      .chooseVideoFor(action.bookingId!),
+          ),
+      ],
+      NextActionKind.videoReviewInProgress => [
+        title('コーチが添削しています'),
+        Text(
+          [
+            if (action.submittedAt case final at?)
+              '${formatDayClock(at)} に送った動画',
+            _nextActionCoachLabel(action),
+          ].join('・'),
+          style: muted,
+        ),
+        const Text('添削が返ってくると、ここから完了の記録へ進めます。'),
+        // 待つだけの状態なので primary を出さない
+        RallyButton(
+          label: _nextActionButtonLabel(action),
+          variant: RallyButtonVariant.text,
+          onPressed: busy ? null : () => notifier.open(action),
+        ),
+      ],
+      NextActionKind.recordLessonCompletion =>
+        action.lessonType == LessonType.liveLesson
+            ? [
+                title('ビデオ通話が終わりました'),
+                Text(
+                  [
+                    ?_nextActionRange(action),
+                    _nextActionCoachLabel(action),
+                  ].join('・'),
+                  style: muted,
+                ),
+                const Text('レッスンを受け終えたら、完了を記録しましょう。'),
+                primary(),
+              ]
+            : [
+                title('添削が返ってきました'),
+                Text(
+                  [
+                    if (action.returnedAt case final at?)
+                      '返却: ${formatDayClock(at)}',
+                    _nextActionCoachLabel(action),
+                  ].join('・'),
+                  style: muted,
+                ),
+                const Text('添削を読んだら、レッスンの完了を記録しましょう。'),
+                primary(),
+              ],
+      NextActionKind.startSubscription => [
+        title('月額契約で、続けて教わりましょう'),
+        const Text('動画とチャットは送り放題、ビデオ通話は選んだプランの回数まで毎月受けられます。'),
+        primary(),
+      ],
+    };
+    return RallyCard(children: children);
+  }
+}
+
+/// 次にやることの「ビデオ通話で受ける」（開始 5 分前から押せる。入室前チェックの決まり [prejoinCheckLeadTime] のまま）と、その下の案内。
+/// 開いたまま 5 分前になったら押せるようにし、読み上げで 1 回伝える
+class _NextLiveLessonEntry extends StatefulWidget {
+  const _NextLiveLessonEntry({
+    super.key,
+    required this.startsAt,
+    required this.onPressed,
+  });
+
+  final DateTime startsAt;
+  final VoidCallback? onPressed;
+
+  @override
+  State<_NextLiveLessonEntry> createState() => _NextLiveLessonEntryState();
+}
+
+class _NextLiveLessonEntryState extends State<_NextLiveLessonEntry> {
+  bool? _wasOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return TickingNow(
+      builder: (context, now) {
+        final open = canOpenPrejoinCheck(widget.startsAt, now);
+        if (_wasOpen == false && open) {
+          final view = View.of(context);
+          final direction = Directionality.of(context);
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => SemanticsService.sendAnnouncement(
+              view,
+              '入室前チェックができるようになりました',
+              direction,
+            ),
+          );
+        }
+        _wasOpen = open;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: RallySpacing.sm,
+          children: [
+            RallyButton(
+              label: 'ビデオ通話で受ける',
+              onPressed: open ? widget.onPressed : null,
+            ),
+            Text(
+              open
+                  ? '入室前チェックでカメラとマイクを確かめてから、開始時刻 ${formatClock(widget.startsAt)} に入室します。'
+                  : '${formatDayClock(prejoinCheckOpensAt(widget.startsAt))} から入室前チェックができます'
+                        '（開始 ${prejoinCheckLeadTime.inMinutes} 分前から）。',
+              style: RallyTypography.small.copyWith(
+                color: RallyColors.textMuted,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// 次のレッスンの予約の入口（スロットの選択を開く）。完了したレッスンが 1 件でもあれば出し、
 /// まだない・読み込み中・読めなかったときは欄ごと出さない（初回かどうかはアプリで数え直さない。ADR 0006）
 class _NextLessonSection extends ConsumerWidget {
@@ -107,12 +378,14 @@ class _NextLessonSection extends ConsumerWidget {
           const _SectionTitle('次のレッスン'),
           const Text('レッスンおつかれさまでした。続けて受けられるよう、次のレッスンも予約しておきましょう。'),
           const SizedBox(height: 8),
-          FilledButton.icon(
+          // 主なボタンは「次にやること」の 1 つだけにするので secondary
+          RallyButton(
+            label: '次のレッスンを予約する',
+            variant: RallyButtonVariant.secondary,
+            icon: Icons.event_available,
             onPressed: busy
                 ? null
                 : ref.read(studentFlowProvider.notifier).goToSlotSearch,
-            icon: const Icon(Icons.event_available),
-            label: const Text('次のレッスンを予約する'),
           ),
         ],
       ),
@@ -251,12 +524,14 @@ class _FavoriteCoachesSection extends ConsumerWidget {
   }
 }
 
-/// 今月のビデオ通話の残り（月額契約のプランで決まる上限のうち）
+/// 今月のビデオ通話の残り（月額契約のプランで決まる上限のうち）。受講権がない（`getMyEntitlement` が 404）ときは、
+/// その旨と文字のボタン「月額契約へ進む」（月額契約の画面へ。主なボタンは「次にやること」の 1 つだけにするので text）
 class _LiveLessonQuotaSection extends ConsumerWidget {
   const _LiveLessonQuotaSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
     final failed = ref.watch(
       studentFlowProvider.select(
         (s) => s.homeFailures.contains(HomeSection.entitlement),
@@ -271,9 +546,19 @@ class _LiveLessonQuotaSection extends ConsumerWidget {
         const _SectionTitle('今月のビデオ通話'),
         if (failed)
           const _SectionFailure('ビデオ通話の残りの回数を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。')
-        else if (state.noEntitlement)
-          const Text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。')
-        else if (quota != null) ...[
+        else if (state.noEntitlement) ...[
+          const Text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: RallyButton(
+              label: '月額契約へ進む',
+              variant: RallyButtonVariant.text,
+              onPressed: busy
+                  ? null
+                  : ref.read(studentFlowProvider.notifier).goToSubscription,
+            ),
+          ),
+        ] else if (quota != null) ...[
           Text(
             liveLessonQuotaLabel(quota),
             style: Theme.of(context).textTheme.headlineSmall,
@@ -406,12 +691,14 @@ class _VideoReviewRequestSection extends ConsumerWidget {
               : '予約が確定すると担当コーチとのチャットが開き、動画の添削を依頼できるようになります。',
         ),
         const SizedBox(height: 8),
-        FilledButton.icon(
+        // 主なボタンは「次にやること」の 1 つだけにするので secondary
+        RallyButton(
+          label: '添削を依頼する',
+          variant: RallyButtonVariant.secondary,
+          icon: Icons.videocam_outlined,
           onPressed: state.busy || !available
               ? null
               : ref.read(chatProvider.notifier).startVideoReviewRequest,
-          icon: const Icon(Icons.videocam_outlined),
-          label: const Text('添削を依頼する'),
         ),
       ],
     );

@@ -752,4 +752,74 @@ void main() {
       expect(() => SubscriptionPlanList.fromJson(json), throwsFormatException);
     }
   });
+
+  group('NextActionList', () {
+    test('サーバーの並びのまま読み、kind ごとの項目を写す', () {
+      final list = NextActionList.fromJson({
+        'next_actions': [
+          {
+            'kind': 'confirm_booking',
+            'booking_id': 'b-1',
+            'is_trial': true,
+            'starts_at': '2026-10-28T03:00:00Z',
+            'ends_at': '2026-10-28T03:30:00Z',
+            'sport': 'tennis',
+            'lesson_menu': {
+              'lesson_menu_id': 'm-1',
+              'name': 'フォアハンドの基礎',
+              'duration_minutes': 30,
+            },
+            'coach_display_name': null,
+          },
+          {
+            'kind': 'record_lesson_completion',
+            'lesson_type': 'live_lesson',
+            'session_id': 's-1',
+            'starts_at': '2026-10-28T03:00:00Z',
+            'ends_at': '2026-10-28T03:30:00Z',
+            'coach_display_name': '山田 花子',
+          },
+          {'kind': 'start_subscription'},
+        ],
+      });
+
+      expect(list.nextActions.map((a) => a.kind), [
+        NextActionKind.confirmBooking,
+        NextActionKind.recordLessonCompletion,
+        NextActionKind.startSubscription,
+      ]);
+      final confirm = list.nextActions.first;
+      expect(confirm.bookingId, 'b-1');
+      expect(confirm.isTrial, isTrue);
+      expect(confirm.sport, Sport.tennis);
+      expect(confirm.lessonMenu?.durationMinutes, 30);
+      expect(confirm.coachDisplayName, isNull);
+      expect(confirm.completion, isNull);
+      final completion = list.nextActions[1].completion;
+      expect(completion, isA<LiveLessonCompletion>());
+      expect((completion! as LiveLessonCompletion).sessionId, 's-1');
+      expect(
+        () => list.nextActions.add(list.nextActions.first),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('このアプリの版が知らない kind の行は出さない', () {
+      final list = NextActionList.fromJson({
+        'next_actions': [
+          {'kind': 'review_lesson', 'lesson_id': 'l-1'},
+          {
+            'kind': 'record_lesson_completion',
+            'lesson_type': 'async_lesson',
+            'video_id': 'v-1',
+            'returned_at': '2026-10-29T00:30:00Z',
+          },
+        ],
+      });
+
+      expect(list.nextActions, hasLength(1));
+      final completion = list.nextActions.single.completion;
+      expect((completion! as AsyncLessonCompletion).videoId, 'v-1');
+    });
+  });
 }
