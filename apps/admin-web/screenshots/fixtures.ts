@@ -504,6 +504,13 @@ export const FIXTURES: Fixture[] = [
     status: 409,
     body: { code: "slot_not_started", message: "予約したスロットの開始時刻より前です" } satisfies Schemas["Error"],
   },
+  {
+    // 予約枠の「枠を公開」で過去の開始を入れたとき（coach-slots-publish-past）。サーバーは 422 で断る
+    method: "POST",
+    path: "/slots",
+    status: 422,
+    body: { code: "validation_failed", message: "starts_at is in the past" } satisfies Schemas["Error"],
+  },
   { method: "GET", path: "/coaches/me/videos", body: { videos: VIDEOS } satisfies Schemas["CoachVideoList"] },
   {
     method: "GET",
