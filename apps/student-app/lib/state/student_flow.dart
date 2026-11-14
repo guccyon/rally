@@ -989,8 +989,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(notificationSettings: settings);
   }
 
-  /// 自分のプロフィールを開く（`getMyStudentProfile`）。閉じたら今の段に戻る。
-  /// 読めなくても登録で受け取った表示名はそのまま出す
+  /// 自分のプロフィールを開く（`getMyStudentProfile` と、月額契約の欄の `getMyEntitlement`（[SubscriptionNotifier.loadForProfile]）を並べて読む）。
+  /// 閉じたら今の段に戻る。読めなくても登録で受け取った表示名はそのまま出す（受講権を読めなくても失敗の文言は出さず、月額契約の欄にだけ旨を出す）
   Future<void> openProfile() {
     if (state.step != FlowStep.profile) {
       state = state.copyWith(
@@ -998,7 +998,12 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         step: FlowStep.profile,
       );
     }
-    return run(_loadProfile);
+    return run(
+      () => Future.wait([
+        _loadProfile(),
+        ref.read(subscriptionProvider.notifier).loadForProfile(),
+      ]),
+    );
   }
 
   /// プロフィールを閉じて、開いた段に戻る

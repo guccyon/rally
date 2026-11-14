@@ -552,7 +552,8 @@ void main() {
     expect(find.text(confirmLabel), findsOneWidget);
     expect(inCard(bookingOf('booking-soon'), confirmLabel), findsOneWidget);
 
-    final button = find.widgetWithText(FilledButton, confirmLabel);
+    // 主なボタンにしない（文字のボタン）
+    final button = find.widgetWithText(TextButton, confirmLabel);
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pumpAndSettle();
@@ -567,5 +568,34 @@ void main() {
     expect(find.text('この予約をキャンセルする'), findsOneWidget);
     // 確定は呼ばない（中身を見せた画面で押す）
     expect(api.calls, isNot(contains('confirmBooking')));
+  });
+
+  testWidgets('自分の予約の「内容を確かめて確定する」から開いた確定待ちの画面で、その予約を確定できる', (tester) async {
+    final api = FakeStudentApi();
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+      subscription: subscribed,
+    );
+    await openBookings(tester);
+
+    final open = find.widgetWithText(TextButton, '内容を確かめて確定する');
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+    api.calls.clear();
+
+    await tapText(tester, '予約を確定する');
+
+    // 自分の予約で選んだ予約を確定する
+    expect(api.calls.first, 'confirmBooking');
+    expect(api.requests.last, 'booking-soon');
+    expect(
+      container.read(studentFlowProvider).booking!.status,
+      BookingStatus.confirmed,
+    );
+    expect(find.text('予約が確定しました'), findsOneWidget);
   });
 }

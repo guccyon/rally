@@ -524,12 +524,14 @@ class _FavoriteCoachesSection extends ConsumerWidget {
   }
 }
 
-/// 今月のビデオ通話の残り（月額契約のプランで決まる上限のうち）
+/// 今月のビデオ通話の残り（月額契約のプランで決まる上限のうち）。受講権がない（`getMyEntitlement` が 404）ときは、
+/// その旨と文字のボタン「月額契約へ進む」（月額契約の画面へ。主なボタンは「次にやること」の 1 つだけにするので text）
 class _LiveLessonQuotaSection extends ConsumerWidget {
   const _LiveLessonQuotaSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
     final failed = ref.watch(
       studentFlowProvider.select(
         (s) => s.homeFailures.contains(HomeSection.entitlement),
@@ -544,9 +546,19 @@ class _LiveLessonQuotaSection extends ConsumerWidget {
         const _SectionTitle('今月のビデオ通話'),
         if (failed)
           const _SectionFailure('ビデオ通話の残りの回数を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。')
-        else if (state.noEntitlement)
-          const Text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。')
-        else if (quota != null) ...[
+        else if (state.noEntitlement) ...[
+          const Text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: RallyButton(
+              label: '月額契約へ進む',
+              variant: RallyButtonVariant.text,
+              onPressed: busy
+                  ? null
+                  : ref.read(studentFlowProvider.notifier).goToSubscription,
+            ),
+          ),
+        ] else if (quota != null) ...[
           Text(
             liveLessonQuotaLabel(quota),
             style: Theme.of(context).textTheme.headlineSmall,

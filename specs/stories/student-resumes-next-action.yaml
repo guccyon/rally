@@ -67,7 +67,4 @@ origin:
   issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431", "guccyon/rally#1514"]
   note: "生徒アプリで「次の操作がその直後の画面にしかなく、一度離れると戻れない」不具合がまとまって見つかり、1 件ずつ当て布をせずサーバーの状態から次の操作を出すことにした（ADR 0010。画面は specs/ux/issue-1436.yaml）"
   retro: false
-known_gaps:
-  - step: 7
-    note: "ホームの「次にやること」の「月額契約へ進む」はある（#1439）が、プロフィールの「月額契約へ進む」の行はまだない（#1436 の後続のタスクで実装する）"
 status: active

@@ -294,7 +294,12 @@ void main() {
       FakeStudentApi(nextActions: [Fixtures.nextStartSubscription]),
     );
 
-    await tapText(tester, '月額契約へ進む');
+    // 次にやることのカードの主なボタン（今月のビデオ通話の欄にも文字のボタンがある）
+    final primary = find.widgetWithText(FilledButton, '月額契約へ進む');
+    expect(primary, findsOneWidget);
+    await tester.ensureVisible(primary);
+    await tester.tap(primary);
+    await tester.pumpAndSettle();
 
     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
   });
@@ -307,19 +312,22 @@ void main() {
     await container.read(lessonCompletionsProvider.notifier).loadForHome();
     await tester.pumpAndSettle();
 
-    final variants = {
-      for (final button in tester.widgetList<RallyButton>(
-        find.byType(RallyButton),
-      ))
-        button.label: button.variant,
-    };
-    expect(variants['次のレッスンを予約する'], RallyButtonVariant.secondary);
-    expect(variants['添削を依頼する'], RallyButtonVariant.secondary);
+    final buttons = tester.widgetList<RallyButton>(find.byType(RallyButton));
+    List<RallyButtonVariant> variantsOf(String label) => [
+      for (final button in buttons)
+        if (button.label == label) button.variant,
+    ];
+    expect(variantsOf('次のレッスンを予約する'), [RallyButtonVariant.secondary]);
+    expect(variantsOf('添削を依頼する'), [RallyButtonVariant.secondary]);
     expect(
-      variants.values.where((v) => v == RallyButtonVariant.primary),
+      buttons.where((b) => b.variant == RallyButtonVariant.primary),
       hasLength(1),
     );
-    expect(variants['月額契約へ進む'], RallyButtonVariant.primary);
+    // 次にやることのカードは primary、今月のビデオ通話の欄は文字のボタン
+    expect(
+      variantsOf('月額契約へ進む'),
+      unorderedEquals([RallyButtonVariant.primary, RallyButtonVariant.text]),
+    );
   });
 
   testWidgets('アプリの段の状態を捨てて開き直しても、サーバーの記録から同じ次の操作を出す', (tester) async {
