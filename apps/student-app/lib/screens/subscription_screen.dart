@@ -27,7 +27,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   void initState() {
     super.initState();
     // 契約の前だけ、プランごとの上限を読む（契約の後はサーバーが返す受講権の枠を出す）
-    if (ref.read(subscriptionProvider).subscription == null) {
+    if (!ref.read(subscriptionProvider).hasActiveSubscription) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ref.read(subscriptionProvider.notifier).loadSubscriptionPlans();
@@ -58,7 +58,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         Text('スポーツ: ${sportLabel(flow.student!.sport)}'),
         const Text('動画とチャットは送り放題です。ビデオ通話は、選んだプランの回数まで毎月使えます。'),
         const SizedBox(height: 16),
-        if (subscription == null) ...[
+        if (!state.hasActiveSubscription) ...[
           const Text('プランを選んでください'),
           RadioGroup<SubscriptionPlan>(
             groupValue: _plan,
@@ -86,9 +86,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             child: const Text('月額契約を始める'),
           ),
         ] else ...[
-          const Text('月額契約を開始しました'),
-          Text('プラン: ${subscriptionPlanLabel(subscription.plan)}'),
-          Text('開始: ${formatDateTime(subscription.startedAt)}'),
+          Text(subscription != null ? '月額契約を開始しました' : '今の月額契約'),
+          if ((subscription?.plan ?? state.entitlement?.plan) case final plan?)
+            Text('プラン: ${subscriptionPlanLabel(plan)}'),
+          if (subscription != null)
+            Text('開始: ${formatDateTime(subscription.startedAt)}'),
           if (quota != null) Text('今月のビデオ通話: ${liveLessonQuotaLabel(quota)}'),
           if (flow.subscriptionFromChat) ...[
             const SizedBox(height: 16),
