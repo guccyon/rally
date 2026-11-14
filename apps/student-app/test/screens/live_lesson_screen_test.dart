@@ -7,7 +7,7 @@ import '../support/fake_student_api.dart';
 import '../support/pump.dart';
 
 void main() {
-  testWidgets('通話を開始・終了すると、完了記録に進む（映像はモック）', (tester) async {
+  testWidgets('通話を開始・終了すると、完了記録に進む', (tester) async {
     final api = FakeStudentApi();
     final container = await pumpScreen(
       tester,
@@ -21,12 +21,16 @@ void main() {
       ),
     );
 
-    expect(find.text('映像はモックです'), findsOneWidget);
+    expect(find.text('「通話を開始する」を押すと、コーチと通話できます'), findsOneWidget);
     await tapText(tester, '通話を開始する');
 
     final request = api.requests.single as StartLiveLessonSessionRequest;
     expect(request.toJson(), {'booking_id': Fixtures.bookingId});
-    expect(find.text('通話中（映像はモック）'), findsOneWidget);
+    expect(
+      find.text('コーチと通話中です\n映像が表示されなくても、故障ではありません'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('モック'), findsNothing);
 
     await tapText(tester, '通話を終了する');
 

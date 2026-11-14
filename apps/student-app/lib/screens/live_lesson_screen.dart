@@ -28,7 +28,10 @@ class LiveLessonScreen extends ConsumerWidget {
           color: Colors.black87,
           alignment: Alignment.center,
           child: Text(
-            inProgress ? '通話中（映像はモック）' : '映像はモックです',
+            inProgress
+                ? 'コーチと通話中です\n映像が表示されなくても、故障ではありません'
+                : '「通話を開始する」を押すと、コーチと通話できます',
+            textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white),
           ),
         ),
