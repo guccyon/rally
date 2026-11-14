@@ -42,6 +42,12 @@ class SubscriptionState {
   /// [StudentFlowState.homeFailures] のまま）
   final bool entitlementFailed;
 
+  /// 月額契約が始まっているか（この端末で始めた契約か、読んだ受講権が月額）。契約の画面はこれでプランの欄を消す
+  bool get hasActiveSubscription =>
+      subscription != null ||
+      (entitlement?.contractType == ContractType.subscription &&
+          entitlement?.plan != null);
+
   /// 受講権を読んでいる途中か（まだ読めておらず、契約の前とも読めなかったともわかっていない）
   bool get entitlementLoading =>
       entitlement == null && !noEntitlement && !entitlementFailed;
@@ -127,13 +133,27 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
   Future<void> startSubscription({
     SubscriptionPlan plan = SubscriptionPlan.standard,
   }) => ref.read(studentFlowProvider.notifier).run(() async {
-    final response = await _api.startSubscription(
-      StartSubscriptionRequest(
-        sport: ref.read(studentFlowProvider).student!.sport,
-        plan: plan,
-        paymentMethodToken: mockPaymentMethodToken,
-      ),
-    );
+    final StartSubscriptionResponse response;
+    try {
+      response = await _api.startSubscription(
+        StartSubscriptionRequest(
+          sport: ref.read(studentFlowProvider).student!.sport,
+          plan: plan,
+          paymentMethodToken: mockPaymentMethodToken,
+        ),
+      );
+    } on StudentApiException catch (e) {
+      // 別のタブなどで契約済みなら、押したプランではなくサーバーの契約を読み直して表示の元にする（ADR 0010）。
+      // 読み直せなければ、そのまま失敗の文言だけを出す
+      if (e.error?.code == ErrorCode.subscriptionAlreadyActive) {
+        try {
+          await loadEntitlement();
+        } on StudentApiException {
+          // 元の失敗を出す
+        }
+      }
+      rethrow;
+    }
     state = state.copyWith(
       subscription: response.subscription,
       entitlement: response.entitlement,
