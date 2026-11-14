@@ -16,6 +16,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         CreateBooking::new(
             ports.bookings(),
             CatalogLessonMenuLookup::new(ports.lesson_menus()),
+            ports.completions(),
             ports.analytics(),
             ports.clock(),
         ),

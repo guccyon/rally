@@ -11,6 +11,7 @@ use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
+    lesson::LessonCompletionRepository,
 };
 
 /// 予約の作成の入力。`student_id` は認証した生徒のアカウント（役割の確認は境界が行う）。
@@ -26,8 +27,8 @@ pub struct CreateBookingCommand {
 pub enum CreateBookingError {
     /// スロットがない
     SlotNotFound,
-    /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約、コーチが受付を
-    /// 止めている）
+    /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約（完了したレッスンが
+    /// あるときを含む）、コーチが受付を止めている）
     Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -44,25 +45,32 @@ pub enum CreateBookingError {
 /// 予約は断らない）。枠のコーチが受付を止めていれば（domain の [`domain::scheduling::CoachAcceptance`]）、枠の状態の
 /// 判定の後で断る（[`SchedulingError::CoachNotAcceptingBookings`]。入っている予約の確定・キャンセルは止めない）。受付の
 /// 状態は予約を保存するトランザクションの前に読むので、止めた直後の並行な予約が 1 件通ることはある。
+/// 体験予約は、その生徒の完了したレッスン（lesson_completion。同期・非同期のどちらでも。完了記録の保存先
+/// [`LessonCompletionRepository`] から読む。docs/adr/0006）が 1 件でもあれば、キャンセルされていない予約がなくても
+/// 断る（受け終えた体験予約をあとでキャンセルしても体験は使用済み。判定は domain の [`Booking::is_trial_available`]）。
+/// 完了記録を読むのは体験予約のときだけで、予約を保存するトランザクションの前に読む（受付の状態と同じ）。
 /// 保存したら行動イベント `booking.created` を 1 回発火する。拒否・保存の失敗では発火しない。
-pub struct CreateBooking<B, M, A, C> {
+pub struct CreateBooking<B, M, R, A, C> {
     bookings: B,
     lesson_menus: M,
+    completions: R,
     analytics: A,
     clock: C,
 }
 
-impl<B, M, A, C> CreateBooking<B, M, A, C>
+impl<B, M, R, A, C> CreateBooking<B, M, R, A, C>
 where
     B: BookingRepository,
     M: LessonMenuLookup,
+    R: LessonCompletionRepository,
     A: AnalyticsSink,
     C: Clock,
 {
-    pub fn new(bookings: B, lesson_menus: M, analytics: A, clock: C) -> Self {
+    pub fn new(bookings: B, lesson_menus: M, completions: R, analytics: A, clock: C) -> Self {
         Self {
             bookings,
             lesson_menus,
+            completions,
             analytics,
             clock,
         }
@@ -95,10 +103,23 @@ where
             .find_coach_acceptance(slot.coach_id())
             .await
             .map_err(CreateBookingError::Unavailable)?;
+        let has_completed_lesson = is_trial
+            && !self
+                .completions
+                .completions_of_student(student_id)
+                .await
+                .map_err(CreateBookingError::Unavailable)?
+                .is_empty();
         let booking = self
             .bookings
             .reserve(slot_id, student_id, |slot, existing| {
                 let booking = Booking::reserve(id, student_id, is_trial, slot, existing, now)?;
+                // 枠の状態・予約の判定の後で、完了したレッスンがあれば体験は使用済み
+                if is_trial
+                    && !Booking::is_trial_available(student_id, existing, has_completed_lesson)
+                {
+                    return Err(SchedulingError::TrialAlreadyUsed);
+                }
                 // 枠の状態の判定（閉じた枠はない枠と同じに扱う）の後で、コーチが受付を止めていないかを確かめる
                 acceptance.ensure_accepting_bookings()?;
                 Ok(booking.with_lesson_menu(slot, lesson_menu.as_ref()))
@@ -156,6 +177,8 @@ mod tests {
             LessonDuration, LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId,
             LessonMenuName,
         },
+        lesson::{LessonCompletion, LessonCompletionId, LessonSource},
+        live_lesson::SessionId,
         scheduling::{
             BookingId, BookingLessonMenu, BookingStatus, CoachAcceptance, SlotCapacity, SlotSeats,
             SlotStatus,
@@ -166,8 +189,8 @@ mod tests {
     use crate::{
         catalog::{CatalogLessonMenuLookup, LessonMenuRepository},
         in_memory::{
-            FixedClock, InMemoryBookingRepository, InMemoryLessonMenuRepository,
-            InMemorySlotRepository, RecordingAnalyticsSink,
+            FixedClock, InMemoryBookingRepository, InMemoryLessonCompletionRepository,
+            InMemoryLessonMenuRepository, InMemorySlotRepository, RecordingAnalyticsSink,
         },
         scheduling::{CoachAcceptanceRepository, UpdateBookingError},
     };
@@ -178,6 +201,7 @@ mod tests {
     type UseCase = CreateBooking<
         InMemoryBookingRepository,
         CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
+        InMemoryLessonCompletionRepository,
         RecordingAnalyticsSink,
         FixedClock,
     >;
@@ -281,6 +305,7 @@ mod tests {
         let use_case = CreateBooking::new(
             InMemoryBookingRepository::new(slots),
             CatalogLessonMenuLookup::new(menus.clone()),
+            InMemoryLessonCompletionRepository::default(),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );
@@ -450,6 +475,101 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(use_case.analytics().events().len(), 3);
+    }
+
+    /// [`use_case`] の予約を使い、完了記録の保存先だけを `completions` にしたユースケース。
+    fn use_case_with_completions(completions: InMemoryLessonCompletionRepository) -> UseCase {
+        let base = use_case();
+        CreateBooking::new(
+            base.bookings,
+            base.lesson_menus,
+            completions,
+            base.analytics,
+            base.clock,
+        )
+    }
+
+    /// `booking` の通話セッションを受け終えた、生徒 `STUDENT` の完了記録。
+    fn completion_of(booking: &Booking) -> LessonCompletion {
+        LessonCompletion::restore(
+            LessonCompletionId::from_u128(booking.id().as_u128()),
+            STUDENT,
+            COACH,
+            LessonSource::Live(SessionId::from_u128(booking.id().as_u128())),
+            NOW,
+            true,
+        )
+    }
+
+    async fn cancel(use_case: &UseCase, booking: &Booking) {
+        use_case
+            .bookings()
+            .update(booking.id(), |booking, slot| {
+                booking.cancel(STUDENT, slot, NOW).map(|_| ())
+            })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn trial_is_used_after_a_completed_lesson_even_if_the_trial_booking_is_cancelled() {
+        let completions = InMemoryLessonCompletionRepository::default();
+        let use_case = use_case_with_completions(completions.clone());
+        let trial = use_case.execute(command(STUDENT, 10, true)).await.unwrap();
+        // 体験予約のレッスンを受け終えてから、その予約をキャンセルする
+        completions
+            .record(STUDENT, |_| Ok(completion_of(&trial)))
+            .await
+            .unwrap();
+        cancel(&use_case, &trial).await;
+
+        assert_invalid(
+            use_case.execute(command(STUDENT, 11, true)).await,
+            SchedulingError::TrialAlreadyUsed,
+        );
+        assert_eq!(
+            use_case.bookings().all().len(),
+            1,
+            "2 回目の体験予約は保存しない"
+        );
+        assert_eq!(
+            use_case.analytics().events().len(),
+            1,
+            "断った予約は発火しない"
+        );
+        // 通常の予約と、別の生徒の体験予約はできる
+        use_case.execute(command(STUDENT, 11, false)).await.unwrap();
+        use_case
+            .execute(command(OTHER_STUDENT, 14, true))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn trial_is_available_again_after_cancelling_a_trial_booking_not_taken() {
+        let use_case = use_case();
+        let trial = use_case.execute(command(STUDENT, 10, true)).await.unwrap();
+        cancel(&use_case, &trial).await;
+
+        let again = use_case.execute(command(STUDENT, 11, true)).await.unwrap();
+        assert!(again.is_trial());
+    }
+
+    #[tokio::test]
+    async fn slot_state_is_judged_before_the_completed_lessons() {
+        let completions = InMemoryLessonCompletionRepository::default();
+        let use_case = use_case_with_completions(completions.clone());
+        let regular = use_case.execute(command(STUDENT, 10, false)).await.unwrap();
+        completions
+            .record(STUDENT, |_| Ok(completion_of(&regular)))
+            .await
+            .unwrap();
+        assert_invalid(
+            use_case.execute(command(STUDENT, 13, true)).await,
+            SchedulingError::SlotNotOpen {
+                status: SlotStatus::Closed,
+            },
+        );
     }
 
     #[tokio::test]
@@ -637,6 +757,7 @@ mod tests {
         let use_case = CreateBooking::new(
             BrokenRepository,
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
+            InMemoryLessonCompletionRepository::default(),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );

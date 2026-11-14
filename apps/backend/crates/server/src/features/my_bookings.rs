@@ -16,6 +16,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.bookings(),
             ProfileCoachIntroductionLookup::new(ports.accounts()),
             EntitlementQuotaGate::new(ports.entitlements()),
+            ports.completions(),
             ports.clock(),
         ),
         MockTokenService,

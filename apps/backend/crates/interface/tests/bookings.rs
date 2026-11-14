@@ -128,6 +128,8 @@ struct App {
     /// 枠に結びついたレッスンメニューを引く保存先
     lesson_menus: application::in_memory::InMemoryLessonMenuRepository,
     accounts: InMemoryAccountRepository,
+    /// 完了記録の保存先（体験予約の判定と予約の一覧の `trial_available` が読む）
+    completions: InMemoryLessonCompletionRepository,
     analytics: RecordingAnalyticsSink,
     events: RecordingDomainEventPublisher,
 }
@@ -163,6 +165,7 @@ fn app_with_entitlements(
     let bookings = InMemoryBookingRepository::new(slots.clone());
     let accounts = InMemoryAccountRepository::default();
     let lesson_menus = application::in_memory::InMemoryLessonMenuRepository::default();
+    let completions = InMemoryLessonCompletionRepository::default();
     let router = interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
@@ -189,6 +192,7 @@ fn app_with_entitlements(
         CreateBooking::new(
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            completions.clone(),
             analytics.clone(),
             clock,
         ),
@@ -211,6 +215,7 @@ fn app_with_entitlements(
             bookings.clone(),
             application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
             EntitlementQuotaGate::new(entitlements.clone()),
+            completions.clone(),
             clock,
         ),
         ListCoachBookings::new(
@@ -274,7 +279,7 @@ fn app_with_entitlements(
         RecordLessonCompletion::new(
             InMemoryLiveLessonSessionRepository::default(),
             InMemoryVideoRepository::default(),
-            InMemoryLessonCompletionRepository::default(),
+            completions.clone(),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             clock,
@@ -335,6 +340,7 @@ fn app_with_entitlements(
         slots,
         lesson_menus,
         accounts,
+        completions,
         analytics,
         events,
     }
@@ -502,6 +508,87 @@ async fn trial_booking_is_only_once_per_student() {
         })
         .collect();
     assert_eq!(trials, [true, false, true]);
+}
+
+/// 生徒 `STUDENT` が予約した通話のレッスンを受け終えた完了記録を保存する（通話セッションの準備を省き、
+/// 保存先に直に入れる）。
+async fn record_completion(app: &App) {
+    use application::lesson::LessonCompletionRepository;
+    use domain::{
+        lesson::{LessonCompletion, LessonSource},
+        live_lesson::SessionId,
+    };
+
+    app.completions
+        .record(account_id(STUDENT), |history| {
+            Ok(LessonCompletion::restore(
+                app.completions.next_id(),
+                account_id(STUDENT),
+                COACH,
+                LessonSource::Live(SessionId::from_u128(1)),
+                nov1(2),
+                history.is_empty(),
+            ))
+        })
+        .await
+        .unwrap();
+}
+
+/// `GET /bookings/me` の `trial_available`（契約の形も確かめる）。
+async fn trial_available(app: &App) -> bool {
+    let (status, body) = get_my_bookings(&app.router, Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_list_contract(status, &body);
+    body["trial_available"].as_bool().unwrap()
+}
+
+#[tokio::test]
+async fn second_trial_after_cancelling_a_completed_trial_booking_is_409_trial_already_used() {
+    let app = app();
+    assert!(trial_available(&app).await, "予約も完了記録もない");
+    let trial = create(&app.router, STUDENT, 10, true).await;
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &trial).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!trial_available(&app).await, "有効な体験予約がある");
+    // 体験予約のレッスンを受け終えてから、その予約をキャンセルする
+    record_completion(&app).await;
+    let (status, body) = post_cancel(&app.router, Some(STUDENT), &trial, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        !trial_available(&app).await,
+        "キャンセル済みの予約しかなくても、受けたレッスンがあれば使用済み"
+    );
+    let created = app.analytics.events().len();
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(11, true)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_create_contract(status, &body);
+    assert_eq!(body["code"], "trial_already_used");
+    assert_eq!(
+        app.analytics.events().len(),
+        created,
+        "断った予約は発火しない"
+    );
+
+    // 通常の予約は通る
+    create(&app.router, STUDENT, 11, false).await;
+}
+
+#[tokio::test]
+async fn trial_is_available_again_after_cancelling_a_trial_booking_not_taken() {
+    let app = app();
+    let trial = create(&app.router, STUDENT, 10, true).await;
+    let (status, body) = post_cancel(&app.router, Some(STUDENT), &trial, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        trial_available(&app).await,
+        "受けていない体験予約をキャンセルしただけ"
+    );
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(11, true)).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_create_contract(status, &body);
+    assert_eq!(body["is_trial"], true);
 }
 
 #[tokio::test]
@@ -1233,7 +1320,7 @@ async fn student_without_bookings_gets_an_empty_list() {
     let (status, body) = get_my_bookings(&app.router, Some(STUDENT)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_list_contract(status, &body);
-    assert_eq!(body, json!({ "bookings": [] }));
+    assert_eq!(body, json!({ "bookings": [], "trial_available": true }));
 }
 
 #[tokio::test]

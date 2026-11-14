@@ -191,6 +191,7 @@ mod tests {
         let mut booking = CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
+            crate::in_memory::InMemoryLessonCompletionRepository::default(),
             RecordingAnalyticsSink::default(),
             FixedClock(CREATED_AT),
         )
@@ -322,6 +323,7 @@ mod tests {
         let create = CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
+            crate::in_memory::InMemoryLessonCompletionRepository::default(),
             RecordingAnalyticsSink::default(),
             FixedClock(CREATED_AT),
         );

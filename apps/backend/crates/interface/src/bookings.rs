@@ -10,6 +10,7 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     identity::{TokenVerifier, account_id_uuid},
+    lesson::LessonCompletionRepository,
     scheduling::{
         BookingRepository, CancelBooking, CancelBookingCommand, ConfirmBooking,
         ConfirmBookingCommand, CreateBooking, CreateBookingCommand, LessonMenuLookup, QuotaGate,
@@ -36,14 +37,14 @@ use crate::{
 };
 
 /// `/bookings` のハンドラーが使うユースケース。
-pub struct BookingsState<B, J, G, A, P, C> {
-    pub create_booking: CreateBooking<B, J, A, C>,
+pub struct BookingsState<B, J, M, G, A, P, C> {
+    pub create_booking: CreateBooking<B, J, M, A, C>,
     pub confirm_booking: ConfirmBooking<B, G, A, P, C>,
     pub cancel_booking: CancelBooking<B, A, P, C>,
 }
 
 /// ハンドラーが共有する [`BookingsState`]。
-type Shared<B, J, G, A, P, C> = Arc<BookingsState<B, J, G, A, P, C>>;
+type Shared<B, J, M, G, A, P, C> = Arc<BookingsState<B, J, M, G, A, P, C>>;
 
 /// student-app の `CreateBookingRequest`。
 #[derive(Deserialize)]
@@ -78,14 +79,15 @@ pub struct BookingLessonMenuBody {
 }
 
 /// `POST /bookings`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。予約する生徒はトークンのアカウント。
-pub async fn create_booking<B, J, G, A, P, C>(
-    State(state): State<Shared<B, J, G, A, P, C>>,
+pub async fn create_booking<B, J, M, G, A, P, C>(
+    State(state): State<Shared<B, J, M, G, A, P, C>>,
     account: AuthenticatedAccount,
     request: Result<Json<CreateBookingRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<BookingBody>), ApiError>
 where
     B: BookingRepository,
     J: LessonMenuLookup,
+    M: LessonCompletionRepository,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -111,14 +113,15 @@ where
 /// `POST /bookings/{booking_id}/confirm`。生徒だけが呼べ、確定できるのは自分の予約だけ。
 /// 月額の生徒のビデオ通話の暦月の枠が残っていなければ 409 `live_lesson_quota_exceeded`（不変条件 1）。失敗の応答は
 /// [`crate::scheduling_error`] が決める。
-pub async fn confirm_booking<B, J, G, A, P, C>(
-    State(state): State<Shared<B, J, G, A, P, C>>,
+pub async fn confirm_booking<B, J, M, G, A, P, C>(
+    State(state): State<Shared<B, J, M, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(booking_id): Path<String>,
 ) -> Result<Json<BookingBody>, ApiError>
 where
     B: BookingRepository,
     J: LessonMenuLookup,
+    M: LessonCompletionRepository,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -142,14 +145,15 @@ where
 ///
 /// 回数を消費するかはレスポンスに含めない（契約。判定は境界間イベント `BookingCancelled` の
 /// `consumes_quota` で entitlement に渡す）。リクエストの本文（任意の `reason`）は読まない。
-pub async fn cancel_booking<B, J, G, A, P, C>(
-    State(state): State<Shared<B, J, G, A, P, C>>,
+pub async fn cancel_booking<B, J, M, G, A, P, C>(
+    State(state): State<Shared<B, J, M, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(booking_id): Path<String>,
 ) -> Result<Json<BookingBody>, ApiError>
 where
     B: BookingRepository,
     J: LessonMenuLookup,
+    M: LessonCompletionRepository,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -204,8 +208,8 @@ pub(crate) fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLesso
 ///
 /// どれも生徒だけ。同じパスの `GET /bookings`（本部が見る予約の一覧）は [`crate::headquarters_bookings_router`] にあり、
 /// `merge` で 1 つのパスにまとまる。
-pub fn bookings_router<B, J, G, A, P, C, T>(
-    create_booking: CreateBooking<B, J, A, C>,
+pub fn bookings_router<B, J, M, G, A, P, C, T>(
+    create_booking: CreateBooking<B, J, M, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     tokens: T,
@@ -213,6 +217,7 @@ pub fn bookings_router<B, J, G, A, P, C, T>(
 where
     B: BookingRepository + 'static,
     J: LessonMenuLookup + 'static,
+    M: LessonCompletionRepository + 'static,
     G: QuotaGate + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
@@ -221,14 +226,17 @@ where
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
-        .route("/bookings", post(self::create_booking::<B, J, G, A, P, C>))
+        .route(
+            "/bookings",
+            post(self::create_booking::<B, J, M, G, A, P, C>),
+        )
         .route(
             "/bookings/{booking_id}/confirm",
-            post(self::confirm_booking::<B, J, G, A, P, C>),
+            post(self::confirm_booking::<B, J, M, G, A, P, C>),
         )
         .route(
             "/bookings/{booking_id}/cancel",
-            post(self::cancel_booking::<B, J, G, A, P, C>),
+            post(self::cancel_booking::<B, J, M, G, A, P, C>),
         )
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(BookingsState {

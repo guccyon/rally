@@ -35,7 +35,7 @@ pub enum SchedulingError {
     SlotStatusMismatchesSeats { status: SlotStatus },
     /// その生徒はそのスロットに有効な予約をすでに持っている（同じ生徒が同じ枠を 2 回は予約できない）
     SlotAlreadyBookedByStudent,
-    /// 体験予約はその生徒の初回の予約だけ（キャンセルされていない予約がすでにある）
+    /// 体験予約はその生徒の初回の予約だけ（キャンセルされていない予約がすでにあるか、完了したレッスンがある）
     TrialAlreadyUsed,
     /// 予約が確定前（`Pending`）でない（`status` は今の状態）
     BookingNotPending { status: BookingStatus },

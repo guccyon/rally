@@ -120,6 +120,7 @@ fn app() -> App {
         CreateBooking::new(
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
+            application::in_memory::InMemoryLessonCompletionRepository::default(),
             analytics.clone(),
             clock,
         ),
@@ -149,6 +150,7 @@ fn app() -> App {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
+            application::in_memory::InMemoryLessonCompletionRepository::default(),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(

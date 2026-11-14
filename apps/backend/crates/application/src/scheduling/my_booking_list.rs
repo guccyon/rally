@@ -18,4 +18,7 @@ pub struct MyBookingList {
     /// `items` の予約を一覧を読んだ時刻にキャンセルしたらどうなるかの見込み（予約の ID ごと）。キャンセルできない
     /// 予約（キャンセル済み）は含まない
     pub cancellations: BTreeMap<BookingId, CancellationPreview>,
+    /// 生徒が今体験予約できるか（キャンセルされていない予約がなく、完了したレッスンもないときだけ true。
+    /// [`Booking::is_trial_available`]）
+    pub trial_available: bool,
 }
