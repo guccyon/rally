@@ -185,6 +185,20 @@ describe("本部の予約の詳細", () => {
     expect(listOf(card, "キャンセルの経緯")).toBeUndefined();
   });
 
+  test("開始まで（hours_before_start）が載っていないキャンセルは、枠の時刻とキャンセルした日時から出し、説明文と食い違わない", async () => {
+    const { hours_before_start: _omitted, ...rest } = LEGACY_CANCEL;
+    render(
+      <BookingDetail
+        api={{ getBooking: detailOf({ ...DETAIL, status_changes: [CONFIRMED, rest as Schemas["BookingStatusChange"]] }) }}
+        bookingId={BOOKING_ID}
+      />,
+    );
+
+    const card = await screen.findByRole("article", { name: "10/22（木）18:30 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")?.[1]).toEqual(["開始まで", expect.stringMatching(/^開始の \d+ 時間/)]);
+    expect(within(card).getByRole("status")).toHaveTextContent("開始の何時間前かは、枠の時刻とキャンセルした日時から出しています");
+  });
+
   test("生徒のキャンセル（枠を使った）は、キャンセルした人・開始まで・ビデオ通話の枠を文で出し、理由の行を出さない", async () => {
     render(<BookingDetail api={{ getBooking: detailOf(DETAIL) }} bookingId={BOOKING_ID} />);
 

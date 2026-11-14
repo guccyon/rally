@@ -35,9 +35,21 @@ export function cancellerLabel(change: BookingStatusChange): string {
   }
 }
 
+/**
+ * 契約の hours_before_start が載っていないとき、枠の開始とキャンセルした日時から同じ規則（端数は 0 に向けて切り捨て、
+ * 開始より後は負）で出す。どちらかが読めなければ undefined。
+ */
+export function hoursBeforeStart(change: BookingStatusChange, slotStartsAt: string): number | undefined {
+  if (change.hours_before_start != null) return change.hours_before_start;
+  const diffMs = Date.parse(slotStartsAt) - Date.parse(change.changed_at);
+  if (Number.isNaN(diffMs)) return undefined;
+  const hours = Math.trunc(diffMs / 3_600_000);
+  return hours === 0 ? 0 : hours;
+}
+
 /** 開始の何時間前か（契約の hours_before_start。端数は 0 に向けて切り捨て、開始より後は負）。 */
-export function hoursBeforeStartLabel(hours: number | undefined): string {
-  if (hours === undefined) return NO_RECORD;
+export function hoursBeforeStartLabel(hours: number | null | undefined): string {
+  if (hours == null) return NO_RECORD;
   if (hours < 0) return `開始の ${-hours} 時間後`;
   if (hours === 0) return "開始の 1 時間以内";
   if (hours < 24) return `開始の ${hours} 時間前`;
