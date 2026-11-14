@@ -153,6 +153,8 @@ void main() {
     );
     expect(find.text('月 2 回のうち残り 1 回'), findsOneWidget);
     expect(find.text('プラン: スタンダード'), findsOneWidget);
+    // 契約があれば月額契約への入口は出さない
+    expect(find.text('月額契約へ進む'), findsNothing);
 
     // スレッドにはコーチの名前がないので、自分の予約に載っている名前で出す
     expect(find.text('佐藤 コーチ'), findsOneWidget);
@@ -921,5 +923,41 @@ void main() {
     ]);
     // ホームの画面には「ホーム」の入口を出さない
     expect(find.byTooltip('ホーム'), findsNothing);
+  });
+
+  testWidgets(
+    '月額契約がなければ、今月のビデオ通話の欄に文字のボタン「月額契約へ進む」を出し、押すと月額契約の画面を開く。契約したら消える',
+    (tester) async {
+      final api = FakeStudentApi();
+      final container = await pumpHome(tester, api);
+
+      final button = find.widgetWithText(TextButton, '月額契約へ進む');
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+
+      await tapText(tester, '月額契約を始める');
+      expect(find.text('月額契約を開始しました'), findsOneWidget);
+      await tester.tap(find.byTooltip('ホーム'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(studentFlowProvider).step, FlowStep.home);
+      expect(find.text('月額契約へ進む'), findsNothing);
+      expect(find.text('月 2 回のうち残り 2 回'), findsOneWidget);
+    },
+  );
+
+  testWidgets('受講権を読めなかったときは「月額契約へ進む」を出さない（契約の有無がわからない）', (tester) async {
+    final api = FakeStudentApi(
+      failures: {'getMyEntitlement': Fixtures.unreachable},
+    );
+    await pumpHome(tester, api);
+
+    expect(
+      find.text('ビデオ通話の残りの回数を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。'),
+      findsOneWidget,
+    );
+    expect(find.text('月額契約へ進む'), findsNothing);
   });
 }

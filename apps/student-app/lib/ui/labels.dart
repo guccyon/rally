@@ -221,6 +221,14 @@ String subscriptionPlanLabel(SubscriptionPlan plan) => switch (plan) {
 String subscriptionPlanChoiceLabel(SubscriptionPlanDetail detail) =>
     '${subscriptionPlanLabel(detail.plan)}　ビデオ通話 月 ${detail.liveLessonsPerMonth} 回';
 
+/// プロフィールの月額契約の行の subtitle（端末のタイムゾーンで）。例: `プラン: スタンダード・10/30（金）から`。
+/// 開始の日がわからなければ（この端末で始めた契約でない）プランだけ。例: `プラン: スタンダード`
+String subscriptionSummaryLabel(SubscriptionPlan plan, {DateTime? startedAt}) =>
+    [
+      'プラン: ${subscriptionPlanLabel(plan)}',
+      if (startedAt != null) '${_dayLabel(startedAt.toLocal())}から',
+    ].join('・');
+
 /// 今月のビデオ通話の残り回数（上限は契約プランで決まる）。例: `月 4 回のうち残り 3 回`
 String liveLessonQuotaLabel(LiveLessonQuota quota) =>
     '月 ${quota.limit} 回のうち残り ${quota.remaining} 回';

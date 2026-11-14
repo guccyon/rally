@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/app.dart';
 import 'package:rally_student_app/device/local_media.dart';
 import 'package:rally_student_app/state/student_flow.dart';
@@ -12,16 +13,21 @@ import 'support/pump.dart';
 /// 一周シナリオ（体験予約 → 初回レッスン → 完了記録 → 評価 → 月額契約）を画面遷移でたどる。
 /// 今の時刻は端末の時計のまま（見本のスロットの開始時刻より後なので、入室前チェックを開けて入室できる）。端末のカメラ・マイクは作り物。
 void main() {
-  Future<void> pumpApp(WidgetTester tester, FakeStudentApi api) =>
-      tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            studentApiProvider.overrideWithValue(api),
-            localMediaProvider.overrideWithValue(FakeLocalMedia()),
-          ],
-          child: const StudentApp(),
-        ),
-      );
+  /// [now] を渡すと、端末の時計の代わりにその時刻にする
+  Future<void> pumpApp(
+    WidgetTester tester,
+    FakeStudentApi api, {
+    DateTime? now,
+  }) => tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        studentApiProvider.overrideWithValue(api),
+        localMediaProvider.overrideWithValue(FakeLocalMedia()),
+        if (now != null) clockProvider.overrideWithValue(() => now),
+      ],
+      child: const StudentApp(),
+    ),
+  );
 
   Future<void> registerAndBook(WidgetTester tester) async {
     expect(find.text('アカウント登録'), findsOneWidget);
@@ -151,6 +157,175 @@ void main() {
         'listSubscriptionPlans',
         'startSubscription',
       ]);
+    },
+  );
+
+  /// 自分の予約を開き、一覧の先頭（いま体験予約した予約）をキャンセルして閉じる（キャンセルできるよう、開始より前の時刻で描いておく）
+  Future<void> cancelTrialInMyBookings(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('自分の予約'));
+    await tester.pumpAndSettle();
+    final cancel = find.text('この予約をキャンセルする').first;
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    await tapText(tester, 'キャンセルする');
+    expect(find.text('状態: キャンセル済み'), findsOneWidget);
+    await tester.tap(find.byTooltip('自分の予約を閉じる'));
+    await tester.pumpAndSettle();
+  }
+
+  void expectCancelledBooking(WidgetTester tester) {
+    expect(find.text('状態: キャンセル済み'), findsOneWidget);
+    expect(find.textContaining('この予約はもう確定待ちではありません。'), findsOneWidget);
+    expect(find.text('ホームに戻る'), findsOneWidget);
+    expect(find.text('予約が確定しました'), findsNothing);
+    expect(find.text('ビデオ通話で受ける'), findsNothing);
+    expect(find.text('動画を送って添削を受ける'), findsNothing);
+  }
+
+  testWidgets('確定した予約を自分の予約でキャンセルして閉じると、元の画面はキャンセル済みを出し、レッスンに進めない（#1364）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(myBookings: []);
+    await pumpApp(tester, api, now: Fixtures.now);
+
+    await registerAndBook(tester);
+    await cancelTrialInMyBookings(tester);
+
+    expectCancelledBooking(tester);
+    expect(api.calls.last, 'listMyBookings');
+    await tapText(tester, 'ホームに戻る');
+    expect(find.text('ホーム'), findsOneWidget);
+  });
+
+  testWidgets('動画の送付を開いてから自分の予約でキャンセルして閉じると、送付に戻らずキャンセル済みを出す', (tester) async {
+    final api = FakeStudentApi(myBookings: []);
+    await pumpApp(tester, api, now: Fixtures.now);
+
+    await registerAndBook(tester);
+    await tapText(tester, '動画を送って添削を受ける');
+    expect(find.text('動画を送る'), findsOneWidget);
+    await cancelTrialInMyBookings(tester);
+
+    expectCancelledBooking(tester);
+    expect(api.calls, isNot(contains('submitVideo')));
+  });
+
+  testWidgets(
+    '途中で離れる一周: 登録 → 体験予約 → 自分の予約から確定 → ホームの次にやることからレッスン → 完了の記録 → 今月のビデオ通話から月額契約',
+    (tester) async {
+      // 今の時刻はテストで進める（見本のスロットの 2 日前から始める。確定待ちの予約は始まる前だけ確定できる）
+      var now = Fixtures.now;
+      final api = FakeStudentApi(myBookings: const []);
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            studentApiProvider.overrideWithValue(api),
+            localMediaProvider.overrideWithValue(FakeLocalMedia()),
+            clockProvider.overrideWithValue(() => now),
+          ],
+          child: const StudentApp(),
+        ),
+      );
+      Future<void> goHome() async {
+        await tester.tap(find.byTooltip('ホーム'));
+        await tester.pumpAndSettle();
+        expect(find.text('ホーム'), findsOneWidget);
+      }
+
+      // 登録して体験予約を作り、確定せずにホームへ離れる
+      expect(find.text('アカウント登録'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'メールアドレス'),
+        'yamada@example.com',
+      );
+      await tester.enterText(find.widgetWithText(TextFormField, '表示名'), '山田');
+      await tapText(tester, 'テニス');
+      await tapText(tester, '登録する');
+      await tapText(tester, 'スロットを探して予約する');
+      await tapText(tester, '体験予約する');
+      expect(find.text('予約の確定待ち'), findsOneWidget);
+      api.nextActions
+        ..clear()
+        ..add(Fixtures.nextConfirmBooking);
+      await goHome();
+      expect(find.text('体験予約がまだ確定していません'), findsOneWidget);
+
+      // 自分の予約の確定待ちから確定する
+      await tester.tap(find.byTooltip('自分の予約'));
+      await tester.pumpAndSettle();
+      await tapText(tester, '内容を確かめて確定する');
+      expect(find.text('予約の確定待ち'), findsOneWidget);
+      await tapText(tester, '予約を確定する');
+      expect(find.text('予約が確定しました'), findsOneWidget);
+      expect(api.calls, contains('confirmBooking'));
+
+      // 受け方を選ばずにホームへ離れ、開始時刻を過ぎてから次にやることのビデオ通話で受ける
+      api.nextActions
+        ..clear()
+        ..add(Fixtures.nextJoinLiveLesson);
+      await goHome();
+      expect(find.text('体験予約のレッスンを受けましょう'), findsOneWidget);
+      now = Fixtures.slot.startsAt.add(const Duration(minutes: 1));
+      await tester.pump(const Duration(seconds: 1));
+      await tapText(tester, 'ビデオ通話で受ける');
+      expect(find.text('入室前チェック'), findsOneWidget);
+      await tapText(tester, '入室する');
+      expect(find.text('ビデオ通話'), findsOneWidget);
+      await tapText(tester, '通話を終了する');
+      expect(find.text('レッスンの完了'), findsOneWidget);
+
+      // 完了を記録せずにホームへ離れ、次にやることから完了を記録する
+      api.nextActions
+        ..clear()
+        ..add(Fixtures.nextRecordLiveCompletion);
+      await goHome();
+      expect(find.text('ビデオ通話が終わりました'), findsOneWidget);
+      await tapText(tester, '完了の記録へ進む');
+      expect(find.text('レッスンの完了'), findsOneWidget);
+      await tapText(tester, '完了を記録する');
+      expect(find.text('初回レッスンを完了しました'), findsOneWidget);
+      expect(
+        (api.requests.whereType<RecordLessonCompletionRequest>().single)
+            .toJson()['session_id'],
+        Fixtures.sessionId,
+      );
+
+      // 月額契約へ進まずにホームへ離れる。プロフィールにも「月額契約へ進む」がある
+      api.nextActions
+        ..clear()
+        ..add(Fixtures.nextStartSubscription);
+      await goHome();
+      expect(find.text('月額契約で、続けて教わりましょう'), findsOneWidget);
+      await tester.tap(find.byTooltip('プロフィール'));
+      await tester.pumpAndSettle();
+      expect(find.text('月額契約へ進む'), findsOneWidget);
+      expect(find.text('まだ月額契約はありません'), findsOneWidget);
+      await tester.tap(find.byTooltip('プロフィールを閉じる'));
+      await tester.pumpAndSettle();
+
+      // 今月のビデオ通話の欄の文字のボタンから月額契約を始める
+      final quotaEntry = find.widgetWithText(TextButton, '月額契約へ進む');
+      await tester.ensureVisible(quotaEntry);
+      await tester.tap(quotaEntry);
+      await tester.pumpAndSettle();
+      await tapText(tester, '月額契約を始める');
+      expect(find.text('月額契約を開始しました'), findsOneWidget);
+
+      // 契約したあとは、ホームにもプロフィールにも「月額契約へ進む」を出さない
+      api.nextActions.clear();
+      await goHome();
+      expect(find.text('次にやること'), findsNothing);
+      expect(find.text('月額契約へ進む'), findsNothing);
+      expect(find.text('月 2 回のうち残り 2 回'), findsOneWidget);
+      await tester.tap(find.byTooltip('プロフィール'));
+      await tester.pumpAndSettle();
+      expect(find.text('月額契約へ進む'), findsNothing);
+      expect(find.textContaining('プラン: スタンダード・'), findsOneWidget);
+      expect(api.calls.where((c) => c == 'startSubscription'), hasLength(1));
     },
   );
 

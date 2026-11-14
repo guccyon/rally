@@ -16,6 +16,7 @@ class SubscriptionState {
     this.subscription,
     this.entitlement,
     this.noEntitlement = false,
+    this.entitlementFailed = false,
     // 渡した元のリストを後で変えても状態が変わらないよう、読み取り専用の写しを持つ
   }) : subscriptionPlans = subscriptionPlans == null
            ? null
@@ -37,12 +38,21 @@ class SubscriptionState {
   /// `getMyEntitlement` が 404（受講権がまだない＝月額契約の前）を返したら true
   final bool noEntitlement;
 
+  /// プロフィールで受講権（`getMyEntitlement`）を読めなかったら true（月額契約の欄にだけその旨を出す。ホームの欄は
+  /// [StudentFlowState.homeFailures] のまま）
+  final bool entitlementFailed;
+
+  /// 受講権を読んでいる途中か（まだ読めておらず、契約の前とも読めなかったともわかっていない）
+  bool get entitlementLoading =>
+      entitlement == null && !noEntitlement && !entitlementFailed;
+
   SubscriptionState copyWith({
     List<SubscriptionPlanDetail>? subscriptionPlans,
     bool? subscriptionPlansFailed,
     Subscription? subscription,
     Entitlement? entitlement,
     bool? noEntitlement,
+    bool? entitlementFailed,
   }) => SubscriptionState(
     subscriptionPlans: subscriptionPlans ?? this.subscriptionPlans,
     subscriptionPlansFailed:
@@ -50,6 +60,7 @@ class SubscriptionState {
     subscription: subscription ?? this.subscription,
     entitlement: entitlement ?? this.entitlement,
     noEntitlement: noEntitlement ?? this.noEntitlement,
+    entitlementFailed: entitlementFailed ?? this.entitlementFailed,
   );
 }
 
@@ -84,6 +95,18 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
     }
   }
 
+  /// プロフィールを開いたときに受講権を読む（[loadEntitlement]）。読めなければ [SubscriptionState.entitlementFailed] を立てるだけで投げない
+  /// （表示名の欄はそのまま使え、失敗の文言も出さない）
+  Future<void> loadForProfile() async {
+    state = state.copyWith(entitlementFailed: false);
+    try {
+      await loadEntitlement();
+    } on StudentApiException {
+      if (!ref.mounted) return;
+      state = state.copyWith(entitlementFailed: true);
+    }
+  }
+
   /// 契約プランとビデオ通話の暦月の上限（`listSubscriptionPlans`）を読む。契約の画面を開いたときに呼ぶ。
   /// 読めなくてもプランは名前だけで選べるので、busy にせず失敗の文言も出さない
   /// （[SubscriptionState.subscriptionPlansFailed] を立て、プランの欄にだけその旨を出す）。
@@ -115,6 +138,7 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
       subscription: response.subscription,
       entitlement: response.entitlement,
       noEntitlement: false,
+      entitlementFailed: false,
     );
   });
 }
