@@ -16,7 +16,6 @@ use application::{
     scheduling::SchedulingCoachAcceptanceLookup,
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -38,6 +37,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.favorite_coaches(),
             SchedulingCoachAcceptanceLookup::new(ports.coach_acceptances()),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

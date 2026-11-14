@@ -33,6 +33,9 @@ services:
       # サーバーの時計を実際より進める秒数。触れる環境で QA が「翌日」をまたぐ流れを確かめるときだけ、工場の shipper が渡す
       # （.factory-config/ship.yaml の touch.clock_env。factory-engine の ADR 0028 の scenario_time）。本番には渡さないので 0 のまま
       CLOCK_OFFSET_SECONDS: ${CLOCK_OFFSET_SECONDS:-0}
+      # アクセストークンの署名の鍵（秘密情報。Issue #1593）。値はリポジトリに置かず、環境ごとに人（提供元）が用意した置き場から
+      # shipper の環境変数で渡す。渡さなければ空で、backend は署名なしのモックのトークンで動く（apps/backend の README の「認証」）
+      ACCESS_TOKEN_SIGNING_KEY: ${ACCESS_TOKEN_SIGNING_KEY:-}
     depends_on:
       postgres: { condition: service_healthy }
     ports:

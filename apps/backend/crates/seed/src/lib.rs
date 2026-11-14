@@ -4,8 +4,13 @@
 //! 計画（[`SeedPlan`]。乱数の種だけから決まる純粋な生成）と、その実行（[`Seeder`]）を分ける。書いた結果の
 //! 件数と分布は [`SeedReport`] が DB から読む。依存してよいのは domain・application・infra
 //! （`crates/architecture/tests/dependency_direction.rs`）。
+//!
+//! 触れる環境（staging）のログインの手がかりと、アカウントのアクセストークンを発行する `access-token`（[`LoginHint`]・
+//! [`AccessTokenArgs`]。Issue #1593）も同じイメージに入れるのでここに置く。
 
+mod access_token_args;
 mod coach_plan;
+mod login_hint;
 mod retention;
 mod seed_args;
 mod seed_error;
@@ -16,7 +21,9 @@ mod slot_plan;
 mod step;
 mod student_plan;
 
+pub use access_token_args::AccessTokenArgs;
 pub use coach_plan::CoachPlan;
+pub use login_hint::LoginHint;
 pub use retention::Retention;
 pub use seed_args::SeedArgs;
 pub use seed_error::SeedError;

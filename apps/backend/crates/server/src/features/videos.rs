@@ -8,7 +8,7 @@ use application::{
     entitlement::EntitlementReviewGate,
 };
 use axum::Router;
-use infra::{MockAiFeedbackGenerator, MockTokenService, MockVideoStorage};
+use infra::{MockAiFeedbackGenerator, MockVideoStorage};
 
 use crate::ports::Ports;
 
@@ -31,6 +31,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.events(),
             ports.clock(),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

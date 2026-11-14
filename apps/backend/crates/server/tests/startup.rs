@@ -64,12 +64,13 @@ impl Server {
     }
 }
 
-/// バイナリを起動するコマンド。親の `DATABASE_URL`・`APP_VERSION` は渡さず、`envs` だけを足す。
+/// バイナリを起動するコマンド。親の `DATABASE_URL`・`APP_VERSION`・`ACCESS_TOKEN_SIGNING_KEY` は渡さず、`envs` だけを足す。
 fn command(envs: &[(&str, &str)]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_server"));
     command
         .env_remove("DATABASE_URL")
         .env_remove("APP_VERSION")
+        .env_remove("ACCESS_TOKEN_SIGNING_KEY")
         .env("BIND_ADDR", "127.0.0.1:0")
         .envs(envs.iter().copied())
         .stdin(Stdio::null());
@@ -148,6 +149,31 @@ fn exits_with_the_cause_when_database_url_is_invalid() {
         stderr.contains("DATABASE_URL の Postgres につなげない"),
         "{stderr}"
     );
+}
+
+#[test]
+fn issues_signed_tokens_when_the_signing_key_is_set() {
+    let server = Server::start(&[(
+        "ACCESS_TOKEN_SIGNING_KEY",
+        "startup-test-signing-key-0123456789abcdef",
+    )]);
+
+    let (status, body) = server.request("POST", "/accounts", Some(register_body()));
+    assert_eq!(status, 201, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    let token = body["access_token"].as_str().unwrap();
+    assert!(token.starts_with("v1."), "{token}");
+}
+
+#[test]
+fn exits_with_the_cause_when_the_signing_key_is_short() {
+    let stderr = fails_to_start(&[("ACCESS_TOKEN_SIGNING_KEY", "short-key")]);
+
+    assert!(
+        stderr.contains("ACCESS_TOKEN_SIGNING_KEY は 32 バイト以上"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("short-key"), "鍵の値を出さない: {stderr}");
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]

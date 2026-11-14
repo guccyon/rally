@@ -5,7 +5,6 @@ use application::{
     profile::{GetCoachBio, UpdateCoachProfile},
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -14,6 +13,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         GetAccount::new(ports.accounts()),
         GetCoachBio::new(ports.accounts()),
         UpdateCoachProfile::new(ports.accounts()),
-        MockTokenService,
+        ports.tokens(),
     )
 }
