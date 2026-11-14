@@ -229,8 +229,8 @@ terms:
     code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended, LiveLessonSession::end_by_headquarters, endLiveLessonSessionByHeadquarters, live_lesson.session_headquarters_ends]
     note: >-
       開始・終了できるのは参加者だけで、確定した予約にしか開始できず、予約したスロットの開始時刻より前には開始できず（開始時刻ちょうどから。
-      完了はセッションの終了の後にしか記録できないので、枠の開始より前に完了したレッスンはできない。#899）、同じ予約のセッションは 1 つ。グループレッスンの通話中のセッションには、
-      結び付いた予約の生徒が同じセッションに入る。完了したレッスン（lesson_completion）は結び付いた予約の生徒ごとに 1 つで、終了したセッションにだけ記録できる。
+      完了はセッションの終了の後にしか記録できないので、枠の開始より前に完了したレッスンはできない。#899）、同じ予約のセッションは 1 つ。通話中のセッションには、
+      あとから入る参加者が同じセッションに入る（マンツーマンでは先に入室した相手のあとのコーチ・生徒。#1471。グループレッスンでは結び付いた予約の生徒）。完了したレッスン（lesson_completion）は結び付いた予約の生徒ごとに 1 つで、終了したセッションにだけ記録できる。
       admin-web の本部の画面での呼び名は「ビデオ通話」（例: 「ビデオ通話の記録」「終わっていないビデオ通話」）で、「ライブレッスン」「通話」と言い換えない（specs/design/content.yaml の glossary_mapping。#898）。
   - id: prejoin_check
     ja: "入室前チェック"
