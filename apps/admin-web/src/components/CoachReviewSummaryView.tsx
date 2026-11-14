@@ -50,7 +50,8 @@ export async function loadCoachReviews(
  * 評価の件数と平均と、その下に評価の一覧。コーチの「自分の評価」と本部の画面で共通。
  * `showLessonMenu` は一覧の各行にレッスンのメニューを出すか、`renderReply` は各行の下に出す返信の欄（どちらも CoachReviewList）。
  * `maxRating`・`period` は一覧をその点以下・その期間（評価の付いた日付）に絞って読んだとき（本部の画面だけ）。
- * `showCoachId` は件数と平均の上にコーチ ID を出すか。本部の画面はコーチを表示名で選ぶので出さない（#897）。
+ * `coachName` を渡すと件数と平均の上に「コーチ」としてその表示名を出す（コーチの「自分の評価」。内部のコーチ ID は出さない #1446）。
+ * 空なら「表示名未設定」と出す。本部の画面はコーチを表示名で選ぶので渡さない（#897）。
  * 一覧の見出しと 0 件の文言に条件を添える（件数と平均は絞らないので、その見出しは変えない）。
  */
 export function CoachReviewSummaryView({
@@ -60,13 +61,13 @@ export function CoachReviewSummaryView({
   renderReply,
   maxRating = null,
   period = null,
-  showCoachId = true,
+  coachName,
 }: CoachReviews & {
   showLessonMenu?: boolean;
   renderReply?: (review: Schemas["CoachReview"]) => ReactNode;
   maxRating?: number | null;
   period?: { from: string; to: string } | null;
-  showCoachId?: boolean;
+  coachName?: string;
 }) {
   const conditions = [
     ...(period === null ? [] : [`${formatDay(period.from)} 〜 ${formatDay(period.to)}`]),
@@ -75,10 +76,10 @@ export function CoachReviewSummaryView({
   return (
     <>
       <dl aria-label="評価の件数と平均" className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
-        {showCoachId && (
+        {coachName !== undefined && (
           <>
-            <dt>コーチ ID</dt>
-            <dd className="font-mono">{summary.coach_id}</dd>
+            <dt>コーチ</dt>
+            <dd>{coachName.trim() === "" ? "表示名未設定" : coachName}</dd>
           </>
         )}
         <dt>評価の件数</dt>
