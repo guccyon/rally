@@ -129,6 +129,19 @@ export const SCREENS: Screen[] = [
     },
   },
   {
+    id: "coach-slots-publish-past",
+    title: "コーチ: 予約枠（過去の開始で公開して 422）",
+    role: "coach",
+    path: "/coach",
+    open: async (page) => {
+      await coachTab("予約枠")(page);
+      await page.getByLabel("開始").fill("2020-01-01T10:00");
+      await page.getByLabel("終了").fill("2020-01-01T11:00");
+      await page.getByRole("button", { name: "枠を公開" }).click();
+      await page.getByRole("alert").filter({ hasText: "開始の日時が過去" }).waitFor();
+    },
+  },
+  {
     id: "coach-lesson-menus",
     title: "コーチ: レッスンメニュー",
     role: "coach",
