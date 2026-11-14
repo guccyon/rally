@@ -41,7 +41,7 @@ mod pg_slot_repository;
 mod pg_support;
 mod pg_video_repository;
 pub mod scheduling_values;
-mod signed_token;
+mod signed_token_service;
 mod unknown_video_call_provider;
 mod video_call_backend;
 
@@ -74,7 +74,7 @@ pub use pg_notification_repository::PgNotificationRepository;
 pub use pg_notification_settings_repository::PgNotificationSettingsRepository;
 pub use pg_slot_repository::PgSlotRepository;
 pub use pg_video_repository::PgVideoRepository;
-pub use signed_token::SignedTokenService;
+pub use signed_token_service::SignedTokenService;
 pub use unknown_video_call_provider::UnknownVideoCallProvider;
 pub use video_call_backend::VideoCallBackend;
 

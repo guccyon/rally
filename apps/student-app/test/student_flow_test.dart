@@ -74,7 +74,10 @@ void main() {
     tester,
   ) async {
     // 登録したばかりの生徒（予約がないので体験予約できる）
-    final api = FakeStudentApi(myBookings: const []);
+    final api = FakeStudentApi(
+      myBookings: const [],
+      lessonCompletions: const [],
+    );
     await pumpApp(tester, api);
 
     await registerAndBook(tester);
@@ -114,6 +117,7 @@ void main() {
     (tester) async {
       final api = FakeStudentApi(
         myBookings: const [],
+        lessonCompletions: const [],
         reviews: [Fixtures.reviewInProgress, Fixtures.reviewReturned],
       );
       await pumpApp(tester, api);
@@ -187,7 +191,7 @@ void main() {
   testWidgets('確定した予約を自分の予約でキャンセルして閉じると、元の画面はキャンセル済みを出し、レッスンに進めない（#1364）', (
     tester,
   ) async {
-    final api = FakeStudentApi(myBookings: []);
+    final api = FakeStudentApi(myBookings: [], lessonCompletions: const []);
     await pumpApp(tester, api, now: Fixtures.now);
 
     await registerAndBook(tester);
@@ -200,7 +204,7 @@ void main() {
   });
 
   testWidgets('動画の送付を開いてから自分の予約でキャンセルして閉じると、送付に戻らずキャンセル済みを出す', (tester) async {
-    final api = FakeStudentApi(myBookings: []);
+    final api = FakeStudentApi(myBookings: [], lessonCompletions: const []);
     await pumpApp(tester, api, now: Fixtures.now);
 
     await registerAndBook(tester);
@@ -217,7 +221,10 @@ void main() {
     (tester) async {
       // 今の時刻はテストで進める（見本のスロットの 2 日前から始める。確定待ちの予約は始まる前だけ確定できる）
       var now = Fixtures.now;
-      final api = FakeStudentApi(myBookings: const []);
+      final api = FakeStudentApi(
+        myBookings: const [],
+        lessonCompletions: const [],
+      );
       tester.view.physicalSize = const Size(800, 3000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -334,7 +341,10 @@ void main() {
     tester,
   ) async {
     // 登録したばかりの生徒（予約がないので体験予約できる）
-    final api = FakeStudentApi(myBookings: const []);
+    final api = FakeStudentApi(
+      myBookings: const [],
+      lessonCompletions: const [],
+    );
     await pumpApp(tester, api);
 
     expect(find.byTooltip('チャット'), findsNothing);
@@ -394,7 +404,11 @@ void main() {
     };
     await pumpApp(
       tester,
-      FakeStudentApi(myBookings: const [], failures: failures),
+      FakeStudentApi(
+        myBookings: const [],
+        lessonCompletions: const [],
+        failures: failures,
+      ),
     );
     await registerAndBook(tester);
     await tester.tap(find.byTooltip('チャット'));
@@ -464,7 +478,10 @@ void main() {
   });
 
   testWidgets('ホームから月額契約を始めたときは「チャットへ戻る」を出さない', (tester) async {
-    await pumpApp(tester, FakeStudentApi(myBookings: const []));
+    await pumpApp(
+      tester,
+      FakeStudentApi(myBookings: const [], lessonCompletions: const []),
+    );
     await registerAndBook(tester);
     await tapText(tester, 'ビデオ通話で受ける');
     await tapText(tester, '入室する');

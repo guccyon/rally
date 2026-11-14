@@ -204,6 +204,10 @@ fn app_with_entitlements(
             clock,
         ),
         CancelBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
+        application::scheduling::DescribeBooking::new(
+            bookings.clone(),
+            application::profile::ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachAccountLookup::new(
@@ -429,6 +433,15 @@ async fn student_creates_a_trial_booking_with_the_contract_shape() {
     assert_eq!(body["created_at"], "2026-10-26T00:00:00Z");
     assert_eq!(body["confirmed_at"], Value::Null);
     assert_eq!(
+        body["ends_at"], "2026-11-01T11:00:00Z",
+        "スロットの終了時刻"
+    );
+    assert_eq!(body["sport"], "tennis", "スロットのスポーツ");
+    assert!(
+        body.get("coach_display_name").is_none(),
+        "コーチのアカウントが引けなければ coach_display_name を載せない: {body}"
+    );
+    assert_eq!(
         slot_status(&app, 10),
         SlotStatus::Open,
         "作成ではスロットを埋めない"
@@ -572,6 +585,26 @@ async fn second_trial_after_cancelling_a_completed_trial_booking_is_409_trial_al
 
     // 通常の予約は通る
     create(&app.router, STUDENT, 11, false).await;
+}
+
+/// 予約を作らずに（動画添削などで）レッスンを受け終えた生徒（#1594）。予約は 0 件でも体験は使用済みで、通常の予約は通る
+#[tokio::test]
+async fn student_with_a_completed_lesson_and_no_booking_is_not_offered_a_trial() {
+    let app = app();
+    record_completion(&app).await;
+    assert!(
+        !trial_available(&app).await,
+        "予約がなくても、受けたレッスンがあれば使用済み"
+    );
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, true)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "trial_already_used");
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, false)).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_create_contract(status, &body);
+    assert_eq!(body["is_trial"], false);
 }
 
 #[tokio::test]
@@ -1119,6 +1152,43 @@ async fn only_authenticated_students_can_cancel() {
     assert!(app.events.events().is_empty());
 }
 
+// --- 予約を返す操作の終了時刻・スポーツ・コーチの表示名 ---
+
+#[tokio::test]
+async fn created_confirmed_and_cancelled_bookings_carry_the_slot_end_sport_and_coach_display_name()
+{
+    let app = app();
+    register_coach(&app).await;
+    let added_fields = |body: &Value| {
+        (
+            body["ends_at"].clone(),
+            body["sport"].clone(),
+            body["coach_display_name"].clone(),
+        )
+    };
+    let carried = (
+        json!("2026-11-01T12:00:00Z"),
+        json!("tennis"),
+        json!("たなか"),
+    );
+
+    let (status, created) = post_bookings(&app.router, Some(STUDENT), booking(11, false)).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    assert_create_contract(status, &created);
+    assert_eq!(added_fields(&created), carried, "作成");
+
+    let booking_id = created["booking_id"].as_str().unwrap();
+    let (status, confirmed) = post_confirm(&app.router, Some(STUDENT), booking_id).await;
+    assert_eq!(status, StatusCode::OK, "{confirmed}");
+    assert_confirm_contract(status, &confirmed);
+    assert_eq!(added_fields(&confirmed), carried, "確定");
+
+    let (status, cancelled) = post_cancel(&app.router, Some(STUDENT), booking_id, None).await;
+    assert_eq!(status, StatusCode::OK, "{cancelled}");
+    assert_cancel_contract(status, &cancelled);
+    assert_eq!(added_fields(&cancelled), carried, "キャンセル");
+}
+
 // --- GET /bookings/me ---
 
 async fn get_my_bookings(router: &Router, token: Option<&str>) -> (StatusCode, Value) {
@@ -1213,6 +1283,16 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
         "自己紹介文を書いていないコーチは coach_bio を載せない"
     );
     assert_eq!(items[2]["booking"]["is_trial"], true);
+    // 予約にも、添えたスロットと同じ終了時刻・スポーツ・コーチの表示名を載せる
+    for item in items {
+        assert_eq!(
+            item["booking"]["ends_at"], item["slot"]["ends_at"],
+            "{item}"
+        );
+        assert_eq!(item["booking"]["sport"], item["slot"]["sport"], "{item}");
+        assert_eq!(item["booking"]["coach_display_name"], "たなか", "{item}");
+    }
+    assert_eq!(items[2]["booking"]["ends_at"], "2026-11-01T11:00:00Z");
     // 受講権のない生徒なので、キャンセルできる予約は枠を使わない。キャンセル済みは null
     assert_eq!(
         items

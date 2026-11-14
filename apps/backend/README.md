@@ -191,7 +191,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 - 本番と staging は署名付きにする。鍵は秘密情報で、工場は作らず、リポジトリに置かない。値は環境ごとに人（提供元）が用意した置き場から、shipper が `deploy/compose.yaml` の `ACCESS_TOKEN_SIGNING_KEY` に渡す（渡さなければモックのまま動く）。本番と staging は別の鍵にする（staging のトークンで本番に入れないように）
 - 署名付きのトークンにも期限と失効はない。鍵を替えると、それまでに発行したトークンはすべて 401 になる（生徒は登録し直せないので、ログイン（ADR 0012）ができるまでは鍵を替えると入り直せない）。パスワード・外部 IdP は扱わない
-- テスト: `crates/infra/src/signed_token.rs`（発行と検証・`mock.` の拒否・改ざん・別の鍵・短い鍵）、`crates/infra/tests/access_token_backend.rs`（環境変数での選び方）、`crates/server/tests/signed_access_tokens.rs`（鍵ありの設定で組み立てたルーターで、本部・コーチ・生徒の操作が署名付きのトークンで通り、手で作った `mock.` のトークンと改ざんしたトークンはどの役割でも 401）
+- テスト: `crates/infra/src/signed_token_service.rs`（発行と検証・`mock.` の拒否・改ざん・別の鍵・短い鍵）、`crates/infra/tests/access_token_backend.rs`（環境変数での選び方）、`crates/server/tests/signed_access_tokens.rs`（鍵ありの設定で組み立てたルーターで、本部・コーチ・生徒の操作が署名付きのトークンで通り、手で作った `mock.` のトークンと改ざんしたトークンはどの役割でも 401）
 
 ### staging でトークンを作る（runbook）
 

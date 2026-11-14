@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,7 @@ import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/app.dart';
 import 'package:rally_student_app/device/local_media.dart';
+import 'package:rally_student_app/session/file_session_store.dart';
 import 'package:rally_student_app/session/session_store.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 
@@ -62,7 +64,11 @@ void main() {
 
   testWidgets('登録したあと開き直すと、同じ生徒のままホームが開き、ホームの欄はサーバーから読み直す', (tester) async {
     final store = MemorySessionStore();
-    await openApp(tester, FakeStudentApi(myBookings: const []), store);
+    await openApp(
+      tester,
+      FakeStudentApi(myBookings: const [], lessonCompletions: const []),
+      store,
+    );
     await register(tester);
 
     final saved = store.read()!;
@@ -96,6 +102,49 @@ void main() {
     expect(api.calls, isNot(contains('registerAccount')));
   });
 
+  testWidgets('iOS / Android: アプリを止めて起動し直しても、端末のファイルから同じ生徒のホームが開く（#1597）', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('rally_session_test');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/rally_student_session.json');
+
+    await openApp(
+      tester,
+      FakeStudentApi(myBookings: const []),
+      FileSessionStore(file),
+    );
+    await register(tester);
+
+    // 起動し直す（メモリは捨て、同じファイルを指す保管を作り直す）
+    final api = FakeStudentApi();
+    final container = await openApp(tester, api, FileSessionStore(file));
+
+    expect(find.text('アカウント登録'), findsNothing);
+    expect(find.text('山田さん、こんにちは'), findsOneWidget);
+    final state = container.read(studentFlowProvider);
+    expect(state.step, FlowStep.home);
+    expect(state.accessToken, Fixtures.registered.accessToken);
+    expect(api.calls.first, 'getMyStudentProfile');
+    expect(api.calls, containsAll(['listMyBookings', 'getMyEntitlement']));
+    expect(api.calls, isNot(contains('registerAccount')));
+  });
+
+  testWidgets('iOS / Android: 端末のファイルが壊れていれば、落ちずに登録の画面から始まる（#1597）', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('rally_session_test');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/rally_student_session.json')
+      ..writeAsStringSync('not json');
+
+    final api = FakeStudentApi();
+    await openApp(tester, api, FileSessionStore(file));
+
+    expect(find.text('アカウント登録'), findsOneWidget);
+    expect(api.calls, isEmpty);
+  });
+
   testWidgets('開き直したときは読み直した生徒を残し直す（表示名を変えていればそれが出る）', (tester) async {
     final store = MemorySessionStore()
       ..save(
@@ -120,7 +169,11 @@ void main() {
 
   testWidgets('段の状態は残さない: 予約の確定待ちの画面で開き直しても、ホームから始まる', (tester) async {
     final store = MemorySessionStore();
-    await openApp(tester, FakeStudentApi(myBookings: const []), store);
+    await openApp(
+      tester,
+      FakeStudentApi(myBookings: const [], lessonCompletions: const []),
+      store,
+    );
     await register(tester);
     await tapText(tester, 'スロットを探して予約する');
     await tapText(tester, '体験予約する');

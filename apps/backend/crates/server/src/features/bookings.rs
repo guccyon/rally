@@ -1,10 +1,12 @@
 //! 生徒の予約の作成・確定・キャンセル（`POST /bookings`・`/bookings/{booking_id}/confirm`・`/cancel`）。確定は
-//! entitlement に通話の枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。
+//! entitlement に通話の枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。返す予約に添えるコーチの表示名は
+//! アカウントの保存先から読む。
 
 use application::{
     catalog::CatalogLessonMenuLookup,
     entitlement::EntitlementQuotaGate,
-    scheduling::{CancelBooking, ConfirmBooking, CreateBooking},
+    profile::ProfileCoachDisplayNameLookup,
+    scheduling::{CancelBooking, ConfirmBooking, CreateBooking, DescribeBooking},
 };
 use axum::Router;
 
@@ -31,6 +33,10 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.analytics(),
             ports.events(),
             ports.clock(),
+        ),
+        DescribeBooking::new(
+            ports.bookings(),
+            ProfileCoachDisplayNameLookup::new(ports.accounts()),
         ),
         ports.tokens(),
     )
