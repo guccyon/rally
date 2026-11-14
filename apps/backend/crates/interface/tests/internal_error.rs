@@ -151,10 +151,16 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             clock,
         ),
         CancelBooking::new(
-            bookings,
+            bookings.clone(),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,
+        ),
+        application::scheduling::DescribeBooking::new(
+            bookings.clone(),
+            application::profile::ProfileCoachDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
         ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),

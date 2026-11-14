@@ -163,6 +163,12 @@ fn app() -> App {
             events.clone(),
             clock.clone(),
         ),
+        application::scheduling::DescribeBooking::new(
+            bookings.clone(),
+            application::profile::ProfileCoachDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+        ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachAccountLookup::new(
