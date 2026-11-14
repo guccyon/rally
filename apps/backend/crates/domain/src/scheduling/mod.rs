@@ -14,7 +14,8 @@
 //! [`CoachAcceptanceChange`]（止めた記録は理由 [`CoachSuspensionReason`] を持つ）。コーチのお休み（本部が期間の予約を
 //! まとめてキャンセルし、枠を取り下げた記録）は [`CoachLeave`]（依頼は [`CoachLeaveRequest`]、生徒への一言は
 //! [`CoachLeaveNote`]、キャンセルした予約の写しは [`CoachLeaveBooking`]）。期間の何を片づけるかは [`CoachLeaveTargets`] の
-//! 1 か所（本部が確かめる一覧とお休みにする操作が共に使う）。不変条件の違反は
+//! 1 か所（本部が確かめる一覧とお休みにする操作が共に使う）。生徒の次の操作（確定待ち → 入室できる同期レッスン → 完了の
+//! 記録なし → 次の同期レッスン → 添削待ち → 月額契約なし）の決め方は [`NextAction::decide`] の 1 か所（ADR 0010）。不変条件の違反は
 //! [`SchedulingError`]。
 
 mod booking;
@@ -41,6 +42,7 @@ mod coach_leave_request;
 mod coach_leave_targets;
 mod coach_recent_cancelled_booking_count;
 mod coach_suspension_reason;
+mod next_action;
 mod recent_lesson_menu_bookings;
 mod recent_student_bookings;
 mod scheduling_error;
@@ -77,6 +79,7 @@ pub use coach_leave_request::CoachLeaveRequest;
 pub use coach_leave_targets::CoachLeaveTargets;
 pub use coach_recent_cancelled_booking_count::CoachRecentCancelledBookingCount;
 pub use coach_suspension_reason::CoachSuspensionReason;
+pub use next_action::NextAction;
 pub use recent_lesson_menu_bookings::RecentLessonMenuBookings;
 pub use recent_student_bookings::RecentStudentBookings;
 pub use scheduling_error::SchedulingError;

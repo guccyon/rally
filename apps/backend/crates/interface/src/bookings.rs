@@ -191,7 +191,7 @@ pub(crate) fn booking_body(booking: &Booking) -> Result<BookingBody, ApiError> {
     })
 }
 
-fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLessonMenuBody {
+pub(crate) fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLessonMenuBody {
     BookingLessonMenuBody {
         lesson_menu_id: lesson_menu_id_uuid::format(menu.id()),
         name: menu.name().as_str().to_string(),

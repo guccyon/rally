@@ -226,6 +226,13 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 行動イベント `booking.cancelled` を 1 回発火する。`hours_before_start` はキャンセルした時刻から開始時刻までの時間を時間単位で切り捨てた整数（開始後のキャンセルは負）
 - 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・23 / 25 時間前の `consumes_quota`・スロットが空くこと・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで通す）、`crates/infra/tests/domain_event_payload.rs`（`BookingCancelled` のペイロードが AsyncAPI の `required` と一致すること）
 
+## scheduling: 生徒の次の操作（ADR 0010）
+
+- `GET /me/next-actions`（student-app の `getMyNextActions`）: 生徒だけが呼べる（コーチ・本部は 403、トークンがなければ 401）。トークンの生徒の予約と予約した枠・予約が結び付いた通話セッション・送った動画・完了記録・受講権の有無を読み、次の操作を優先の順に 3 件まで返す。なければ空の配列（200）。照会だけで何も保存せず、ビデオ通話の枠も消費しない（ADR 0005）。行動イベントは発火しない
+- 決め方（確定待ち → 入室前チェックを開ける同期レッスン → 完了の記録のないレッスン → 次の同期レッスン 1 件 → 添削待ちの動画 → 完了したレッスンがあり受講権がない）は `domain::scheduling::NextAction::decide` の 1 か所だけに置く（契約の `getMyNextActions` の説明が正）。入室前チェックを開けるのは開始の 5 分前から（`NextAction::PREJOIN_CHECK_LEAD`）。完了したかは完了記録だけで決め、通話の終了や添削の返却から推し量らない（ADR 0006）。どの入力も本人のものだけを使う
+- ユースケースは `application::scheduling::GetMyNextActions`。通話セッションは、確定済みで枠の開始時刻を過ぎた予約のものだけを予約ごとに読む（`LiveLessonSessionRepository::find_by_booking`）。コーチの表示名は profile に問い合わせる（`BookingCoachDisplayNameLookup`。`server` は `ProfileCoachDisplayNameLookup`）
+- テスト: `domain::scheduling::next_action`（各状態の kind と順・5 分前の境目・進行中 / 終了したセッション・完了の記録の有無・受講権・3 件まで・他の生徒の記録を使わない）、`application::scheduling::get_my_next_actions`（保存先から読んで決める・表示名をまとめて 1 回で問い合わせる・操作がなければ問い合わせない）、`crates/interface/tests/student_next_actions.rs`（契約の形・各 kind の項目・他の生徒の分を返さない・空・403 / 401）、`crates/server/tests/student_next_actions.rs`（インメモリと Postgres の組み立てで予約 → 確定に沿って返る。Postgres は `--include-ignored`）
+
 ## scheduling: スポーツごとの予約枠の需給
 
 - `GET /slot-supply`（admin-web の `getSlotSupply`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチの採用計画に使う。スポーツ 6 種類すべてについて、公開した枠の数 `published_slots`・予約しようとした生徒の数 `booking_students` と、判定 `status`（`sufficient` / `insufficient` / `no_activity` / `not_applicable`）を返す。行動イベントは発火しない
