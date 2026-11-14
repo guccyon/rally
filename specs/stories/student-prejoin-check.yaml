@@ -47,12 +47,12 @@ touches:
     - student-app.listMyBookings
     - student-app.startLiveLessonSession
 origin:
-  issues: ["guccyon/rally#1039", "guccyon/rally#899", "guccyon/rally#921", "guccyon/rally#1009"]
+  issues: ["guccyon/rally#1039", "guccyon/rally#899", "guccyon/rally#921", "guccyon/rally#1009", "guccyon/rally#1544"]
   note: "窓口の相談 2（依頼者 builder）。Google Meet の入室前の体験を手本にする。通話はモックのまま、カメラ・マイク・スピーカーは端末の本物を使う"
   retro: false
 known_gaps:
   - step: 5
     note: "開始時刻と開ける時刻は、サーバーに合わせた時計（端末の時計に、listMyBookings の応答の Date ヘッダーから出したずれを足したもの。#1315）で判断する。Date は秒までなので、サーバーより 1 秒以内遅れて押せるようになることがある。Date を読めないとき（応答にない・別のオリジンから呼んでいる）は端末の時計のままで、端末の時計が進んでいると押してから 409 slot_not_started の文言（#1009）で知る。そのときはその応答の Date でずれを合わせ直し、残り時間の表示に戻る（入室は繰り返し送らない）"
   - step: 2
-    note: "Web 版はブラウザーが端末の設定を開けないので、許可を断ったときは「端末の設定を開く」の代わりに「もう一度確かめる」を出す（iOS / Android のビルドはまだない）"
+    note: "Web 版はブラウザーが端末の設定を開けないので、許可を断ったときは「端末の設定を開く」の代わりに「もう一度確かめる」を出す。iOS 版は端末の設定（このアプリの設定）を開ける（#1544）。Android 版の端末の部品はまだない（カメラ・マイクはないものとして扱う）"
 status: active
