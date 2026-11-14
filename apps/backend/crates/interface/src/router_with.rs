@@ -32,10 +32,10 @@ use application::{
         ReviewedLessonMenuLookup, SubmitLessonReview,
     },
     scheduling::{
-        BookingRepository, CancelBooking, CoachIntroductionLookup, ConfirmBooking, CreateBooking,
-        GetSlotSupply, LessonMenuLookup, ListCoachBookings, ListCoachSlots, ListMyBookings,
-        PublishSlot, QuotaGate, SearchSlots, SlotCoachAccountLookup, SlotRepository,
-        StudentDisplayNameLookup,
+        BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CoachIntroductionLookup,
+        ConfirmBooking, CreateBooking, DescribeBooking, GetSlotSupply, LessonMenuLookup,
+        ListCoachBookings, ListCoachSlots, ListMyBookings, PublishSlot, QuotaGate, SearchSlots,
+        SlotCoachAccountLookup, SlotRepository, StudentDisplayNameLookup,
     },
 };
 use axum::Router;
@@ -59,6 +59,7 @@ pub fn router_with<
     I,
     D,
     B,
+    Bk,
     Sc,
     G,
     E,
@@ -91,6 +92,7 @@ pub fn router_with<
     create_booking: CreateBooking<B, J, M, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
+    describe_booking: DescribeBooking<B, Bk>,
     get_slot_supply: GetSlotSupply<B, Sc, C>,
     list_my_bookings: ListMyBookings<B, I, G, M, C>,
     list_coach_bookings: ListCoachBookings<B, D, C>,
@@ -122,6 +124,7 @@ where
     I: CoachIntroductionLookup + 'static,
     D: StudentDisplayNameLookup + 'static,
     B: BookingRepository + 'static,
+    Bk: BookingCoachDisplayNameLookup + 'static,
     Sc: SlotCoachAccountLookup + 'static,
     G: QuotaGate + 'static,
     E: EntitlementRepository + 'static,
@@ -152,6 +155,7 @@ where
             create_booking,
             confirm_booking,
             cancel_booking,
+            describe_booking,
             tokens.clone(),
         ))
         .merge(crate::coach_bookings_router(
