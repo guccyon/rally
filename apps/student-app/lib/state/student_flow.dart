@@ -470,7 +470,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 起動したときに、端末に残した登録の結果（[sessionStoreProvider]）があれば同じ生徒でホームから始める。
   /// 残していなければ登録の画面のまま。段・予約・通話セッションは残していないので、ホームの欄（と次にやること）は
   /// サーバーから読む（ADR 0010）。最初に `getMyStudentProfile` でトークンを確かめて生徒を読み直し、401 なら残したものを消して
-  /// 登録の画面にする。通信の失敗などそれ以外は、残した生徒のままホームの欄を読む（読めない欄はホームが出す）
+  /// 登録の画面にし、「ログインの有効期限が切れました。登録からやり直してください。」を出す。通信の失敗などそれ以外は、残した生徒のままホームの欄を読む（読めない欄はホームが出す）
   Future<void> resumeSavedSession() async {
     final saved = ref.read(sessionStoreProvider).read();
     if (saved == null) return;
@@ -488,9 +488,10 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       } on StudentApiException catch (e) {
         if (e.statusCode == 401) {
           ref.read(sessionStoreProvider).clear();
-          // run が最後に busy を外す
+          // 投げ直して、run が busy を外し、登録の画面に理由の文言（[errorMessageOf] の unauthorized）を出す。
+          // 文言がないと、登録が消えたと思って新しいアカウントを作り直すおそれがある
           state = StudentFlowState(busy: true);
-          return;
+          rethrow;
         }
       }
       await _loadHome();

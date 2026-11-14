@@ -140,7 +140,7 @@ void main() {
     expect(state.session, isNull);
   });
 
-  testWidgets('トークンが無効（401）なら残したものを消して登録の画面にする', (tester) async {
+  testWidgets('トークンが無効（401）なら残したものを消して、理由の文言と登録の画面を出す', (tester) async {
     final store = MemorySessionStore()
       ..save(
         SavedSession(accessToken: 'expired-token', student: Fixtures.student),
@@ -165,7 +165,8 @@ void main() {
     expect(state.accessToken, isNull);
     expect(state.student, isNull);
     expect(state.busy, isFalse);
-    expect(state.errorMessage, isNull);
+    expect(state.errorMessage, 'ログインの有効期限が切れました。登録からやり直してください。');
+    expect(find.text('ログインの有効期限が切れました。登録からやり直してください。'), findsOneWidget);
     expect(api.calls, ['getMyStudentProfile']);
 
     // 登録し直せば、新しいトークンを残す
