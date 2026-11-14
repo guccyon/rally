@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
+import '../ui/components/confirm_dialog.dart';
 import '../ui/components/list_row.dart';
 import '../ui/components/notice.dart';
 import '../ui/components/section_loading.dart';
@@ -13,6 +14,7 @@ import '../ui/theme/rally_tokens.dart';
 /// 自分のプロフィール（`getMyStudentProfile` / `updateMyStudentProfile`）。表示名を見て変え、「保存する」で保存する。
 /// 表示名の規則はサーバーが判定し、断られたら（422）サーバーの文言を出す。スポーツは見るだけ（変えられない）。
 /// 表示名の欄の下に月額契約の欄（`getMyEntitlement`。契約の有無はサーバーの受講権から出す。ADR 0010）。
+/// いちばん下にログアウトの欄（確かめてから [StudentFlowNotifier.logout] で登録の画面へ。家族の端末や学校の PC で次の人に見せない。#1588）。
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -101,6 +103,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         if (_saved) ...[const SizedBox(height: 8), const Text('表示名を保存しました。')],
         const SizedBox(height: 24),
         const _SubscriptionSection(),
+        const SizedBox(height: 24),
+        const _LogoutSection(),
+      ],
+    );
+  }
+}
+
+/// ログアウトの欄。行を押すと確かめ、ログアウトしたら登録の画面になる。ログインの画面はまだなく、
+/// ログアウトすると同じ生徒には戻れないので、取り消せない操作として確かめる（patterns.yaml の confirm）
+class _LogoutSection extends ConsumerWidget {
+  const _LogoutSection();
+
+  Future<void> _logout(BuildContext context, WidgetRef ref) async {
+    final displayName = ref.read(studentFlowProvider).student?.displayName;
+    final who = displayName == null ? 'この生徒' : '$displayNameさん';
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'ログアウトしますか？',
+      body:
+          '$whoの予約・チャット・月額契約をこの端末に出さないようにし、登録の画面に戻ります。'
+          'ログインの画面はまだないため、ログアウトするとこのアカウントには戻れません。',
+      confirmLabel: 'ログアウトする',
+      danger: true,
+    );
+    if (confirmed) ref.read(studentFlowProvider.notifier).logout();
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: RallySpacing.sm),
+          child: Text('ログアウト', style: Theme.of(context).textTheme.titleMedium),
+        ),
+        ListRow(
+          title: 'ログアウトする',
+          subtitle: '家族の端末や学校の PC など、ほかの人も使う端末では使い終わったらログアウトしてください',
+          onTap: busy ? null : () => _logout(context, ref),
+        ),
       ],
     );
   }
