@@ -42,9 +42,18 @@ void main() {
   });
 
   group('体験予約を使ったあと（#1505）', () {
-    final booked = registered.copyWith(myBookings: Fixtures.myBookings);
+    final booked = registered.copyWith(
+      myBookings: Fixtures.myBookings,
+      trialAvailable: false,
+    );
 
-    testWidgets('キャンセルされていない予約がある生徒には「予約する」を出し、押すと通常の予約で確定待ちに進む', (
+    // キャンセル済みの予約だけ
+    final cancelledOnly = [
+      for (final item in Fixtures.myBookings)
+        if (item.booking.status == BookingStatus.cancelled) item,
+    ];
+
+    testWidgets('サーバーが体験予約を使用済み（trial_available false）と返した生徒には「予約する」を出し、押すと通常の予約で確定待ちに進む', (
       tester,
     ) async {
       final api = FakeStudentApi();
@@ -67,17 +76,40 @@ void main() {
       expect(container.read(studentFlowProvider).errorMessage, isNull);
     });
 
-    testWidgets('予約がキャンセル済みだけなら、今までどおり「体験予約する」で体験予約する', (tester) async {
+    testWidgets('受け終えた体験予約をキャンセルした生徒は、キャンセル済みの予約しかなくてもサーバーが false なら「予約する」で通常の予約にする（#1595）', (
+      tester,
+    ) async {
+      final api = FakeStudentApi();
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered.copyWith(
+          myBookings: cancelledOnly,
+          trialAvailable: false,
+        ),
+      );
+
+      await tapText(tester, 'テニス');
+      expect(find.text('体験予約する'), findsNothing);
+      await tapText(tester, '予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+      expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
+    });
+
+    testWidgets('受けていない体験予約をキャンセルしただけ（サーバーが true）なら、今までどおり「体験予約する」で体験予約する', (
+      tester,
+    ) async {
       final api = FakeStudentApi();
       await pumpScreen(
         tester,
         const SlotSearchScreen(),
         api: api,
         initial: registered.copyWith(
-          myBookings: [
-            for (final item in Fixtures.myBookings)
-              if (item.booking.status == BookingStatus.cancelled) item,
-          ],
+          myBookings: cancelledOnly,
+          trialAvailable: true,
         ),
       );
 

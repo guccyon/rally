@@ -767,6 +767,49 @@ void main() {
     },
   );
 
+  testWidgets(
+    '受け終えた体験予約をキャンセルした生徒は、キャンセル済みの予約しかなくてもサーバーの trial_available false に従い「予約する」で通常の予約になる（#1595）',
+    (tester) async {
+      final api = FakeStudentApi(
+        myBookings: [
+          for (final item in Fixtures.myBookings)
+            if (item.booking.status == BookingStatus.cancelled) item,
+        ],
+        lessonCompletions: [Fixtures.lessonCompletions.first],
+        trialAvailable: false,
+      );
+      final container = await pumpHome(tester, api);
+      api.calls.clear();
+
+      await tapText(tester, '次のレッスンを予約する');
+
+      expect(api.calls, contains('listMyBookings'));
+      expect(find.text('体験予約する'), findsNothing);
+      await tapText(tester, '予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.bookingPending);
+      expect(state.errorMessage, isNull);
+    },
+  );
+
+  testWidgets('自分の予約の応答に trial_available が載っていなければ、契約どおり体験予約を出さず通常の予約にする', (
+    tester,
+  ) async {
+    final api = _WithoutTrialAvailableApi();
+    await pumpHome(tester, api);
+
+    await tapText(tester, 'スロットを探して予約する');
+
+    expect(find.text('体験予約する'), findsNothing);
+    await tapText(tester, '予約する');
+
+    final request = api.requests.last as CreateBookingRequest;
+    expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+  });
+
   testWidgets('受けたレッスンがまだない生徒には「次のレッスンを予約する」を出さない。月額契約の前の文言はそのまま', (
     tester,
   ) async {
@@ -977,4 +1020,15 @@ void main() {
     );
     expect(find.text('月額契約へ進む'), findsNothing);
   });
+}
+
+/// `listMyBookings` の応答に `trial_available` を載せない（項目を足す前のサーバー）
+class _WithoutTrialAvailableApi extends FakeStudentApi {
+  _WithoutTrialAvailableApi() : super(myBookings: const []);
+
+  @override
+  Future<MyBookingList> listMyBookings() async {
+    calls.add('listMyBookings');
+    return MyBookingList(bookings: [...myBookings]);
+  }
 }
