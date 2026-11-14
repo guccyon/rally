@@ -5,6 +5,7 @@ import '../api/models.dart';
 import '../state/student_flow.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
+import '../ui/pop_once.dart';
 
 /// 自分の予約の一覧（`listMyBookings`）とキャンセル（`cancelBooking`）。
 /// まだ始まっていない確定待ちの予約には「内容を確かめて確定する」を出し、押すと予約の ID で予約の確定待ちの画面を開く（確定はその画面で押す）。
@@ -109,11 +110,11 @@ class MyBookingsScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => popOnce(context, false),
             child: const Text('やめる'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => popOnce(context, true),
             child: const Text('キャンセルする'),
           ),
         ],

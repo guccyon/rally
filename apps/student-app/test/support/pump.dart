@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/server_clock.dart';
@@ -89,4 +90,16 @@ Future<void> tapText(WidgetTester tester, String text) async {
   await tester.ensureVisible(finder);
   await tester.tap(finder);
   await tester.pumpAndSettle();
+}
+
+/// [finder] のボタンを、次のフレームを待たずにすばやく 2 回押して、落ち着くまで進める。
+/// Web 版はセマンティクスの木（画面の読み上げや自動操作が押す要素）からの押下を、ポインターの吸収（Navigator が閉じた直後の押下を捨てる）を通さずに
+/// ボタンへ渡すので、閉じ始めたダイアログのボタンが 2 回押される（#1513）。ここでもセマンティクスの tap で押す。
+Future<void> doubleTapInOneFrame(WidgetTester tester, Finder finder) async {
+  final semantics = tester.ensureSemantics();
+  final node = tester.getSemantics(finder);
+  node.owner!.performAction(node.id, SemanticsAction.tap);
+  node.owner!.performAction(node.id, SemanticsAction.tap);
+  await tester.pumpAndSettle();
+  semantics.dispose();
 }

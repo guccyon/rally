@@ -13,6 +13,8 @@ import 'package:rally_student_app/ui/components/status_tag.dart';
 import 'package:rally_student_app/ui/theme/rally_theme.dart';
 import 'package:rally_student_app/ui/theme/rally_tokens.dart';
 
+import '../../support/pump.dart';
+
 Future<void> pumpPart(WidgetTester tester, Widget child) => tester.pumpWidget(
   MaterialApp(
     theme: buildRallyTheme(),
@@ -427,6 +429,45 @@ void main() {
 
     testWidgets('「やめる」は false', (tester) async {
       expect(await open(tester, tap: 'やめる'), isFalse);
+    });
+
+    testWidgets('すばやく二度押ししても閉じるのは確認だけで、開いた画面は残る（#1513）', (tester) async {
+      var opened = 0;
+      final results = <bool>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildRallyTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  opened++;
+                  results.add(
+                    await showConfirmDialog(
+                      context,
+                      title: '予約をキャンセルしますか？',
+                      body: '10/28（水）12:00〜12:30 のテニスの予約をキャンセルします。',
+                      confirmLabel: 'キャンセルする',
+                      danger: true,
+                    ),
+                  );
+                },
+                child: const Text('開く'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('開く'));
+      await tester.pumpAndSettle();
+
+      await doubleTapInOneFrame(tester, find.text('キャンセルする'));
+
+      expect(tester.takeException(), isNull);
+      expect(opened, 1);
+      expect(results, [true]);
+      expect(find.text('予約をキャンセルしますか？'), findsNothing);
+      expect(find.text('開く'), findsOneWidget);
     });
   });
 }
