@@ -166,6 +166,7 @@ void main() {
       'body',
       'created_at',
       'is_read',
+      'booking_id',
     ]);
     expect(propertiesOf('NotificationList'), ['notifications']);
   });

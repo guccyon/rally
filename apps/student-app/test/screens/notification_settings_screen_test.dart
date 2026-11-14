@@ -25,6 +25,7 @@ void main() {
     '動画の添削が返ってきたとき',
     '担当コーチからメッセージが届いたとき',
     '本部からのお知らせが届いたとき',
+    'レッスンの前日と開始 1 時間前',
   ];
 
   Future<void> openSettings(WidgetTester tester) async {

@@ -734,6 +734,20 @@ void main() {
     expect(updated.bookingConfirmed, isTrue);
     expect(updated.bookingCancelledByHeadquarters, isTrue);
     expect(updated.messageReceived, isTrue);
+    // 契約で任意の lesson_reminder は、載っていなければ既定の true、載っていればその値
+    expect(updated.lessonReminder, isTrue);
+    final withoutReminder = await apiReplying(200, {
+      ...settings,
+      'lesson_reminder': false,
+    }).getMyNotificationSettings();
+    expect(withoutReminder.receives(NotificationKind.lessonReminder), isFalse);
+    expect(
+      UpdateNotificationSettingsRequest.only(
+        NotificationKind.lessonReminder,
+        false,
+      ).toJson(),
+      {'lesson_reminder': false},
+    );
   });
 
   test('お知らせの一覧と既読にする操作のパスと、知らない種類のお知らせ', () async {
@@ -753,6 +767,14 @@ void main() {
           'created_at': '2026-10-26T02:00:00Z',
           'is_read': true,
         },
+        {
+          'notification_id': 'n3',
+          'kind': 'lesson_reminder',
+          'body': '明日はレッスンの日です',
+          'created_at': '2026-10-26T01:00:00Z',
+          'is_read': false,
+          'booking_id': 'b1',
+        },
       ],
     };
 
@@ -760,15 +782,23 @@ void main() {
     expect(sent.single.method, 'GET');
     expect(sent.single.url.path, '/notifications/me');
     expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
-    expect(list.notifications.map((n) => n.notificationId), ['n1', 'n2']);
+    expect(list.notifications.map((n) => n.notificationId), [
+      'n1',
+      'n2',
+      'n3',
+    ]);
     final first = list.notifications.first;
     expect(first.kind, NotificationKind.bookingConfirmed);
+    expect(first.bookingId, isNull);
     expect(first.body, '予約が確定しました');
     expect(first.createdAt, DateTime.utc(2026, 10, 26, 3));
     expect(first.isRead, isFalse);
     // 契約で増えうる種類は読み飛ばさず、種類だけを null にする
-    expect(list.notifications.last.kind, isNull);
-    expect(list.notifications.last.body, '新しいお知らせ');
+    expect(list.notifications[1].kind, isNull);
+    expect(list.notifications[1].body, '新しいお知らせ');
+    // リマインドは結び付く予約を持つ
+    expect(list.notifications.last.kind, NotificationKind.lessonReminder);
+    expect(list.notifications.last.bookingId, 'b1');
     expect(() => list.notifications.clear(), throwsUnsupportedError);
 
     final read = await apiReplying(200, {

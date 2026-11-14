@@ -8,6 +8,8 @@ info:
     最初は入口（ログイン）だけを書く。コーチの画面（予約枠の登録・添削の返却・通話への参加・チャットなど）は、
     coach-app に移す後続のチケットで、admin-web の同じ操作と同じ形で足す。それまでコーチはそれらを admin-web の
     コーチの入口（PC。移行中だけ）から使う。
+    コーチのお知らせ（`listMyNotifications` / `markMyNotificationsRead`）も同じで、移すときは admin-web の `NotificationKind`
+    （レッスンのリマインド `lesson_reminder` を含む）と `Notification`（予約への参照 `booking_id` を含む）を同じ綴り・同じ形で足す。
 
     ログインは student-app のログイン（#1404。メールのワンタイムコード）に倣い、同じ形にする。
     1. `requestCoachLoginCode`（`POST /login-codes`）: メールアドレスに 6 桁の確認コードを送る（Gen1 はメールの送信をモックにする）

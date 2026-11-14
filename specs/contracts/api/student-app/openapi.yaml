@@ -1185,7 +1185,8 @@ paths:
         書かなかった種類は今の設定のまま（空のオブジェクトなら何も変えない）。生徒だけが呼べる（それ以外の役割は 403）。
         値が真偽値でないときは 422。受け取るかは通知を送る時点の設定で決まり、false の種類の通知は送らない。
         送らなかった通知は、あとで true に戻しても送り直さない。false が止めるのはプッシュ通知だけで、
-        お知らせ（`listMyNotifications`）には false の種類の分も残る。
+        お知らせ（`listMyNotifications`）には false の種類の分も残る。ただしレッスンのリマインド（`lesson_reminder`）は例外で、
+        false ならプッシュ通知もお知らせも作らない（あとで true に戻しても、作らなかったリマインドは作り直さない）。
       tags: [notification]
       x-context: notification
       x-analytics-events: []
@@ -1224,7 +1225,13 @@ paths:
           コーチのお休みで本部が予約をキャンセルしたこと（admin-web の `startCoachLeave`））。
           通知の受け取り設定（`updateMyNotificationSettings`）で false の種類も、プッシュ通知を送らないだけで
           お知らせには残る
-        - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ・同じ本部からのお知らせ）のお知らせは 1 件
+        - レッスンのリマインド（`lesson_reminder`）は、確定した同期レッスン（ビデオ通話）の予約について、開始の前日と
+          開始 1 時間前に作る（予約の時刻のイベントでなく、時刻の経過で作る）。作る時点で予約が確定のままのときだけ作り、
+          キャンセルした予約・コーチのお休みで消えた予約には作らない。上の「false でもお知らせには残る」の例外で、
+          受け取り設定の `lesson_reminder` が false ならお知らせも作らない
+        - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ・同じ本部からのお知らせ）のお知らせは 1 件。
+          リマインドは同じ予約の同じ時点（前日・1 時間前）ごとに 1 件
+        - リマインドは `booking_id` にその予約を載せる（お知らせから予約を開くため）
         - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める。本部からのお知らせ（`announcement`）は、
           本部が書いた題と本文を改行（`\n`）でつないだもの
         - 本部が取り下げた本部からのお知らせ（admin-web の `withdrawAnnouncement`）は載せない（既読かを問わない）
@@ -2650,6 +2657,12 @@ components:
         announcement:
           type: boolean
           description: 本部からのお知らせ（メンテナンスやキャンペーンの知らせ）の通知を受け取るか
+        lesson_reminder:
+          type: boolean
+          default: true
+          description: |
+            確定した同期レッスンの、開始の前日と開始 1 時間前のリマインドを受け取るか（既定 true）。他の種類と違い、
+            false ならお知らせも作らない。あとから足した項目なので必須にしていない（載っていなければ true とみなす）
 
     UpdateNotificationSettingsRequest:
       type: object
@@ -2670,6 +2683,9 @@ components:
         announcement:
           type: boolean
           description: 本部からのお知らせの通知を受け取るか
+        lesson_reminder:
+          type: boolean
+          description: レッスンの前日と開始 1 時間前のリマインドを受け取るか（false ならお知らせも作らない）
 
     NotificationKind:
       type: string
@@ -2677,7 +2693,10 @@ components:
         お知らせ・プッシュ通知の種類（`NotificationSettings` の項目名と同じ綴り）。値は追加しうる（クライアントは未知の値を
         汎用のお知らせとして扱う）。`booking_confirmed` は予約の確定の知らせ。`booking_cancelled_by_headquarters` は
         コーチのお休みで本部が予約をキャンセルしたことの知らせ（本文「コーチのお休みで予約をキャンセルしました」から始まる）。
-      enum: [booking_confirmed, booking_cancelled_by_headquarters, video_review_returned, message_received, announcement]
+        `lesson_reminder` は確定した同期レッスンの、開始の前日と開始 1 時間前のリマインド（`Notification.booking_id` に予約を
+        載せる。受け取り設定が false ならお知らせも作らない）。
+      enum: [booking_confirmed, booking_cancelled_by_headquarters, video_review_returned, message_received, announcement,
+             lesson_reminder]
 
     Notification:
       type: object
@@ -2703,6 +2722,12 @@ components:
         is_read:
           type: boolean
           description: 既読か（`markMyNotificationsRead` で既読にする）
+        booking_id:
+          type: string
+          format: uuid
+          description: |
+            お知らせが結び付く予約。レッスンのリマインド（`lesson_reminder`）には必ず載せ、クライアントはこれでお知らせから
+            予約を開く。それ以外の種類には今は載せない（あとで載せる種類を増やしうる。載っていなければ予約を開かない）
 
     NotificationList:
       type: object
