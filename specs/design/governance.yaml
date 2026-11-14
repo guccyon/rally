@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.8.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.9.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -69,6 +69,8 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
   - id: description-list-only
     target: admin-web の src/（src/components/ui/DescriptionList.tsx を除く）
     detect: dl 要素を直に書いている要素（0.8.0）
+  - id: one-kpi-hero
+    detect: 1 画面に kpi_figure の hero が 2 つ以上。指標の値の場所に「0」「-」「N/A」・空の文字（出せないときは「—」と理由。0.9.0）
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
 
 requests:   # 画面のタスクから来た部品の求めのうち、まだ足していないもの
@@ -80,17 +82,28 @@ requests:   # 画面のタスクから来た部品の求めのうち、まだ足
     from: "#1030"
     stage: 次の版
     note: patterns の detail の structure に description_list と timeline を書き足す（0.8.0 は字数の上限で components にだけ書いた）
+  - id: tokens-figure-use
+    from: "#1462"
+    stage: 次の版
+    note: tokens.yaml の typography.admin_web の figure の用途に「事業の指標の北極星（kpi_figure の hero）」を足す。0.9.0 は字数の上限で kpi_figure にだけ書いた。食い違えば kpi_figure に従う
+  - id: trend_indicator
+    from: "#1462"
+    stage: 保留
+    note: >-
+      API が前月からの向きを返すと決まったら足す。形は status_tag と同じ点と字。色は上下でなく良し悪しで選ぶ（良くなった success・悪くなった danger・同じ neutral）。
+      字は「前月より良い」「前月より悪い」「前月と同じ」と印（↑↓→）を併記し、tokens.yaml に trend の色の対応を足す
 
 changelog:
   file: specs/design/CHANGELOG.md
   format: 版・日付・変えたもの・理由・効く画面（screens.ts と capture_test.dart の画面の id）・承認（工場か人）
   entries:   # 直近の版だけ。全文は specs/design/CHANGELOG.md
-    - version: 0.8.0
-      date: "2026-11-09"
+    - version: 0.9.0
+      date: "2026-11-14"
       change: >-
-        description_list（inline・stacked）と timeline を足した。lint に description-list-only を足し、state-color-map を timeline に広げた。
-        既存の見本を 10 個絞った（字数の上限。部品の定めは同じ）
+        kpi_figure（hero・cell・unavailable）を足し、card と data_table の注に書き足した。lint に one-kpi-hero、requests に tokens-figure-use と trend_indicator を足した。
+        既存の見本を 19 個絞り、使わなくなった preview_css を消した（字数の上限。部品の定めは同じ）
       reason: >-
-        #1030 の画面の設計で部品が足りなかった（ADR 0025）。admin-web の 7 か所の dl に、ラベルの幅と狭い幅の形がなかった。経緯はお知らせの取り下げなどでも要る。トークンと既存の名前・値は変えていない
-      affects: admin-web の dl のある画面（hq-booking-detail・hq-coach-overview・hq-coach-reviews*・hq-student-activity・hq-coach-leave*・hq-announcement-confirm・coach-live）と design-catalog。今変わるのは design-catalog だけ
-      approved_by: 工場（部品・should・lint の追加。must はない）
+        #1462 の画面の設計で部品が足りなかった（ADR 0025）。指標の前月の弱め方と「—」と理由の出し方がなかった。
+        trend_indicator は API が向きを返すと決まるまで足さない。トークンと既存の名前・値は変えていない。must はない
+      affects: 本部の指標の画面（id は #1462 で足す）と admin-web の design-catalog。今変わるのは design-catalog だけ。student-app は変わらない
+      approved_by: 工場（部品・should・lint の追加）
