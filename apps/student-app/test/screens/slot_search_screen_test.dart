@@ -154,6 +154,22 @@ void main() {
       expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
     });
 
+    testWidgets('自分の予約をまだ読めていなければ「体験予約する」で、押すと体験予約になる', (tester) async {
+      final api = FakeStudentApi(
+        myBookings: const [],
+        failures: {'listMyBookings': Fixtures.unreachable},
+      );
+      final container = await openSlotSearch(tester, api);
+
+      expect(container.read(studentFlowProvider).trialAvailable, isNull);
+      expect(container.read(studentFlowProvider).errorMessage, isNull);
+      expect(find.text('予約する'), findsNothing);
+      await tapText(tester, '体験予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': true});
+    });
+
     testWidgets('体験予約が 409 trial_already_used なら文言を出し、予約を読み直して「予約する」に切り替える', (
       tester,
     ) async {

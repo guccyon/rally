@@ -172,7 +172,7 @@ class StudentFlowState {
     this.profileReturnStep,
     this.bookingsReturnStep,
     this.myBookings,
-    this.trialAvailable = false,
+    this.trialAvailable,
     this.videosReturnStep,
     List<MyVideo>? myVideos,
     this.myVideoReview,
@@ -284,12 +284,14 @@ class StudentFlowState {
   final List<MyBooking>? myBookings;
 
   /// 今体験予約できるかのサーバーの判定（`listMyBookings` の `trial_available`）。自分の予約を読むたびに置き換える。
-  /// 応答に載っていない・まだ読めていないときは false（通常の予約にする）
-  final bool trialAvailable;
+  /// 応答に載っていなければ false。まだ読めていなければ null
+  final bool? trialAvailable;
 
   /// スロットを体験予約として予約するか。サーバーの判定 [trialAvailable] だけで決める（キャンセルされていない予約の有無や
-  /// 完了したレッスンの件数からアプリで数え直さない。ADR 0010）
-  bool get canBookTrial => trialAvailable;
+  /// 完了したレッスンの件数からアプリで数え直さない。ADR 0010）。
+  /// まだ読めていない（null）ときは、登録したばかりの生徒の体験予約を止めないよう true（使えなければサーバーが
+  /// 409 `trial_already_used` で断り、[StudentFlowNotifier.bookSlot] が読み直して通常の予約に切り替える）
+  bool get canBookTrial => trialAvailable ?? true;
 
   /// 自分の動画の一覧を閉じたときに戻る段（一覧を開いた段）
   final FlowStep? videosReturnStep;

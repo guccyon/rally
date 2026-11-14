@@ -10,7 +10,7 @@ import '../ui/lesson_menu_entry.dart';
 import '../ui/sport_selector.dart';
 
 /// スロットの検索（`searchSlots`。スポーツで絞り、コーチの紹介から来たときはそのコーチでも絞って、見出しにコーチの名前と
-/// 「絞り込みを外す」を出す）と予約（`createBooking`。サーバーの判定 `trial_available` が true なら体験予約、そうでなければ通常の予約）。検索の読み込み中・0 件・読めなかったとき（「もう一度読み込む」）を出し分ける
+/// 「絞り込みを外す」を出す）と予約（`createBooking`。サーバーの判定 `trial_available` が true か、自分の予約をまだ読めていなければ体験予約、そうでなければ通常の予約）。検索の読み込み中・0 件・読めなかったとき（「もう一度読み込む」）を出し分ける
 class SlotSearchScreen extends ConsumerWidget {
   const SlotSearchScreen({super.key});
 
@@ -99,7 +99,7 @@ class SlotSearchScreen extends ConsumerWidget {
 /// スロットの行。自己紹介文を行の幅で読めるよう縦に並べる: 日時 → スポーツ →
 /// グループレッスンの枠なら定員と残りの席 → 結びついていればレッスンメニューの名前と 1 回の時間（`lesson_menu`）→ 載っていればコーチの名前と自己紹介文（`coach_display_name` / `coach_bio`）→
 /// コーチの評価の件数と平均（押すと評価の一覧）→ 予約のボタン（行の幅いっぱい。サーバーの判定 `trial_available`
-/// （[StudentFlowState.canBookTrial]）が true なら「体験予約する」、false か載っていなければ「予約する」）
+/// （[StudentFlowState.canBookTrial]）が true かまだ読めていなければ「体験予約する」、false か載っていなければ「予約する」）
 class _SlotCard extends StatelessWidget {
   const _SlotCard({
     required this.slot,
