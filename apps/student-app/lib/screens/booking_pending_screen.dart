@@ -6,7 +6,9 @@ import 'package:flutter/semantics.dart';
 import '../api/models.dart';
 import '../state/prejoin_check.dart';
 import '../state/student_flow.dart';
+import '../ui/components/confirm_dialog.dart';
 import '../ui/components/notice.dart';
+import '../ui/components/rally_button.dart';
 import '../ui/components/section_loading.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
@@ -16,111 +18,89 @@ import '../ui/ticking_now.dart';
 /// 予約の確定待ち（`confirmBooking`）。確定したら初回レッスンの受け方を選ぶ。
 /// 「ビデオ通話で受ける」は開始 5 分前から押せ、押すと入室前チェックを開く（それより早いときは開ける時刻を出す）。
 /// 予約した時点のレッスンメニューの写し（`Booking.lesson_menu`）があれば、その名前と 1 回の時間も出す。
-/// 開くたび（自分の予約などから戻ったときも）に予約を ID で読み直し（ADR 0010）、読み込み中・失敗・見つからない・
-/// キャンセル済み・確定待ち・確定済みを出し分ける。受け方のボタンは確定済みのときだけ出す。
-class BookingPendingScreen extends ConsumerStatefulWidget {
+/// 体験予約の直後のほか、ホームの「次にやること」や自分の予約から予約の ID で開く（`listMyBookings` から読み直す。[StudentFlowState.bookingLookup]）。
+/// 確定待ちなら「この予約をキャンセルする」（確認のダイアログ）で確定せずに枠を返せる。
+/// 出すのはサーバーの記録の予約（作った・確定した・キャンセルした応答か、予約の ID で `listMyBookings` から読み直したもの。ADR 0010）。
+/// キャンセル済み・見つからない予約は info の知らせと「ホームに戻る」だけで、確定・入室・動画の送付の道は出さない。
+class BookingPendingScreen extends ConsumerWidget {
   const BookingPendingScreen({super.key});
 
-  @override
-  ConsumerState<BookingPendingScreen> createState() =>
-      _BookingPendingScreenState();
-}
-
-class _BookingPendingScreenState extends ConsumerState<BookingPendingScreen> {
-  /// 開いてから読み直しを始めたか（始める前の 1 枚目も読み込み中にし、前に持っていた予約の状態を出さない）
-  bool _reloading = false;
+  /// キャンセル済み・見つからない予約の知らせ
+  static const _goneNotice = 'この予約はもう確定待ちではありません。ホームで次にやることを確かめてください。';
 
   @override
-  void initState() {
-    super.initState();
-    // 画面を描いてから読み直す（provider を描く途中で変えない）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() => _reloading = true);
-      ref.read(studentFlowProvider.notifier).reloadBooking();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
     final notifier = ref.read(studentFlowProvider.notifier);
-    final booking = state.booking!;
-    final goHome = state.busy ? null : notifier.goHome;
-    switch (_reloading ? state.bookingLoad : BookingLoad.loading) {
-      case BookingLoad.loading:
-        return const FlowScaffold(
-          title: '予約',
-          children: [
-            LinearProgressIndicator(),
-            SizedBox(height: 8),
-            SectionLoading(message: '予約を読み込んでいます…'),
-          ],
-        );
-      case BookingLoad.failed:
-        return FlowScaffold(
-          title: '予約',
-          children: [
-            const Notice(
-              message: '予約を読み込めませんでした。通信の状態を確かめて、ホームからもう一度開いてください。',
-              status: RallyStatus.danger,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton(onPressed: goHome, child: const Text('ホームに戻る')),
-          ],
-        );
-      case BookingLoad.notFound:
-        return FlowScaffold(
-          title: '予約',
-          children: [
-            const Notice(
-              message: 'この予約は見つかりませんでした。ホームや自分の予約から、今の予約を確かめてください。',
-              status: RallyStatus.info,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton(onPressed: goHome, child: const Text('ホームに戻る')),
-          ],
-        );
-      case BookingLoad.loaded:
-        break;
-    }
-    final menu = booking.lessonMenu;
-    final details = [
-      Text(booking.isTrial ? '体験予約' : '予約'),
-      Text('開始: ${formatDateTime(booking.startsAt)}'),
-      if (menu != null) Text(bookingLessonMenuLabel(menu)),
-      Text('状態: ${bookingStatusLabel(booking.status)}'),
-      const SizedBox(height: 16),
-    ];
-    return switch (booking.status) {
-      BookingStatus.cancelled => FlowScaffold(
-        title: '予約はキャンセル済みです',
+    final booking = state.booking;
+    final lookup = state.bookingLookup;
+    final backHome = RallyButton(
+      label: 'ホームに戻る',
+      variant: RallyButtonVariant.secondary,
+      onPressed: state.busy ? null : notifier.goHome,
+    );
+    if (lookup == BookingLookup.failed) {
+      return FlowScaffold(
+        title: '予約',
         children: [
-          ...details,
           const Notice(
-            message: 'この予約はキャンセルしました。このレッスンは受けられないので、ほかの枠やコーチを探して予約してください。',
-            status: RallyStatus.info,
+            message: '予約を読み込めませんでした。「ホームに戻る」から、もう一度開けます。',
+            status: RallyStatus.danger,
           ),
-          const SizedBox(height: 16),
-          OutlinedButton(onPressed: goHome, child: const Text('ホームに戻る')),
+          const SizedBox(height: 8),
+          backHome,
         ],
-      ),
-      BookingStatus.pending => FlowScaffold(
-        title: '予約の確定待ち',
+      );
+    }
+    if (lookup == BookingLookup.notFound) {
+      return FlowScaffold(
+        title: '予約',
         children: [
-          ...details,
+          const Notice(message: _goneNotice, status: RallyStatus.info),
+          const SizedBox(height: 8),
+          backHome,
+        ],
+      );
+    }
+    if (lookup == BookingLookup.loading || booking == null) {
+      return const FlowScaffold(
+        title: '予約',
+        children: [SectionLoading(message: '予約を読み込んでいます…')],
+      );
+    }
+    final cancelled = booking.status == BookingStatus.cancelled;
+    final confirmed = booking.status == BookingStatus.confirmed;
+    final menu = booking.lessonMenu;
+    return FlowScaffold(
+      title: cancelled
+          ? '予約'
+          : confirmed
+          ? '予約が確定しました'
+          : '予約の確定待ち',
+      children: [
+        Text(booking.isTrial ? '体験予約' : '予約'),
+        Text('開始: ${formatDateTime(booking.startsAt)}'),
+        if (menu != null) Text(bookingLessonMenuLabel(menu)),
+        Text('状態: ${bookingStatusLabel(booking.status)}'),
+        const SizedBox(height: 16),
+        if (cancelled) ...[
+          const Notice(message: _goneNotice, status: RallyStatus.info),
+          const SizedBox(height: 8),
+          backHome,
+        ] else if (!confirmed) ...[
           const Text('予約はまだ確定していません。内容を確かめて確定してください。'),
           const SizedBox(height: 8),
           FilledButton(
             onPressed: state.busy ? null : notifier.confirmBooking,
             child: const Text('予約を確定する'),
           ),
-        ],
-      ),
-      BookingStatus.confirmed => FlowScaffold(
-        title: '予約が確定しました',
-        children: [
-          ...details,
+          const SizedBox(height: 8),
+          RallyButton(
+            label: 'この予約をキャンセルする',
+            variant: RallyButtonVariant.text,
+            onPressed: state.busy ? null : () => _confirmCancel(context, ref),
+          ),
+        ] else ...[
           const Text('初回レッスンの受け方を選んでください。'),
           const SizedBox(height: 8),
           _LiveLessonEntry(startsAt: booking.startsAt, busy: state.busy),
@@ -130,8 +110,36 @@ class _BookingPendingScreenState extends ConsumerState<BookingPendingScreen> {
             child: const Text('動画を送って添削を受ける'),
           ),
         ],
-      ),
-    };
+      ],
+    );
+  }
+
+  /// 確定待ちの予約をキャンセルしてよいかを確かめ、よければ `cancelBooking`。キャンセルできたらホームへ戻り、toast で知らせる。
+  /// 確定待ちはキャンセル規定で回数を使わないので、そのことは書かない
+  Future<void> _confirmCancel(BuildContext context, WidgetRef ref) async {
+    final state = ref.read(studentFlowProvider);
+    final booking = state.booking!;
+    final sport = state.bookedSlot?.sport;
+    final range = state.bookedSlot == null
+        ? formatDateTime(booking.startsAt)
+        : formatTimeRange(state.bookedSlot!.startsAt, state.bookedSlot!.endsAt);
+    final kind = booking.isTrial ? '体験予約' : '予約';
+    final what = sport == null ? kind : '${sportLabel(sport)}の$kind';
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showConfirmDialog(
+      context,
+      title: '予約をキャンセルしますか？',
+      body: '$range の$whatをキャンセルします。押さえていたスロットはほかの生徒も予約できるようになります。',
+      confirmLabel: 'キャンセルする',
+      danger: true,
+    );
+    if (!confirmed) return;
+    final cancelled = await ref
+        .read(studentFlowProvider.notifier)
+        .cancelOpenBooking();
+    if (cancelled) {
+      messenger.showSnackBar(const SnackBar(content: Text('予約をキャンセルしました')));
+    }
   }
 }
 

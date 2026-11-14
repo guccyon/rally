@@ -103,7 +103,7 @@ class ChatNotifier extends Notifier<ChatState> {
   }
 
   /// チャットを閉じて、開いた段に戻る
-  void closeChat() => _flow.moveTo(state.returnStep ?? FlowStep.slotSearch);
+  void closeChat() => _flow.returnTo(state.returnStep ?? FlowStep.slotSearch);
 
   /// スレッドを開く。相手のメッセージを `markMessageThreadRead` で既読にしてから `listMessages` で読む
   /// （一覧を読むだけでは既読にならない契約なので、画面に出したら既読にする）。

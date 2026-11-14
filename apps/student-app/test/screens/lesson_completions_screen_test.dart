@@ -228,10 +228,11 @@ void main() {
     await tapText(tester, '添削結果を見る');
 
     expect(container.read(studentFlowProvider).step, FlowStep.myVideoReview);
-    expect(api.calls, ['getVideoReview']);
+    // 返却済みなので、完了の記録へ進めるかを次の操作で確かめ直す
+    expect(api.calls, ['getVideoReview', 'getMyNextActions']);
     expect(api.requests, ['video-returned']);
     expect(find.text('コーチの添削'), findsOneWidget);
-    // 読むだけで、完了の記録には進ませない
+    // サーバーの次の操作に完了の記録がない（記録済み）ので、完了の記録には進ませない
     expect(find.text('完了の記録へ進む'), findsNothing);
 
     await tester.tap(find.byTooltip('添削結果を閉じる'));

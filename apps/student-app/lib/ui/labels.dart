@@ -95,6 +95,12 @@ String formatClockRange(DateTime start, DateTime end) {
   );
 }
 
+/// 端末のタイムゾーンで日付と時刻。例: `10/28（水）12:10`（ホームの「次にやること」の送った・返った日時）
+String formatDayClock(DateTime value) {
+  final local = value.toLocal();
+  return '${_dayLabel(local)}${_clockLabel(local)}';
+}
+
 /// 端末のタイムゾーンで時刻だけ。例: `12:00`（入室の帯の開始時刻）
 String formatClock(DateTime value) => _clockLabel(value.toLocal());
 
@@ -214,6 +220,14 @@ String subscriptionPlanLabel(SubscriptionPlan plan) => switch (plan) {
 /// 例: `プラス　ビデオ通話 月 4 回`。上限を読めなかったときは [subscriptionPlanLabel] だけを出す
 String subscriptionPlanChoiceLabel(SubscriptionPlanDetail detail) =>
     '${subscriptionPlanLabel(detail.plan)}　ビデオ通話 月 ${detail.liveLessonsPerMonth} 回';
+
+/// プロフィールの月額契約の行の subtitle（端末のタイムゾーンで）。例: `プラン: スタンダード・10/30（金）から`。
+/// 開始の日がわからなければ（この端末で始めた契約でない）プランだけ。例: `プラン: スタンダード`
+String subscriptionSummaryLabel(SubscriptionPlan plan, {DateTime? startedAt}) =>
+    [
+      'プラン: ${subscriptionPlanLabel(plan)}',
+      if (startedAt != null) '${_dayLabel(startedAt.toLocal())}から',
+    ].join('・');
 
 /// 今月のビデオ通話の残り回数（上限は契約プランで決まる）。例: `月 4 回のうち残り 3 回`
 String liveLessonQuotaLabel(LiveLessonQuota quota) =>

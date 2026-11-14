@@ -129,9 +129,11 @@ class PrejoinCheckNotifier extends Notifier<PrejoinCheckState> {
   void open() {
     final flow = ref.read(studentFlowProvider);
     final booking = flow.booking;
-    if (booking == null) return;
-    // キャンセル済み・読み直す前の予約からは開かない
-    if (!ref.read(studentFlowProvider.notifier).canChooseLesson) return;
+    // 入室は読み直した確定済みの予約からだけ（キャンセル済み・確定待ち・読み直す前の予約からは開かない。#1364）
+    if (booking == null ||
+        !ref.read(studentFlowProvider.notifier).canChooseLesson) {
+      return;
+    }
     if (!canOpenPrejoinCheck(booking.startsAt, ref.read(clockProvider)())) {
       return;
     }

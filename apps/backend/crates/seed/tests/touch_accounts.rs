@@ -16,7 +16,7 @@ use std::{
 
 use application::{
     catalog::CatalogLessonMenuLookup,
-    identity::account_id_uuid,
+    identity::{TokenVerifier, account_id_uuid},
     in_memory::{FixedClock, RecordingAnalyticsSink, RecordingDomainEventPublisher},
     profile::{
         ProfileCoachAccountLookup, ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup,
@@ -26,10 +26,13 @@ use application::{
     },
 };
 use domain::{
-    identity::AccountId,
+    identity::{AccountId, Role},
     scheduling::{BookingCancelReason, BookingCanceller, BookingStatus, CoachLeaveNote},
 };
-use infra::{PgAccountRepository, PgBookingRepository, PgLessonMenuRepository};
+use infra::{
+    MockTokenService, PgAccountRepository, PgBookingRepository, PgLessonMenuRepository,
+    identity_values::role_value,
+};
 use seed::{SeedPlan, Seeder};
 use sqlx::{
     AssertSqlSafe, PgPool,
@@ -74,33 +77,30 @@ async fn the_login_hints_point_at_seeded_accounts_and_the_headquarters_can_put_a
         .unwrap();
     let hints: Vec<serde_json::Value> = serde_json::from_str(&hints).unwrap();
     let mut headquarters: Option<AccountId> = None;
+    let mut roles = Vec::new();
     for hint in &hints {
         let token = hint["value"].as_str().unwrap();
-        let mut parts = token.splitn(3, '.');
-        let (mock, role, id) = (parts.next(), parts.next().unwrap(), parts.next().unwrap());
-        assert_eq!(mock, Some("mock"), "{hint}");
+        let claims = MockTokenService
+            .verify(token)
+            .unwrap_or_else(|e| panic!("手がかりのトークンが検証に通る: {hint}: {e:?}"));
         let found: Option<String> =
             sqlx::query_scalar("SELECT role FROM identity.accounts WHERE account_id = $1")
-                .bind(Uuid::parse_str(id).unwrap())
+                .bind(account_id_uuid::to_uuid(claims.account_id))
                 .fetch_optional(&pool)
                 .await
                 .unwrap();
         assert_eq!(
             found.as_deref(),
-            Some(role),
+            Some(role_value(claims.role)),
             "手がかりが実在のアカウントを指す: {hint}"
         );
-        if role == "headquarters" {
-            headquarters = Some(account_id_uuid::parse(id).unwrap());
+        roles.push(claims.role);
+        if claims.role == Role::Headquarters {
+            headquarters = Some(claims.account_id);
         }
     }
     let headquarters = headquarters.unwrap_or_else(|| panic!("本部の手がかりがない: {hints:?}"));
-    assert!(
-        hints
-            .iter()
-            .any(|hint| hint["value"].as_str().unwrap().starts_with("mock.coach.")),
-        "{hints:?}"
-    );
+    assert!(roles.contains(&Role::Coach), "{hints:?}");
 
     // 明後日以降に始まる確定した予約を持つコーチ（QA の「確定済みの予約を持つコーチ」）と、その枠の日（日本時間）
     let (coach, day, booking): (Uuid, Date, Uuid) = sqlx::query_as(

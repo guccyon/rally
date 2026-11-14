@@ -115,6 +115,7 @@ void main() {
       'listMyNotifications',
       'listFavoriteCoaches',
       'listMyLessonCompletions',
+      'getMyNextActions',
     ]);
     expect(find.text('ホーム'), findsOneWidget);
     expect(find.text('山田さん、こんにちは'), findsOneWidget);
@@ -152,6 +153,8 @@ void main() {
     );
     expect(find.text('月 2 回のうち残り 1 回'), findsOneWidget);
     expect(find.text('プラン: スタンダード'), findsOneWidget);
+    // 契約があれば月額契約への入口は出さない
+    expect(find.text('月額契約へ進む'), findsNothing);
 
     // スレッドにはコーチの名前がないので、自分の予約に載っている名前で出す
     expect(find.text('佐藤 コーチ'), findsOneWidget);
@@ -542,7 +545,7 @@ void main() {
 
     await tapText(tester, '鈴木 コーチ');
 
-    expect(api.calls, ['getVideoReview']);
+    expect(api.calls, ['getVideoReview', 'getMyNextActions']);
     expect(api.requests.last, returned.videoId);
     var state = container.read(studentFlowProvider);
     expect(state.step, FlowStep.myVideoReview);
@@ -558,7 +561,9 @@ void main() {
     expect(find.text('返ってきた添削'), findsOneWidget);
   });
 
-  testWidgets('初回レッスンの添削を待つ画面を離れても、返ってきた添削から完了を記録できる（#1423）', (tester) async {
+  testWidgets('添削を待つ画面を離れ、アプリの段の状態がなくても、返ってきた添削から完了を記録できる（#1423）', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -571,17 +576,14 @@ void main() {
     final api = FakeStudentApi(
       myVideos: [flowVideo],
       videoReviews: {Fixtures.videoId: Fixtures.reviewReturned},
+      nextActions: [Fixtures.nextRecordAsyncCompletion],
     );
-    // 体験予約から動画を送り、添削待ちのままアプリバーのホームで離れた状態
+    // 開き直したのと同じく、アプリの段には送った動画も予約も持っていない
     final container = await pumpScreen(
       tester,
       const StudentFlowScreen(),
       api: api,
-      initial: home.copyWith(
-        booking: Fixtures.bookingConfirmed,
-        video: Fixtures.video,
-        review: Fixtures.reviewInProgress,
-      ),
+      initial: home,
     );
     await container.read(studentFlowProvider.notifier).refreshHome();
     await tester.pumpAndSettle();
@@ -594,18 +596,22 @@ void main() {
     await tapText(tester, '完了の記録へ進む');
     var state = container.read(studentFlowProvider);
     expect(state.step, FlowStep.lessonCompletion);
-    expect(state.review?.status, VideoReviewStatus.returned);
+    expect(find.text('添削が返されました。'), findsOneWidget);
 
     await tapText(tester, '完了を記録する');
     state = container.read(studentFlowProvider);
-    expect(api.calls, ['getVideoReview', 'recordLessonCompletion']);
+    expect(api.calls, [
+      'getVideoReview',
+      'getMyNextActions',
+      'recordLessonCompletion',
+    ]);
     final body = api.requests.last as AsyncLessonCompletion;
     expect(body.videoId, Fixtures.videoId);
     expect(state.lesson, isNotNull);
     expect(find.text('初回レッスンを完了しました'), findsOneWidget);
   });
 
-  testWidgets('完了を記録した後に同じ動画の添削を開いても、完了の記録へは進めない', (tester) async {
+  testWidgets('サーバーの次の操作に完了の記録がない（記録済み）動画の添削を開いても、完了の記録へは進めない', (tester) async {
     tester.view.physicalSize = const Size(800, 3000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -619,6 +625,7 @@ void main() {
       myVideos: [flowVideo],
       videoReviews: {Fixtures.videoId: Fixtures.reviewReturned},
     );
+    // アプリの段にまだ完了していない動画を持っていても、出すかはサーバーの記録で決める
     final container = await pumpScreen(
       tester,
       const StudentFlowScreen(),
@@ -626,7 +633,6 @@ void main() {
       initial: home.copyWith(
         video: Fixtures.video,
         review: Fixtures.reviewReturned,
-        lesson: Fixtures.asyncLesson,
       ),
     );
     await container.read(studentFlowProvider.notifier).refreshHome();
@@ -684,7 +690,10 @@ void main() {
     await tapText(tester, 'スロットを探して予約する');
 
     expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
-    expect(api.calls.first, 'searchSlots');
+    expect(
+      api.calls.take(2),
+      unorderedEquals(['searchSlots', 'listMyBookings']),
+    );
     expect(api.requests.whereType<Sport>().last, Sport.tennis);
   });
 
@@ -711,9 +720,35 @@ void main() {
     await tapText(tester, '次のレッスンを予約する');
 
     expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
-    expect(api.calls.first, 'searchSlots');
+    expect(
+      api.calls.take(2),
+      unorderedEquals(['searchSlots', 'listMyBookings']),
+    );
     expect(api.requests.whereType<Sport>().last, Sport.tennis);
   });
+
+  testWidgets(
+    '「次のレッスンを予約する」から開いたスロットは、体験予約を使った生徒には「予約する」で、押すと通常の予約になる（#1505）',
+    (tester) async {
+      final api = FakeStudentApi(
+        lessonCompletions: [Fixtures.lessonCompletions.first],
+      );
+      final container = await pumpHome(tester, api);
+      api.calls.clear();
+
+      await tapText(tester, '次のレッスンを予約する');
+
+      expect(api.calls, contains('listMyBookings'));
+      expect(find.text('体験予約する'), findsNothing);
+      await tapText(tester, '予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.bookingPending);
+      expect(state.errorMessage, isNull);
+    },
+  );
 
   testWidgets('受けたレッスンがまだない生徒には「次のレッスンを予約する」を出さない。月額契約の前の文言はそのまま', (
     tester,
@@ -884,8 +919,45 @@ void main() {
       'listMyNotifications',
       'listFavoriteCoaches',
       'listMyLessonCompletions',
+      'getMyNextActions',
     ]);
     // ホームの画面には「ホーム」の入口を出さない
     expect(find.byTooltip('ホーム'), findsNothing);
+  });
+
+  testWidgets(
+    '月額契約がなければ、今月のビデオ通話の欄に文字のボタン「月額契約へ進む」を出し、押すと月額契約の画面を開く。契約したら消える',
+    (tester) async {
+      final api = FakeStudentApi();
+      final container = await pumpHome(tester, api);
+
+      final button = find.widgetWithText(TextButton, '月額契約へ進む');
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+
+      await tapText(tester, '月額契約を始める');
+      expect(find.text('月額契約を開始しました'), findsOneWidget);
+      await tester.tap(find.byTooltip('ホーム'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(studentFlowProvider).step, FlowStep.home);
+      expect(find.text('月額契約へ進む'), findsNothing);
+      expect(find.text('月 2 回のうち残り 2 回'), findsOneWidget);
+    },
+  );
+
+  testWidgets('受講権を読めなかったときは「月額契約へ進む」を出さない（契約の有無がわからない）', (tester) async {
+    final api = FakeStudentApi(
+      failures: {'getMyEntitlement': Fixtures.unreachable},
+    );
+    await pumpHome(tester, api);
+
+    expect(
+      find.text('ビデオ通話の残りの回数を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。'),
+      findsOneWidget,
+    );
+    expect(find.text('月額契約へ進む'), findsNothing);
   });
 }

@@ -10,6 +10,7 @@ import '../ui/ai_feedback_card.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 import '../ui/lesson_menu_picker.dart';
+import '../ui/pop_once.dart';
 import 'video_submit_screen.dart';
 
 /// 担当コーチとのメッセージ（`listMessages` / `sendMessage`）。開いたら相手のメッセージは既読にする。
@@ -209,7 +210,7 @@ class _StampPicker extends StatelessWidget {
                   SizedBox(
                     width: 96,
                     child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(stamp),
+                      onPressed: () => popOnce(context, stamp),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                       ),
@@ -326,7 +327,7 @@ class _VideoReviewRequestDialogState
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => popOnce<_VideoReviewRequest>(context),
           child: const Text('やめる'),
         ),
         FilledButton(
@@ -334,7 +335,7 @@ class _VideoReviewRequestDialogState
               ? null
               : () {
                   final note = _note.text.trim();
-                  Navigator.of(context).pop((
+                  popOnce<_VideoReviewRequest>(context, (
                     note: note.isEmpty ? null : note,
                     lessonMenuId: lessonMenuId,
                   ));
