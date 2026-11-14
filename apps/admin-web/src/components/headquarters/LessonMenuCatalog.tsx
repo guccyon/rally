@@ -433,7 +433,7 @@ export function LessonMenuCatalog({
       )}
       {state.kind === "loaded" && state.menus.length > 0 && (
         // 数え方は契約の listLessonMenus（照会した時刻の 30 日前から、キャンセルされていない予約）に合わせる。
-        <p className="text-xs text-text-muted">この 30 日間に入った予約（キャンセルされていないもの）の数です。</p>
+        <p className="text-xs text-text-muted">直近 30 日の予約は、今から 30 日前から今までに入った予約のうち、キャンセルされていないものの数です。</p>
       )}
     </div>
   );
