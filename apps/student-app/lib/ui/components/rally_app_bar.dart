@@ -33,7 +33,7 @@ class RallyAppBarAction {
   final bool hasUnread;
 }
 
-/// アプリバー（components.yaml の app_bar。0.9.0）。background に下の border 1px・影なし・高さ 56px・左右 xs 4px。
+/// アプリバー（components.yaml の app_bar。0.10.0）。background に下の border 1px・影なし・高さ 56px・左右 xs 4px。
 /// [onBack] があれば左に戻る（種類 back）、なければ出さない（種類 top）。題は title 17px 900 で 1 行、末尾を「…」で切り、見出しとして読む。
 /// 入口（[actions]）は 48px の押せる範囲にアイコン 24px。出す条件（登録したあと・脇の画面でない など）は呼ぶ側が決める。
 /// [busy]（送信中）は戻ると入口を text_muted にして押せなくし、端末の戻るも止める。

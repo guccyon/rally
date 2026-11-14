@@ -87,14 +87,10 @@ components:
       good: 「スロットを探して予約する」が primary、「予約をすべて見る」が text
       bad: 青いピル型の主ボタンと、線だけの副ボタンが並ぶ
     preview:
-      - label: "primary"
-        html: '<div class="pv"><span class="btn btn-primary">スロットを探して予約する</span></div>'
       - label: "押下・フォーカス"
         html: '<div class="pv row-x"><span class="btn btn-pressed">予約する</span><span class="btn btn-primary is-focus">予約する</span></div>'
       - label: "secondary・text"
         html: '<div class="pv row-x"><span class="btn btn-secondary">コーチを探す</span><span class="btn btn-text">予約をすべて見る</span></div>'
-      - label: "読み込み中"
-        html: '<div class="pv"><span class="btn btn-primary" aria-busy="true"><i class="spin"></i>予約する</span></div>'
       - label: "無効"
         html: '<div class="pv"><span class="btn btn-disabled" aria-disabled="true">予約する</span><p class="type-small hint">スロットを選ぶと予約できます。</p></div>'
 
@@ -171,7 +167,7 @@ components:
     ja: 選択欄
     lifecycle: trial
     use: 決まった選択肢から 1 つを選ぶ（admin-web の絞り込み・お知らせの対象・スロットの公開とレッスンメニューの欄）
-    not_for: 自由な文字 → text_field。日付と期間 → date_field。いくつも選ぶ → checkbox（保留）。2〜6 個を並べて見せる → chip（0.9.0）。student-app は今は使わない（絞り込みは chip）
+    not_for: 自由な文字 → text_field。日付と期間 → date_field。いくつも選ぶ → checkbox（保留）。2〜6 個を並べて見せる → chip（0.10.0）。student-app は今は使わない（絞り込みは chip）
     parts: [label, field（素の select 要素）, value, chevron, helper, error_text]
     style:
       field: text_field の field と同じ（background・border_strong 1px・radius md・高さ 48px 以上・左 md 16px）。右は chevron の分 xl 40px
@@ -260,7 +256,7 @@ components:
     ja: カード
     lifecycle: trial
     use: 1 件のまとまり（予約・コーチ・添削）を囲む
-    not_for: 文 1 行だけ → list_row。主役の数字 → score_panel
+    not_for: 文 1 行だけ → list_row。主役の数字 → score_panel。指標の今月と前月 → kpi_figure（0.9.0）
     parts: [container, date_block（予約だけ）, title, meta, status_tag（任意）, action（任意）]
     variants:
       plain:   {container: background, border: border 1px, radius: md, padding_px: 16, gap_px: 8, title: title}
@@ -307,7 +303,7 @@ components:
     parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）]
     variants:
       text: {align: left, wrap: しない, note: 日時・名前・状態・種類など短い値}
-      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）}
+      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）。指標の値は kpi_figure の cell（0.9.0）}
       long_text: {align: left, wrap: 文節で折る（word-break auto-phrase）, min_width: 12em, max_width: 40em, note: 一言・題など文の列だけ}
     style:
       wrapper: {overflow_x: auto, max_width: 100%, container: background}
@@ -483,6 +479,56 @@ components:
       - label: "残りの回数"
         html: '<div class="pv w panel dark" aria-label="今月のビデオ通話、残り 2 回、月 2 回のうち"><i class="band"></i><div class="eb type-small">今月のビデオ通話</div><div class="numrow"><span class="type-small">残り</span><span class="num type-display">2</span><span class="type-title">回</span></div><div class="note note-d type-small">月 2 回のうち（プラン: スタンダード）</div></div>'
 
+  - id: kpi_figure
+    ja: 指標の値の組
+    lifecycle: trial   # 0.9.0（#1462）
+    use: admin-web で 1 つの指標（specs/analytics/kpi.yaml）の今月と前月の値を、単位・見方（良い向き）・出せないときの「—」と理由まで 1 組で出す
+    not_for: 指標でないまとめの件数（本部とコーチのホーム）→ card に figure。student-app の主役の数字 → score_panel。前月からの向き → trend_indicator（まだない。governance の requests）
+    parts: [label（kpi.yaml の ja）, value（今月）, unit, previous（「前月 58.1%」）, direction（「見方: 高いほど良い」）, reason（出せないときだけ）]
+    variants:
+      hero: {container: card の plain, label: title, value: figure・text, unit: title, previous: small・text_muted で value の右に baseline・間 md, direction: small・text_muted, note: 北極星だけ}
+      cell: {container: data_table の numeric のセル, value: small・tnum・text, previous: 前月の列は text_muted, direction: 見方の列（text_muted）}
+    states:
+      default: 今月と前月の値がある
+      pressed: 押せない部品。詳しく見る操作は card の text のボタンか link のセル
+      disabled: 使わない。出せない値は unavailable
+      loading: hero は label を残し、value の場所に「読み込み中…」（small・text_muted・role=status）。「—」を使わない。cell は data_table の loading
+      error: hero は card の中に error_text（role=alert）。cell は data_table の error
+      unavailable: value を「—」（U+2014）にして理由を添える。hero は small・text の 1 文、cell は「—」の右に 10 字までの語（text_muted）を 1 行で。前月は「前月 —」
+    wording:
+      number: 割合は小数 1 桁に「%」（「62.4%」）、時間は「18.5 時間」、単位のない値は小数 3 桁（「0.012」）。今月と前月は同じ桁
+      direction: kpi.yaml の up_is_good は「高いほど良い」、down_is_good は「低いほど良い」
+      reasons: {too_few: "hero「対象が 5 件未満のため、出せません。」cell「5 件未満」", none: "hero「対象が 0 件のため、出せません。」cell「対象 0 件」", not_yet: "hero「集計の期間が終わっていないため、11/30（月）に出ます。」cell「11/30 に出ます」"}
+      error: 「今月の値を読めませんでした。画面を更新すると、もう一度読み込めます。」
+    a11y: hero は role=group と aria-label で 1 文に読む（「初回レッスン後の 1 ヶ月継続率、今月 62.4%、前月 58.1%、高いほど良い」）。「—」は「出せません」と読む
+    rules:
+      - level: should
+        statement: 値を出せないときは 0 や空欄にせず、「—」と理由を出す
+        why: 0 は最も悪い値に読め、空欄は読み込みの失敗と見分けられない
+        check: design_inspector
+      - level: should
+        statement: 前月の値は今月より小さく text_muted で出し、「前月」の語か列の見出しを添える
+        why: 2 つの数字が並んでも、今月の値を取り違えない
+        check: design_inspector
+      - level: should
+        statement: 良い向きは値の色で示さず「見方」の文字で出す。値の色は text のまま（trend_indicator を足すまで）
+        why: 継続率は高いほど、分散は低いほど良い。色だけでは向きを読み違え、色の見分けが難しい人に届かない
+        check: design_inspector
+      - level: should
+        statement: hero は 1 画面に 1 つ（北極星だけ）。ほかの指標は cell の表に並べる
+        why: 大きな数字が並ぶと、どれが北極星か分からない（one-hot-spot）
+        check: deterministic
+    examples: {good: "「62.4%」を figure、右に「前月 58.1%」を text_muted", bad: 出せない値を「0%」で出す。下がった値を赤い字にするだけ}
+    preview:
+      - label: "hero・通常（北極星）"
+        html: '<div class="pv w card kf" role="group" aria-label="初回レッスン後の 1 ヶ月継続率、今月 62.4%、前月 58.1%、高いほど良い"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><div class="vr"><span class="v"><span class="type-figure">62.4</span><span class="type-title">%</span></span><span class="type-small muted">前月 58.1%</span></div><div class="type-small muted">見方: 高いほど良い</div></div>'
+      - label: "hero・出せない（unavailable）"
+        html: '<div class="pv w card kf" role="group"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><div class="vr"><span class="type-figure" aria-label="出せません">—</span><span class="type-small muted">前月 58.1%</span></div><p class="type-small">集計の期間が終わっていないため、11/30（月）に出ます。</p><div class="type-small muted">見方: 高いほど良い</div></div>'
+      - label: "hero・読み込み中・失敗"
+        html: '<div class="pv kfs"><div class="card kf"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><p class="type-small muted" role="status">読み込み中…</p></div><div class="card kf"><div class="type-title">初回レッスン後の 1 ヶ月継続率</div><p class="type-small etx" role="alert"><i class="ic">!</i>今月の値を読めませんでした。画面を更新すると、もう一度読み込めます。</p></div></div>'
+      - label: "cell（data_table の数字の列）・出せない"
+        html: '<div class="pv kt"><div class="tbl-wrap"><table class="tbl type-small" aria-label="ほかの指標"><thead><tr><th scope="col">指標</th><th scope="col">見方</th><th scope="col" class="num">今月</th><th scope="col" class="num">前月</th></tr></thead><tbody><tr><td>コーチの予約枠充足率</td><td class="muted">高いほど良い</td><td class="num">74.0%</td><td class="num muted">71.5%</td></tr><tr><td>コーチ別継続率の分散</td><td class="muted">低いほど良い</td><td class="num"><span aria-label="出せません">—</span> <span class="muted">5 件未満</span></td><td class="num muted">0.012</td></tr><tr><td>添削の返却リードタイム</td><td class="muted">低いほど良い</td><td class="num">18.5 時間</td><td class="num muted">21.0 時間</td></tr></tbody></table></div></div>'
+
   - id: notice
     ja: 知らせ
     lifecycle: trial
@@ -533,8 +579,6 @@ components:
     preview:
       - label: "screen（ほかに primary がない）"
         html: '<div class="pv empty empty-screen"><p class="type-body">まだこれからの予約はありません。コーチを探して始めましょう</p><span class="btn btn-primary">コーチを探す</span></div>'
-      - label: "section（画面に primary がある）"
-        html: '<div class="pv empty empty-section"><p class="type-body">まだこれからの予約はありません。</p><span class="btn btn-secondary">コーチを探す</span></div>'
 
   - id: loading
     ja: 読み込み中
@@ -791,7 +835,7 @@ preview_css: |
   .jb > .btn{width:100%}
   .pv.dlw{width:560px}.dl{margin:0}
   .dl .it{display:grid;grid-template-columns:10em 1fr;column-gap:var(--space-md);align-items:baseline;padding:var(--space-sm) 0;border-top:1px solid var(--color-border)}
-  .dl .it:first-child{border-top:0}.dl.st .it{grid-template-columns:1fr;row-gap:var(--space-xs)}
+  .dl .it:first-child{border-top:0}
   .dl dt{font-weight:700;color:var(--color-text-muted)}.dl dt,.dl dd{word-break:auto-phrase}
   .dl dd{margin:0;font-variant-numeric:tabular-nums}
   .etx{display:flex;gap:var(--space-xs);align-items:flex-start;color:var(--color-danger-fg)}
@@ -813,3 +857,5 @@ preview_css: |
   .chip.on{background:var(--color-primary-container);font-weight:700}
   .chips.off .chip{background:var(--color-surface);border-color:var(--color-surface);color:var(--color-text-muted)}
   .ck{width:12px;height:7px;margin-top:-4px;border:solid;border-width:0 0 2px 2px;transform:rotate(-45deg)}
+  .kf .vr{display:flex;align-items:baseline;gap:var(--space-md);flex-wrap:wrap}.kf .v{display:flex;align-items:baseline;gap:var(--space-xs)}
+  .pv.kfs{width:360px;display:flex;flex-direction:column;gap:var(--space-md)}.pv.kt{width:640px}

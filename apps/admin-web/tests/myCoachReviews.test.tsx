@@ -87,7 +87,7 @@ describe("自分の評価", () => {
     expect(api.getCoachReviewSummary).toHaveBeenCalledWith(COACH_ID);
     expect(api.listCoachReviews).toHaveBeenCalledWith(COACH_ID);
     expect(summaryOf(summary)).toEqual([
-      ["コーチ ID", COACH_ID],
+      ["コーチ", "山田コーチ"],
       ["評価の件数", "2 件"],
       ["点の平均（1〜5）", "4.00"],
     ]);
@@ -101,7 +101,7 @@ describe("自分の評価", () => {
     // 評価したレッスンのメニューがあれば出し、なければこれまでどおり。
     expect(items[0]).toHaveTextContent("メニュー: サーブ特訓");
     expect(items[1]).not.toHaveTextContent("メニュー:");
-    expect(screen.queryByLabelText("コーチ ID")).not.toBeInTheDocument();
+    expect(summary).not.toHaveTextContent(COACH_ID);
     expect(screen.queryByRole("button", { name: "評価を見る" })).not.toBeInTheDocument();
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
   });

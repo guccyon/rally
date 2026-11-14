@@ -412,6 +412,23 @@ void main() {
     expect(item.slot.coachBio, isNull);
     expect(item.booking.lessonMenu, isNull);
     expect(() => list.bookings.clear(), throwsUnsupportedError);
+    // trial_available の載っていない応答は null
+    expect(list.trialAvailable, isNull);
+  });
+
+  test('MyBookingList.fromJson はサーバーが判定した体験予約の可否 trial_available を読む', () {
+    expect(
+      MyBookingList.fromJson({'bookings': <dynamic>[], 'trial_available': true})
+          .trialAvailable,
+      isTrue,
+    );
+    expect(
+      MyBookingList.fromJson({
+        'bookings': <dynamic>[],
+        'trial_available': false,
+      }).trialAvailable,
+      isFalse,
+    );
   });
 
   test('MyVideoList をコンストラクタで直接作っても、渡した元を変えても一覧は変わらず、書き換えられない', () {

@@ -50,6 +50,8 @@ const notInStudentCatalog = <String, String>{
   'select': 'components.yaml の not_for に student-app では今は使わないとある（絞り込みは patterns の search_filter のチップ）',
   'data_table':
       'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
+  'kpi_figure':
+      'components.yaml の use に admin-web で事業の指標を出すとある（student-app の主役の数字は score_panel）',
   'notice / toast':
       'toast はテーマ（SnackBarThemeData）の SnackBar で出す。画面の下に重ねて出るのでカタログには置けない',
 };

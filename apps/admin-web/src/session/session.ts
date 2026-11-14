@@ -1,5 +1,6 @@
 // ログインの状態（モックのトークンとロール）を localStorage に保持する。Gen1 は本物の認証がない。
-// トークンは不透明なもの（契約の bearerAuth）として扱い、中身は解釈しない。ロールは利用者がログイン時に選ぶ。
+// トークンは不透明なもの（契約の bearerAuth）として扱い、中身は解釈しない。ロールは利用者がログイン時に選び、
+// 保持する前に LoginForm が getMyAccount でトークンの役割と合うかを確かめる。
 
 export const ROLES = ["coach", "headquarters"] as const;
 export type Role = (typeof ROLES)[number];

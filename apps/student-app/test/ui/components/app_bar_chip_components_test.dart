@@ -5,7 +5,7 @@ import 'package:rally_student_app/ui/components/rally_choice_chips.dart';
 import 'package:rally_student_app/ui/theme/rally_theme.dart';
 import 'package:rally_student_app/ui/theme/rally_tokens.dart';
 
-/// アプリバー（app_bar）とチップ（chip）の部品（components.yaml の 0.9.0）。
+/// アプリバー（app_bar）とチップ（chip）の部品（components.yaml の 0.10.0）。
 void main() {
   Future<void> pumpAppBar(WidgetTester tester, RallyAppBar appBar) =>
       tester.pumpWidget(

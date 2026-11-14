@@ -10,7 +10,7 @@ class RallyChipOption<T> {
   final String label;
 }
 
-/// チップ（選択。components.yaml の chip。0.9.0）。並ぶ 2〜6 個から 1 つを選ぶ。
+/// チップ（選択。components.yaml の chip。0.10.0）。並ぶ 2〜6 個から 1 つを選ぶ。
 /// 種類は choice（必須の 1 つ。初めは何も選ばず、送るときに確かめる）と filter（選んだらすぐ読み直す）で、見た目は同じ。
 /// 選んでいない chip は background・text、選んだ chip は primary_container・small 700 と前に check を出し、読み上げは radio の「選択中」。
 /// 押したらその場で [onSelected] を呼ぶ。選んだ chip をもう一度押しても外さない。
