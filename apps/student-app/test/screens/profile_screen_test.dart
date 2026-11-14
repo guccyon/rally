@@ -277,8 +277,10 @@ void main() {
         SubscriptionPlan.plus,
         startedAt: Fixtures.now,
       );
-      expect(find.text('月額契約'), findsOneWidget);
-      expect(find.text(summary), findsOneWidget);
+      // 欄の見出しと、契約の行の題の 2 つ
+      expect(find.text('月額契約'), findsNWidgets(2));
+      expect(find.widgetWithText(ListTile, '月額契約'), findsOneWidget);
+      expect(find.widgetWithText(ListTile, summary), findsOneWidget);
       expect(find.text('月額契約へ進む'), findsNothing);
       // 表示名の欄はそのまま使える
       expect(fieldText(tester), '山田');
