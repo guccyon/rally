@@ -290,6 +290,14 @@ class Student {
     sport: Sport.fromWire(json['sport'] as String),
     createdAt: _dateTime(json['created_at']),
   );
+
+  /// [Student.fromJson] の逆（端末に残すときに使う。`lib/session/session_store.dart`）
+  Map<String, dynamic> toJson() => {
+    'student_id': studentId,
+    'display_name': displayName,
+    'sport': sport.wire,
+    'created_at': createdAt.toUtc().toIso8601String(),
+  };
 }
 
 /// `RegisterAccountRequest`
@@ -534,10 +542,17 @@ class MyBooking {
 
 /// `MyBookingList`
 class MyBookingList {
-  const MyBookingList({required this.bookings, this.clockOffset});
+  const MyBookingList({
+    required this.bookings,
+    this.trialAvailable,
+    this.clockOffset,
+  });
 
   /// 予約したスロットの開始時刻の新しい順（同じ開始時刻は予約の作成の新しい順）。キャンセル済みも含む
   final List<MyBooking> bookings;
+
+  /// 今体験予約できるか（サーバーの判定。受け終えた体験予約をキャンセルしても false）。応答に載っていなければ null
+  final bool? trialAvailable;
 
   /// 応答の Date ヘッダーから出した、サーバーの時計と端末の時計のずれ（契約の項目ではない。`server_clock.dart`）。Date を読めないときは null
   final Duration? clockOffset;
@@ -551,6 +566,7 @@ class MyBookingList {
         (e) => MyBooking.fromJson(e as Map<String, dynamic>),
       ),
     ),
+    trialAvailable: json['trial_available'] as bool?,
     clockOffset: clockOffset,
   );
 }

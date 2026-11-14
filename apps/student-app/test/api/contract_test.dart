@@ -678,7 +678,9 @@ void main() {
       '#/components/schemas/Booking',
     );
     expect(refOf(myBooking['slot'] as YamlMap), '#/components/schemas/Slot');
-    expect(propertiesOf('MyBookingList'), ['bookings']);
+    expect(propertiesOf('MyBookingList'), ['bookings', 'trial_available']);
+    // 後から足した体験予約の可否は任意の項目
+    expect(requiredOf('MyBookingList'), ['bookings']);
     final items =
         (((schemas['MyBookingList'] as YamlMap)['properties']
                     as YamlMap)['bookings']
