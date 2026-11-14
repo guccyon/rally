@@ -127,7 +127,7 @@ mod tests {
         lesson::{LessonCompletion, LessonCompletionId, LessonSource},
         live_lesson::SessionId,
         profile::{CoachBio, DisplayName},
-        scheduling::{Booking, BookingStatus, CancellationPreview, Slot, SlotId, SlotStatus},
+        scheduling::{Booking, BookingId, BookingStatus, Slot, SlotId, SlotStatus},
     };
 
     use super::*;
@@ -285,11 +285,16 @@ mod tests {
             .unwrap();
     }
 
-    fn preview(consumes_quota: bool, free_cancel_until: Option<u64>) -> CancellationPreview {
-        CancellationPreview {
-            consumes_quota,
-            free_cancel_until: free_cancel_until.map(at),
-        }
+    /// 一覧の見込みを（消費するか、境目）に直したもの。見込みは `CancellationPolicy` だけが作るので、値は読んで比べる
+    fn previews(list: &MyBookingList) -> BTreeMap<BookingId, (bool, Option<SystemTime>)> {
+        list.cancellations
+            .iter()
+            .map(|(id, preview)| (*id, (preview.consumes_quota(), preview.free_cancel_until())))
+            .collect()
+    }
+
+    fn preview(consumes_quota: bool, free_cancel_until: Option<u64>) -> (bool, Option<SystemTime>) {
+        (consumes_quota, free_cancel_until.map(at))
     }
 
     fn ids(list: &MyBookingList) -> Vec<(u128, BookingStatus)> {
@@ -438,7 +443,7 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(
-                list.cancellations,
+                previews(&list),
                 BTreeMap::from([(booking.id(), preview(consumes_quota, Some(76)))]),
                 "{now_hour} 時"
             );
@@ -461,7 +466,7 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(
-                list.cancellations[&booking.id()].consumes_quota,
+                list.cancellations[&booking.id()].consumes_quota(),
                 CancellationPolicy::decide(&booking, at(now_hour)).consumes_quota
             );
         }
@@ -481,7 +486,7 @@ mod tests {
             .unwrap();
         assert_eq!(list.items.len(), 2);
         assert_eq!(
-            list.cancellations,
+            previews(&list),
             BTreeMap::from([(active.id(), preview(false, Some(176)))]),
             "キャンセル済みの予約には見込みを付けない"
         );
@@ -506,7 +511,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(
-                list.cancellations,
+                previews(&list),
                 BTreeMap::from([(booking.id(), preview(false, None))]),
                 "体験予約 {is_trial}"
             );
@@ -523,7 +528,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            list.cancellations,
+            previews(&list),
             BTreeMap::from([(trial.id(), preview(true, Some(76)))]),
             "月額契約の後の体験予約は他の予約と同じに数える（docs/adr/0005 の 6）"
         );
