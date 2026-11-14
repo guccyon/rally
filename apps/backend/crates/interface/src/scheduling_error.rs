@@ -109,6 +109,7 @@ impl From<CreateBookingError> for ApiError {
                 Self::conflict("coach_not_accepting_bookings", describe(&error))
             }
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotOfAnotherCoach
             | SchedulingError::SlotCapacityOutOfRange { .. }
@@ -157,6 +158,7 @@ impl From<ConfirmBookingError> for ApiError {
                 entitlement_error::live_lesson_quota_exceeded()
             }
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotOfAnotherCoach
             | SchedulingError::SlotCapacityOutOfRange { .. }
@@ -203,6 +205,7 @@ impl From<CancelBookingError> for ApiError {
                 Self::conflict("invalid_booking_state", describe(&error))
             }
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotOfAnotherCoach
             | SchedulingError::SlotNotOpen { .. }
@@ -251,6 +254,7 @@ impl From<PublishSlotError> for ApiError {
                 Self::conflict("slot_overlaps", describe(&error))
             }
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOfAnotherCoach
             | SchedulingError::SlotNotOpen { .. }
             | SchedulingError::SlotCapacityOutOfRange { .. }
@@ -306,6 +310,7 @@ impl From<WithdrawSlotError> for ApiError {
                 status: SlotStatus::Closed,
             } => Self::conflict("slot_already_closed", describe(&error)),
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotNotOpen { .. }
             | SchedulingError::SlotCapacityOutOfRange { .. }
@@ -358,6 +363,7 @@ impl From<ListBookingsError> for ApiError {
             SchedulingError::BookingPeriodEndsBeforeItStarts
             | SchedulingError::BookingPeriodTooLong { .. } => Self::from(error),
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotOfAnotherCoach
             | SchedulingError::SlotNotOpen { .. }
@@ -407,6 +413,7 @@ impl From<ChangeCoachAcceptanceError> for ApiError {
                 Self::conflict("coach_not_suspended", describe(&error))
             }
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotOfAnotherCoach
             | SchedulingError::SlotNotOpen { .. }
@@ -462,6 +469,7 @@ impl From<CoachLeaveError> for ApiError {
                 Self::validation_failed(describe(&error))
             }
             SchedulingError::SlotEndsBeforeItStarts
+            | SchedulingError::SlotStartsInThePast
             | SchedulingError::SlotOverlaps { .. }
             | SchedulingError::SlotOfAnotherCoach
             | SchedulingError::SlotNotOpen { .. }
@@ -496,6 +504,9 @@ impl From<CoachLeaveError> for ApiError {
 fn describe(error: &SchedulingError) -> String {
     match error {
         SchedulingError::SlotEndsBeforeItStarts => "スロットの開始が終了より前でない".to_string(),
+        SchedulingError::SlotStartsInThePast => {
+            "過去の開始の枠は公開できない（開始は現在時刻より後にする）".to_string()
+        }
         SchedulingError::SlotOverlaps { existing } => format!(
             "同じコーチの枠（{}）と期間が重なる",
             slot_id_uuid::format(*existing)
@@ -607,6 +618,10 @@ mod tests {
             (
                 SchedulingError::SlotEndsBeforeItStarts,
                 "スロットの開始が終了より前でない",
+            ),
+            (
+                SchedulingError::SlotStartsInThePast,
+                "過去の開始の枠は公開できない（開始は現在時刻より後にする）",
             ),
             (
                 SchedulingError::SlotOverlaps {
@@ -763,6 +778,7 @@ mod tests {
         for (error, _) in &all {
             match error {
                 SchedulingError::SlotEndsBeforeItStarts
+                | SchedulingError::SlotStartsInThePast
                 | SchedulingError::SlotOverlaps { .. }
                 | SchedulingError::SlotOfAnotherCoach
                 | SchedulingError::SlotNotOpen { .. }

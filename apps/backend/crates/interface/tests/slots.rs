@@ -767,16 +767,19 @@ async fn search_by_a_coach_without_slots_is_an_empty_page_not_404() {
 }
 
 #[tokio::test]
-async fn search_starts_from_now_by_default() {
+async fn slot_starting_in_the_past_or_now_is_422_and_not_listed() {
     let app = app();
-    // 現在時刻（2026-10-26T00:00:00Z）より前の枠は既定では出ない
-    let (status, _) = post_slots(
-        &app.router,
-        Some(COACH_A),
-        slot("tennis", "2026-10-25T10:00:00Z", "2026-10-25T11:00:00Z"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CREATED);
+    // 現在時刻（2026-10-26T00:00:00Z）より前の開始と、ちょうど現在の開始は公開できない
+    for starts_at in ["2026-10-25T10:00:00Z", "2026-10-26T00:00:00Z"] {
+        let (status, body) = post_slots(
+            &app.router,
+            Some(COACH_A),
+            slot("tennis", starts_at, "2026-10-26T01:00:00Z"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "validation_failed", "{body}");
+    }
     let future = publish(&app.router, COACH_A, "tennis", 10).await;
 
     let (_, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
