@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/models.dart';
 import '../device/local_media.dart';
 import 'student_flow.dart';
 
@@ -124,12 +125,13 @@ class PrejoinCheckNotifier extends Notifier<PrejoinCheckState> {
 
   LocalMedia get _media => ref.read(localMediaProvider);
 
-  /// 予約の確定の「ビデオ通話で受ける」。開始 5 分前より早ければ何もしない（ボタンも押せない）。
+  /// 予約の確定の「ビデオ通話で受ける」。確定済みの予約でないか、開始 5 分前より早ければ何もしない（ボタンも押せない）。
   /// 開けたら前のチェックの状態を捨てて入室前チェックへ（カメラ・マイクは画面が開いてから [start] で開く）。
   void open() {
     final flow = ref.read(studentFlowProvider);
     final booking = flow.booking;
-    if (booking == null) return;
+    // 入室は読み直した確定済みの予約からだけ（キャンセル済み・確定待ちからは開かない）
+    if (booking == null || booking.status != BookingStatus.confirmed) return;
     if (!canOpenPrejoinCheck(booking.startsAt, ref.read(clockProvider)())) {
       return;
     }

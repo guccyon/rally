@@ -18,33 +18,76 @@ import '../ui/ticking_now.dart';
 /// 予約の確定待ち（`confirmBooking`）。確定したら初回レッスンの受け方を選ぶ。
 /// 「ビデオ通話で受ける」は開始 5 分前から押せ、押すと入室前チェックを開く（それより早いときは開ける時刻を出す）。
 /// 予約した時点のレッスンメニューの写し（`Booking.lesson_menu`）があれば、その名前と 1 回の時間も出す。
-/// 体験予約の直後のほか、ホームの「次にやること」から予約の ID で開く（`listMyBookings` から読み直す。[StudentFlowState.bookingLoad]）。
+/// 体験予約の直後のほか、ホームの「次にやること」や自分の予約から予約の ID で開く（`listMyBookings` から読み直す。[StudentFlowState.bookingLookup]）。
 /// 確定待ちなら「この予約をキャンセルする」（確認のダイアログ）で確定せずに枠を返せる。
+/// 出すのはサーバーの記録の予約（作った・確定した・キャンセルした応答か、予約の ID で `listMyBookings` から読み直したもの。ADR 0010）。
+/// キャンセル済み・見つからない予約は info の知らせと「ホームに戻る」だけで、確定・入室・動画の送付の道は出さない。
 class BookingPendingScreen extends ConsumerWidget {
   const BookingPendingScreen({super.key});
+
+  /// キャンセル済み・見つからない予約の知らせ
+  static const _goneNotice = 'この予約はもう確定待ちではありません。ホームで次にやることを確かめてください。';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
     final notifier = ref.read(studentFlowProvider.notifier);
     final booking = state.booking;
-    if (state.bookingLoad != null || booking == null) {
+    final lookup = state.bookingLookup;
+    final backHome = RallyButton(
+      label: 'ホームに戻る',
+      variant: RallyButtonVariant.secondary,
+      onPressed: state.busy ? null : notifier.goHome,
+    );
+    if (lookup == BookingLookup.failed) {
       return FlowScaffold(
         title: '予約',
-        children: [_BookingLoadState(state.bookingLoad, busy: state.busy)],
+        children: [
+          const Notice(
+            message: '予約を読み込めませんでした。「ホームに戻る」から、もう一度開けます。',
+            status: RallyStatus.danger,
+          ),
+          const SizedBox(height: 8),
+          backHome,
+        ],
       );
     }
+    if (lookup == BookingLookup.notFound) {
+      return FlowScaffold(
+        title: '予約',
+        children: [
+          const Notice(message: _goneNotice, status: RallyStatus.info),
+          const SizedBox(height: 8),
+          backHome,
+        ],
+      );
+    }
+    if (lookup == BookingLookup.loading || booking == null) {
+      return const FlowScaffold(
+        title: '予約',
+        children: [SectionLoading(message: '予約を読み込んでいます…')],
+      );
+    }
+    final cancelled = booking.status == BookingStatus.cancelled;
     final confirmed = booking.status == BookingStatus.confirmed;
     final menu = booking.lessonMenu;
     return FlowScaffold(
-      title: confirmed ? '予約が確定しました' : '予約の確定待ち',
+      title: cancelled
+          ? '予約'
+          : confirmed
+          ? '予約が確定しました'
+          : '予約の確定待ち',
       children: [
         Text(booking.isTrial ? '体験予約' : '予約'),
         Text('開始: ${formatDateTime(booking.startsAt)}'),
         if (menu != null) Text(bookingLessonMenuLabel(menu)),
         Text('状態: ${bookingStatusLabel(booking.status)}'),
         const SizedBox(height: 16),
-        if (!confirmed) ...[
+        if (cancelled) ...[
+          const Notice(message: _goneNotice, status: RallyStatus.info),
+          const SizedBox(height: 8),
+          backHome,
+        ] else if (!confirmed) ...[
           const Text('予約はまだ確定していません。内容を確かめて確定してください。'),
           const SizedBox(height: 8),
           FilledButton(
@@ -55,7 +98,7 @@ class BookingPendingScreen extends ConsumerWidget {
           RallyButton(
             label: 'この予約をキャンセルする',
             variant: RallyButtonVariant.text,
-            onPressed: state.busy ? null : () => _cancel(context, ref),
+            onPressed: state.busy ? null : () => _confirmCancel(context, ref),
           ),
         ] else ...[
           const Text('初回レッスンの受け方を選んでください。'),
@@ -71,70 +114,32 @@ class BookingPendingScreen extends ConsumerWidget {
     );
   }
 
-  /// 確認してから確定待ちの予約をキャンセルする。キャンセルできたらホームへ戻り、toast で知らせる
-  Future<void> _cancel(BuildContext context, WidgetRef ref) async {
+  /// 確定待ちの予約をキャンセルしてよいかを確かめ、よければ `cancelBooking`。キャンセルできたらホームへ戻り、toast で知らせる。
+  /// 確定待ちはキャンセル規定で回数を使わないので、そのことは書かない
+  Future<void> _confirmCancel(BuildContext context, WidgetRef ref) async {
     final state = ref.read(studentFlowProvider);
     final booking = state.booking!;
-    final slot = state.bookedSlot;
-    final when = slot != null && slot.slotId == booking.slotId
-        ? formatTimeRange(slot.startsAt, slot.endsAt)
-        : formatDateTime(booking.startsAt);
-    final what = [
-      if (slot != null && slot.slotId == booking.slotId) sportLabel(slot.sport),
-      booking.isTrial ? '体験予約' : '予約',
-    ].join('の');
+    final sport = state.bookedSlot?.sport;
+    final range = state.bookedSlot == null
+        ? formatDateTime(booking.startsAt)
+        : formatTimeRange(state.bookedSlot!.startsAt, state.bookedSlot!.endsAt);
+    final kind = booking.isTrial ? '体験予約' : '予約';
+    final what = sport == null ? kind : '${sportLabel(sport)}の$kind';
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showConfirmDialog(
       context,
       title: '予約をキャンセルしますか？',
-      body: '$when の$whatをキャンセルします。押さえていたスロットはほかの生徒も予約できるようになります。',
+      body: '$range の$whatをキャンセルします。押さえていたスロットはほかの生徒も予約できるようになります。',
       confirmLabel: 'キャンセルする',
       danger: true,
     );
     if (!confirmed) return;
     final cancelled = await ref
         .read(studentFlowProvider.notifier)
-        .cancelPendingBooking();
+        .cancelOpenBooking();
     if (cancelled) {
       messenger.showSnackBar(const SnackBar(content: Text('予約をキャンセルしました')));
     }
-  }
-}
-
-/// 予約の ID で開いた予約の画面の、読み込み中・読めなかった・もう確定待ちでも確定済みでもないの表示（どれも「ホームに戻る」で戻る）
-class _BookingLoadState extends ConsumerWidget {
-  const _BookingLoadState(this.load, {required this.busy});
-
-  final BookingLoad? load;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(studentFlowProvider.notifier);
-    if (load == null || load == BookingLoad.loading) {
-      return const SectionLoading(message: '予約を読み込んでいます…');
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      spacing: RallySpacing.md,
-      children: [
-        if (load == BookingLoad.failed)
-          const Notice(
-            message: '予約を読み込めませんでした。「ホームに戻る」から、もう一度開けます。',
-            status: RallyStatus.danger,
-          )
-        else
-          const Notice(
-            message: 'この予約はもう確定待ちではありません。ホームで次にやることを確かめてください。',
-            status: RallyStatus.info,
-          ),
-        RallyButton(
-          label: 'ホームに戻る',
-          variant: RallyButtonVariant.secondary,
-          onPressed: busy ? null : notifier.goHome,
-        ),
-      ],
-    );
   }
 }
 
