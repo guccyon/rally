@@ -49,6 +49,13 @@ void main() {
         ),
       );
 
+  testWidgets('開発用の言葉「モック」を出さず、料金の注記を生徒に分かる言葉で出す', (tester) async {
+    await pumpSubscription(tester);
+
+    expect(find.textContaining('モック'), findsNothing);
+    expect(find.text('いまは料金は請求されません。'), findsOneWidget);
+  });
+
   testWidgets('プランは月のビデオ通話の回数を添えて出し、既定のスタンダードで始めると今月の通話の枠を出す', (tester) async {
     final api = await pumpSubscription(tester);
 
@@ -90,6 +97,35 @@ void main() {
     expect(request.toJson()['plan'], 'plus');
     expect(find.text('プラン: プラス'), findsOneWidget);
     expect(find.text('今月のビデオ通話: 月 4 回のうち残り 4 回'), findsOneWidget);
+  });
+
+  testWidgets('別のタブで契約済みなら、押したプランではなくサーバーの契約のプランと残りの回数を出す', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      failures: const {
+        'startSubscription': StudentApiException(
+          statusCode: 409,
+          error: ApiError(
+            code: ErrorCode.subscriptionAlreadyActive,
+            message: 'already',
+          ),
+        ),
+      },
+    )..entitlement = Fixtures.subscriptionStartedWith(
+        SubscriptionPlan.standard,
+      ).entitlement;
+    await pumpSubscription(tester, api: api);
+
+    await tapText(tester, 'プラス　ビデオ通話 月 4 回');
+    await tapText(tester, '月額契約を始める');
+
+    expect(api.calls, contains('getMyEntitlement'));
+    expect(find.text('プラン: スタンダード'), findsOneWidget);
+    expect(find.text('プラン: プラス'), findsNothing);
+    expect(find.text('今月のビデオ通話: 月 2 回のうち残り 2 回'), findsOneWidget);
+    expect(find.text('月額契約を始める'), findsNothing);
+    expect(find.byType(RadioGroup<SubscriptionPlan>), findsNothing);
   });
 
   testWidgets('プランに添える回数は、アプリに持たず listSubscriptionPlans の応答の値を出す', (
