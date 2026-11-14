@@ -11,6 +11,13 @@ import '../ui/labels.dart';
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
+  /// スイッチを出す種類。初回レッスンのあとのフォロー（[NotificationKind.firstLessonFollowup]）は、
+  /// バックエンドがこの項目を保存して返すようになるまで出さない
+  static final shownKinds = [
+    for (final kind in NotificationKind.values)
+      if (kind != NotificationKind.firstLessonFollowup) kind,
+  ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(studentFlowProvider);
@@ -28,7 +35,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
         const Text('オフにしている間に届くはずだった通知は、あとでオンに戻しても届きません。'),
         const SizedBox(height: 8),
         if (settings != null)
-          for (final kind in NotificationKind.values)
+          for (final kind in shownKinds)
             SwitchListTile(
               title: Text(notificationKindLabel(kind)),
               value: settings.receives(kind),

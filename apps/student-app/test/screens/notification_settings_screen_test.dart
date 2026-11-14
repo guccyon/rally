@@ -25,7 +25,6 @@ void main() {
     '動画の添削が返ってきたとき',
     '担当コーチからメッセージが届いたとき',
     '本部からのお知らせが届いたとき',
-    '初回レッスンのあと、次の予約がまだないとき',
   ];
 
   Future<void> openSettings(WidgetTester tester) async {
@@ -64,6 +63,8 @@ void main() {
         ))
           (tile.title! as Text).data,
       ], labels);
+      // フォローのスイッチは、バックエンドがこの項目を保存して返すようになるまで出さない
+      expect(find.text('初回レッスンのあと、次の予約がまだないとき'), findsNothing);
       expect(switchOf(tester, '予約が確定したとき'), isTrue);
       expect(switchOf(tester, '動画の添削が返ってきたとき'), isTrue);
       expect(switchOf(tester, '担当コーチからメッセージが届いたとき'), isFalse);
