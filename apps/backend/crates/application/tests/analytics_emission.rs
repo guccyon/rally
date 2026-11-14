@@ -106,7 +106,7 @@ fn src() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
-fn events_yaml() -> Vec<Yaml> {
+fn all_events_yaml() -> Vec<Yaml> {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../../specs/analytics/events.yaml"
@@ -114,6 +114,14 @@ fn events_yaml() -> Vec<Yaml> {
     let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
     let root: Yaml = serde_yaml::from_str(&text).unwrap();
     root["events"].as_sequence().unwrap().clone()
+}
+
+/// events.yaml のうち発火を実装したイベント（`planned_by` の付いた、契約だけ先に置いたものを除く）。
+fn events_yaml() -> Vec<Yaml> {
+    all_events_yaml()
+        .into_iter()
+        .filter(|e| e["planned_by"].is_null())
+        .collect()
 }
 
 /// 空白（改行を含む）を除いたテキスト。rustfmt の折り返しに左右されずに探すため。
@@ -151,6 +159,25 @@ fn every_event_of_events_yaml_has_exactly_one_row_in_the_table() {
         defined.iter().collect::<BTreeSet<_>>(),
         "表と events.yaml のイベント名が一致しない"
     );
+}
+
+/// `planned_by` は発火するユースケースがまだないイベントだけに付ける。表に行を足したら外す。
+#[test]
+fn planned_events_are_not_in_the_table() {
+    for event in all_events_yaml()
+        .iter()
+        .filter(|e| !e["planned_by"].is_null())
+    {
+        let name = event["name"].as_str().unwrap();
+        assert!(
+            event["planned_by"].as_str().is_some(),
+            "{name} の planned_by が文字列でない"
+        );
+        assert!(
+            EMITTERS.iter().all(|row| row.0 != name),
+            "{name} は表にあるので events.yaml の planned_by を外す"
+        );
+    }
 }
 
 #[test]

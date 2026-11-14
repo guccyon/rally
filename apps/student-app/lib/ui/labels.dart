@@ -208,6 +208,7 @@ String notificationKindLabel(NotificationKind kind) => switch (kind) {
   NotificationKind.videoReviewReturned => '動画の添削が返ってきたとき',
   NotificationKind.messageReceived => '担当コーチからメッセージが届いたとき',
   NotificationKind.announcement => '本部からのお知らせが届いたとき',
+  NotificationKind.firstLessonFollowup => '初回レッスンのあと、次の予約がまだないとき',
 };
 
 /// 月額契約のプランの名前

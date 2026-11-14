@@ -2,6 +2,8 @@
 # 前提は product-context.md、context は context-map.yaml の id、用語は glossary.yaml に合わせる。
 # モックの行動トラッキングはこの定義どおりに発火する。KPI の式（セマンティック層）はここでは定義せず、kpi.yaml の 1 か所に置く（kpi は kpi.yaml の ja を指す）。
 # 各項目: name（<対象>.<出来事>）・ja・context（context-map.yaml の id。複数のコンテキストが発行するイベントだけ contexts: で id を列挙する。glossary と同じ規約）・actor（student | coach | system）・required（必須属性。occurred_at と student_id / coach_id のどちらかを必ず含む）・kpi（product-context の KPI 名 or null）
+# 任意で planned_by（発火を実装するチケット。例 "guccyon/rally#1464"）: 契約を先に置き、発火するユースケースがまだないイベントだけに付ける。
+# 付いたイベントは発火の網羅の検査（apps/backend の analytics_emission.rs・analytics_event_payload.rs）から外れ、発火を実装したら外す
 # common_optional: すべての行動イベントに付けられる共通の任意属性。各項目は name・ja・description・example。
 # 発火する側は値が分かるときだけ付け、分からなければ付けない（欠けていても発火は止めない）。どのイベントの required にも入れない。
 schema_version: "0.1"
@@ -115,3 +117,16 @@ events:
     actor: student
     required: [student_id, coach_id, thread_id, message_id, sender_role, occurred_at]
     kpi: null
+  # 生徒が初回レッスンのあとのフォローのお知らせ（student-app の契約の NotificationKind の first_lesson_followup）を
+  # 開いて、開く先（Notification.destination）に進んだ。お知らせ 1 件につき最初に開いたときだけ発火する（開き直しは数えない）
+  # days_after は完了の記録から何日後の分か（3 | 7。契約の NotificationKind の first_lesson_followup の説明の日数）、destination は slot_search | coach_profile（契約の NotificationDestinationKind と同じ）
+  # lesson_id はフォローの起点の初回レッスンの完了記録（lesson.completed の lesson_id で is_first_lesson が true のもの）。
+  # その後の予約とは student_id で結び、occurred_at より後の booking.created（is_trial が false）を「開いた → 予約した」とする。
+  # kpi は null（north star の first_lesson_retention_1m の式はこのイベントを読まない。式は変えない）
+  - name: followup_notification.opened
+    ja: "フォローのお知らせを開いた"
+    context: notification
+    actor: student
+    required: [student_id, notification_id, lesson_id, days_after, destination, occurred_at]
+    kpi: null
+    planned_by: "guccyon/rally#1464"

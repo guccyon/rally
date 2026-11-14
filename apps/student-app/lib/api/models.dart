@@ -214,7 +214,8 @@ enum NotificationKind {
   bookingCancelledByHeadquarters('booking_cancelled_by_headquarters'),
   videoReviewReturned('video_review_returned'),
   messageReceived('message_received'),
-  announcement('announcement');
+  announcement('announcement'),
+  firstLessonFollowup('first_lesson_followup');
 
   const NotificationKind(this.wire);
   final String wire;
@@ -1832,6 +1833,7 @@ class NotificationSettings {
     required this.videoReviewReturned,
     required this.messageReceived,
     required this.announcement,
+    required this.firstLessonFollowup,
   });
 
   final String studentId;
@@ -1851,6 +1853,9 @@ class NotificationSettings {
   /// 本部からのお知らせの通知を受け取るか
   final bool announcement;
 
+  /// 初回レッスンのあとのフォローのお知らせ（3 日後・7 日後）の通知を受け取るか
+  final bool firstLessonFollowup;
+
   /// [kind] の通知を受け取るか
   bool receives(NotificationKind kind) => switch (kind) {
     NotificationKind.bookingConfirmed => bookingConfirmed,
@@ -1859,6 +1864,7 @@ class NotificationSettings {
     NotificationKind.videoReviewReturned => videoReviewReturned,
     NotificationKind.messageReceived => messageReceived,
     NotificationKind.announcement => announcement,
+    NotificationKind.firstLessonFollowup => firstLessonFollowup,
   };
 
   /// [kind] だけを [receives] に変えた設定
@@ -1881,6 +1887,9 @@ class NotificationSettings {
         announcement: kind == NotificationKind.announcement
             ? receives
             : announcement,
+        firstLessonFollowup: kind == NotificationKind.firstLessonFollowup
+            ? receives
+            : firstLessonFollowup,
       );
 
   factory NotificationSettings.fromJson(Map<String, dynamic> json) =>
@@ -1892,6 +1901,8 @@ class NotificationSettings {
         videoReviewReturned: json['video_review_returned'] as bool,
         messageReceived: json['message_received'] as bool,
         announcement: json['announcement'] as bool,
+        // この項目を返さないサーバーの版もあり、欠けていれば既定の true（契約の説明）
+        firstLessonFollowup: json['first_lesson_followup'] as bool? ?? true,
       );
 }
 
@@ -1903,6 +1914,7 @@ class UpdateNotificationSettingsRequest {
     this.videoReviewReturned,
     this.messageReceived,
     this.announcement,
+    this.firstLessonFollowup,
   });
 
   /// [kind] 1 つだけを [receives] に変える
@@ -1926,6 +1938,9 @@ class UpdateNotificationSettingsRequest {
     NotificationKind.announcement => UpdateNotificationSettingsRequest(
       announcement: receives,
     ),
+    NotificationKind.firstLessonFollowup => UpdateNotificationSettingsRequest(
+      firstLessonFollowup: receives,
+    ),
   };
 
   final bool? bookingConfirmed;
@@ -1933,6 +1948,7 @@ class UpdateNotificationSettingsRequest {
   final bool? videoReviewReturned;
   final bool? messageReceived;
   final bool? announcement;
+  final bool? firstLessonFollowup;
 
   Map<String, dynamic> toJson() => {
     'booking_confirmed': ?bookingConfirmed,
@@ -1940,6 +1956,7 @@ class UpdateNotificationSettingsRequest {
     'video_review_returned': ?videoReviewReturned,
     'message_received': ?messageReceived,
     'announcement': ?announcement,
+    'first_lesson_followup': ?firstLessonFollowup,
   };
 }
 
@@ -1951,6 +1968,7 @@ class ApiNotification {
     required this.body,
     required this.createdAt,
     required this.isRead,
+    this.destination,
   });
 
   final String notificationId;
@@ -1967,6 +1985,9 @@ class ApiNotification {
   /// 既読か（`markMyNotificationsRead` で既読にする）
   final bool isRead;
 
+  /// 開いたときに進む先。載っていない・このアプリの版が読めない先は null（開く先はない）
+  final NotificationDestination? destination;
+
   factory ApiNotification.fromJson(Map<String, dynamic> json) =>
       ApiNotification(
         notificationId: json['notification_id'] as String,
@@ -1974,7 +1995,53 @@ class ApiNotification {
         body: json['body'] as String,
         createdAt: _dateTime(json['created_at']),
         isRead: json['is_read'] as bool,
+        destination: NotificationDestination.tryFromJson(json['destination']),
       );
+}
+
+/// 開く先の種類（`NotificationDestinationKind`）。値は後方互換に増えうるので、知らない値は [tryFromWire] が null にする
+enum NotificationDestinationKind {
+  slotSearch('slot_search'),
+  coachProfile('coach_profile');
+
+  const NotificationDestinationKind(this.wire);
+  final String wire;
+
+  /// 契約にない（このアプリの版が知らない）値は null。
+  static NotificationDestinationKind? tryFromWire(String value) =>
+      values.where((e) => e.wire == value).firstOrNull;
+}
+
+/// `NotificationDestination`（お知らせを開いたときに進む先）。[kind] が slotSearch なら [sport]、coachProfile なら [coachId] を持つ
+class NotificationDestination {
+  const NotificationDestination({required this.kind, this.sport, this.coachId});
+
+  final NotificationDestinationKind kind;
+
+  /// スロットを探す画面（`searchSlots`）で絞るスポーツ
+  final Sport? sport;
+
+  /// 紹介（`getCoachProfile`）を開くコーチ
+  final String? coachId;
+
+  /// 載っていない（null）・知らない種類・種類に要る項目がない・知らないスポーツの先は null（開く先はない）
+  static NotificationDestination? tryFromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final kind = NotificationDestinationKind.tryFromWire(
+      json['kind'] as String,
+    );
+    final sport = Sport.values
+        .where((e) => e.wire == json['sport'])
+        .firstOrNull;
+    final coachId = json['coach_id'] as String?;
+    return switch (kind) {
+      NotificationDestinationKind.slotSearch when sport != null =>
+        NotificationDestination(kind: kind!, sport: sport),
+      NotificationDestinationKind.coachProfile when coachId != null =>
+        NotificationDestination(kind: kind!, coachId: coachId),
+      _ => null,
+    };
+  }
 }
 
 /// `NotificationList`

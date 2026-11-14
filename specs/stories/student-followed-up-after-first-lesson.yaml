@@ -1,0 +1,64 @@
+type: UserStory
+id: student-followed-up-after-first-lesson
+title: "生徒が初回レッスンのあと次の予約がないとき、3 日後と 7 日後のフォローのお知らせから次の予約に進める"
+actor: student
+goal: "初回レッスンを受けたあとアプリを開かずにいても、こちらからの声かけで次のレッスンを思い出し、そのまま予約できる。初回のあと 30 日以内の離脱がいちばん多い（KPI first_lesson_retention_1m）"
+reader: [student]
+entry: "初回レッスン（通話か動画添削）の完了を記録した生徒が、そのあと次の予約を取らないまま 3 日（72 時間）が過ぎ、3 日後の分のフォローのお知らせ（first_lesson_followup）のプッシュ通知を受け取る"
+exit: "生徒がお知らせから開いたスロットを探す画面（またはコーチの紹介からそのコーチの空き枠）で 2 回目の予約（体験予約ではない通常の予約）を作り、予約の確定待ちを見ている。予約を取ったあとは 7 日後のお知らせが届かない"
+preconditions:
+  - "生徒の完了したレッスン（lesson_completion）が 1 件だけあり、それが is_first_lesson: true"
+  - "生徒は初回レッスンの完了の記録より後に予約を作っていない"
+  - "通知の受け取り設定の first_lesson_followup は true（既定）"
+  - "生徒のスポーツに予約できるスロットがある"
+time:
+  - "初回レッスンの完了の記録から 3 日後・7 日後をまたぐ（staging ではサーバーの時刻を進めて確かめる）"
+steps:
+  - where: "端末のプッシュ通知（モック）"
+    do: "完了の記録から 3 日後に届いたプッシュ通知を押す（またはアプリを開き、アプリバーの「お知らせ」を開く）"
+    sees: "お知らせの一覧の先頭に、3 日後のフォローのお知らせ「初回レッスンおつかれさまでした。忘れないうちに、次のレッスンを予約しませんか」。一覧のほかのお知らせの並びと既読の扱いは今までどおり"
+  - where: "student-app お知らせ"
+    do: "3 日後のフォローのお知らせを押す"
+    sees: "お知らせの開く先（destination: slot_search）のとおり、スロットを探す画面が自分のスポーツで開き、予約できるスロットが並ぶ。体験予約を使っているので、スロットのボタンは「予約する」（判定はサーバーの trial_available。student-books-after-first-lesson と同じ）。開いたことが行動イベント followup_notification.opened に残る"
+  - where: "student-app スロットを探す"
+    do: "スロットの「予約する」を押す"
+    sees: "予約の確定待ちが開く（createBooking は is_trial: false）。この予約があるので、完了の記録から 7 日後のお知らせは届かない"
+  - where: "student-app お知らせ（別の生徒: 3 日後に予約しなかった）"
+    do: "3 日後のお知らせでは予約せず、完了の記録から 7 日後に届いたフォローのお知らせを押す"
+    sees: "3 日後とは違う文の 7 日後のお知らせ「初回レッスンから 1 週間です。{コーチの表示名}コーチと続きのレッスンを予約しませんか」。押すと初回レッスンを担当したコーチの紹介（destination: coach_profile）が開き、そのコーチの空き枠から「予約する」で予約の確定待ちに進める。コーチが受付を止めている・生徒のスポーツを提供していないときは、お知らせの文と開く先がスロット検索になる"
+must_not:
+  - "初回レッスンの完了の記録がない生徒、または初回でないレッスンのあとにフォローのお知らせを送る"
+  - "初回かどうか・次の予約があるかをアプリや定時処理で数え直す（初回は完了の記録の is_first_lesson、次の予約はサーバーの予約の記録だけで決める。ADR 0006・ADR 0010）"
+  - "その時点で次の予約（キャンセルされていない、初回の完了の記録より後に作った予約）がある生徒に、その日数のお知らせを送る。3 日後のあとに予約を取った生徒に 7 日後のお知らせを送る"
+  - "同じ生徒に同じ日数のお知らせを 2 件送る、または 3 日後と 7 日後で同じ文を送る、または 3 日・7 日のほかの日数のお知らせを送る"
+  - "割引・クーポン・期限・「残りわずか」など、急かす言葉や決済に触れる言葉をお知らせに書く"
+  - "通知の受け取り設定で first_lesson_followup を切った生徒にプッシュ通知を送る（お知らせの一覧には残す）"
+  - "お知らせの開く先に、生徒のスポーツと違うスポーツのスロット検索、またはゴルフの画面を開く"
+  - "お知らせの追加で、ホームの「次のレッスンを予約する」（student-books-after-first-lesson）や「次にやること」（student-resumes-next-action）の表示と流れを変える"
+  - "開く先のないお知らせ（destination がない）や知らない種類・開く先の種類のお知らせを押したときに、失敗の文言を出す、または一覧を止める（開く先がなければ何もしない）"
+touches:
+  apps: [student-app]
+  contexts: [notification, scheduling, live-lesson, async-lesson]
+  terms: [notification, notification_settings, lesson_completion, slot, booking]
+  operations:
+    - student-app.listMyNotifications
+    - student-app.getMyNotificationSettings
+    - student-app.updateMyNotificationSettings
+    - student-app.searchSlots
+    - student-app.getCoachProfile
+    - student-app.listMyBookings
+    - student-app.createBooking
+  events:
+    - lesson.completed
+    - followup_notification.opened
+    - booking.created
+origin:
+  issues: ["guccyon/rally#1464", "guccyon/rally#1472"]
+  note: "#1360 でホームに「次のレッスンを予約する」を出したが、アプリを開かない生徒には届かない。Blueprint の機会「初回レッスン後の 7 日間フォロー導線」"
+  retro: false
+known_gaps:
+  - step: 1
+    note: "フォローのお知らせを作る定時処理と、お知らせの本文・開く先（Notification.destination）を返す実装がまだない（#1464 の後続のタスク）"
+  - step: 2
+    note: "student-app のお知らせの一覧から開く先へ進む操作と、行動イベント followup_notification.opened の発火がまだない（events.yaml では planned_by。#1464 の後続のタスク）"
+status: draft
