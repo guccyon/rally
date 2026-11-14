@@ -189,13 +189,60 @@ describe("入室前チェック", () => {
     expect(await screen.findByText("通話中")).toBeInTheDocument();
     expect(screen.getByText("通話を開始しました。")).toBeInTheDocument();
     expect(screen.getByText("カメラ: 入・マイク: 切（入室前チェックのまま）")).toBeInTheDocument();
-    // 長い一覧の下に埋もれないよう、通話中の表示と「通話を終了」は予約の一覧より前にある
-    const listTable = screen.getByRole("table", { name: "これからの予約" });
-    for (const node of [screen.getByText("通話中"), screen.getByRole("button", { name: "通話を終了" })]) {
-      expect(node.compareDocumentPosition(listTable) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
     expect(fake.live()).toEqual([]);
     expect(fake.probes.every((probe) => probe.closed)).toBe(true);
+  });
+
+  test("入室すると一覧と入れ替わって通話中の画面になり、見出しに焦点が移って先頭を見せる。終了すると「通話を終了しました。」を出したまま一覧に戻る", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const { coachApi, user } = await openCheck({}, 0);
+      coachApi.endLiveLessonSession.mockResolvedValue({
+        ok: true,
+        data: { ...STARTED, status: "ended", ended_at: "2026-11-08T03:25:00Z", duration_sec: 1500 },
+      });
+      await user.click(screen.getByRole("button", { name: "入室する" }));
+
+      // 長い一覧の下に埋もれないよう、一覧の表は出さず、通話中の画面だけを出す
+      const heading = await screen.findByRole("heading", { name: "ビデオ通話中" });
+      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: "ビデオ通話中" })).toHaveTextContent("生徒: 鈴木 一郎");
+      expect(screen.getByRole("status")).toHaveTextContent("通話を開始しました。");
+      expect(screen.getByText("通話中")).toBeInTheDocument();
+      expect(screen.getByText("カメラ: 入・マイク: 入（入室前チェックのまま）")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "通話を終了" })).toBeEnabled();
+      expect(heading).toHaveFocus();
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+      expect(scrollIntoView.mock.contexts.at(-1)).toBe(heading);
+
+      await user.click(screen.getByRole("button", { name: "通話を終了" }));
+
+      expect(coachApi.endLiveLessonSession).toHaveBeenCalledWith(SESSION_ID);
+      expect(await screen.findByRole("table", { name: "これからの予約" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "ビデオ通話中" })).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("通話を終了しました。");
+      expect(screen.getByText("1500 秒")).toBeInTheDocument();
+      // 押したボタンが消えても焦点は迷子にならず、一覧の先頭に移る
+      expect(document.activeElement).not.toBe(document.body);
+      expect(document.activeElement).toContainElement(screen.getByRole("status"));
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
+  test("終了に失敗したら通話中の画面のまま理由を出し、もう一度終了できる", async () => {
+    const { coachApi, user } = await openCheck({}, 0);
+    coachApi.endLiveLessonSession.mockResolvedValue({ ok: false, message: "通話を終了できませんでした。" });
+    await user.click(screen.getByRole("button", { name: "入室する" }));
+    await screen.findByRole("heading", { name: "ビデオ通話中" });
+
+    await user.click(screen.getByRole("button", { name: "通話を終了" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("通話を終了できませんでした。");
+    expect(screen.getByRole("heading", { name: "ビデオ通話中" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "通話を終了" })).toBeEnabled();
   });
 
   test("入室で 409 slot_not_started が返ったら今の文言を出し、チェックは開いたまま", async () => {
