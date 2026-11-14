@@ -106,6 +106,21 @@ enum HomeSection {
   favoriteCoaches,
 }
 
+/// 続きの画面（予約の確定待ち・予約が確定しました）で、持っている予約の ID から `listMyBookings` で読み直した結果（ADR 0010）
+enum BookingLoad {
+  /// 読み直している（前に持っていた予約の状態は出さない）
+  loading,
+
+  /// 読めた（[StudentFlowState.booking] はサーバーの今の状態）
+  loaded,
+
+  /// 読めなかった
+  failed,
+
+  /// 一覧にない（他人の予約か、なくなった）
+  notFound,
+}
+
 /// 添削の依頼（チャットの [ChatNotifier.requestVideoReview] と一周シナリオの [StudentFlowNotifier.submitVideo]）の結果
 enum VideoReviewRequestResult {
   /// 受け付けられた
@@ -141,6 +156,7 @@ class StudentFlowState {
     this.coachLessonMenusFailures = const {},
     this.bookedSlot,
     this.booking,
+    this.bookingLoad = BookingLoad.loaded,
     this.session,
     this.video,
     this.review,
@@ -218,8 +234,11 @@ class StudentFlowState {
   /// 体験予約したスロット（動画の送付でスポーツを使う）
   final Slot? bookedSlot;
 
-  /// 体験予約
+  /// 体験予約（続きの画面を開くたびに、この ID でサーバーから読み直す）
   final Booking? booking;
+
+  /// [booking] を読み直した結果（続きの画面はこれで読み込み中・失敗・見つからない・予約の状態を出し分ける）
+  final BookingLoad bookingLoad;
   final LiveLessonSession? session;
   final Video? video;
   final VideoReview? review;
@@ -280,6 +299,7 @@ class StudentFlowState {
     Set<String>? coachLessonMenusFailures,
     Slot? bookedSlot,
     Booking? booking,
+    BookingLoad? bookingLoad,
     LiveLessonSession? session,
     Video? video,
     VideoReview? review,
@@ -314,6 +334,7 @@ class StudentFlowState {
         coachLessonMenusFailures ?? this.coachLessonMenusFailures,
     bookedSlot: bookedSlot ?? this.bookedSlot,
     booking: booking ?? this.booking,
+    bookingLoad: bookingLoad ?? this.bookingLoad,
     session: session ?? this.session,
     video: video ?? this.video,
     review: review ?? this.review,
@@ -632,14 +653,65 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
-  /// `confirmBooking`
+  /// `confirmBooking`。確定したら予約を読み直す（ADR 0010）
   Future<void> confirmBooking() => run(() async {
     final booking = await _api.confirmBooking(state.booking!.bookingId);
     state = state.copyWith(booking: booking);
+    await _reloadBooking(booking.bookingId);
   });
 
-  /// 初回レッスンを動画の送付で受ける
-  void chooseVideo() => state = state.copyWith(step: FlowStep.videoSubmit);
+  /// 続きの画面（予約の確定待ち・予約が確定しました）を開いた・戻ったときに、持っている予約を ID で読み直す
+  /// （`listMyBookings` から探す。ADR 0010）。読んでいるあいだと読めないときは、前に持っていた予約の状態を出さない
+  Future<void> reloadBooking() async {
+    final bookingId = state.booking?.bookingId;
+    if (bookingId == null) return;
+    await _reloadBooking(bookingId);
+  }
+
+  /// [reloadBooking] の本体。失敗は [StudentFlowState.errorMessage] にせず、[BookingLoad.failed] にする（画面に出す）。
+  /// 読んでいるあいだに別の予約に移っていたら、応答を捨てる
+  Future<void> _reloadBooking(String bookingId) async {
+    state = state.copyWith(
+      bookingLoad: BookingLoad.loading,
+      errorMessage: state.errorMessage,
+    );
+    try {
+      await _loadMyBookings();
+    } on StudentApiException {
+      if (ref.mounted && state.booking?.bookingId == bookingId) {
+        state = state.copyWith(
+          bookingLoad: BookingLoad.failed,
+          errorMessage: state.errorMessage,
+        );
+      }
+      return;
+    }
+    if (!ref.mounted || state.booking?.bookingId != bookingId) return;
+    final found = (state.myBookings ?? const <MyBooking>[])
+        .where((item) => item.booking.bookingId == bookingId)
+        .firstOrNull;
+    state = found == null
+        ? state.copyWith(
+            bookingLoad: BookingLoad.notFound,
+            errorMessage: state.errorMessage,
+          )
+        : state.copyWith(
+            booking: found.booking,
+            bookingLoad: BookingLoad.loaded,
+            errorMessage: state.errorMessage,
+          );
+  }
+
+  /// 受け方を選べるか（読み直した予約が確定済みのときだけ。キャンセル済みの予約のレッスンには進めない）
+  bool get canChooseLesson =>
+      state.bookingLoad == BookingLoad.loaded &&
+      state.booking?.status == BookingStatus.confirmed;
+
+  /// 初回レッスンを動画の送付で受ける（確定済みの予約のときだけ）
+  void chooseVideo() {
+    if (!canChooseLesson) return;
+    state = state.copyWith(step: FlowStep.videoSubmit);
+  }
 
   /// `startLiveLessonSession`（映像はモックなので接続はしない）
   Future<void> startCall() => run(() async {
@@ -688,6 +760,11 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     String? lessonMenuId,
   }) async {
     var result = VideoReviewRequestResult.failed;
+    if (!canChooseLesson) {
+      // 送付の画面を開いたあとに自分の予約でキャンセルした（送らずに確定待ちの画面へ戻し、キャンセル済みを出す）
+      state = state.copyWith(step: FlowStep.bookingPending);
+      return result;
+    }
     await run(() async {
       final booking = state.booking!;
       final video = await submitVideoForReview(
@@ -848,10 +925,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 自分の予約の一覧を読み直す
   Future<void> refreshMyBookings() => run(_loadMyBookings);
 
-  /// 自分の予約の一覧を閉じて、開いた段に戻る
-  void closeMyBookings() => state = state.copyWith(
-    step: state.bookingsReturnStep ?? FlowStep.slotSearch,
-  );
+  /// 自分の予約の一覧を閉じて、開いた段に戻る。動画の送付から開いてその予約をキャンセルしていたら、
+  /// 予約の確定待ちの画面に戻す（読み直してキャンセル済みを出す。キャンセルした予約のレッスンには進めない）
+  void closeMyBookings() {
+    final back = state.bookingsReturnStep ?? FlowStep.slotSearch;
+    final leftLesson =
+        back == FlowStep.videoSubmit &&
+        state.booking?.status == BookingStatus.cancelled;
+    state = state.copyWith(step: leftLesson ? FlowStep.bookingPending : back);
+  }
 
   /// キャンセルのボタンを出すか。キャンセル済みでなく、まだ始まっていない予約だけ
   bool canCancel(Booking booking) =>
@@ -871,6 +953,10 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   Future<void> cancelBooking(Booking booking) => run(() async {
     final cancelled = await _api.cancelBooking(booking.bookingId);
     state = state.copyWith(
+      // 続きの画面の予約なら、それも応答で置き換える（戻ったときにも読み直す）
+      booking: state.booking?.bookingId == cancelled.bookingId
+          ? cancelled
+          : null,
       myBookings: [
         for (final item in state.myBookings ?? const <MyBooking>[])
           item.booking.bookingId == cancelled.bookingId

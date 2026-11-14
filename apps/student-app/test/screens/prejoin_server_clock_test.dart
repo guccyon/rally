@@ -24,6 +24,12 @@ void main() {
     booking: Fixtures.bookingConfirmed,
   );
 
+  /// 自分の予約の一覧（予約の確定の画面が開くときに、確定済みの予約を ID で読み直す）
+  List<MyBooking> myBookings() => [
+    Fixtures.trialMyBooking(Fixtures.bookingConfirmed),
+    ...Fixtures.myBookings,
+  ];
+
   const slotNotStarted = StudentApiException(
     statusCode: 409,
     error: ApiError(
@@ -67,7 +73,7 @@ void main() {
       tester,
     ) async {
       var server = opensAt.subtract(const Duration(seconds: 1));
-      final api = FakeStudentApi()..clockOffset = -skew;
+      final api = FakeStudentApi(myBookings: myBookings())..clockOffset = -skew;
       final container = await open(
         tester,
         api: api,
@@ -112,6 +118,7 @@ void main() {
       var server = startsAt.subtract(const Duration(minutes: 2));
       const skew = Duration(minutes: 2);
       final api = FakeStudentApi(
+        myBookings: myBookings(),
         failures: {'startLiveLessonSession': slotNotStarted},
       );
       final container = await open(
@@ -151,7 +158,7 @@ void main() {
 
   testWidgets('応答に Date がないときは、端末の時計のままで開け、開始時刻に入室できる', (tester) async {
     var device = opensAt.subtract(const Duration(seconds: 1));
-    final api = FakeStudentApi();
+    final api = FakeStudentApi(myBookings: myBookings());
     final container = await open(tester, api: api, deviceNow: () => device);
     expect(container.read(serverClockProvider).offset, Duration.zero);
 

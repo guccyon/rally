@@ -203,19 +203,42 @@ class FakeStudentApi implements StudentApi {
     );
   }
 
+  /// 作った予約は [myBookings] の先頭に足す（続きの画面が `listMyBookings` から読み直せるように）
   @override
-  Future<Booking> createBooking(CreateBookingRequest body) => _answer(
-    'createBooking',
-    () => Fixtures.withLessonMenu(Fixtures.bookingPending, bookingLessonMenu),
-    body,
-  );
+  Future<Booking> createBooking(CreateBookingRequest body) =>
+      _answer('createBooking', () {
+        final booking = Fixtures.withLessonMenu(
+          Fixtures.bookingPending,
+          bookingLessonMenu,
+        );
+        final slot = slots.firstWhere(
+          (s) => s.slotId == body.slotId,
+          orElse: () => Fixtures.slot,
+        );
+        myBookings.removeWhere((b) => b.booking.bookingId == booking.bookingId);
+        myBookings.insert(0, MyBooking(booking: booking, slot: slot));
+        return booking;
+      }, body);
 
+  /// [myBookings] にあるその予約も確定済みにする
   @override
-  Future<Booking> confirmBooking(String bookingId) => _answer(
-    'confirmBooking',
-    () => Fixtures.withLessonMenu(Fixtures.bookingConfirmed, bookingLessonMenu),
-    bookingId,
-  );
+  Future<Booking> confirmBooking(String bookingId) =>
+      _answer('confirmBooking', () {
+        final booking = Fixtures.withLessonMenu(
+          Fixtures.bookingConfirmed,
+          bookingLessonMenu,
+        );
+        final index = myBookings.indexWhere(
+          (b) => b.booking.bookingId == bookingId,
+        );
+        if (index >= 0) {
+          myBookings[index] = MyBooking(
+            booking: booking,
+            slot: myBookings[index].slot,
+          );
+        }
+        return booking;
+      }, bookingId);
 
   @override
   Future<MyBookingList> listMyBookings() => _answer(
@@ -690,6 +713,10 @@ abstract final class Fixtures {
     createdAt: now,
     confirmedAt: now,
   );
+
+  /// 自分の予約の一覧に載る、体験予約したスロット [slot] の [booking]（続きの画面が `listMyBookings` から読み直す先）
+  static MyBooking trialMyBooking(Booking booking) =>
+      MyBooking(booking: booking, slot: slot);
 
   /// [booking] の状態とキャンセルの時刻を変えたもの
   static Booking bookingWith(
