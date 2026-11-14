@@ -140,17 +140,20 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
     NotificationKind.bookingConfirmed ||
     NotificationKind.bookingCancelledByHeadquarters ||
     NotificationKind.videoReviewReturned ||
-    NotificationKind.messageReceived => true,
+    NotificationKind.messageReceived ||
+    NotificationKind.lessonReminder => true,
     NotificationKind.announcement || null => false,
   };
 
   /// 行を押したとき。お知らせは行き先の ID を持たないので、種類に応じた一覧の画面を開く
-  /// （予約の確定と本部による予約のキャンセルは自分の予約・添削の返却は自分の動画・メッセージの受信はチャットのスレッドの一覧）。
+  /// （予約の確定・本部による予約のキャンセル・レッスンのリマインドは自分の予約・添削の返却は自分の動画・メッセージの受信は
+  /// チャットのスレッドの一覧）。
   /// 開いた画面を閉じるとお知らせの画面に戻る
   Future<void> select(ApiNotification notification) async {
     switch (notification.kind) {
       case NotificationKind.bookingConfirmed ||
-          NotificationKind.bookingCancelledByHeadquarters:
+          NotificationKind.bookingCancelledByHeadquarters ||
+          NotificationKind.lessonReminder:
         await _flow.openMyBookings();
       case NotificationKind.videoReviewReturned:
         await _flow.openMyVideos();

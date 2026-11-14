@@ -3321,9 +3321,14 @@ paths:
         照会だけで、何も保存しない（既読にもしない）。
 
         - お知らせはコーチにプッシュ通知を送るときに作る（生徒が予約を確定した＝新しい予約・生徒からの動画の添削の依頼・
-          生徒からのチャットのメッセージ）
-        - 同じ通知（同じ予約・同じ動画の添削の依頼・同じメッセージ）のお知らせは 1 件
+          生徒からのチャットのメッセージ・レッスンのリマインド）
+        - レッスンのリマインド（`lesson_reminder`）は、自分が担当する確定した同期レッスン（ビデオ通話）の予約について、開始の
+          前日と開始 1 時間前に作る（時刻の経過で作る）。作る時点で予約が確定のままのときだけ作り、キャンセルした予約・
+          コーチのお休みで消えた予約には作らない。コーチには受け取り設定がないので、確定した予約には必ず作る
+        - 同じ通知（同じ予約・同じ動画の添削の依頼・同じメッセージ）のお知らせは 1 件。リマインドは同じ予約の同じ時点
+          （前日・1 時間前）ごとに 1 件
         - 本文（`body`）は表示用の文言で、サーバーが種類と中身から決める
+        - リマインドは `booking_id` にその予約を載せる（お知らせから自分の予約を開くため）
 
         行動イベントは発火しない。
       tags: [notification]
@@ -5954,8 +5959,10 @@ components:
       description: |
         お知らせ・プッシュ通知の種類（student-app の `NotificationKind` と同じ綴り）。コーチが受け取るのは、予約の確定
         （`booking_confirmed`。コーチには新しい予約として知らせる）・添削の依頼（`video_review_requested`）・
-        メッセージの受信（`message_received`。生徒から届いたもの）。値は追加しうる（クライアントは未知の値を汎用のお知らせとして扱う）。
-      enum: [booking_confirmed, video_review_requested, message_received]
+        メッセージの受信（`message_received`。生徒から届いたもの）・レッスンのリマインド（`lesson_reminder`。担当する確定した
+        同期レッスンの、開始の前日と開始 1 時間前。`Notification.booking_id` に予約を載せる）。値は追加しうる（クライアントは
+        未知の値を汎用のお知らせとして扱う）。
+      enum: [booking_confirmed, video_review_requested, message_received, lesson_reminder]
 
     Notification:
       type: object
@@ -5978,6 +5985,13 @@ components:
         is_read:
           type: boolean
           description: 既読か（`markMyNotificationsRead` で既読にする）
+        booking_id:
+          type: string
+          format: uuid
+          description: |
+            お知らせが結び付く予約（student-app の `Notification.booking_id` と同じ）。レッスンのリマインド（`lesson_reminder`）には
+            必ず載せ、クライアントはこれでお知らせから自分の予約を開く。それ以外の種類には今は載せない（あとで載せる種類を
+            増やしうる。載っていなければ予約を開かない）
 
     NotificationList:
       type: object
