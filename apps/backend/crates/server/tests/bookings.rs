@@ -5,6 +5,7 @@
 //! コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は本人の枠への予約だけを生徒の表示名と一緒に返し、コーチ以外は 403。
 //! 本部が見る予約の一覧（`GET /bookings`）は同じパスの `POST /bookings`（生徒）と並んで、すべてのコーチの枠への予約を
 //! 日付（日本時間）で絞って返し、本部以外は 403。
+//! 予約をせずに動画の添削を受け終えた（完了を記録した）生徒は、体験を使用済み（`trial_available` false・体験予約は 409）とする。
 
 use application::identity::{TokenClaims, TokenIssuer};
 use axum::{
@@ -421,4 +422,115 @@ async fn headquarters_lists_bookings_of_every_coach_by_date_in_japan() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
+}
+
+/// 予約をせずに動画を送って無料の添削（非同期のレッスン）を受け終えた（返却された添削の完了を記録した）生徒は、体験を使用済みとする（#1595）。
+/// 自分の予約の一覧の `trial_available` は false で、体験予約は 409 `trial_already_used`、通常の予約はできる
+#[tokio::test]
+async fn student_who_received_a_video_review_cannot_book_a_trial() {
+    let router = server::router();
+    let coach = MockTokenService
+        .issue(TokenClaims {
+            account_id: AccountId::from_u128(42),
+            role: Role::Coach,
+        })
+        .into_string();
+    let (status, slot) = send(
+        &router,
+        post_json(
+            "/slots",
+            Some(&coach),
+            json!({
+                "sport": "tennis",
+                "starts_at": "2099-01-01T10:00:00Z",
+                "ends_at": "2099-01-01T11:00:00Z",
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let student = register(&router, "taro@example.com").await;
+    let my_bookings = || {
+        Request::get("/bookings/me")
+            .header(header::AUTHORIZATION, format!("Bearer {student}"))
+            .body(Body::empty())
+            .unwrap()
+    };
+    let (status, list) = send(&router, my_bookings()).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(
+        list["trial_available"], true,
+        "登録したばかりなら体験予約できる"
+    );
+
+    let (status, video) = send(
+        &router,
+        post_json(
+            "/videos",
+            Some(&student),
+            json!({
+                "coach_id": "00000000-0000-0000-0000-00000000002a",
+                "sport": "tennis",
+                "content_type": "video/quicktime"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{video}");
+    let video_id = video["video_id"].as_str().unwrap();
+    let review_path = format!("/videos/{video_id}/review");
+    let (status, body) = send(
+        &router,
+        post_json(
+            &review_path,
+            Some(&coach),
+            json!({ "comment": "フォロースルーを大きく" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // 返却されただけでは、まだ受け終えていない
+    let (status, list) = send(&router, my_bookings()).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["trial_available"], true, "{list}");
+    let (status, completion) = send(
+        &router,
+        post_json(
+            "/lessons/completions",
+            Some(&student),
+            json!({ "lesson_type": "async_lesson", "video_id": video_id }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{completion}");
+
+    let (status, list) = send(&router, my_bookings()).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["bookings"], json!([]), "{list}");
+    assert_eq!(list["trial_available"], false, "{list}");
+
+    let (status, body) = send(
+        &router,
+        post_json(
+            "/bookings",
+            Some(&student),
+            json!({ "slot_id": slot["slot_id"], "is_trial": true }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "trial_already_used");
+
+    let (status, booking) = send(
+        &router,
+        post_json(
+            "/bookings",
+            Some(&student),
+            json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{booking}");
+    assert_eq!(booking["is_trial"], false);
+    assert_eq!(booking["status"], "pending");
 }
