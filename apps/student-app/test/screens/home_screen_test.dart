@@ -856,7 +856,7 @@ void main() {
     expect(find.text('担当コーチとのチャット'), findsOneWidget);
     expect(find.text('動画の添削を依頼する'), findsOneWidget);
     expect(container.read(chatProvider).promptVideoReviewRequest, isFalse);
-    await tapText(tester, '動画を選ぶ（モック）');
+    await tapText(tester, '動画を選ぶ');
     await tapText(tester, '依頼する');
 
     expect(api.calls, [

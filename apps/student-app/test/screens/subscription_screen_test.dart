@@ -45,6 +45,13 @@ void main() {
         ),
       );
 
+  testWidgets('開発用の言葉「モック」を出さず、料金の注記を生徒に分かる言葉で出す', (tester) async {
+    await pumpSubscription(tester);
+
+    expect(find.textContaining('モック'), findsNothing);
+    expect(find.text('いまは料金は請求されません。'), findsOneWidget);
+  });
+
   testWidgets('プランは月のビデオ通話の回数を添えて出し、既定のスタンダードで始めると今月の通話の枠を出す', (tester) async {
     final api = await pumpSubscription(tester);
 

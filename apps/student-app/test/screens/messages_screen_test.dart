@@ -339,7 +339,7 @@ void main() {
     final submit = find.widgetWithText(FilledButton, '依頼する');
     expect(tester.widget<FilledButton>(submit).onPressed, isNull);
 
-    await tapText(tester, '動画を選ぶ（モック）');
+    await tapText(tester, '動画を選ぶ');
     expect(find.text('選んだ動画: swing.mp4'), findsOneWidget);
     await tester.enterText(
       find.descendant(
@@ -554,7 +554,7 @@ void main() {
     );
 
     await tapText(tester, '添削を依頼する');
-    await tapText(tester, '動画を選ぶ（モック）');
+    await tapText(tester, '動画を選ぶ');
     await tapText(tester, 'やめる');
 
     expect(find.byType(AlertDialog), findsNothing);
@@ -612,7 +612,7 @@ void main() {
         chat: threadChat(),
       );
       await tapText(tester, '添削を依頼する');
-      await tapText(tester, '動画を選ぶ（モック）');
+      await tapText(tester, '動画を選ぶ');
     }
 
     testWidgets('担当コーチの非同期のメニューのうち生徒のスポーツのものを名前と説明で出し、既定は「指定しない」でメニューなしで送る', (
