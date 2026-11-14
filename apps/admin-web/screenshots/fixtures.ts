@@ -133,6 +133,19 @@ const BOOKINGS: Schemas["CoachBooking"][] = [
   ),
 ];
 
+/** 入室前チェックから入室したときの通話セッション（coach-live-in-call。入室前チェックの予約に、開始時刻ちょうどに入った）。 */
+export const PREJOIN_STARTED_SESSION: Schemas["LiveLessonSession"] = {
+  session_id: id("5555", 1),
+  booking_id: BOOKINGS[3]!.booking.booking_id,
+  student_id: SATO.id,
+  coach_id: COACH_ID,
+  status: "in_progress",
+  started_at: PREJOIN_STARTS_AT.toISOString(),
+  ended_at: null,
+  duration_sec: null,
+  room_token: "mock-room",
+};
+
 // 本部の予約の一覧（今日から 7 日）。確定待ちのまま 24 時間以内に始まる予約・確定済み・確定待ち・キャンセル済みを混ぜる。
 const HQ_BOOKINGS: Schemas["HeadquartersBooking"][] = [
   {

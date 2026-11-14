@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 
 import type { Role } from "@/session/session";
 
-import { HQ_BOOKING_DETAIL_STATES, PREJOIN_STARTS_AT } from "./fixtures";
+import { HQ_BOOKING_DETAIL_STATES, PREJOIN_STARTED_SESSION, PREJOIN_STARTS_AT } from "./fixtures";
 
 // キャプチャする画面の一覧。画面を足したり、たどり方（押す文言）を変えたりしたらここを直す。
 // id はファイル名と、前後の比較の突き合わせに使うので変えない（変えると「消えた画面」と「新しい画面」になる）。
@@ -218,6 +218,27 @@ export const SCREENS: Screen[] = [
     open: async (page) => {
       await openPrejoinCheck(page);
       await page.getByText("この PC にカメラが見つかりません。").waitFor();
+    },
+  },
+  {
+    id: "coach-live-in-call",
+    title: "コーチ: 通話への参加（入室して通話中）",
+    role: "coach",
+    path: "/coach",
+    prepare: async (page) => {
+      await fakeMedia({ camera: "ok", mic: "ok", many: false })(page);
+      // 「入室する」は既定の応答（fixtures.ts）では 409 slot_not_started。この画面だけ入室できたことにする（後から足した route が先に効く）
+      await page.route("**/api/live-lesson-sessions", async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(PREJOIN_STARTED_SESSION) });
+      });
+    },
+    open: async (page) => {
+      await openPrejoinCheck(page);
+      await waitForCamera(page);
+      await reachStartTime(page);
+      await page.getByRole("button", { name: "入室する" }).click();
+      await page.getByRole("heading", { name: "ビデオ通話中" }).waitFor();
     },
   },
   { id: "coach-reviews", title: "コーチ: 自分の評価", role: "coach", path: "/coach", open: coachTab("自分の評価") },
