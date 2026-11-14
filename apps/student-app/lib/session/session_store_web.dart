@@ -3,7 +3,7 @@ import 'package:web/web.dart' as web;
 import 'session_store.dart';
 
 /// Web 版の [SessionStore]。ブラウザーの localStorage に、このオリジンで 1 件だけ残す（再読み込み・「進む」で戻っても読める）。
-SessionStore createSessionStore() => _LocalStorageSessionStore();
+Future<SessionStore> openSessionStore() async => _LocalStorageSessionStore();
 
 /// localStorage のキー
 const _key = 'rally.student.session';

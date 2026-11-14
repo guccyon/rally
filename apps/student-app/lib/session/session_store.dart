@@ -3,8 +3,9 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
-import 'session_store_stub.dart'
-    if (dart.library.js_interop) 'session_store_web.dart';
+export 'session_store_stub.dart'
+    if (dart.library.js_interop) 'session_store_web.dart'
+    show openSessionStore;
 
 /// 端末に残す登録の結果（`registerAccount` の応答のトークンと生徒）。開き直したときに同じ生徒で始めるためだけに持つ。
 /// 段・予約・通話セッションは持たない（次の操作はサーバーの状態から出す。ADR 0010）。
@@ -33,8 +34,8 @@ class SavedSession {
   }
 }
 
-/// 登録の結果を端末に残す所（ポート）。本物は [createSessionStore]（Web 版はブラウザーの localStorage、
-/// ほかは開いている間だけのメモリ）、テストは [MemorySessionStore] を渡して開き直しを確かめる（[sessionStoreProvider]）。
+/// 登録の結果を端末に残す所（ポート）。本物は [openSessionStore]（Web 版はブラウザーの localStorage、
+/// iOS / Android はアプリのファイル）、テストは [MemorySessionStore] を渡して開き直しを確かめる（[sessionStoreProvider]）。
 abstract class SessionStore {
   /// 残した登録の結果。ない・読めなければ null
   SavedSession? read();
@@ -46,7 +47,7 @@ abstract class SessionStore {
   void clear();
 }
 
-/// 開いている間だけ持つ [SessionStore]（Web 版のほかと、テスト）。同じものを渡し直せば開き直しを再現できる
+/// 開いている間だけ持つ [SessionStore]（テストと、端末の保管の置き場所が分からないとき）。同じものを渡し直せば開き直しを再現できる
 class MemorySessionStore implements SessionStore {
   MemorySessionStore([this._raw]);
 
@@ -68,7 +69,8 @@ class MemorySessionStore implements SessionStore {
   void clear() => _raw = null;
 }
 
-/// 登録の結果を残す所。テストでは [MemorySessionStore] に差し替える。
+/// 登録の結果を残す所。`main` が [openSessionStore] で開いたもので差し替える。
+/// 差し替えないとき（テスト・画面のキャプチャ）は開いている間だけのメモリ
 final sessionStoreProvider = Provider<SessionStore>(
-  (ref) => createSessionStore(),
+  (ref) => MemorySessionStore(),
 );
