@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/slot_search_screen.dart';
@@ -12,10 +13,12 @@ import '../support/fake_student_api.dart';
 import '../support/pump.dart';
 
 void main() {
+  // 予約も受けたレッスンもない生徒（サーバーが `trial_available: true` を返した）
   final registered = StudentFlowState(
     step: FlowStep.slotSearch,
     accessToken: Fixtures.registered.accessToken,
     student: Fixtures.student,
+    canBookTrial: true,
   );
 
   testWidgets('スポーツで絞って検索し、スロットを体験予約すると確定待ちに進む', (tester) async {
@@ -41,80 +44,157 @@ void main() {
     expect(state.booking!.status, BookingStatus.pending);
   });
 
-  group('体験予約を使ったあと（#1505）', () {
-    final booked = registered.copyWith(
-      myBookings: Fixtures.myBookings,
-      trialAvailable: false,
+  group('体験予約か通常の予約かはサーバーの trial_available で決める（#1505・#1594）', () {
+    /// スロットを探す画面を開き直す（ホームの「次のレッスンを予約する」などと同じく、自分の予約を読み直す）
+    Future<ProviderContainer> openSlotSearch(
+      WidgetTester tester,
+      FakeStudentApi api,
+    ) async {
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+      await container.read(studentFlowProvider.notifier).goToSlotSearch();
+      await tester.pumpAndSettle();
+      return container;
+    }
+
+    testWidgets(
+      '完了したレッスンがあり予約がない生徒（trial_available false）には「予約する」を出し、押すと通常の予約で確定待ちに進む',
+      (tester) async {
+        final api = FakeStudentApi(myBookings: const []);
+        expect(api.lessonCompletions, isNotEmpty);
+        final container = await openSlotSearch(tester, api);
+
+        expect(container.read(studentFlowProvider).canBookTrial, isFalse);
+        expect(find.text('予約する'), findsOneWidget);
+        expect(find.text('体験予約する'), findsNothing);
+
+        await tapText(tester, '予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': false,
+        });
+        expect(
+          container.read(studentFlowProvider).step,
+          FlowStep.bookingPending,
+        );
+        expect(container.read(studentFlowProvider).errorMessage, isNull);
+      },
     );
 
-    // キャンセル済みの予約だけ
-    final cancelledOnly = [
-      for (final item in Fixtures.myBookings)
-        if (item.booking.status == BookingStatus.cancelled) item,
-    ];
-
-    testWidgets('サーバーが体験予約を使用済み（trial_available false）と返した生徒には「予約する」を出し、押すと通常の予約で確定待ちに進む', (
+    testWidgets('キャンセルされていない予約がある生徒（trial_available false）には「予約する」を出す', (
       tester,
     ) async {
-      final api = FakeStudentApi();
-      final container = await pumpScreen(
-        tester,
-        const SlotSearchScreen(),
-        api: api,
-        initial: booked,
-      );
+      final api = FakeStudentApi(lessonCompletions: const []);
+      await openSlotSearch(tester, api);
 
-      await tapText(tester, 'テニス');
       expect(find.text('予約する'), findsOneWidget);
       expect(find.text('体験予約する'), findsNothing);
-
-      await tapText(tester, '予約する');
-
-      final request = api.requests.last as CreateBookingRequest;
-      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
-      expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
-      expect(container.read(studentFlowProvider).errorMessage, isNull);
     });
 
-    testWidgets('受け終えた体験予約をキャンセルした生徒は、キャンセル済みの予約しかなくてもサーバーが false なら「予約する」で通常の予約にする（#1595）', (
+    testWidgets(
+      '予約がキャンセル済みだけで受けたレッスンもない生徒（trial_available true）には「体験予約する」を出す',
+      (tester) async {
+        final api = FakeStudentApi(
+          myBookings: [
+            for (final item in Fixtures.myBookings)
+              if (item.booking.status == BookingStatus.cancelled) item,
+          ],
+          lessonCompletions: const [],
+        );
+        await openSlotSearch(tester, api);
+
+        expect(find.text('予約する'), findsNothing);
+        await tapText(tester, '体験予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': true,
+        });
+      },
+    );
+
+    testWidgets(
+      '受け終えた体験予約をキャンセルした生徒（キャンセル済みの予約だけで、受けたレッスンがあり trial_available false）には「予約する」を出し、通常の予約にする（#1595）',
+      (tester) async {
+        final api = FakeStudentApi(
+          myBookings: [
+            for (final item in Fixtures.myBookings)
+              if (item.booking.status == BookingStatus.cancelled) item,
+          ],
+          lessonCompletions: [Fixtures.lessonCompletions.first],
+        );
+        final container = await openSlotSearch(tester, api);
+
+        expect(container.read(studentFlowProvider).canBookTrial, isFalse);
+        expect(find.text('体験予約する'), findsNothing);
+        await tapText(tester, '予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': false,
+        });
+        expect(
+          container.read(studentFlowProvider).step,
+          FlowStep.bookingPending,
+        );
+      },
+    );
+
+    testWidgets('trial_available が応答に載っていなければ、予約の件数から決めずに通常の予約にする', (
       tester,
     ) async {
-      final api = FakeStudentApi();
-      final container = await pumpScreen(
-        tester,
-        const SlotSearchScreen(),
-        api: api,
-        initial: registered.copyWith(
-          myBookings: cancelledOnly,
-          trialAvailable: false,
-        ),
-      );
+      final api = FakeStudentApi(
+        myBookings: const [],
+        lessonCompletions: const [],
+      )..omitTrialAvailable = true;
+      await openSlotSearch(tester, api);
 
-      await tapText(tester, 'テニス');
+      expect(find.text('予約する'), findsOneWidget);
       expect(find.text('体験予約する'), findsNothing);
       await tapText(tester, '予約する');
 
       final request = api.requests.last as CreateBookingRequest;
       expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
-      expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
     });
 
-    testWidgets('受けていない体験予約をキャンセルしただけ（サーバーが true）なら、今までどおり「体験予約する」で体験予約する', (
+    testWidgets('自分の予約をまだ読めていない間は予約のボタンを押せず、読み終えてから trial_available で決める', (
       tester,
     ) async {
-      final api = FakeStudentApi();
-      await pumpScreen(
+      final api = FakeStudentApi(
+        myBookings: const [],
+        lessonCompletions: const [],
+      );
+      final container = await pumpScreen(
         tester,
         const SlotSearchScreen(),
         api: api,
-        initial: registered.copyWith(
-          myBookings: cancelledOnly,
-          trialAvailable: true,
+        initial: StudentFlowState(
+          step: FlowStep.slotSearch,
+          accessToken: Fixtures.registered.accessToken,
+          student: Fixtures.student,
         ),
       );
 
+      // スポーツで絞るだけでは自分の予約を読まない
       await tapText(tester, 'テニス');
-      expect(find.text('予約する'), findsNothing);
+      expect(container.read(studentFlowProvider).canBookTrial, isNull);
+      final button = find.widgetWithText(FilledButton, '予約する');
+      expect(button, findsOneWidget);
+      expect(tester.widget<FilledButton>(button).onPressed, isNull);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(api.calls, isNot(contains('createBooking')));
+
+      await container.read(studentFlowProvider.notifier).goToSlotSearch();
+      await tester.pumpAndSettle();
       await tapText(tester, '体験予約する');
 
       final request = api.requests.last as CreateBookingRequest;

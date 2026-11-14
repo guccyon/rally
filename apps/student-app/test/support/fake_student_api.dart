@@ -14,7 +14,6 @@ class FakeStudentApi implements StudentApi {
     NotificationSettings? notificationSettings,
     List<ApiNotification>? notifications,
     List<MyBooking>? myBookings,
-    this.trialAvailable,
     List<MyVideo>? myVideos,
     this.entitlement,
     List<SubscriptionPlanDetail>? subscriptionPlans,
@@ -77,10 +76,14 @@ class FakeStudentApi implements StudentApi {
   /// `cancelBooking` でキャンセル済みにする）
   final List<MyBooking> myBookings;
 
-  /// `listMyBookings` が返す `trial_available`（サーバーの判定）。null なら [myBookings] にキャンセルされていない予約が
-  /// なければ true（完了したレッスンは見ない。それで使用済みになる場合はテストで false を入れる）。
-  /// テストで書き換えて「サーバーの判定が変わった」を表す
-  bool? trialAvailable;
+  /// `listMyBookings` の `trial_available`。サーバーと同じく、キャンセルされていない予約がなく、
+  /// 受けたレッスン（[lessonCompletions]）もなければ true
+  bool get trialAvailable =>
+      myBookings.every((b) => b.booking.status == BookingStatus.cancelled) &&
+      lessonCompletions.isEmpty;
+
+  /// true にすると、`listMyBookings` の応答に `trial_available` を載せない（古いサーバーの応答）
+  bool omitTrialAvailable = false;
 
   /// 自分が送った動画（`listMyVideos` が返す）
   final List<MyVideo> myVideos;
@@ -259,17 +262,12 @@ class FakeStudentApi implements StudentApi {
     myBookings.insert(0, MyBooking(booking: booking, slot: slot));
   }
 
-  /// `listMyBookings` が返す `trial_available`（[trialAvailable] がなければ、キャンセルされていない予約がないか）
-  bool get _trialAvailable =>
-      trialAvailable ??
-      myBookings.every((b) => b.booking.status == BookingStatus.cancelled);
-
   @override
   Future<MyBookingList> listMyBookings() => _answer(
     'listMyBookings',
     () => MyBookingList(
       bookings: [...myBookings],
-      trialAvailable: _trialAvailable,
+      trialAvailable: omitTrialAvailable ? null : trialAvailable,
       clockOffset: clockOffset,
     ),
   );

@@ -58,8 +58,11 @@ class SlotSearchScreen extends ConsumerWidget {
         for (final slot in slots)
           _SlotCard(
             slot: slot,
-            trial: state.canBookTrial,
-            onBook: state.busy ? null : () => notifier.bookSlot(slot),
+            trial: state.canBookTrial ?? false,
+            // 自分の予約を読み終えるまでは、体験予約か通常の予約かが決まらないので押せない
+            onBook: state.busy || state.canBookTrial == null
+                ? null
+                : () => notifier.bookSlot(slot),
           ),
       ];
     }

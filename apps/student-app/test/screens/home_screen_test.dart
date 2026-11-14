@@ -776,7 +776,6 @@ void main() {
             if (item.booking.status == BookingStatus.cancelled) item,
         ],
         lessonCompletions: [Fixtures.lessonCompletions.first],
-        trialAvailable: false,
       );
       final container = await pumpHome(tester, api);
       api.calls.clear();
@@ -795,20 +794,28 @@ void main() {
     },
   );
 
-  testWidgets('自分の予約の応答に trial_available が載っていなければ、契約どおり体験予約を出さず通常の予約にする', (
-    tester,
-  ) async {
-    final api = _WithoutTrialAvailableApi();
-    await pumpHome(tester, api);
+  testWidgets(
+    '予約を作らずに動画添削で受け終えた生徒も、サーバーの trial_available false で「予約する」になり、通常の予約に進める（#1594）',
+    (tester) async {
+      // キャンセルされていない予約は 0 件。予約の件数から決めると「体験予約する」になってしまう
+      final api = FakeStudentApi(
+        myBookings: const [],
+        lessonCompletions: [Fixtures.lessonCompletions.first],
+      );
+      final container = await pumpHome(tester, api);
 
-    await tapText(tester, 'スロットを探して予約する');
+      await tapText(tester, '次のレッスンを予約する');
 
-    expect(find.text('体験予約する'), findsNothing);
-    await tapText(tester, '予約する');
+      expect(find.text('体験予約する'), findsNothing);
+      await tapText(tester, '予約する');
 
-    final request = api.requests.last as CreateBookingRequest;
-    expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
-  });
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.bookingPending);
+      expect(state.errorMessage, isNull);
+    },
+  );
 
   testWidgets('受けたレッスンがまだない生徒には「次のレッスンを予約する」を出さない。月額契約の前の文言はそのまま', (
     tester,
@@ -1020,15 +1027,4 @@ void main() {
     );
     expect(find.text('月額契約へ進む'), findsNothing);
   });
-}
-
-/// `listMyBookings` の応答に `trial_available` を載せない（項目を足す前のサーバー）
-class _WithoutTrialAvailableApi extends FakeStudentApi {
-  _WithoutTrialAvailableApi() : super(myBookings: const []);
-
-  @override
-  Future<MyBookingList> listMyBookings() async {
-    calls.add('listMyBookings');
-    return MyBookingList(bookings: [...myBookings]);
-  }
 }

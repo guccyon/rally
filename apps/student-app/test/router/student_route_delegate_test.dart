@@ -21,7 +21,9 @@ void main() {
     FakeLocalMedia? media,
   }) async {
     final history = FakeBrowserHistory(tester);
-    final fake = api ?? FakeStudentApi(myBookings: const []);
+    final fake =
+        api ??
+        FakeStudentApi(myBookings: const [], lessonCompletions: const []);
     final container = ProviderContainer(
       overrides: [
         studentApiProvider.overrideWithValue(fake),
@@ -123,7 +125,10 @@ void main() {
   });
 
   testWidgets('確定待ちの画面の「戻る」はホームへ戻り、確定待ちの予約は「次にやること」に残る', (tester) async {
-    final api = FakeStudentApi(myBookings: const []);
+    final api = FakeStudentApi(
+      myBookings: const [],
+      lessonCompletions: const [],
+    );
     final (history, _) = await openApp(tester, api: api);
     await register(tester);
     await book(tester);
