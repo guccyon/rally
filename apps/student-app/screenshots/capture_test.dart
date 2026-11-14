@@ -96,10 +96,11 @@ Future<void> _showWholePage(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// 既定の [_api] の生徒は予約があり体験予約を使っているので、ボタンは「予約する」
 Future<void> _toBooking(WidgetTester tester) async {
   await _register(tester);
   await tapText(tester, 'スロットを探して予約する');
-  await tapText(tester, '体験予約する');
+  await tapText(tester, '予約する');
 }
 
 Future<void> _toConfirmed(WidgetTester tester) async {
@@ -154,6 +155,11 @@ final screens = <Screen>[
     await _register(t);
     await tapText(t, 'スロットを探して予約する');
   }),
+  // 予約がまだない生徒（体験予約をまだ使っていないので「体験予約する」）
+  Screen('slot-search-trial', 'スロットを探す: 体験予約', (t) async {
+    await _register(t);
+    await tapText(t, 'スロットを探して予約する');
+  }, api: () => _api(myBookings: const [])),
   Screen('slot-search-coach', 'スロットを探す: コーチで絞る', (t) async {
     await _register(t);
     await tapText(t, 'コーチを探す');
@@ -272,35 +278,38 @@ final screens = <Screen>[
 ];
 
 /// キャプチャ用の API のモック。既定の見本に、受講権とお知らせとお気に入りのコーチを足して画面を埋める。
-FakeStudentApi _api({Map<String, StudentApiException> failures = const {}}) =>
-    FakeStudentApi(
-      failures: failures,
-      entitlement: Fixtures.subscriptionStarted.entitlement,
-      favoriteCoaches: [Fixtures.favoriteCoach()],
-      notifications: [
-        ApiNotification(
-          notificationId: '99999999-9999-4999-8999-999999999991',
-          kind: NotificationKind.bookingConfirmed,
-          body: '10/28（水）12:00 の予約が確定しました。',
-          createdAt: Fixtures.now.subtract(const Duration(hours: 2)),
-          isRead: false,
-        ),
-        ApiNotification(
-          notificationId: '99999999-9999-4999-8999-999999999993',
-          kind: NotificationKind.bookingCancelledByHeadquarters,
-          body: 'コーチのお休みで予約をキャンセルしました\n佐藤 コーチのお休みのため、10/30（金）19:00〜19:30 の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。',
-          createdAt: Fixtures.now.subtract(const Duration(hours: 5)),
-          isRead: false,
-        ),
-        ApiNotification(
-          notificationId: '99999999-9999-4999-8999-999999999992',
-          kind: NotificationKind.videoReviewReturned,
-          body: '佐藤 コーチが動画の添削を返しました。',
-          createdAt: Fixtures.now.subtract(const Duration(days: 1)),
-          isRead: true,
-        ),
-      ],
-    );
+FakeStudentApi _api({
+  Map<String, StudentApiException> failures = const {},
+  List<MyBooking>? myBookings,
+}) => FakeStudentApi(
+  failures: failures,
+  myBookings: myBookings,
+  entitlement: Fixtures.subscriptionStarted.entitlement,
+  favoriteCoaches: [Fixtures.favoriteCoach()],
+  notifications: [
+    ApiNotification(
+      notificationId: '99999999-9999-4999-8999-999999999991',
+      kind: NotificationKind.bookingConfirmed,
+      body: '10/28（水）12:00 の予約が確定しました。',
+      createdAt: Fixtures.now.subtract(const Duration(hours: 2)),
+      isRead: false,
+    ),
+    ApiNotification(
+      notificationId: '99999999-9999-4999-8999-999999999993',
+      kind: NotificationKind.bookingCancelledByHeadquarters,
+      body: 'コーチのお休みで予約をキャンセルしました\n佐藤 コーチのお休みのため、10/30（金）19:00〜19:30 の予約を本部でキャンセルしました。今月のビデオ通話の枠は使いません。ほかの枠やコーチを探して予約できます。',
+      createdAt: Fixtures.now.subtract(const Duration(hours: 5)),
+      isRead: false,
+    ),
+    ApiNotification(
+      notificationId: '99999999-9999-4999-8999-999999999992',
+      kind: NotificationKind.videoReviewReturned,
+      body: '佐藤 コーチが動画の添削を返しました。',
+      createdAt: Fixtures.now.subtract(const Duration(days: 1)),
+      isRead: true,
+    ),
+  ],
+);
 
 /// 撮った画像を SCREENSHOT_DIR に書くだけの比較役（matchesGoldenFile の描画をそのまま使う）。
 class _WriteComparator extends GoldenFileComparator {
