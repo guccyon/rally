@@ -70,7 +70,8 @@ class FakeStudentApi implements StudentApi {
   /// 入れておくと、`listMyNotifications` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
   Completer<void>? notificationsGate;
 
-  /// 自分の予約（`listMyBookings` が返す。`cancelBooking` でその予約をキャンセル済みにする）
+  /// 自分の予約（`listMyBookings` が返す。`createBooking` で作った予約を足し、`confirmBooking` で確定済みに、
+  /// `cancelBooking` でキャンセル済みにする）
   final List<MyBooking> myBookings;
 
   /// 自分が送った動画（`listMyVideos` が返す）
@@ -204,18 +205,45 @@ class FakeStudentApi implements StudentApi {
   }
 
   @override
-  Future<Booking> createBooking(CreateBookingRequest body) => _answer(
-    'createBooking',
-    () => Fixtures.withLessonMenu(Fixtures.bookingPending, bookingLessonMenu),
-    body,
-  );
+  Future<Booking> createBooking(CreateBookingRequest body) =>
+      _answer('createBooking', () {
+        final booking = Fixtures.withLessonMenu(
+          Fixtures.bookingPending,
+          bookingLessonMenu,
+        );
+        // サーバーと同じく、作った予約は `listMyBookings` にも出す
+        _putMyBooking(
+          booking,
+          slots.where((s) => s.slotId == body.slotId).firstOrNull ??
+              Fixtures.slot,
+        );
+        return booking;
+      }, body);
 
   @override
-  Future<Booking> confirmBooking(String bookingId) => _answer(
-    'confirmBooking',
-    () => Fixtures.withLessonMenu(Fixtures.bookingConfirmed, bookingLessonMenu),
-    bookingId,
-  );
+  Future<Booking> confirmBooking(String bookingId) =>
+      _answer('confirmBooking', () {
+        final booking = Fixtures.withLessonMenu(
+          Fixtures.bookingConfirmed,
+          bookingLessonMenu,
+        );
+        final index = myBookings.indexWhere(
+          (b) => b.booking.bookingId == bookingId,
+        );
+        if (index >= 0) {
+          myBookings[index] = MyBooking(
+            booking: booking,
+            slot: myBookings[index].slot,
+          );
+        }
+        return booking;
+      }, bookingId);
+
+  /// [booking] を自分の予約に入れる（同じ ID があれば置き換える）
+  void _putMyBooking(Booking booking, Slot slot) {
+    myBookings.removeWhere((b) => b.booking.bookingId == booking.bookingId);
+    myBookings.insert(0, MyBooking(booking: booking, slot: slot));
+  }
 
   @override
   Future<MyBookingList> listMyBookings() => _answer(

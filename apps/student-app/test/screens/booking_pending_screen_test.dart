@@ -3,9 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/booking_pending_screen.dart';
+import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/prejoin_check.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/state/subscription.dart';
+import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_student_api.dart';
 import '../support/pump.dart';
@@ -195,5 +197,206 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
     expect(find.textContaining('から入室前チェックができます'), findsNothing);
+  });
+
+  group('予約をサーバーの記録から読み直す（#1514）', () {
+    /// 確定待ちの体験予約がサーバーにもある、ホームから体験予約した直後の状態（アプリ全体の画面で出す）
+    StudentFlowState justBooked() =>
+        pending().copyWith(accessToken: Fixtures.registered.accessToken);
+
+    MyBooking mine(Booking booking) =>
+        MyBooking(booking: booking, slot: Fixtures.slot);
+
+    Booking cancelledTrial() => Fixtures.bookingWith(
+      Fixtures.bookingPending,
+      status: BookingStatus.cancelled,
+      cancelledAt: Fixtures.now,
+    );
+
+    const goneNotice = 'この予約はもう確定待ちではありません。ホームで次にやることを確かめてください。';
+
+    testWidgets('確定待ちの予約を自分の予約でキャンセルして戻ると、キャンセル済みと出て「予約を確定する」は出ない', (
+      tester,
+    ) async {
+      final api = FakeStudentApi(myBookings: [mine(Fixtures.bookingPending)]);
+      final container = await pumpScreen(
+        tester,
+        const StudentFlowScreen(),
+        api: api,
+        initial: justBooked(),
+      );
+
+      await tester.tap(find.byTooltip('自分の予約'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(OutlinedButton, 'この予約をキャンセルする'));
+      await tester.pumpAndSettle();
+      await tapText(tester, 'キャンセルする');
+      expect(find.text('状態: キャンセル済み'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('自分の予約を閉じる'));
+      await tester.pumpAndSettle();
+
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.bookingPending);
+      expect(state.booking!.status, BookingStatus.cancelled);
+      expect(api.calls.last, 'listMyBookings');
+      expect(find.text('状態: キャンセル済み'), findsOneWidget);
+      expect(find.text(goneNotice), findsOneWidget);
+      expect(find.text('予約の確定待ち'), findsNothing);
+      expect(find.text('予約を確定する'), findsNothing);
+      expect(find.text('この予約をキャンセルする'), findsNothing);
+      expect(find.text('ビデオ通話で受ける'), findsNothing);
+      expect(find.text('動画を送って添削を受ける'), findsNothing);
+
+      await tapText(tester, 'ホームに戻る');
+      expect(container.read(studentFlowProvider).step, FlowStep.home);
+    });
+
+    testWidgets('脇の画面にいるあいだにほかの端末で確定していたら、戻ったときに確定済みの表示にする', (tester) async {
+      final api = FakeStudentApi(myBookings: [mine(Fixtures.bookingPending)]);
+      final container = await pumpScreen(
+        tester,
+        const StudentFlowScreen(),
+        api: api,
+        initial: justBooked(),
+      );
+
+      await tester.tap(find.byTooltip('プロフィール'));
+      await tester.pumpAndSettle();
+      api.myBookings[0] = mine(Fixtures.bookingConfirmed);
+      container.read(studentFlowProvider.notifier).closeProfile();
+      await tester.pumpAndSettle();
+
+      expect(find.text('予約が確定しました'), findsOneWidget);
+      expect(find.text('予約を確定する'), findsNothing);
+      expect(find.text('ビデオ通話で受ける'), findsOneWidget);
+    });
+
+    testWidgets(
+      '「予約を確定する」が 409 invalid_booking_state なら、予約を読み直してキャンセル済みを出し、ボタンを残さない',
+      (tester) async {
+        final api = FakeStudentApi(
+          myBookings: [mine(cancelledTrial())],
+          failures: {
+            'confirmBooking': const StudentApiException(
+              statusCode: 409,
+              error: ApiError(
+                code: ErrorCode.invalidBookingState,
+                message: '予約の状態が変わっています。予約を確かめてください。',
+              ),
+            ),
+          },
+        );
+        final container = await pumpScreen(
+          tester,
+          const BookingPendingScreen(),
+          api: api,
+          initial: pending(),
+        );
+
+        await tapText(tester, '予約を確定する');
+
+        expect(api.calls, ['confirmBooking', 'listMyBookings']);
+        expect(
+          container.read(studentFlowProvider).booking!.status,
+          BookingStatus.cancelled,
+        );
+        expect(find.text('状態: キャンセル済み'), findsOneWidget);
+        expect(find.text(goneNotice), findsOneWidget);
+        expect(find.text('予約を確定する'), findsNothing);
+        expect(find.text('ホームに戻る'), findsOneWidget);
+      },
+    );
+
+    testWidgets('自分の予約に見つからない予約は、中身もボタンも出さずに知らせと「ホームに戻る」を出す', (tester) async {
+      final container = await pumpScreen(
+        tester,
+        const BookingPendingScreen(),
+        api: FakeStudentApi(myBookings: const []),
+        initial: StudentFlowState(student: Fixtures.student),
+      );
+
+      await container
+          .read(studentFlowProvider.notifier)
+          .openBooking(Fixtures.bookingId);
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(studentFlowProvider).bookingLookup,
+        BookingLookup.notFound,
+      );
+      expect(find.text(goneNotice), findsOneWidget);
+      expect(find.textContaining('開始: '), findsNothing);
+      expect(find.text('予約を確定する'), findsNothing);
+      expect(find.text('ビデオ通話で受ける'), findsNothing);
+      expect(find.text('ホームに戻る'), findsOneWidget);
+    });
+
+    testWidgets('予約を読み込めなければ、失敗の知らせと「ホームに戻る」を出す', (tester) async {
+      final container = await pumpScreen(
+        tester,
+        const BookingPendingScreen(),
+        api: FakeStudentApi(
+          failures: {
+            'listMyBookings': const StudentApiException(statusCode: 503),
+          },
+        ),
+        initial: StudentFlowState(student: Fixtures.student),
+      );
+
+      await container
+          .read(studentFlowProvider.notifier)
+          .openBooking(Fixtures.bookingId);
+      await tester.pumpAndSettle();
+
+      expect(find.text('予約を読み込めませんでした。「ホームに戻る」から、もう一度開けます。'), findsOneWidget);
+      expect(find.text('予約を確定する'), findsNothing);
+      expect(find.text('ホームに戻る'), findsOneWidget);
+    });
+
+    testWidgets('確定待ちの画面の「この予約をキャンセルする」で確かめてからキャンセルし、ホームに戻る', (tester) async {
+      final api = FakeStudentApi(myBookings: [mine(Fixtures.bookingPending)]);
+      final container = await pumpScreen(
+        tester,
+        const StudentFlowScreen(),
+        api: api,
+        initial: justBooked(),
+      );
+
+      expect(find.text('予約を確定する'), findsOneWidget);
+      await tapText(tester, 'この予約をキャンセルする');
+      expect(find.text('予約をキャンセルしますか？'), findsOneWidget);
+      expect(
+        find.text(
+          '${formatTimeRange(Fixtures.slot.startsAt, Fixtures.slot.endsAt)} の'
+          'テニスの体験予約をキャンセルします。押さえていたスロットはほかの生徒も予約できるようになります。',
+        ),
+        findsOneWidget,
+      );
+      await tapText(tester, 'キャンセルする');
+
+      expect(api.calls.first, 'cancelBooking');
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.home);
+      expect(state.booking!.status, BookingStatus.cancelled);
+      expect(find.text('予約をキャンセルしました'), findsOneWidget);
+    });
+
+    testWidgets('キャンセル済みの予約からは、動画の送付にも入室前チェックにも進まない（#1364）', (tester) async {
+      final container = await pumpScreen(
+        tester,
+        const BookingPendingScreen(),
+        api: FakeStudentApi(),
+        initial: pending().copyWith(booking: cancelledTrial()),
+        now: prejoinCheckOpensAt(Fixtures.slot.startsAt),
+      );
+
+      container.read(studentFlowProvider.notifier).chooseVideo();
+      container.read(prejoinCheckProvider.notifier).open();
+      await tester.pump();
+
+      expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
+      expect(find.text('動画を送って添削を受ける'), findsNothing);
+    });
   });
 }
