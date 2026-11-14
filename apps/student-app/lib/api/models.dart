@@ -290,6 +290,14 @@ class Student {
     sport: Sport.fromWire(json['sport'] as String),
     createdAt: _dateTime(json['created_at']),
   );
+
+  /// [Student.fromJson] の逆（端末に残すときに使う。`lib/session/session_store.dart`）
+  Map<String, dynamic> toJson() => {
+    'student_id': studentId,
+    'display_name': displayName,
+    'sport': sport.wire,
+    'created_at': createdAt.toUtc().toIso8601String(),
+  };
 }
 
 /// `RegisterAccountRequest`

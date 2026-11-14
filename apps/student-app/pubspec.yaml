@@ -13,7 +13,8 @@ dependencies:
   http: ^1.6.0
   # 応答の Date ヘッダーを読む（lib/api/server_clock.dart。http が使っているもの）
   http_parser: ^4.1.2
-  # 入室前チェックの Web 版でブラウザーのカメラ・マイク・Web Audio を使う（lib/device/web_local_media.dart）
+  # 入室前チェックの Web 版でブラウザーのカメラ・マイク・Web Audio を使う（lib/device/web_local_media.dart）。
+  # 登録の結果をブラウザーの localStorage に残すのにも使う（lib/session/session_store_web.dart）
   web: ^1.1.2
 
 dev_dependencies:
