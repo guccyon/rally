@@ -15,7 +15,11 @@ channels:
       予約が確定した。entitlement はこれを購読し、月額の生徒のビデオ通話の暦月の枠を 1 回使う（不変条件 1。
       暦月は occurred_at で決める。docs/adr/0005）。枠が残っているかは scheduling が確定の前に entitlement に問い合わせる。
       messaging はこれを購読し、その生徒とコーチのチャットのスレッドを開く（生徒とコーチの組に 1 つ。Gen1 は matching が
-      ないので、確定した予約のコーチを担当コーチとみなす）。
+      ないので、確定した予約のコーチを担当コーチとみなす）。notification はこれを購読し、生徒と担当コーチに予約の確定を
+      知らせる。あわせて同期レッスン（ビデオ通話）の確定した予約をレッスンのリマインド（種類 `lesson_reminder`）の対象に
+      する。リマインドはこのイベントの時点では作らず、notification が時刻の経過で、開始の前日と開始 1 時間前に生徒と
+      担当コーチに作る（作る時点で予約が確定のままのときだけ。同じ予約の同じ時点・同じ宛先には 1 回。生徒の受け取り設定の
+      `lesson_reminder` が false なら、その生徒にはお知らせも作らない）。
     x-publisher: [scheduling]
     x-subscribers: [entitlement, messaging, notification, analytics]
     messages:
@@ -30,7 +34,8 @@ channels:
       false なら確定で使った枠を戻す（docs/adr/0005）。キャンセルした人を cancelled_by に載せる。本部のキャンセル
       （コーチのお休み。admin-web の startCoachLeave）は生徒の都合でないので、キャンセル規定によらず consumes_quota は
       false（判定は scheduling の 1 か所。不変条件 3）。notification は本部のキャンセルを購読し、予約した生徒に予約ごとに
-      知らせる（お知らせとして残し、プッシュ通知は受け取り設定の booking_confirmed に従う）。
+      知らせる（お知らせとして残し、プッシュ通知は受け取り設定の booking_confirmed に従う）。notification は、キャンセルの
+      人を問わず、キャンセルされた予約をレッスンのリマインドの対象から外す（まだ作っていないリマインドは作らない）。
     x-publisher: [scheduling]
     x-subscribers: [entitlement, notification, analytics]
     messages:

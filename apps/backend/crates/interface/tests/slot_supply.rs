@@ -214,6 +214,12 @@ fn app_with_accounts(
             RecordingDomainEventPublisher::default(),
             clock,
         ),
+        application::scheduling::DescribeBooking::new(
+            bookings.clone(),
+            application::profile::ProfileCoachDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+        ),
         GetSlotSupply::new(
             bookings,
             application::profile::ProfileCoachAccountLookup::new(accounts),
