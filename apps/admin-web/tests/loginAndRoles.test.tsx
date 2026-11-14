@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -16,26 +16,130 @@ beforeEach(() => {
   replace.mockReset();
 });
 
+type Account = { account_id: string; role: "student" | "coach" | "headquarters"; display_name: string };
+
+const accountOf = (role: Account["role"]) => async () => ({
+  ok: true as const,
+  data: { account_id: "00000000-0000-0000-0000-000000000022", role, display_name: "名前" },
+});
+
+async function login(role: "コーチ" | "本部", token: string) {
+  const user = userEvent.setup();
+  await user.click(screen.getByLabelText(role));
+  await user.type(screen.getByLabelText("アクセストークン"), token);
+  await user.click(screen.getByRole("button", { name: "ログイン" }));
+}
+
 describe("ログイン", () => {
-  test("トークンとロールを保持し、ロールの画面へ移る", async () => {
-    const user = userEvent.setup();
-    render(<LoginForm />);
+  test("トークンの役割が選んだロールと合えば、トークンとロールを保持し、ロールの画面へ移る", async () => {
+    const getAccount = vi.fn(accountOf("headquarters"));
+    render(<LoginForm getAccount={getAccount} />);
 
-    await user.click(screen.getByLabelText("本部"));
-    await user.type(screen.getByLabelText("アクセストークン"), " mock.headquarters.x ");
-    await user.click(screen.getByRole("button", { name: "ログイン" }));
+    await login("本部", " mock.headquarters.x ");
 
+    expect(getAccount).toHaveBeenCalledWith("mock.headquarters.x");
     expect(readSession()).toEqual({ role: "headquarters", token: "mock.headquarters.x" });
     expect(push).toHaveBeenCalledWith("/headquarters");
   });
 
+  test("コーチのトークンでも、ロールにコーチを選べば入れる", async () => {
+    render(<LoginForm getAccount={accountOf("coach")} />);
+
+    await login("コーチ", "mock.coach.22");
+
+    expect(readSession()).toEqual({ role: "coach", token: "mock.coach.22" });
+    expect(push).toHaveBeenCalledWith("/coach");
+  });
+
+  test("本部を選んでコーチのトークンを入れると、コーチのものだと出して入れない", async () => {
+    render(<LoginForm getAccount={accountOf("coach")} />);
+
+    await login("本部", "mock.coach.22");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "このトークンはコーチのものです（本部のものではありません）。ロール「コーチ」を選んでログインしてください。",
+    );
+    expect(readSession()).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("コーチを選んで本部のトークンを入れると、本部のものだと出して入れない", async () => {
+    render(<LoginForm getAccount={accountOf("headquarters")} />);
+
+    await login("コーチ", "mock.headquarters.1");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("このトークンは本部のものです");
+    expect(readSession()).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("生徒のトークンでは、管理画面に入れないと出して入れない", async () => {
+    render(<LoginForm getAccount={accountOf("student")} />);
+
+    await login("コーチ", "mock.student.5");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "このトークンは生徒のものです。生徒のトークンでは管理画面に入れません。",
+    );
+    expect(readSession()).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("無効なトークン（401）なら、無効だと出して入れない", async () => {
+    const getAccount = async () => ({
+      ok: false as const,
+      message: "トークンがないか無効です。ログインし直してください。",
+      code: "unauthorized" as const,
+    });
+    render(<LoginForm getAccount={getAccount} />);
+
+    await login("本部", "bad");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("トークンが無効です。");
+    expect(readSession()).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("通信に失敗したら、失敗した旨を出して保持しない", async () => {
+    const getAccount = async () => ({ ok: false as const, message: "サーバーに接続できません。" });
+    render(<LoginForm getAccount={getAccount} />);
+
+    await login("本部", "mock.headquarters.x");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "ログインできませんでした。サーバーに接続できません。",
+    );
+    expect(readSession()).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("確かめているあいだは「ログイン」を押せない", async () => {
+    let resolve: (value: Awaited<ReturnType<ReturnType<typeof accountOf>>>) => void = () => {};
+    const getAccount = vi.fn(
+      () => new Promise<Awaited<ReturnType<ReturnType<typeof accountOf>>>>((r) => (resolve = r)),
+    );
+    render(<LoginForm getAccount={getAccount} />);
+
+    await login("本部", "mock.headquarters.x");
+
+    const button = screen.getByRole("button", { name: "ログイン" });
+    expect(button).toBeDisabled();
+    await userEvent.setup().click(button);
+    expect(getAccount).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolve(await accountOf("headquarters")()));
+    expect(push).toHaveBeenCalledWith("/headquarters");
+  });
+
   test("トークンが空ならログインしない", async () => {
+    const getAccount = vi.fn(accountOf("coach"));
     const user = userEvent.setup();
-    render(<LoginForm />);
+    render(<LoginForm getAccount={getAccount} />);
 
     await user.click(screen.getByRole("button", { name: "ログイン" }));
 
     expect(readSession()).toBeNull();
+    expect(getAccount).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("トークンを入力してください。");
   });
 });

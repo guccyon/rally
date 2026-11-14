@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../state/prejoin_check.dart';
 import '../state/student_flow.dart';
+import '../ui/components/confirm_dialog.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/theme/rally_tokens.dart';
 
@@ -62,4 +63,21 @@ class LiveLessonScreen extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// ビデオ通話の最中にブラウザーや端末の「戻る」を押したときの確認（router/student_route_delegate.dart が出す）。
+/// 黙って通話の画面を離れず、「通話を終了する」なら通話を終えて完了の記録へ進み、「通話を続ける」ならそのままにする
+Future<void> confirmEndingCall(
+  BuildContext context,
+  StudentFlowNotifier notifier,
+) async {
+  final confirmed = await showConfirmDialog(
+    context,
+    title: '通話を終了しますか？',
+    body: 'コーチとのビデオ通話を終了し、レッスンの完了の記録へ進みます。終了した通話には戻れません。',
+    confirmLabel: '通話を終了する',
+    cancelLabel: '通話を続ける',
+    danger: true,
+  );
+  if (confirmed) await notifier.endCall();
 }
