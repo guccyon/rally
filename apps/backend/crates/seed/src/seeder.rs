@@ -74,7 +74,7 @@ where
         Self { pool, analytics }
     }
 
-    /// 計画のすべての出来事を書く。空の DB（マイグレーションを当てたもの）を前提にし、どれか 1 つでも
+    /// 計画のすべての出来事を書く（コーチと同じ時刻に本部のアカウントを 1 つ登録する）。空の DB（マイグレーションを当てたもの）を前提にし、どれか 1 つでも
     /// ユースケースが失敗すれば止める。
     pub async fn run(&self, plan: &SeedPlan) -> Result<(), SeedError> {
         let pool = &self.pool;
@@ -176,6 +176,18 @@ where
                 .map_err(|e| failed(&format!("コーチ {}", i + 1), "登録", e))?;
             coach_ids.push(account.id());
         }
+        // 本部のアカウント。触れる環境の本部のログインの手がかり（.factory-config/ship.yaml の touch.accounts）がこれを
+        // 指す。本部の操作の記録（コーチのお休みの created_by など）は実在の本部のアカウントへの外部キーを持つので、
+        // 登録のない ID のトークンでは保存できない（Issue #1480）
+        register
+            .execute(RegisterAccountCommand {
+                email: format!("headquarters.seed{}@example.com", plan.seed),
+                display_name: "本部 01".to_string(),
+                role: Role::Headquarters,
+                sports: vec![],
+            })
+            .await
+            .map_err(|e| failed("本部", "登録", e))?;
 
         let publish_slot = async |step: &Step| -> Result<SlotId, SeedError> {
             let Step::PublishSlot { slot, .. } = step else {

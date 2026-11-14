@@ -3,7 +3,8 @@
 //! お休みにすると、予約が本部のキャンセルになって本部のキャンセルされた予約の一覧（`listCancelledBookings`）に
 //! `cancelled_by: headquarters` で出ること、生徒のお知らせ（student-app の `listMyNotifications`）にコーチの表示名・予約の
 //! 日時・本部の一言の本文が届くこと（境界間イベントの購読を通して）、枠が生徒の検索（`searchSlots`）に出なくなること、
-//! 同じ期間の 2 回目は 409 になることを確かめる。契約の形・失敗の応答の細かい検査は interface の `tests/coach_leaves.rs`。
+//! 同じ期間の 2 回目は 409 になることを確かめる。登録のない本部の ID のトークンでは保存できない（500）こと、確定した予約を
+//! お休みにすると本部の予約の詳細（`getBooking`）にお休みの経緯が出ることも確かめる（Issue #1480）。契約の形・失敗の応答の細かい検査は interface の `tests/coach_leaves.rs`。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test coach_leaves -- --include-ignored` で走らせる。
@@ -212,4 +213,105 @@ async fn headquarters_puts_a_coach_on_leave_and_the_student_is_notified(pool: Pg
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{again}");
     assert_eq!(again["code"], "coach_leave_overlaps");
+}
+
+/// Issue #1480: 登録のない ID の本部のトークン（モックのトークンはどの ID でも本部として通る）では、お休みの記録の
+/// `created_by`（実在の本部のアカウントへの外部キー）を書けずに 500 になり、確定した予約は何も変わらない（全部か何もしないか）。
+/// 登録した本部のアカウントのトークンなら同じお休みが通り、予約がお休みの理由で本部のキャンセルになって、本部の予約の詳細
+/// （`getBooking`）の状態が変わった記録にお休みの記録（操作した本部のアカウントと時刻）が出る。触れる環境の本部のログインの
+/// 手がかりは合成シードが登録した本部を指す（`crates/seed/tests/touch_accounts.rs`）。
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_confirmed_booking_is_cancelled_by_a_leave_of_a_registered_headquarters_and_its_detail_shows_the_leave(
+    pool: PgPool,
+) {
+    let (coach, coach_token) = register(&pool, "yamada@example.com", Role::Coach).await;
+    let (_, student_token) = register(&pool, "sato@example.com", Role::Student).await;
+    let (hq, hq_token) = register(&pool, "hq@example.com", Role::Headquarters).await;
+    let unregistered_hq_token = MockTokenService
+        .issue(TokenClaims {
+            account_id: account_id_uuid::parse("00000000-0000-4000-8000-000000000001").unwrap(),
+            role: Role::Headquarters,
+        })
+        .into_string();
+    let clock = ManualClock::new(now());
+    let router = server::router_with_postgres(pool, clock, RecordingAnalyticsSink::default());
+    let coach_id = account_id_uuid::format(coach);
+
+    // 12/10 19:00（日本時間）の枠を予約して確定する
+    let (status, slot) = send(
+        &router,
+        post_json(
+            "/slots",
+            &coach_token,
+            json!({
+                "sport": "tennis",
+                "starts_at": "2026-12-10T10:00:00Z",
+                "ends_at": "2026-12-10T11:00:00Z",
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let (status, booking) = send(
+        &router,
+        post_json(
+            "/bookings",
+            &student_token,
+            json!({ "slot_id": slot["slot_id"], "is_trial": true }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{booking}");
+    let booking_id = booking["booking_id"].as_str().unwrap().to_string();
+    let (status, confirmed) = send(
+        &router,
+        post_json(
+            &format!("/bookings/{booking_id}/confirm"),
+            &student_token,
+            json!({}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{confirmed}");
+
+    let request = json!({
+        "from": "2026-12-10",
+        "to": "2026-12-10",
+        "note": "ご迷惑をおかけします。",
+        "expected_booking_ids": [booking_id],
+    });
+    let leaves = format!("/coaches/{coach_id}/leaves");
+    let detail = format!("/bookings/{booking_id}");
+
+    // 登録のない本部の ID では保存できず、予約は確定のまま
+    let (status, failed) = send(
+        &router,
+        post_json(&leaves, &unregistered_hq_token, request.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{failed}");
+    assert_eq!(failed["code"], "internal");
+    let (status, body) = send(&router, get(&detail, &hq_token)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["booking"]["status"], "confirmed");
+
+    // 登録した本部ならお休みにでき、予約の詳細に経緯が出る
+    let (status, result) = send(&router, post_json(&leaves, &hq_token, request)).await;
+    assert_eq!(status, StatusCode::CREATED, "{result}");
+    assert_eq!(result["cancelled_booking_ids"], json!([booking_id]));
+    assert_eq!(
+        result["coach_leave"]["created_by"],
+        account_id_uuid::format(hq)
+    );
+
+    let (status, body) = send(&router, get(&detail, &hq_token)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["booking"]["status"], "cancelled");
+    let cancelled = &body["status_changes"][1];
+    assert_eq!(cancelled["status"], "cancelled", "{body}");
+    assert_eq!(cancelled["cancelled_by"], "headquarters");
+    assert_eq!(cancelled["consumes_quota"], false);
+    assert_eq!(cancelled["cancel_reason"], "coach_leave");
+    assert_eq!(cancelled["coach_leave"], result["coach_leave"]);
 }

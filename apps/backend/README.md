@@ -184,6 +184,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - アクセストークンはアカウント ID と役割を載せた不透明な文字列で、`Authorization: Bearer <access_token>` で送る（契約の `bearerAuth`）。発行・検証は application のポート `identity::TokenIssuer` / `TokenVerifier`、実装は infra の `MockTokenService` だけ
 - `MockTokenService` は**署名なし**の固定形式 `mock.<役割>.<アカウント ID>` で、誰でも任意の役割のトークンを作れる。Gen1 のローカル起動とテスト用で、本番では署名付きの実装に差し替える。パスワード・外部 IdP・失効は扱わない
 - `POST /accounts` と `GET /healthz` 以外のエンドポイントは認証必須にする。ハンドラーの引数に `interface::AuthenticatedAccount` を取れば、トークンがない・無効なら 401 `unauthorized`（`WWW-Authenticate: Bearer`）。役割で絞るルートは `route_layer(interface::require_role(&[Role::Coach]))` を重ね、役割が合わなければ 403 `forbidden`（admin-web の本部とコーチの同居。ADR 0002 Q3）
+- トークンはどの ID でも通るが、本部の操作の記録（コーチのお休みの `scheduling.coach_leaves.created_by` など）は実在の本部のアカウントへの外部キーを持つので、登録のない ID の本部のトークンではその操作は保存できずに 500 になる（Issue #1480。`crates/server/tests/coach_leaves.rs`）。触れる環境の本部のログインの手がかりは、下の「合成シード」が登録した本部を指す
 - 401 / 403 / 200 の統合テストは `crates/server/tests/auth.rs`（infra のモックで発行したトークンと、`POST /accounts` が返したトークンを使う）
 
 ## scheduling: スロットの公開と検索
@@ -465,6 +466,17 @@ curl -s 'http://127.0.0.1:9090/rally-analytics?list-type=2'   # 書かれたオ�
 - テスト: `crates/infra/tests/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形・共通の任意属性は値が分かるときだけ付き、どのイベントの `required` にもないこと）、`crates/infra/tests/analytics_common_attributes.rs`（環境変数から共通の任意属性を読むこと）、`crates/infra/tests/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周。版の環境変数があれば `release_id` / `app_version` が付くこと）
 - 発火の網羅: `crates/application/tests/analytics_emission.rs` がソースを静的に読み、events.yaml の全イベントに発火するユースケースがあることを、テストの中の対応表（イベント名 → `AnalyticsEvent` の変種 → ユースケースとファイル）で確かめる。イベントを足したら表に 1 行足す。表にない `emit` も落とす
 - セマンティック層: `crates/application/tests/kpi_semantic_layer.rs` が kpi.yaml を読み、6 つの KPI の式が events.yaml にある名前（イベント名と `required` の属性）と語彙だけを参照し、`inputs` が式の読むイベントと一致すること、events.yaml の `kpi` がその KPI の `inputs` に入っていることを確かめる。CI は `apps/backend` に変更があるときだけ走るので、specs/ だけを変えたら手元で `cargo test -p application` を走らせる
+
+## 合成シード
+
+`crates/seed/`（T18）。application のユースケースを通して、空の DB に合成データ（本部 1・コーチ 30・生徒 1000・12 ヶ月の履歴）を書く。計画は乱数の種だけで決まる（`seed::SeedPlan`）。触れる環境（staging）には shipper が 1 回だけ書く（`.factory-config/ship.yaml` の `seed`）。
+
+```sh
+cargo run -p seed -- --seed 42
+```
+
+- 本部のアカウント `本部 01`（`headquarters.seed<種>@example.com`）を、コーチと同じ時刻に登録する。触れる環境のログインの手がかり（`ship.yaml` の `touch.accounts`）は、本部・コーチとも DB に登録したアカウントのトークン（`mock.<役割>.<アカウント ID>`）を出す
+- テスト（Postgres。`cargo test -p seed -- --include-ignored`）: `tests/slot_supply.rs`（需給の足りていないスポーツ）、`tests/touch_accounts.rs`（`ship.yaml` の手がかりの SQL を種 42 の DB で実行し、すべて実在のアカウントをその役割で指すこと、本部の手がかりで確定した予約を持つコーチをお休みにでき、予約の詳細にお休みの経緯が出ること。Issue #1480）
 
 ## 一周シナリオの E2E（API レベル）
 
