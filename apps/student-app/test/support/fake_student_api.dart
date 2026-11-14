@@ -140,6 +140,9 @@ class FakeStudentApi implements StudentApi {
   /// 入れておくと、`getMyNextActions` はこれが完了するまで応答を返さない（読み込み中の表示を確かめる）
   Completer<void>? nextActionsGate;
 
+  /// 入れておくと、`getMyEntitlement` はこれが完了するまで応答を返さず、[calls] にも残さない（読み込み中の表示を確かめる）
+  Completer<void>? entitlementGate;
+
   /// `getVideoReview` だけを、動画の ID ごとに失敗させる
   final Set<String> videoReviewFailures = {};
   final Map<String, StudentApiException> failures;
@@ -485,10 +488,15 @@ class FakeStudentApi implements StudentApi {
   }, body);
 
   @override
-  Future<Entitlement> getMyEntitlement() => _answer(
-    'getMyEntitlement',
-    () => entitlement ?? (throw Fixtures.entitlementNotFound),
-  );
+  Future<Entitlement> getMyEntitlement() {
+    Future<Entitlement> answer() => _answer(
+      'getMyEntitlement',
+      () => entitlement ?? (throw Fixtures.entitlementNotFound),
+    );
+    // 門がなければ呼ばれた順のまま [calls] に残す（待つと、並べて読む欄の順が入れ替わる）
+    final gate = entitlementGate;
+    return gate == null ? answer() : gate.future.then((_) => answer());
+  }
 
   @override
   Future<MessageThreadList> listMessageThreads() => _answer(
