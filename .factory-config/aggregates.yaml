@@ -1,0 +1,7 @@
+# 断片で更新する共有ファイルの宣言（Engine ADR 0051 の 2）。書き方は factory-engine の core-gates/aggregate_compile.py
+aggregates:
+  # 知見の一覧。知見（K-*.yaml）の中身から作る生成物で、手で書き換えない。
+  # 作り直しは、engine.lock の版の core-gates/knowledge_check.py --index で行う（CI の knowledge-check と同じ版）
+  - path: .factory-config/knowledge/INDEX.md
+    compile: generate
+    command: ref=$(grep -Ev '^[[:space:]]*(#|$)' .factory-config/engine.lock | head -1 | tr -d '[:space:]') && curl -fsSL -o "${TMPDIR:-/tmp}/knowledge_check.py" "https://raw.githubusercontent.com/guccyon/factory-engine/${ref}/core-gates/knowledge_check.py" && python3 "${TMPDIR:-/tmp}/knowledge_check.py" --repo . --index
