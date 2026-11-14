@@ -37,10 +37,11 @@ const TABS: { id: Tab; title: string }[] = [
 
 /**
  * お知らせの種類 → 行を押したときに移るタブ（お知らせは行き先の ID を持たないので、その種類の一覧の画面）。
- * 新しい予約は「通話への参加」（自分の予約の一覧）、添削の依頼は「動画の添削」、メッセージは「チャット」。
+ * 新しい予約とレッスンのリマインドは「通話への参加」（自分の予約の一覧）、添削の依頼は「動画の添削」、メッセージは「チャット」。
  */
 const NOTIFICATION_TABS: Record<Schemas["NotificationKind"], Tab> = {
   booking_confirmed: "live",
+  lesson_reminder: "live",
   video_review_requested: "videos",
   message_received: "chat",
 };
