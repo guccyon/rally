@@ -159,7 +159,7 @@ void main() {
         ),
       },
     );
-    await pumpScreen(
+    final container = await pumpScreen(
       tester,
       const MessagesScreen(),
       api: api,
@@ -172,10 +172,14 @@ void main() {
     await tapText(tester, '送信する');
 
     expect(find.text('チャットは月額契約を始めると使えます。'), findsOneWidget);
+    expect(find.text('月額契約へ進む'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       '質問です',
     );
+
+    await tapText(tester, '月額契約へ進む');
+    expect(container.read(studentFlowProvider).step, FlowStep.subscription);
   });
 
   testWidgets('新しいメッセージを確かめると読み直して既読にし、戻るとスレッドの一覧を読み直す', (tester) async {

@@ -14,7 +14,7 @@ import { LessonReviewReplyForm } from "@/components/coach/LessonReviewReplyForm"
 
 type State =
   | { kind: "loading" }
-  | { kind: "loaded"; reviews: CoachReviews }
+  | { kind: "loaded"; reviews: CoachReviews; coachName: string }
   | { kind: "failed"; message: string };
 
 const NOT_COACH = "コーチのアカウントでログインしたときだけ、自分の評価を見られます。";
@@ -42,7 +42,7 @@ export function MyCoachReviews({
     if (account.data.role !== "coach") return { kind: "failed", message: NOT_COACH };
     const response = await loadCoachReviews(api, account.data.account_id);
     return response.ok
-      ? { kind: "loaded", reviews: response.data }
+      ? { kind: "loaded", reviews: response.data, coachName: account.data.display_name }
       : { kind: "failed", message: response.message };
   }, [api]);
 
@@ -61,7 +61,7 @@ export function MyCoachReviews({
     setState((current) =>
       current.kind === "loaded"
         ? {
-            kind: "loaded",
+            ...current,
             reviews: {
               ...current.reviews,
               reviews: current.reviews.reviews.map((review) =>
@@ -82,6 +82,7 @@ export function MyCoachReviews({
       {state.kind === "failed" && <ResultMessage result={{ ok: false, message: state.message }} />}
       {state.kind === "loaded" && (
         <CoachReviewSummaryView
+          coachName={state.coachName}
           summary={state.reviews.summary}
           reviews={state.reviews.reviews}
           showLessonMenu
