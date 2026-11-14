@@ -407,6 +407,30 @@ void main() {
     expect(find.textContaining(RegExp(r'^自分 ・ .* ・ 未読$')), findsOneWidget);
   });
 
+  testWidgets('スタンプの一覧で 1 つをすばやく二度押ししても、送るのは 1 回で、チャットの画面は残る（#1513）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const MessagesScreen(),
+      api: api,
+      initial: threadOpened(),
+      chat: threadChat(),
+    );
+
+    await tapText(tester, 'スタンプ');
+    // 閉じ始めた一覧の 2 回目は、下の画面を閉じない
+    await doubleTapInOneFrame(tester, find.text('ナイスショット'));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('送るスタンプを選んでください'), findsNothing);
+    expect(api.calls, ['sendMessage']);
+    expect(find.text('担当コーチとのチャット'), findsOneWidget);
+    expect(find.text('🎯'), findsOneWidget);
+    expect(find.text('スタンプ'), findsOneWidget);
+  });
+
   testWidgets('スタンプを選ばずに閉じると何も送らない', (tester) async {
     final api = FakeStudentApi();
     await pumpScreen(

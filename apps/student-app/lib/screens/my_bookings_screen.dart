@@ -5,6 +5,7 @@ import '../api/models.dart';
 import '../state/student_flow.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
+import '../ui/pop_once.dart';
 
 /// 自分の予約の一覧（`listMyBookings`）とキャンセル（`cancelBooking`）。
 /// まだ始まっていない予約にだけキャンセルのボタンと、枠を使わずにキャンセルできる境目か、今キャンセルすると
@@ -99,11 +100,11 @@ class MyBookingsScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => popOnce(context, false),
             child: const Text('やめる'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => popOnce(context, true),
             child: const Text('キャンセルする'),
           ),
         ],

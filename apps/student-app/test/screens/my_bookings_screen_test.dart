@@ -251,6 +251,40 @@ void main() {
     expect(find.text(cancelLabel), findsOneWidget);
   });
 
+  testWidgets('確認の「キャンセルする」をすばやく二度押ししても、キャンセルは 1 回で、一覧とアプリバーは残る（#1513）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+      subscription: subscribed,
+    );
+    await openBookings(tester);
+    final later = bookingOf('booking-later');
+
+    await tapCancelOf(tester, later);
+    // 閉じ始めた確認の 2 回目は、下の画面を閉じない
+    await doubleTapInOneFrame(
+      tester,
+      find.widgetWithText(FilledButton, 'キャンセルする'),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(api.calls, ['listMyBookings', 'cancelBooking']);
+    expect(api.requests.single, 'booking-later');
+    expect(find.text('予約をキャンセルしますか？'), findsNothing);
+    expect(
+      find.descendant(of: cardOf(later), matching: find.text('状態: キャンセル済み')),
+      findsOneWidget,
+    );
+    expect(find.text('自分の予約'), findsOneWidget);
+    expect(find.byTooltip('自分の予約を閉じる'), findsOneWidget);
+    expect(find.text('一覧を更新する'), findsOneWidget);
+  });
+
   testWidgets('24 時間を切った予約は、確認に今月のビデオ通話の回数を 1 回使うことを添え、やめればキャンセルしない', (
     tester,
   ) async {
