@@ -12,6 +12,9 @@ info:
     - 各操作が発火する行動イベントは `x-analytics-events` に `specs/analytics/events.yaml` の name で書く
     - 外部連携（Stripe / Twilio Video / S3 直接アップロード）は Gen1 ではモックだが、契約は本物と同じ形で書く
     - 認証はモックのトークンを `bearerAuth` として置く（不透明なトークン。`components.securitySchemes.bearerAuth`）
+    - ログインはメールの 6 桁のワンタイムコード（docs/adr/0012-student-login-one-time-code.md）。`requestLoginCode`（`POST /login-codes`）で
+      コードを送り、`createSession`（`POST /sessions`）でコードを確かめてトークンを受け取る。登録済みのメールアドレスでの登録
+      （`registerAccount` の 409）は `login_guidance` でログインへ案内する
 
     ## 互換ポリシー
 
@@ -73,9 +76,87 @@ paths:
               schema:
                 $ref: "#/components/schemas/RegisterAccountResponse"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/EmailAlreadyRegistered"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+
+  /login-codes:
+    post:
+      operationId: requestLoginCode
+      summary: ログインの確認コードを送る（生徒）
+      description: |
+        登録済みのメールアドレスに 6 桁の確認コードを送る（Gen1 はメールの送信をモックにする）。ログインの 1 段目
+        （docs/adr/0012-student-login-one-time-code.md。coach-app の `requestCoachLoginCode` と同じ形）。
+
+        - 登録のないメールアドレス・生徒でないアカウントのメールアドレスでも、同じ 202 を返す（登録の有無と役割を明かさない）。
+          そのときは何も送らない
+        - 確認コードの有効期限は送ってから 10 分。送り直すと、前に送ったコードは使えなくなる
+        - 同じメールアドレスへの送り直しは、前に送ってから 60 秒たつまで 429 `too_many_requests`（`Retry-After` に待つ秒数）
+        - メールアドレスの形が違う・空なら 422 `validation_failed`
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestLoginCodeRequest"
+      responses:
+        "202":
+          description: 受け付けた（登録の有無と役割で変えない）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestLoginCodeResponse"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /sessions:
+    post:
+      operationId: createSession
+      summary: 確認コードを確かめてログインする（生徒）
+      description: |
+        `requestLoginCode` で送った確認コードを確かめ、本人（生徒）とアクセストークンを返す。ログインの 2 段目。
+        応答は `registerAccount` の 201 と同じ形（`student` と `access_token`）で、以後の扱いも登録したときと同じ。
+
+        - コードが違う・そのメールアドレスに送ったコードがないなら 401 `login_code_invalid`。期限（送ってから 10 分）が過ぎたなら
+          401 `login_code_expired`
+        - 登録のないメールアドレス・生徒でないアカウントのメールアドレスは、コードを送っていないので 401 `login_code_invalid`
+          （登録の有無と役割を明かさない）
+        - 1 つのコードで 5 回間違えると、そのコードは使えなくなり、以後は 429 `too_many_requests`（送り直せば新しいコードで続けられる）
+        - 確かめたコードは使えなくなる（同じコードで 2 回ログインできない）
+        - メールアドレスの形が違う・コードが 6 桁の数字でないなら 422 `validation_failed`
+
+        行動イベントは発火しない。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "200":
+          description: ログインした。本人（生徒）とアクセストークン
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateSessionResponse"
+        "401":
+          $ref: "#/components/responses/LoginCodeRejected"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /slots:
     get:
@@ -1320,7 +1401,7 @@ components:
       type: http
       scheme: bearer
       description: |
-        アカウント ID と役割を載せた不透明なトークン（`RegisterAccountResponse.access_token`）。
+        アカウント ID と役割を載せた不透明なトークン（`RegisterAccountResponse.access_token`・`CreateSessionResponse.access_token`）。
         クライアントは中身を解釈しない。Gen1 は署名なしのモックで、本番では署名付きの方式に差し替える
         （形式が変わってもクライアントへの影響はない）。トークンがない・無効なら 401、役割が操作に合わなければ 403。
 
@@ -1378,6 +1459,32 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    EmailAlreadyRegistered:
+      description: |
+        メールアドレスがすでに登録されている（`email_already_registered`）。`Conflict` と同じ `code`・`message` に、
+        ログインへの案内 `login_guidance` を足した形（足すだけなので、`Error` として読むクライアントはそのまま動く）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/EmailAlreadyRegisteredError"
+    LoginCodeRejected:
+      description: 確認コードが違う・送ったコードがない（`login_code_invalid`）、または期限切れ（`login_code_expired`）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: 回数が多い（確認コードの送り直しの待ち・確認コードの間違いの上限）
+      headers:
+        Retry-After:
+          description: 次に試せるまでの秒数
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
 
   schemas:
     Sport:
@@ -1424,6 +1531,86 @@ components:
         access_token:
           type: string
           description: "モックのトークン。以後のリクエストで `Authorization: Bearer <access_token>` に使う"
+
+    RequestLoginCodeRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: ログインする生徒の、登録したメールアドレス
+
+    RequestLoginCodeResponse:
+      type: object
+      description: 受け付けた確認コードの送り先と待ち時間（登録の有無と役割で変えない）
+      required: [email, expires_in_seconds, resend_after_seconds]
+      properties:
+        email:
+          type: string
+          format: email
+          description: 送り先として受け付けたメールアドレス（リクエストのまま）
+        expires_in_seconds:
+          type: integer
+          description: 確認コードの有効期限（秒。今は 600）
+        resend_after_seconds:
+          type: integer
+          description: 送り直せるまでの秒数（今は 60）
+
+    CreateSessionRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+          description: "`requestLoginCode` に送ったメールアドレス"
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: メールに届いた 6 桁の確認コード
+
+    CreateSessionResponse:
+      type: object
+      description: ログインの結果。`RegisterAccountResponse` と同じ形（本人（生徒）とアクセストークン）
+      required: [student, access_token]
+      properties:
+        student:
+          $ref: "#/components/schemas/Student"
+        access_token:
+          type: string
+          description: "モックのトークン。以後のリクエストで `Authorization: Bearer <access_token>` に使う"
+
+    LoginGuidance:
+      type: object
+      description: |
+        登録済みのメールアドレスで登録しようとした生徒を、ログインへ案内するための情報。クライアントはログインの画面へ進め、
+        `email` を入れた状態で `requestLoginCode` を呼べるようにする（このときはまだ確認コードを送っていない）
+      required: [email, request_login_code_path]
+      properties:
+        email:
+          type: string
+          format: email
+          description: ログインに使うメールアドレス（登録のリクエストの `email` のまま）
+        request_login_code_path:
+          type: string
+          enum: [/login-codes]
+          description: ログインの 1 段目の操作（`requestLoginCode`）のパス
+
+    EmailAlreadyRegisteredError:
+      type: object
+      description: |
+        `email_already_registered` の本文。`Error` の項目に、ログインへの案内 `login_guidance` を足す。
+        `login_guidance` は任意（載せていない版のサーバーもある）。ないときクライアントは今までどおり汎用の 409 として扱う
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+          description: 人間向けの説明（表示用ではない）
+        login_guidance:
+          $ref: "#/components/schemas/LoginGuidance"
 
     Slot:
       type: object
@@ -2850,6 +3037,9 @@ components:
         - coach_not_accepting_bookings
         - live_lesson_session_ended_by_headquarters
         - slot_not_started
+        - login_code_invalid
+        - login_code_expired
+        - too_many_requests
 
     Error:
       type: object
