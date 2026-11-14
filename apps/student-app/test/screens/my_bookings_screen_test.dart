@@ -49,6 +49,9 @@ void main() {
       find.descendant(of: cardOf(item), matching: find.text(text));
 
   Future<void> openBookings(WidgetTester tester) async {
+    // 4 件のカードがどれも画面に収まる高さにする（一覧は見えている行だけを作る）
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.tap(find.byTooltip('自分の予約'));
     await tester.pumpAndSettle();
   }
@@ -496,5 +499,39 @@ void main() {
     expect(api.calls, ['listMyBookings', 'listMyBookings']);
     expect(find.byType(Card), findsNWidgets(4));
     expect(find.text('サーバーにつながりませんでした。通信状態を確かめてください。'), findsNothing);
+  });
+
+  testWidgets('まだ始まっていない確定待ちの予約にだけ「内容を確かめて確定する」を出し、押すとその予約を読み直して確定待ちの画面を開く', (
+    tester,
+  ) async {
+    const confirmLabel = '内容を確かめて確定する';
+    final api = FakeStudentApi();
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+      subscription: subscribed,
+    );
+    await openBookings(tester);
+
+    expect(find.text(confirmLabel), findsOneWidget);
+    expect(inCard(bookingOf('booking-soon'), confirmLabel), findsOneWidget);
+
+    final button = find.widgetWithText(FilledButton, confirmLabel);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    final state = container.read(studentFlowProvider);
+    expect(api.calls, ['listMyBookings', 'listMyBookings']);
+    expect(state.step, FlowStep.bookingPending);
+    expect(state.booking!.bookingId, 'booking-soon');
+    expect(state.bookedSlot!.sport, Sport.soccer);
+    expect(find.text('予約の確定待ち'), findsOneWidget);
+    expect(find.text('予約を確定する'), findsOneWidget);
+    expect(find.text('この予約をキャンセルする'), findsOneWidget);
+    // 確定は呼ばない（中身を見せた画面で押す）
+    expect(api.calls, isNot(contains('confirmBooking')));
   });
 }

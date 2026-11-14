@@ -7,6 +7,7 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// 自分の予約の一覧（`listMyBookings`）とキャンセル（`cancelBooking`）。
+/// まだ始まっていない確定待ちの予約には「内容を確かめて確定する」を出し、押すと予約の ID で予約の確定待ちの画面を開く（確定はその画面で押す）。
 /// まだ始まっていない予約にだけキャンセルのボタンと、枠を使わずにキャンセルできる境目か、今キャンセルすると
 /// 枠を使うことを出し（`listMyBookings` の `free_cancel_until` / `cancel_consumes_quota`）、押したら確認してからキャンセルする。
 class MyBookingsScreen extends ConsumerWidget {
@@ -44,6 +45,15 @@ class MyBookingsScreen extends ConsumerWidget {
                   if (item.slot.coachDisplayName case final name?)
                     Text('コーチ: $name'),
                   Text('状態: ${bookingStatusLabel(item.booking.status)}'),
+                  if (notifier.canConfirm(item.booking)) ...[
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: state.busy
+                          ? null
+                          : () => notifier.openBooking(item.booking.bookingId),
+                      child: const Text('内容を確かめて確定する'),
+                    ),
+                  ],
                   if (notifier.canCancel(item.booking)) ...[
                     if (notifier.cancellationUsesQuota(item))
                       const Text(cancelConsumesQuotaNotice)
