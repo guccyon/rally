@@ -254,6 +254,14 @@ final screens = <Screen>[
     ),
   ),
   Screen('live-lesson', 'ビデオ通話', _toLiveLesson),
+  Screen('live-lesson-back-confirm', 'ビデオ通話: 「戻る」で出す終了の確認', (t) async {
+    await _toLiveLesson(t);
+    // ブラウザー・端末の「戻る」（通話の画面にとどまり、通話を終えるかを確かめる。#1519）
+    await t
+        .widget<Router<Object>>(find.byType(Router<Object>))
+        .routerDelegate
+        .popRoute();
+  }),
   Screen('video-submit', '動画を送る', (t) async {
     await _toConfirmed(t);
     await tapText(t, '動画を送って添削を受ける');
