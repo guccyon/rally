@@ -24,12 +24,12 @@ class SelectedCoach {
       );
 
   /// ホームのお気に入りのコーチの行。スポーツは、コーチが提供していれば生徒のスポーツ [studentSport]、
-  /// していなければコーチの提供するスポーツの先頭
+  /// していなければコーチの提供するスポーツの先頭（提供するスポーツが空なら [studentSport]）
   SelectedCoach.fromFavorite(FavoriteCoach coach, {required Sport studentSport})
     : this(
         coachId: coach.coachId,
         displayName: coach.displayName,
-        sport: coach.sports.contains(studentSport)
+        sport: coach.sports.contains(studentSport) || coach.sports.isEmpty
             ? studentSport
             : coach.sports.first,
       );
