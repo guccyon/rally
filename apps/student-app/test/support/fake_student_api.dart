@@ -14,6 +14,7 @@ class FakeStudentApi implements StudentApi {
     NotificationSettings? notificationSettings,
     List<ApiNotification>? notifications,
     List<MyBooking>? myBookings,
+    bool? trialAvailable,
     List<MyVideo>? myVideos,
     this.entitlement,
     List<SubscriptionPlanDetail>? subscriptionPlans,
@@ -33,6 +34,8 @@ class FakeStudentApi implements StudentApi {
        nextActions = List.of(nextActions ?? const []),
        slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
+       trialAvailable =
+           trialAvailable ?? (myBookings ?? Fixtures.myBookings).isEmpty,
        myVideos = List.of(myVideos ?? Fixtures.myVideos),
        lessonCompletions = List.of(
          lessonCompletions ?? Fixtures.lessonCompletions,
@@ -75,6 +78,10 @@ class FakeStudentApi implements StudentApi {
   /// 自分の予約（`listMyBookings` が返す。`createBooking` で作った予約を足し、`confirmBooking` で確定済みに、
   /// `cancelBooking` でキャンセル済みにする）
   final List<MyBooking> myBookings;
+
+  /// 体験予約できるかのサーバーの判定（`listMyBookings` の `trial_available`）。null なら応答に載せない。
+  /// 渡さなければ、予約がまだない生徒（[myBookings] が空）だけ true。体験予約を作ったら false にする
+  bool? trialAvailable;
 
   /// 自分が送った動画（`listMyVideos` が返す）
   final List<MyVideo> myVideos;
@@ -219,7 +226,8 @@ class FakeStudentApi implements StudentApi {
           Fixtures.bookingPending,
           bookingLessonMenu,
         );
-        // サーバーと同じく、作った予約は `listMyBookings` にも出す
+        // サーバーと同じく、作った予約は `listMyBookings` にも出し、体験予約なら体験を使ったことにする
+        if (body.isTrial) trialAvailable = false;
         _putMyBooking(
           booking,
           slots.where((s) => s.slotId == body.slotId).firstOrNull ??
@@ -256,7 +264,11 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<MyBookingList> listMyBookings() => _answer(
     'listMyBookings',
-    () => MyBookingList(bookings: [...myBookings], clockOffset: clockOffset),
+    () => MyBookingList(
+      bookings: [...myBookings],
+      trialAvailable: trialAvailable,
+      clockOffset: clockOffset,
+    ),
   );
 
   @override
