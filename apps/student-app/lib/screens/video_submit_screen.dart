@@ -78,7 +78,7 @@ class _VideoSubmitScreenState extends ConsumerState<VideoSubmitScreen> {
       children: [
         OutlinedButton(
           onPressed: () => setState(() => _fileSelected = true),
-          child: const Text('動画を選ぶ（モック）'),
+          child: const Text('動画を選ぶ'),
         ),
         Text(
           _fileSelected

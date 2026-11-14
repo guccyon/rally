@@ -75,7 +75,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           ),
           if (state.subscriptionPlansFailed)
             const Text('プランごとのビデオ通話の回数を読み込めませんでした。プランの名前で選んで始められます。'),
-          const Text('決済はモックです（請求は発生しません）。'),
+          const Text('いまは料金は請求されません。'),
           const SizedBox(height: 8),
           FilledButton(
             onPressed: flow.busy

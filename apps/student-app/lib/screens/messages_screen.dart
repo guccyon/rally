@@ -313,7 +313,7 @@ class _VideoReviewRequestDialogState
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: () => setState(() => _fileSelected = true),
-              child: const Text('動画を選ぶ（モック）'),
+              child: const Text('動画を選ぶ'),
             ),
             Text(
               _fileSelected

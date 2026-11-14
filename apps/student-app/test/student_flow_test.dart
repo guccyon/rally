@@ -120,7 +120,7 @@ void main() {
       await registerAndBook(tester);
       await tapText(tester, '動画を送って添削を受ける');
       expect(find.text('動画を送る'), findsOneWidget);
-      await tapText(tester, '動画を選ぶ（モック）');
+      await tapText(tester, '動画を選ぶ');
       await tapText(tester, '送付する');
 
       expect(find.text('添削結果'), findsOneWidget);

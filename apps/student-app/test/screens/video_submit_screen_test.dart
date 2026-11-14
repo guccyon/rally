@@ -19,7 +19,24 @@ void main() {
     endsAt: Fixtures.slot.endsAt,
   );
 
-  testWidgets('動画を選んで（モック）送付すると、体験予約のコーチとスロットのスポーツで送って添削結果に進む', (tester) async {
+  testWidgets('動画を選ぶボタンに開発用の言葉「モック」を出さない', (tester) async {
+    await pumpScreen(
+      tester,
+      const VideoSubmitScreen(),
+      api: FakeStudentApi(),
+      initial: StudentFlowState(
+        step: FlowStep.videoSubmit,
+        student: Fixtures.student,
+        bookedSlot: soccerSlot,
+        booking: Fixtures.bookingConfirmed,
+      ),
+    );
+
+    expect(find.text('動画を選ぶ'), findsOneWidget);
+    expect(find.textContaining('モック'), findsNothing);
+  });
+
+  testWidgets('動画を選んで送付すると、体験予約のコーチとスロットのスポーツで送って添削結果に進む', (tester) async {
     final api = FakeStudentApi(reviews: [Fixtures.reviewInProgress]);
     final container = await pumpScreen(
       tester,
@@ -36,7 +53,7 @@ void main() {
     final submit = find.widgetWithText(FilledButton, '送付する');
     expect(tester.widget<FilledButton>(submit).onPressed, isNull);
 
-    await tapText(tester, '動画を選ぶ（モック）');
+    await tapText(tester, '動画を選ぶ');
     expect(find.text('選んだ動画: swing.mp4'), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'フォアハンドを見てください');
     await tapText(tester, '送付する');
@@ -104,7 +121,7 @@ void main() {
           booking: Fixtures.bookingConfirmed,
         ),
       );
-      await tapText(tester, '動画を選ぶ（モック）');
+      await tapText(tester, '動画を選ぶ');
       return container;
     }
 
