@@ -29,7 +29,7 @@ pub struct PublishSlotCommand {
 
 #[derive(Debug)]
 pub enum PublishSlotError {
-    /// 入力がドメインの不変条件を満たさない（開始が終了より前でない、同じコーチの枠と重なる、結びつけるメニューが
+    /// 入力がドメインの不変条件を満たさない（開始が終了より前でない、開始が現在時刻以前、同じコーチの枠と重なる、結びつけるメニューが
     /// 枠に合わない）
     Invalid(SchedulingError),
     /// 結びつけるレッスンメニューがない
@@ -46,7 +46,7 @@ impl From<SchedulingError> for PublishSlotError {
 
 /// スロットの公開のユースケース（コーチだけが呼ぶ。admin-web の `publishSlot`）。
 ///
-/// 定員つきの枠を作り（開始 < 終了の検証）、コーチのカレンダー（[`domain::scheduling::CoachCalendar`]）で
+/// 定員つきの枠を作り（開始 < 終了の検証。開始が現在時刻以前なら [`SchedulingError::SlotStartsInThePast`]）、コーチのカレンダー（[`domain::scheduling::CoachCalendar`]）で
 /// 同じコーチの枠と重ならないことを確かめて保存する。レッスンメニューの指定があれば、catalog に問い合わせて
 /// （[`LessonMenuLookup`]）枠に結びつけられるか（[`Slot::with_lesson_menu`]）を確かめる。保存したら行動イベント
 /// `slot.published`（KPI「コーチの予約枠充足率」の入力）を 1 回発火する。拒否・保存の失敗では発火しない。
@@ -82,6 +82,7 @@ where
             command.ends_at,
             command.capacity,
         )?;
+        slot.ensure_starts_after(self.clock.now())?;
         let slot = match command.lesson_menu_id {
             None => slot,
             Some(id) => {
@@ -300,6 +301,35 @@ mod tests {
         );
         assert!(use_case.slots().all().is_empty());
         assert!(use_case.analytics().events().is_empty());
+    }
+
+    #[tokio::test]
+    async fn slot_starting_now_or_in_the_past_is_rejected_without_saving_or_emitting() {
+        let use_case = PublishSlot::new(
+            InMemorySlotRepository::default(),
+            menus(),
+            RecordingAnalyticsSink::default(),
+            FixedClock(at(10)),
+        );
+        for from in [9, 10] {
+            let result = use_case.execute(command(COACH, from, 12)).await;
+            assert!(
+                matches!(
+                    result,
+                    Err(PublishSlotError::Invalid(
+                        SchedulingError::SlotStartsInThePast
+                    ))
+                ),
+                "{from}: {result:?}"
+            );
+        }
+        assert!(use_case.slots().all().is_empty());
+        assert!(use_case.analytics().events().is_empty());
+
+        // 現在時刻より後の開始は公開できる
+        let slot = use_case.execute(command(COACH, 11, 12)).await.unwrap();
+        assert_eq!(use_case.slots().all(), vec![slot]);
+        assert_eq!(use_case.analytics().events().len(), 1);
     }
 
     #[tokio::test]

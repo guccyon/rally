@@ -56,6 +56,16 @@ impl Slot {
         )
     }
 
+    /// 公開する枠の開始が、時刻 `now` より後かを確かめる。開始が `now` 以前（過去か、ちょうど現在）なら
+    /// [`SchedulingError::SlotStartsInThePast`]（どの一覧にも出ず、予約もできない枠になるため）。公開のときだけ呼ぶ
+    /// （保存した枠を読み戻す [`Slot::restore`] は、始まった枠も読めなければならないので確かめない）。
+    pub fn ensure_starts_after(&self, now: SystemTime) -> Result<(), SchedulingError> {
+        if self.starts_at <= now {
+            return Err(SchedulingError::SlotStartsInThePast);
+        }
+        Ok(())
+    }
+
     /// 保存した枠を読み戻す（状態を問わない）。開始と終了の検証は [`Slot::publish`] と同じ。
     /// `seats` は保存先が予約の行から数えた席（[`SlotSeats::restore`]）。状態と席が合わなければ
     /// [`SchedulingError::SlotStatusMismatchesSeats`]（予約済みなら確定した予約が定員ちょうど、公開中なら定員未満。
@@ -399,6 +409,22 @@ mod tests {
                     SlotCapacity::ONE,
                 ),
                 Err(SchedulingError::SlotEndsBeforeItStarts)
+            );
+        }
+    }
+
+    #[test]
+    fn slot_must_start_after_now_to_be_published() {
+        let slot = slot(1, 10, 11);
+        assert_eq!(slot.ensure_starts_after(at(9)), Ok(()));
+        assert_eq!(
+            slot.ensure_starts_after(at(10) - Duration::from_nanos(1)),
+            Ok(())
+        );
+        for now in [at(10), at(11), at(100)] {
+            assert_eq!(
+                slot.ensure_starts_after(now),
+                Err(SchedulingError::SlotStartsInThePast)
             );
         }
     }
