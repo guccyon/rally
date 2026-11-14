@@ -1,0 +1,30 @@
+id: K-0033
+theme: 4
+kind: causal
+statement: >-
+  実装役が書くハンドオフの summary.md の書式（概要・対応内容・影響範囲・互換性・動作確認・補足・仮決め・知見）と、検査役が照らす
+  PR テンプレートの見出し（概要・背景・問題・対応内容ほか）が別々に定義され、「背景・問題は変更に必要なときに書く」という条件も
+  検査役の PR-002 の中にだけあって実装役への指示に同じ言葉で渡っていないと、実装役は summary.md をそのまま本文にして背景と問題を
+  概要に詰め込み、検査役は必要な見出しを削ったと読む。同じ本文が役割ごとに違う基準で読まれる（C-0015 の PR #1113 は、
+  検査 2 回とも OV-001 と PR-002 で指摘され、差し戻しになった）。提案の向きは、summary.md の書式を PR テンプレートの見出しに揃え、
+  ファイル数が 2 以上の変更や議決・Issue を前提にする変更では背景と問題を必須にすると実装役への指示に書くこと。
+  見出しの定義が 3 か所に分かれることは K-0005、判定役に rubric の本文が渡らないことは K-0011 の主張で、この知見は
+  summary.md の書式と必須の条件が実装役に伝わらないことに絞る。根拠はこの事例 1 件で、実装役がテンプレートを開いたかは推測。
+  scope の軸は分析役が書かなかったので、事例の業務から決めた。
+scope:
+  work: [dev.describe]
+  artifacts: [PR.body]
+  roles: [implement, inspect]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - event: "case.analyzed:1004155"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0005, K-0011, K-0016]
+invalidate_when:
+  - "実装役の summary.md の書式が PR テンプレートの見出し（tools/pr-body-check/template.json）に揃い、背景・問題が必要な条件が実装役への指示に入った"
+  - "書式と条件が揃ったあとも、背景・問題の欠けの指摘が続いた（原因は書式と条件の伝達ではなかった）"
