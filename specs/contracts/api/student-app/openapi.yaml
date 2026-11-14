@@ -168,6 +168,8 @@ paths:
         月額契約の生徒のビデオ通話の暦月の枠（上限は契約プランで決まる。不変条件 1）は、確定（`confirmBooking`）で確かめて使う。
         スロットにレッスンメニューが結びついていれば、予約した時点のメニューの ID・名前・1 回の時間を予約に写して残す（`lesson_menu`）。
         メニューが予約の時点で公開中でなければ、メニューなしの予約にする（予約は断らない。`lesson_menu` は null）。
+        返す予約には、予約したスロットの終了時刻 `ends_at`・スポーツ `sport` と、コーチの表示名 `coach_display_name`
+        （コーチのアカウントが引けなければ載らない）を載せる（`confirmBooking`・`cancelBooking`・`listMyBookings` の予約も同じ）。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: [booking.created]
@@ -205,6 +207,8 @@ paths:
         各項目には予約したスロット（日時・スポーツ）を添え、スロットにはそのコーチの表示名 `coach_display_name` と
         自己紹介文 `coach_bio` を `searchSlots` と同じく任意の項目として載せる。各項目の予約には、予約した時点のレッスンメニュー
         `lesson_menu`（ID・名前・1 回の時間。`BookingLessonMenu`。なければ null）を載せる（メニューの今の中身ではない）。
+        各項目の予約にも、スロットの終了時刻 `ends_at`・スポーツ `sport` とコーチの表示名 `coach_display_name` を載せる
+        （予約の確定待ちの画面など、予約だけを読む画面が何を予約したかを出せるように。値は添えたスロットと同じ）。
         各項目には、今キャンセルしたらビデオ通話の暦月の枠を使うか `cancel_consumes_quota` と、枠を使わずにキャンセルできる境目の
         時刻 `free_cancel_until`（開始の 24 時間前）を載せる（キャンセル規定。キャンセルできない予約は null。`MyBooking`）。
         一覧の外に、その生徒が今体験予約できるか `trial_available` を載せる（判定はサーバーで、`createBooking` の 409
@@ -236,6 +240,7 @@ paths:
         残っていなければ確定せず 409 `live_lesson_quota_exceeded`（standard の 3 回目・plus の 5 回目は予約できない。暦月は日本時間で
         区切り、翌月には再び確定できる）。確定すると entitlement が枠を 1 回使い
         （`BookingConfirmed` の購読）、`getMyEntitlement` の `live_lesson_quota.used` が増える。受講権のない生徒（月額契約の前）は枠の制約を受けない。
+        返す予約には `createBooking` と同じく `ends_at`・`sport`・`coach_display_name` を載せる。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: [booking.confirmed]
@@ -268,7 +273,7 @@ paths:
         月額契約の生徒なら、開始 24 時間前以降のキャンセルはその予約で枠を使ったことになり（確定前の予約でも `used` が増える）、
         それより前のキャンセルは確定で使った枠が戻る（docs/adr/0005）。
         別の生徒の予約は 404、キャンセル済みの予約は 409 `invalid_booking_state`。生徒だけが呼べる（それ以外の役割は 403）。
-        本文の `reason` は任意で、Gen1 では保存しない。
+        本文の `reason` は任意で、Gen1 では保存しない。返す予約には `createBooking` と同じく `ends_at`・`sport`・`coach_display_name` を載せる。
       tags: [scheduling]
       x-context: scheduling
       x-analytics-events: [booking.cancelled]
@@ -1544,6 +1549,24 @@ components:
           oneOf:
             - $ref: "#/components/schemas/BookingLessonMenu"
             - type: "null"
+        ends_at:
+          type: string
+          format: date-time
+          description: |
+            予約したスロットの終了時刻（`Slot.ends_at` と同じ）。後から足した項目。予約を返す操作では必ず載せる。
+            載っていない応答を受けたクライアントは終わりの時刻を出さない
+        sport:
+          $ref: "#/components/schemas/Sport"
+          description: |
+            予約したスロットのスポーツ（`Slot.sport` と同じ）。後から足した項目。予約を返す操作では必ず載せる。
+            載っていない応答を受けたクライアントはスポーツを出さない
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: |
+            予約したスロットのコーチのアカウントの表示名（今の表示名。予約した時点の写しではない。`Slot.coach_display_name` と同じ）。
+            後から足した項目。コーチのアカウントが引けなければ載らない
 
     BookingLessonMenu:
       type: object
