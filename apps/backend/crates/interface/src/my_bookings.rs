@@ -5,6 +5,7 @@ use std::sync::Arc;
 use application::{
     clock::Clock,
     identity::TokenVerifier,
+    lesson::LessonCompletionRepository,
     scheduling::{BookingRepository, CoachIntroductionLookup, ListMyBookings, QuotaGate},
 };
 use axum::{Json, Router, extract::State, routing::get};
@@ -20,14 +21,19 @@ use crate::{
 };
 
 /// `/bookings/me` のハンドラーが使うユースケース。
-pub struct MyBookingsState<B, I, G, C> {
-    pub list_my_bookings: ListMyBookings<B, I, G, C>,
+pub struct MyBookingsState<B, I, G, R, C> {
+    pub list_my_bookings: ListMyBookings<B, I, G, R, C>,
 }
+
+/// ハンドラーが共有する [`MyBookingsState`]。
+type Shared<B, I, G, R, C> = Arc<MyBookingsState<B, I, G, R, C>>;
 
 /// student-app の `MyBookingList`。
 #[derive(Serialize)]
 pub struct MyBookingListBody {
     bookings: Vec<MyBookingBody>,
+    /// 生徒が今体験予約できるか（サーバーの判定。`createBooking` の 409 `trial_already_used` と同じ条件の否定）
+    trial_available: bool,
 }
 
 /// student-app の `MyBooking`。
@@ -42,14 +48,15 @@ pub struct MyBookingBody {
 }
 
 /// `GET /bookings/me`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンのアカウントの予約。
-pub async fn list_my_bookings<B, I, G, C>(
-    State(state): State<Arc<MyBookingsState<B, I, G, C>>>,
+pub async fn list_my_bookings<B, I, G, R, C>(
+    State(state): State<Shared<B, I, G, R, C>>,
     account: AuthenticatedAccount,
 ) -> Result<Json<MyBookingListBody>, ApiError>
 where
     B: BookingRepository,
     I: CoachIntroductionLookup,
     G: QuotaGate,
+    R: LessonCompletionRepository,
     C: Clock,
 {
     let list = state
@@ -74,6 +81,7 @@ where
                 })
             })
             .collect::<Result<_, ApiError>>()?,
+        trial_available: list.trial_available,
     }))
 }
 
@@ -81,20 +89,21 @@ where
 /// `merge` する（同じ検証器を渡す）。
 ///
 /// `GET /bookings/me` は生徒だけ。
-pub fn my_bookings_router<B, I, G, C, T>(
-    list_my_bookings: ListMyBookings<B, I, G, C>,
+pub fn my_bookings_router<B, I, G, R, C, T>(
+    list_my_bookings: ListMyBookings<B, I, G, R, C>,
     tokens: T,
 ) -> Router
 where
     B: BookingRepository + 'static,
     I: CoachIntroductionLookup + 'static,
     G: QuotaGate + 'static,
+    R: LessonCompletionRepository + 'static,
     C: Clock + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
     Router::new()
-        .route("/bookings/me", get(self::list_my_bookings::<B, I, G, C>))
+        .route("/bookings/me", get(self::list_my_bookings::<B, I, G, R, C>))
         .route_layer(require_role(&[Role::Student]))
         .with_state(Arc::new(MyBookingsState { list_my_bookings }))
         .layer(TokenVerification::layer(tokens))

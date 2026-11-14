@@ -211,6 +211,7 @@ mod tests {
             let booking = CreateBooking::new(
                 bookings.clone(),
                 CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
+                crate::in_memory::InMemoryLessonCompletionRepository::default(),
                 RecordingAnalyticsSink::default(),
                 FixedClock(SystemTime::UNIX_EPOCH),
             )

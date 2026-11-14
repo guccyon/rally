@@ -102,6 +102,7 @@ where
         let create = CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
+            PgLessonCompletionRepository::new(pool.clone()),
             analytics.clone(),
             clock.clone(),
         );

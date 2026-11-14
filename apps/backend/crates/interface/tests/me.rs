@@ -126,6 +126,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
+            application::in_memory::InMemoryLessonCompletionRepository::default(),
             analytics.clone(),
             clock,
         ),
@@ -155,6 +156,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
+            application::in_memory::InMemoryLessonCompletionRepository::default(),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(

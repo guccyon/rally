@@ -246,6 +246,7 @@ fn app() -> App {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
+            application::in_memory::InMemoryLessonCompletionRepository::default(),
             analytics.clone(),
             clock.clone(),
         ),
@@ -275,6 +276,7 @@ fn app() -> App {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(entitlements.clone()),
+            application::in_memory::InMemoryLessonCompletionRepository::default(),
             clock.clone(),
         ),
         application::scheduling::ListCoachBookings::new(

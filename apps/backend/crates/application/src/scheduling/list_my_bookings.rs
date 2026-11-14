@@ -3,10 +3,13 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
-use domain::{identity::AccountId, scheduling::CancellationPolicy};
+use domain::{
+    identity::AccountId,
+    scheduling::{Booking, CancellationPolicy, Slot},
+};
 
 use super::{BookingRepository, CoachIntroductionLookup, MyBookingList, QuotaGate};
-use crate::{Unavailable, clock::Clock};
+use crate::{Unavailable, clock::Clock, lesson::LessonCompletionRepository};
 
 /// 本人の予約の一覧のユースケース（student-app の `listMyBookings`。生徒だけが呼ぶ）。
 ///
@@ -14,26 +17,31 @@ use crate::{Unavailable, clock::Clock};
 /// 並べる（同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。一覧に出るコーチの紹介は profile に
 /// 問い合わせて（[`CoachIntroductionLookup`]）添える。キャンセルできる予約には、今（[`Clock`]）キャンセルしたら
 /// 回数を使うかの見込みを domain の [`CancellationPolicy::preview`] で添える（規則はそこだけ。生徒が通話の枠を
-/// 持つかは entitlement に問い合わせる [`QuotaGate::has_live_lesson_quota`]）。読むだけで何も変えない。
-pub struct ListMyBookings<B, I, G, C> {
+/// 持つかは entitlement に問い合わせる [`QuotaGate::has_live_lesson_quota`]）。一覧の外に、生徒が今体験予約できるか
+/// （`createBooking` の体験予約の判定と同じ domain の [`Booking::is_trial_available`]）を添える。キャンセルされていない
+/// 予約がなければ、完了記録の保存先（[`LessonCompletionRepository`]）から完了したレッスンの有無を読む。読むだけで何も変えない。
+pub struct ListMyBookings<B, I, G, R, C> {
     bookings: B,
     coaches: I,
     quota: G,
+    completions: R,
     clock: C,
 }
 
-impl<B, I, G, C> ListMyBookings<B, I, G, C>
+impl<B, I, G, R, C> ListMyBookings<B, I, G, R, C>
 where
     B: BookingRepository,
     I: CoachIntroductionLookup,
     G: QuotaGate,
+    R: LessonCompletionRepository,
     C: Clock,
 {
-    pub fn new(bookings: B, coaches: I, quota: G, clock: C) -> Self {
+    pub fn new(bookings: B, coaches: I, quota: G, completions: R, clock: C) -> Self {
         Self {
             bookings,
             coaches,
             quota,
+            completions,
             clock,
         }
     }
@@ -70,11 +78,35 @@ where
         } else {
             BTreeMap::new()
         };
+        let trial_available = self.trial_available(student_id, &items).await?;
         Ok(MyBookingList {
             items,
             coaches,
             cancellations,
+            trial_available,
         })
+    }
+
+    /// 生徒が今体験予約できるか。キャンセルされていない予約があれば完了記録を読まずに false。
+    async fn trial_available(
+        &self,
+        student_id: AccountId,
+        items: &[(Booking, Slot)],
+    ) -> Result<bool, Unavailable> {
+        let bookings = || items.iter().map(|(booking, _)| booking);
+        if !Booking::is_trial_available(student_id, bookings(), false) {
+            return Ok(false);
+        }
+        let has_completed_lesson = !self
+            .completions
+            .completions_of_student(student_id)
+            .await?
+            .is_empty();
+        Ok(Booking::is_trial_available(
+            student_id,
+            bookings(),
+            has_completed_lesson,
+        ))
     }
 }
 
@@ -92,6 +124,8 @@ mod tests {
             Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
             YearMonth,
         },
+        lesson::{LessonCompletion, LessonCompletionId, LessonSource},
+        live_lesson::SessionId,
         profile::{CoachBio, DisplayName},
         scheduling::{Booking, BookingStatus, CancellationPreview, Slot, SlotId, SlotStatus},
     };
@@ -101,7 +135,7 @@ mod tests {
         entitlement::EntitlementQuotaGate,
         in_memory::{
             FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
-            InMemorySlotRepository,
+            InMemoryLessonCompletionRepository, InMemorySlotRepository,
         },
         scheduling::CoachIntroduction,
     };
@@ -159,6 +193,7 @@ mod tests {
         InMemoryBookingRepository,
         RecordingLookup,
         EntitlementQuotaGate<InMemoryEntitlementRepository>,
+        InMemoryLessonCompletionRepository,
         FixedClock,
     >;
 
@@ -183,6 +218,7 @@ mod tests {
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::with_entitlements(
                 entitlements,
             )),
+            InMemoryLessonCompletionRepository::default(),
             FixedClock(at(now_hour)),
         )
     }
@@ -324,6 +360,65 @@ mod tests {
         assert!(list.items.is_empty());
         assert!(list.coaches.is_empty());
         assert!(lookup.asked.lock().unwrap().is_empty());
+    }
+
+    /// 生徒 `student` が `hour` 時に受け終えた通話のレッスンの完了記録。
+    fn completion(id: u128, student: AccountId, hour: u64) -> LessonCompletion {
+        LessonCompletion::restore(
+            LessonCompletionId::from_u128(id),
+            student,
+            COACH,
+            LessonSource::Live(SessionId::from_u128(id)),
+            at(hour),
+            true,
+        )
+    }
+
+    /// 受講権のない生徒の一覧を、完了記録 `completions` のもとで読む。
+    async fn trial_available(
+        bookings: InMemoryBookingRepository,
+        completions: impl IntoIterator<Item = LessonCompletion>,
+    ) -> bool {
+        ListMyBookings::new(
+            bookings,
+            RecordingLookup::default(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
+            InMemoryLessonCompletionRepository::with_completions(completions),
+            FixedClock(at(5)),
+        )
+        .execute(STUDENT)
+        .await
+        .unwrap()
+        .trial_available
+    }
+
+    #[tokio::test]
+    async fn trial_is_available_only_without_active_bookings_and_completed_lessons() {
+        let slots = InMemorySlotRepository::with_slots([slot(1, COACH, 10), slot(2, COACH, 20)]);
+        let bookings = InMemoryBookingRepository::new(slots);
+        assert!(trial_available(bookings.clone(), []).await, "予約がない");
+        // 別の生徒の予約・完了記録は関係ない
+        book(&bookings, OTHER_STUDENT, 2, 0).await;
+        assert!(
+            trial_available(bookings.clone(), [completion(9, OTHER_STUDENT, 1)]).await,
+            "別の生徒の予約と完了記録"
+        );
+
+        let trial = book_as(&bookings, STUDENT, 1, 0, true).await;
+        assert!(
+            !trial_available(bookings.clone(), []).await,
+            "有効な予約がある"
+        );
+
+        cancel(&bookings, &trial, 1).await;
+        assert!(
+            trial_available(bookings.clone(), []).await,
+            "受けていない体験予約をキャンセルしただけ"
+        );
+        assert!(
+            !trial_available(bookings, [completion(1, STUDENT, 2)]).await,
+            "受け終えた体験予約をキャンセルしても使用済み"
+        );
     }
 
     #[tokio::test]
