@@ -1,6 +1,9 @@
 import 'models.dart';
 import 'student_api.dart';
 
+/// チャットを送れなかった（月額契約の前）ときの文言。画面はこれと一致したときに、月額契約へ進む入口を添える
+const chatNotEntitledMessage = 'チャットは月額契約を始めると使えます。';
+
 /// API の失敗 → 画面の文言。契約の `ErrorCode` を日本語にするのはここだけ
 /// （`Error.message` は表示用ではないので出さない。例外は表示名の変更の 422 だけで、[profileErrorMessageOf]）。
 String errorMessageOf(Object error) {
@@ -25,7 +28,7 @@ String errorMessageOf(Object error) {
     ErrorCode.invalidSessionState => '通話の状態が変わっています。',
     ErrorCode.invalidVideoState => '添削がまだ返されていません。',
     ErrorCode.lessonAlreadyCompleted => 'このレッスンの完了はすでに記録されています。',
-    ErrorCode.chatNotEntitled => 'チャットは月額契約を始めると使えます。',
+    ErrorCode.chatNotEntitled => chatNotEntitledMessage,
     ErrorCode.lessonAlreadyReviewed => 'このレッスンはすでに評価しています。',
     ErrorCode.coachNotAcceptingBookings => 'このコーチは今、新しい予約を受け付けていません。',
     ErrorCode.liveLessonSessionEndedByHeadquarters =>
