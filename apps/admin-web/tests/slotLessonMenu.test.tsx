@@ -123,8 +123,8 @@ describe("枠に結びつけられるメニューと終了の時刻", () => {
   });
 
   test("datetime-local の値に分を足し、日をまたげば日付も進める。開始が空なら空", () => {
-    expect(addMinutesToLocal("2026-11-01T10:00", 60)).toBe("2026-11-01T11:00");
-    expect(addMinutesToLocal("2026-11-01T23:30", 45)).toBe("2026-11-02T00:15");
+    expect(addMinutesToLocal("2099-11-01T10:00", 60)).toBe("2099-11-01T11:00");
+    expect(addMinutesToLocal("2099-11-01T23:30", 45)).toBe("2099-11-02T00:15");
     expect(addMinutesToLocal("", 60)).toBe("");
   });
 });
@@ -159,22 +159,22 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
 
     const menuSelect = screen.getByLabelText("レッスンメニュー");
     await within(menuSelect).findByRole("option", { name: "サーブ特訓（90 分）" });
-    await user.type(screen.getByLabelText("終了"), "2026-11-01T10:30");
+    await user.type(screen.getByLabelText("終了"), "2099-11-01T10:30");
     await user.selectOptions(menuSelect, "サーブ特訓（90 分）");
-    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
+    await user.type(screen.getByLabelText("開始"), "2099-11-01T10:00");
 
     const ends = screen.getByLabelText("終了");
-    expect(ends).toHaveValue("2026-11-01T11:30");
+    expect(ends).toHaveValue("2099-11-01T11:30");
     expect(ends).toHaveAttribute("readonly");
     expect(screen.getByText("終了は開始からメニューの時間（90 分）で決まります。")).toBeInTheDocument();
-    await user.type(ends, "2026-11-01T12:00");
-    expect(ends).toHaveValue("2026-11-01T11:30");
+    await user.type(ends, "2099-11-01T12:00");
+    expect(ends).toHaveValue("2099-11-01T11:30");
 
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
     expect(api.publishSlot).toHaveBeenCalledWith({
       sport: "tennis",
-      starts_at: new Date("2026-11-01T10:00").toISOString(),
-      ends_at: new Date("2026-11-01T11:30").toISOString(),
+      starts_at: new Date("2099-11-01T10:00").toISOString(),
+      ends_at: new Date("2099-11-01T11:30").toISOString(),
       capacity: 1,
       lesson_menu_id: SERVE.lesson_menu_id,
     });
@@ -191,14 +191,14 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
     await user.selectOptions(menuSelect, "フォーム改善（60 分）");
     await user.selectOptions(menuSelect, "指定しない");
     expect(screen.getByLabelText("終了")).not.toHaveAttribute("readonly");
-    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
-    await user.type(screen.getByLabelText("終了"), "2026-11-01T10:45");
+    await user.type(screen.getByLabelText("開始"), "2099-11-01T10:00");
+    await user.type(screen.getByLabelText("終了"), "2099-11-01T10:45");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
     expect(api.publishSlot).toHaveBeenCalledWith({
       sport: "tennis",
-      starts_at: new Date("2026-11-01T10:00").toISOString(),
-      ends_at: new Date("2026-11-01T10:45").toISOString(),
+      starts_at: new Date("2099-11-01T10:00").toISOString(),
+      ends_at: new Date("2099-11-01T10:45").toISOString(),
       capacity: 1,
     });
   });
@@ -229,7 +229,7 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
     const menuSelect = screen.getByLabelText("レッスンメニュー");
     await within(menuSelect).findByRole("option", { name: "サーブ特訓（90 分）" });
     await user.selectOptions(menuSelect, "サーブ特訓（90 分）");
-    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
+    await user.type(screen.getByLabelText("開始"), "2099-11-01T10:00");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -255,7 +255,7 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
     const menuSelect = screen.getByLabelText("レッスンメニュー");
     await within(menuSelect).findByRole("option", { name: "フォーム改善（60 分）" });
     await user.selectOptions(menuSelect, "フォーム改善（60 分）");
-    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
+    await user.type(screen.getByLabelText("開始"), "2099-11-01T10:00");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/^公開済みの枠と時間が重なっています。$/);
@@ -273,8 +273,8 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
     await within(screen.getByLabelText("レッスンメニュー")).findByRole("option", {
       name: "フォーム改善（60 分）",
     });
-    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
-    await user.type(screen.getByLabelText("終了"), "2026-11-01T11:00");
+    await user.type(screen.getByLabelText("開始"), "2099-11-01T10:00");
+    await user.type(screen.getByLabelText("終了"), "2099-11-01T11:00");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/^入力の内容が正しくありません（テスト）。$/);
@@ -297,14 +297,14 @@ describe("枠の公開でレッスンメニューを選ぶ", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("レッスンメニュー")).toBeDisabled();
-    await user.type(screen.getByLabelText("開始"), "2026-11-01T10:00");
-    await user.type(screen.getByLabelText("終了"), "2026-11-01T11:00");
+    await user.type(screen.getByLabelText("開始"), "2099-11-01T10:00");
+    await user.type(screen.getByLabelText("終了"), "2099-11-01T11:00");
     await user.click(screen.getByRole("button", { name: "枠を公開" }));
 
     expect(api.publishSlot).toHaveBeenCalledWith({
       sport: "tennis",
-      starts_at: new Date("2026-11-01T10:00").toISOString(),
-      ends_at: new Date("2026-11-01T11:00").toISOString(),
+      starts_at: new Date("2099-11-01T10:00").toISOString(),
+      ends_at: new Date("2099-11-01T11:00").toISOString(),
       capacity: 1,
     });
   });
@@ -367,12 +367,12 @@ describe("コーチの画面の「予約枠」", () => {
     const menuSelect = within(region).getByLabelText("レッスンメニュー");
     await within(menuSelect).findByRole("option", { name: "フォーム改善（60 分）" });
     await user.selectOptions(menuSelect, "フォーム改善（60 分）");
-    await user.type(within(region).getByLabelText("開始"), "2026-11-01T10:00");
+    await user.type(within(region).getByLabelText("開始"), "2099-11-01T10:00");
     await user.click(within(region).getByRole("button", { name: "枠を公開" }));
 
     expect(api.publishSlot).toHaveBeenCalledWith(
       expect.objectContaining({
-        ends_at: new Date("2026-11-01T11:00").toISOString(),
+        ends_at: new Date("2099-11-01T11:00").toISOString(),
         lesson_menu_id: FORM.lesson_menu_id,
       }),
     );

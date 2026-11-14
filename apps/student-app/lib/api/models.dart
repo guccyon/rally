@@ -247,6 +247,9 @@ enum ErrorCode {
     'live_lesson_session_ended_by_headquarters',
   ),
   slotNotStarted('slot_not_started'),
+  loginCodeInvalid('login_code_invalid'),
+  loginCodeExpired('login_code_expired'),
+  tooManyRequests('too_many_requests'),
 
   /// 契約にない（このアプリの版が知らない）値。契約の enum には含まれない。
   unknown('');
@@ -453,6 +456,9 @@ class Booking {
     this.confirmedAt,
     this.cancelledAt,
     this.lessonMenu,
+    this.endsAt,
+    this.sport,
+    this.coachDisplayName,
   });
 
   final String bookingId;
@@ -470,6 +476,15 @@ class Booking {
   /// メニューのない予約は null
   final BookingLessonMenu? lessonMenu;
 
+  /// 予約したスロットの終了時刻。後から足した項目なので、載っていない応答では null
+  final DateTime? endsAt;
+
+  /// 予約したスロットのスポーツ。後から足した項目なので、載っていない応答では null
+  final Sport? sport;
+
+  /// 予約したスロットのコーチの表示名。コーチのアカウントが引けないときと、載っていない応答では null
+  final String? coachDisplayName;
+
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
     bookingId: json['booking_id'] as String,
     slotId: json['slot_id'] as String,
@@ -486,6 +501,11 @@ class Booking {
         : BookingLessonMenu.fromJson(
             json['lesson_menu'] as Map<String, dynamic>,
           ),
+    endsAt: _dateTimeOrNull(json['ends_at']),
+    sport: json['sport'] == null
+        ? null
+        : Sport.fromWire(json['sport'] as String),
+    coachDisplayName: json['coach_display_name'] as String?,
   );
 }
 

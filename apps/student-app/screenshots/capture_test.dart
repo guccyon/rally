@@ -39,6 +39,7 @@ class Screen {
     this.home,
     this.media,
     this.api,
+    this.width,
   });
   final String id;
   final String title;
@@ -52,7 +53,16 @@ class Screen {
 
   /// API のモック（なければ [_api]）
   final FakeStudentApi Function()? api;
+
+  /// 画面の幅（論理ピクセル。なければ [_defaultWidth]）
+  final double? width;
 }
+
+/// 既定の画面の幅（論理ピクセル）
+const _defaultWidth = 390.0;
+
+/// 画面の高さ（論理ピクセル）。幅を変えても揃える
+const _height = 844.0;
 
 /// 今の時刻。撮るたびに [Fixtures.now]（予約したスロットの 2 日前）に戻し、入室前チェックをたどるときは [_setNow] で進める
 var _now = Fixtures.now;
@@ -272,6 +282,21 @@ final screens = <Screen>[
     await _toReview(t);
     await tapText(t, '月額契約へ進む');
   }),
+  // 幅違い（360・402）。タイトルの出方と overflow（出ると撮影が失敗する）を、既定の 390 と並べて確かめる
+  for (final width in [360.0, 402.0]) ...[
+    Screen('coach-search-w${width.round()}', 'コーチを探す（幅 ${width.round()}）', (
+      t,
+    ) async {
+      await _register(t);
+      await tapText(t, 'コーチを探す');
+    }, width: width),
+    Screen('subscription-w${width.round()}', '月額契約（幅 ${width.round()}）', (
+      t,
+    ) async {
+      await _toReview(t);
+      await tapText(t, '月額契約へ進む');
+    }, width: width),
+  ],
   Screen('message-threads', 'チャット: スレッドの一覧', (t) async {
     await _register(t);
     await _tapTooltip(t, 'チャット');
@@ -281,6 +306,32 @@ final screens = <Screen>[
     await _tapTooltip(t, 'チャット');
     await tapText(t, '担当コーチ');
   }),
+  // チャットで送れず（月額契約の前）「月額契約へ進む」から始めた後の完了の画面（「チャットへ戻る」を出す。#1565）
+  Screen(
+    'subscription-from-chat',
+    '月額契約: チャットから始めた後',
+    (t) async {
+      await _register(t);
+      await _tapTooltip(t, 'チャット');
+      await tapText(t, '担当コーチ');
+      await t.enterText(find.byType(TextField), 'フォームの相談です');
+      await t.pump();
+      await tapText(t, '送信する');
+      await tapText(t, '月額契約へ進む');
+      await tapText(t, '月額契約を始める');
+    },
+    api: () => _api(
+      failures: const {
+        'sendMessage': StudentApiException(
+          statusCode: 403,
+          error: ApiError(
+            code: ErrorCode.chatNotEntitled,
+            message: 'not entitled',
+          ),
+        ),
+      },
+    ),
+  ),
   Screen('notifications', 'お知らせ', (t) async {
     await _register(t);
     await _tapTooltip(t, 'お知らせ');
@@ -418,9 +469,10 @@ void main() {
       );
       writeMeta(ok: false);
 
-      // スマートフォンの縦の画面（論理 390×844、3 倍）
-      tester.view.physicalSize = const Size(1170, 2532);
+      // スマートフォンの縦の画面（既定は論理 390×844、3 倍。幅は Screen.width で変える）
       tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize =
+          Size(screen.width ?? _defaultWidth, _height) * 3;
       addTearDown(tester.view.reset);
 
       _now = Fixtures.now;

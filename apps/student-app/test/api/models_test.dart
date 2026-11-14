@@ -271,7 +271,6 @@ void main() {
     );
   });
 
-
   group('CoachReview.fromJson', () {
     final review = {
       'review_id': 'r1',
@@ -589,6 +588,38 @@ void main() {
     });
   });
 
+  group('Booking のスロットの終了時刻・スポーツ・コーチの表示名（#1573）', () {
+    final booking = {
+      'booking_id': 'b1',
+      'slot_id': 's1',
+      'student_id': 'st1',
+      'coach_id': 'c1',
+      'is_trial': true,
+      'status': 'pending',
+      'starts_at': '2026-11-01T10:00:00Z',
+      'created_at': '2026-10-26T00:00:00Z',
+    };
+
+    test('載っていれば読む', () {
+      final read = Booking.fromJson({
+        ...booking,
+        'ends_at': '2026-11-01T11:00:00Z',
+        'sport': 'tennis',
+        'coach_display_name': '山田コーチ',
+      });
+      expect(read.endsAt, DateTime.utc(2026, 11, 1, 11));
+      expect(read.sport, Sport.tennis);
+      expect(read.coachDisplayName, '山田コーチ');
+    });
+
+    test('載っていない応答（後から足した項目）も読めて null', () {
+      final read = Booking.fromJson(booking);
+      expect(read.endsAt, isNull);
+      expect(read.sport, isNull);
+      expect(read.coachDisplayName, isNull);
+    });
+  });
+
   group('契約プラン', () {
     test('StartSubscriptionRequest は plan を選んだときだけ送る', () {
       expect(
@@ -604,11 +635,7 @@ void main() {
           plan: SubscriptionPlan.plus,
           paymentMethodToken: 'tok_mock',
         ).toJson(),
-        {
-          'sport': 'tennis',
-          'plan': 'plus',
-          'payment_method_token': 'tok_mock',
-        },
+        {'sport': 'tennis', 'plan': 'plus', 'payment_method_token': 'tok_mock'},
       );
     });
 
