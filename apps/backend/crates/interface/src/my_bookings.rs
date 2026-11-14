@@ -73,9 +73,9 @@ where
                 Ok(MyBookingBody {
                     booking: booking_body(booking)?,
                     slot: student_app_slot_body(slot, list.coaches.get(&slot.coach_id()), None)?,
-                    cancel_consumes_quota: cancellation.map(|preview| preview.consumes_quota),
+                    cancel_consumes_quota: cancellation.map(|preview| preview.consumes_quota()),
                     free_cancel_until: cancellation
-                        .and_then(|preview| preview.free_cancel_until)
+                        .and_then(|preview| preview.free_cancel_until())
                         .map(date_time_to_contract)
                         .transpose()?,
                 })
