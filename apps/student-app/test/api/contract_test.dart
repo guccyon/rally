@@ -82,6 +82,10 @@ void main() {
       enumOf('NotificationKind'),
       NotificationKind.values.map((e) => e.wire).toList(),
     ),
+    'NotificationDestinationKind': (
+      enumOf('NotificationDestinationKind'),
+      NotificationDestinationKind.values.map((e) => e.wire).toList(),
+    ),
     'ErrorCode': (
       enumOf('ErrorCode'),
       ErrorCode.values
@@ -166,6 +170,13 @@ void main() {
       'body',
       'created_at',
       'is_read',
+      'destination',
+    ]);
+    // NotificationDestination.tryFromJson が読む項目
+    expect(propertiesOf('NotificationDestination'), [
+      'kind',
+      'sport',
+      'coach_id',
     ]);
     expect(propertiesOf('NotificationList'), ['notifications']);
   });

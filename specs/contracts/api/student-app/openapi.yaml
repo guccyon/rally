@@ -1222,7 +1222,7 @@ paths:
         - お知らせはプッシュ通知を送るときに作る（予約の確定・動画の添削の返却・担当コーチからのメッセージ・
           本部からのお知らせ（admin-web の `sendAnnouncement`。生徒全員か、生徒のスポーツに送ったもの）・
           コーチのお休みで本部が予約をキャンセルしたこと（admin-web の `startCoachLeave`）・
-          初回レッスンのあとのフォロー（作る条件は `NotificationKind` の `first_lesson_followup_3d` の説明））。
+          初回レッスンのあとのフォロー（作る条件は `NotificationKind` の `first_lesson_followup` の説明））。
           通知の受け取り設定（`updateMyNotificationSettings`）で false の種類も、プッシュ通知を送らないだけで
           お知らせには残る
         - 同じ通知（同じ予約の確定・同じ添削の返却・同じメッセージ・同じ本部からのお知らせ・同じ生徒の同じ日数のフォロー）のお知らせは 1 件
@@ -2655,8 +2655,8 @@ components:
         first_lesson_followup:
           type: boolean
           description: |
-            初回レッスンのあとのフォローのお知らせ（`NotificationKind` の `first_lesson_followup_3d`・`first_lesson_followup_7d`。
-            2 つをこの 1 項目でまとめて切り替える）の通知を受け取るか。既定は true。
+            初回レッスンのあとのフォローのお知らせ（`NotificationKind` の `first_lesson_followup`。3 日後・7 日後の 2 通を
+            この 1 項目でまとめて切り替える）の通知を受け取るか。既定は true。
             この項目を返さないサーバーの版もあるので、クライアントは欠けていれば true として扱う
 
     UpdateNotificationSettingsRequest:
@@ -2688,10 +2688,9 @@ components:
         お知らせ・プッシュ通知の種類（`NotificationSettings` の項目名と同じ綴り）。値は追加しうる（クライアントは未知の値を
         汎用のお知らせとして扱う）。`booking_confirmed` は予約の確定の知らせ。`booking_cancelled_by_headquarters` は
         コーチのお休みで本部が予約をキャンセルしたことの知らせ（本文「コーチのお休みで予約をキャンセルしました」から始まる）。
-        フォローのお知らせの 2 種類だけは項目名と綴りが違い、どちらも `NotificationSettings` の `first_lesson_followup` に従う。
 
-        - `first_lesson_followup_3d` / `first_lesson_followup_7d`: 初回レッスンのあとのフォローのお知らせ。
-          完了したレッスン（glossary の lesson_completion）のうち `is_first_lesson: true` のものの記録の時刻から
+        - `first_lesson_followup`: 初回レッスンのあとのフォローのお知らせ（3 日後の分と 7 日後の分を同じ種類で送り、
+          本文と開く先で分ける）。完了したレッスン（glossary の lesson_completion）のうち `is_first_lesson: true` のものの記録の時刻から
           3 日（72 時間）後・7 日（168 時間）後の時点で、その生徒に次の予約がなければ、それぞれ 1 件だけ作る
           - 初回かどうかは完了の記録の `is_first_lesson` だけで決め、数え直さない（ADR 0006）
           - 「次の予約」は、その時点でキャンセルされていない（確定待ちか確定済みの）その生徒の予約のうち、初回レッスンの
@@ -2708,7 +2707,7 @@ components:
             7 日後は「初回レッスンから 1 週間です。{コーチの表示名}コーチと続きのレッスンを予約しませんか」
             （開く先がスロット検索なら「初回レッスンから 1 週間です。続きのレッスンを予約しませんか」）
       enum: [booking_confirmed, booking_cancelled_by_headquarters, video_review_returned, message_received, announcement,
-             first_lesson_followup_3d, first_lesson_followup_7d]
+             first_lesson_followup]
 
     NotificationDestinationKind:
       type: string
@@ -2761,7 +2760,7 @@ components:
         destination:
           $ref: "#/components/schemas/NotificationDestination"
           description: |
-            開いたときに進む先。今はフォローのお知らせ（`first_lesson_followup_3d`・`first_lesson_followup_7d`）だけが持ち、
+            開いたときに進む先。今はフォローのお知らせ（`first_lesson_followup`）だけが持ち、
             ほかの種類のお知らせには載せない（任意の項目。載っていなければ開く先はない）
 
     NotificationList:

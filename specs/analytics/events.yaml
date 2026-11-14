@@ -117,9 +117,9 @@ events:
     actor: student
     required: [student_id, coach_id, thread_id, message_id, sender_role, occurred_at]
     kpi: null
-  # 生徒が初回レッスンのあとのフォローのお知らせ（student-app の契約の NotificationKind の first_lesson_followup_3d / first_lesson_followup_7d）を
+  # 生徒が初回レッスンのあとのフォローのお知らせ（student-app の契約の NotificationKind の first_lesson_followup）を
   # 開いて、開く先（Notification.destination）に進んだ。お知らせ 1 件につき最初に開いたときだけ発火する（開き直しは数えない）
-  # kind は first_lesson_followup_3d | first_lesson_followup_7d、destination は slot_search | coach_profile（契約の NotificationDestinationKind と同じ）
+  # days_after は完了の記録から何日後の分か（3 | 7。契約の NotificationKind の first_lesson_followup の説明の日数）、destination は slot_search | coach_profile（契約の NotificationDestinationKind と同じ）
   # lesson_id はフォローの起点の初回レッスンの完了記録（lesson.completed の lesson_id で is_first_lesson が true のもの）。
   # その後の予約とは student_id で結び、occurred_at より後の booking.created（is_trial が false）を「開いた → 予約した」とする。
   # kpi は null（north star の first_lesson_retention_1m の式はこのイベントを読まない。式は変えない）
@@ -127,6 +127,6 @@ events:
     ja: "フォローのお知らせを開いた"
     context: notification
     actor: student
-    required: [student_id, notification_id, lesson_id, kind, destination, occurred_at]
+    required: [student_id, notification_id, lesson_id, days_after, destination, occurred_at]
     kpi: null
     planned_by: "guccyon/rally#1464"
