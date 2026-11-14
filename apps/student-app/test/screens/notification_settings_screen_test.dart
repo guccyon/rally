@@ -25,7 +25,6 @@ void main() {
     '動画の添削が返ってきたとき',
     '担当コーチからメッセージが届いたとき',
     '本部からのお知らせが届いたとき',
-    'レッスンの前日と開始 1 時間前',
   ];
 
   Future<void> openSettings(WidgetTester tester) async {
@@ -64,6 +63,8 @@ void main() {
         ))
           (tile.title! as Text).data,
       ], labels);
+      // レッスンのリマインドのスイッチは backend が設定を保存するまで出さない（#1477 で出す）
+      expect(find.text('レッスンの前日と開始 1 時間前'), findsNothing);
       expect(switchOf(tester, '予約が確定したとき'), isTrue);
       expect(switchOf(tester, '動画の添削が返ってきたとき'), isTrue);
       expect(switchOf(tester, '担当コーチからメッセージが届いたとき'), isFalse);
