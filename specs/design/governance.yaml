@@ -2,7 +2,7 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.8.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.9.0     # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
@@ -37,17 +37,17 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
     detect: elevation が 0 でない・box-shadow
   - id: font-family
     detect: Noto Sans CJK JP 以外の font-family と、Web フォントの読み込み（@import url・fonts.googleapis・next/font/google・外の URL の @font-face）
-    allow: Barlow Condensed（tokens.yaml の typography.families.numeric。アプリに同梱したファイルを同じオリジンか pubspec の fonts で読むときだけ。0.5.0 で足した）
+    allow: Barlow Condensed（tokens.yaml の typography.families.numeric。アプリに同梱したファイルを同じオリジンか pubspec の fonts で読むときだけ）
   - id: deprecated-token
     detect: scale.blue の値（#3A54B0 など）と 0.4.0 までの灰の値（#F1F3F8・#DDE1EA・#4A5163・#7D8599・#10131A）
   - id: button-shape
-    detect: 角丸が md でないボタン（rounded-full・StadiumBorder）と、線だけの副のボタン（OutlinedButton）
+    detect: 角丸が md でないボタン（rounded-full・StadiumBorder）と、線だけの副のボタン（OutlinedButton）。chip（role=radio・ChoiceChip）は除く（0.9.0）
   - id: status-tag-shape
     detect: 状態のタグの status の container の面（bg-success-container など。data_table の急ぎの行は除く）
   - id: one-score-panel
     detect: 1 画面に score_panel が 2 つ以上
   - id: a11y-labels
-    detect: tooltip のない IconButton、aria-label のないアイコンだけのボタン、label のない入力欄
+    detect: tooltip のない IconButton、aria-label のないアイコンだけのボタン、label のない入力欄、label のない chip の group
   - id: table-no-page-scroll
     target: admin-web の screens.ts の画面
     detect: 幅 360px と 1024px で document の scrollWidth が画面の幅を超える（ページ全体が横に動く）。table が overflow-x の包みの外にある。表の th・td に段にない余白（py-1 だけ・px-3 など）
@@ -60,15 +60,15 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
     detect: input type="date" を直に書いている要素
   - id: select-only
     target: admin-web の src/（src/components/ui/Select.tsx を除く）
-    detect: select 要素を直に書いている要素（0.6.0）
+    detect: select 要素を直に書いている要素
   - id: media-no-record
     target: 入室前チェックの画面と camera_preview・level_meter の実装
-    detect: MediaRecorder・captureStream・canvas の toBlob と toDataURL、getUserMedia の stream を fetch・WebSocket・RTCPeerConnection に渡すコード（0.7.0。must なので最初からマージを止める）
+    detect: MediaRecorder・captureStream・canvas の toBlob と toDataURL、getUserMedia の stream を fetch・WebSocket・RTCPeerConnection に渡すコード（must なので最初からマージを止める）
   - id: state-color-map
-    detect: status_tag と timeline の点の色が booking_state・slot_state の対応と違う（timeline は 0.8.0 から）
+    detect: status_tag と timeline の点の色が booking_state・slot_state の対応と違う
   - id: description-list-only
     target: admin-web の src/（src/components/ui/DescriptionList.tsx を除く）
-    detect: dl 要素を直に書いている要素（0.8.0）
+    detect: dl 要素を直に書いている要素
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
 
 requests:   # 画面のタスクから来た部品の求めのうち、まだ足していないもの
@@ -85,12 +85,12 @@ changelog:
   file: specs/design/CHANGELOG.md
   format: 版・日付・変えたもの・理由・効く画面（screens.ts と capture_test.dart の画面の id）・承認（工場か人）
   entries:   # 直近の版だけ。全文は specs/design/CHANGELOG.md
-    - version: 0.8.0
-      date: "2026-11-09"
+    - version: 0.9.0
+      date: "2026-11-14"
       change: >-
-        description_list（inline・stacked）と timeline を足した。lint に description-list-only を足し、state-color-map を timeline に広げた。
-        既存の見本を 10 個絞った（字数の上限。部品の定めは同じ）
+        app_bar（top・back。送信中は戻ると入口を止める）と chip（choice・filter。1 つを選ぶ）を足し、button と select の not_for を chip に向けた。
+        lint の button-shape から chip を除き、a11y-labels に chip の group を足した。字数の上限で既存の見本を絞り、文の経緯の注を削った（部品の定めは同じ）
       reason: >-
-        #1030 の画面の設計で部品が足りなかった（ADR 0025）。admin-web の 7 か所の dl に、ラベルの幅と狭い幅の形がなかった。経緯はお知らせの取り下げなどでも要る。トークンと既存の名前・値は変えていない
-      affects: admin-web の dl のある画面（hq-booking-detail・hq-coach-overview・hq-coach-reviews*・hq-student-activity・hq-coach-leave*・hq-announcement-confirm・coach-live）と design-catalog。今変わるのは design-catalog だけ
+        #1404 の画面の設計で部品が足りなかった（ADR 0025）。今の FlowScaffold と SportSelector を写して正本にした。トークンと既存の名前・値は変えていない
+      affects: student-app の全画面のアプリバー（FlowScaffold）、登録とスロットを探す画面のスポーツ（SportSelector）、#1404 の studentLaunch・studentLogin・studentLoginCode、design-catalog。今変わるのは design-catalog だけ
       approved_by: 工場（部品・should・lint の追加。must はない）

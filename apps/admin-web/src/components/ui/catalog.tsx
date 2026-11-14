@@ -41,6 +41,14 @@ export const NOT_IN_ADMIN_WEB: {
   reason: string;
 }[] = [
   {
+    component: "app_bar",
+    reason: "components.yaml の not_for に admin-web とある（見出しと「本部の画面へ戻る」）",
+  },
+  {
+    component: "chip",
+    reason: "components.yaml の not_for に admin-web とある（select を使う）",
+  },
+  {
     component: "score_panel",
     reason: "components.yaml の not_for に admin-web とある",
   },
