@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../state/next_actions.dart';
 import '../state/student_flow.dart';
 import '../ui/ai_feedback_card.dart';
 import '../ui/flow_scaffold.dart';
@@ -11,7 +12,9 @@ import '../ui/labels.dart';
 /// AI の一次フィードバック（glossary の ai_feedback）があれば、コーチの添削とは別の枠に出す。
 /// 動画を送ったときにレッスンメニューを選んでいれば、その名前（送った時点の写し）を出す。
 /// 自分の動画の一覧かホームの「返ってきた添削」から開いたとき（[FlowStep.myVideoReview]）は、その動画の添削を読むだけの画面にする
-/// （閉じると開いた画面に戻る）。ただし一周シナリオで送ってまだ完了を記録していない動画なら、そこから完了の記録へ進める。
+/// （閉じると開いた画面に戻る）。
+/// 「完了の記録へ進む」は、どこから開いても、サーバーの次の操作（`getMyNextActions`）にその動画の完了の記録（`record_lesson_completion`）が
+/// あるときだけ出す（返却待ち・記録済み・次の操作を読めないときは出さない。アプリの段の状態では決めない。ADR 0010）。
 class VideoReviewScreen extends ConsumerWidget {
   const VideoReviewScreen({super.key});
 
@@ -23,8 +26,12 @@ class VideoReviewScreen extends ConsumerWidget {
     final review = fromMyVideos ? state.myVideoReview : state.review;
     final returned = review?.status == VideoReviewStatus.returned;
     final aiComment = review?.aiFeedback?.comment.trim() ?? '';
-    // 一周シナリオで送った動画なら、一覧やホームから開いても完了の記録へ進める（#1423）
-    final completesFlow = fromMyVideos && notifier.myVideoReviewCompletesFlow;
+    // 完了の記録がまだないかはサーバーの記録で決める（#1423。一覧やホームから開いても、開き直しても同じ）
+    final completes =
+        review != null &&
+        ref.watch(
+          nextActionsProvider.select((s) => s.completesVideo(review.videoId)),
+        );
     return FlowScaffold(
       title: '添削結果',
       leading: fromMyVideos
@@ -53,14 +60,14 @@ class VideoReviewScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             AiFeedbackCard(comment: aiComment),
           ],
-          if (!fromMyVideos || completesFlow) ...[
+          if (completes) ...[
             const SizedBox(height: 16),
             FilledButton(
               onPressed: state.busy
                   ? null
-                  : fromMyVideos
-                  ? notifier.goToCompletionFromMyVideoReview
-                  : notifier.goToCompletion,
+                  : () => notifier.goToCompletion(
+                      AsyncLessonCompletion(videoId: review.videoId),
+                    ),
               child: const Text('完了の記録へ進む'),
             ),
           ],

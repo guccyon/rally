@@ -74,6 +74,10 @@ void main() {
       enumOf('StampId'),
       StampId.values.map((e) => e.wire).toList(),
     ),
+    'NextActionKind': (
+      enumOf('NextActionKind'),
+      NextActionKind.values.map((e) => e.wire).toList(),
+    ),
     'NotificationKind': (
       enumOf('NotificationKind'),
       NotificationKind.values.map((e) => e.wire).toList(),
@@ -113,6 +117,7 @@ void main() {
         'getVideoReview',
         'recordLessonCompletion',
         'listMyLessonCompletions',
+        'getMyNextActions',
         'submitLessonReview',
         'listCoachesForStudent',
         'getCoachProfile',

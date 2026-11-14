@@ -95,6 +95,12 @@ String formatClockRange(DateTime start, DateTime end) {
   );
 }
 
+/// 端末のタイムゾーンで日付と時刻。例: `10/28（水）12:10`（ホームの「次にやること」の送った・返った日時）
+String formatDayClock(DateTime value) {
+  final local = value.toLocal();
+  return '${_dayLabel(local)}${_clockLabel(local)}';
+}
+
 /// 端末のタイムゾーンで時刻だけ。例: `12:00`（入室の帯の開始時刻）
 String formatClock(DateTime value) => _clockLabel(value.toLocal());
 

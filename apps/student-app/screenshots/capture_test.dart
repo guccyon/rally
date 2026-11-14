@@ -142,6 +142,24 @@ final screens = <Screen>[
     home: const DesignCatalogScreen(),
   ),
   Screen('home', 'ホーム', _register),
+  // ホームの「次にやること」（1 件目をカード、2 件目からを行。サーバーが返した順のまま）
+  Screen(
+    'home-next-actions',
+    'ホーム: 次にやること',
+    _register,
+    api: () => _api()
+      ..nextActions.addAll([
+        Fixtures.nextConfirmBooking,
+        Fixtures.nextRecordAsyncCompletion,
+        Fixtures.nextVideoReviewInProgress,
+      ]),
+  ),
+  Screen(
+    'home-next-actions-failed',
+    'ホーム: 次にやることを読めない',
+    _register,
+    api: () => _api(failures: {'getMyNextActions': Fixtures.unreachable}),
+  ),
   Screen('coach-search', 'コーチを探す', (t) async {
     await _register(t);
     await tapText(t, 'コーチを探す');

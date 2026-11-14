@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/models.dart';
 import '../state/student_flow.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
-/// レッスンの完了記録（`recordLessonCompletion`）
+/// レッスンの完了記録（`recordLessonCompletion`）。記録する対象（通話セッションか動画の ID）は開いたときに渡された
+/// [StudentFlowState.completing]（通話の終了・添削結果・ホームの「次にやること」から）
 class LessonCompletionScreen extends ConsumerWidget {
   const LessonCompletionScreen({super.key});
 
@@ -18,7 +20,11 @@ class LessonCompletionScreen extends ConsumerWidget {
       title: 'レッスンの完了',
       children: [
         if (lesson == null) ...[
-          Text(state.session != null ? '通話が終わりました。' : '添削が返されました。'),
+          Text(
+            state.completing is LiveLessonCompletion
+                ? '通話が終わりました。'
+                : '添削が返されました。',
+          ),
           const Text('レッスンを受け終えたら、完了を記録してください。'),
           const SizedBox(height: 16),
           FilledButton(
