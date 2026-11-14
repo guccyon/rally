@@ -62,7 +62,11 @@ void main() {
 
   testWidgets('登録したあと開き直すと、同じ生徒のままホームが開き、ホームの欄はサーバーから読み直す', (tester) async {
     final store = MemorySessionStore();
-    await openApp(tester, FakeStudentApi(myBookings: const []), store);
+    await openApp(
+      tester,
+      FakeStudentApi(myBookings: const [], lessonCompletions: const []),
+      store,
+    );
     await register(tester);
 
     final saved = store.read()!;
@@ -120,7 +124,11 @@ void main() {
 
   testWidgets('段の状態は残さない: 予約の確定待ちの画面で開き直しても、ホームから始まる', (tester) async {
     final store = MemorySessionStore();
-    await openApp(tester, FakeStudentApi(myBookings: const []), store);
+    await openApp(
+      tester,
+      FakeStudentApi(myBookings: const [], lessonCompletions: const []),
+      store,
+    );
     await register(tester);
     await tapText(tester, 'スロットを探して予約する');
     await tapText(tester, '体験予約する');
