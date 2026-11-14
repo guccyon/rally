@@ -524,6 +524,29 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームの欄を読み直す
   Future<void> refreshHome() => run(_loadHome);
 
+  /// アプリやタブが前面に戻ったときに、月額契約の欄を受講権（`getMyEntitlement`）で読み直す（別のタブや端末で契約したかもしれない。ADR 0010）。
+  /// busy にせず、失敗の文言も出さない。ホームでは、読めなければ今月のビデオ通話の欄にだけ旨を出し（[StudentFlowState.homeFailures]）、
+  /// 読めたら下ろす。ほかの段では [SubscriptionNotifier.refreshEntitlement]。登録の前は何もしない
+  Future<void> refreshEntitlementOnResume() async {
+    if (state.student == null) return;
+    final subscription = ref.read(subscriptionProvider.notifier);
+    if (state.step != FlowStep.home) return subscription.refreshEntitlement();
+    var failed = false;
+    try {
+      await subscription.loadEntitlement();
+    } on StudentApiException {
+      failed = true;
+    }
+    if (!ref.mounted) return;
+    state = state.copyWith(
+      homeFailures: Set.unmodifiable({
+        for (final section in state.homeFailures)
+          if (section != HomeSection.entitlement) section,
+        if (failed) HomeSection.entitlement,
+      }),
+    );
+  }
+
   /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画・
   /// お気に入りのコーチ（[FavoriteCoachesNotifier.loadForHome]））と、
   /// アプリバーのお知らせのしるし（[NotificationsNotifier.loadForHome]。読めなければしるしを出さないだけ）と、
@@ -1052,7 +1075,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(notificationSettings: settings);
   }
 
-  /// 自分のプロフィールを開く（`getMyStudentProfile` と、月額契約の欄の `getMyEntitlement`（[SubscriptionNotifier.loadForProfile]）を並べて読む）。
+  /// 自分のプロフィールを開く（`getMyStudentProfile` と、月額契約の欄の `getMyEntitlement`（[SubscriptionNotifier.refreshEntitlement]）を並べて読む）。
   /// 閉じたら今の段に戻る。読めなくても登録で受け取った表示名はそのまま出す（受講権を読めなくても失敗の文言は出さず、月額契約の欄にだけ旨を出す）
   Future<void> openProfile() {
     if (state.step != FlowStep.profile) {
@@ -1064,7 +1087,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     return run(
       () => Future.wait([
         _loadProfile(),
-        ref.read(subscriptionProvider.notifier).loadForProfile(),
+        ref.read(subscriptionProvider.notifier).refreshEntitlement(),
       ]),
     );
   }

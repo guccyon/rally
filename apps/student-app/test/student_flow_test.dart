@@ -105,6 +105,7 @@ void main() {
       'recordLessonCompletion',
       'submitLessonReview',
       'listSubscriptionPlans',
+      'getMyEntitlement',
       'startSubscription',
     ]);
   });
@@ -156,10 +157,50 @@ void main() {
         'recordLessonCompletion',
         'submitLessonReview',
         'listSubscriptionPlans',
+        'getMyEntitlement',
         'startSubscription',
       ]);
     },
   );
+
+  testWidgets('別のタブで月額契約したあと、このタブが前面に戻るとホームの契約の欄を読み直し、「月額契約へ進む」を出さない（#1606）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(myBookings: const []);
+    await pumpApp(tester, api);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'メールアドレス'),
+      'yamada@example.com',
+    );
+    await tester.enterText(find.widgetWithText(TextFormField, '表示名'), '山田');
+    await tapText(tester, 'テニス');
+    await tapText(tester, '登録する');
+    expect(
+      find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+      findsOneWidget,
+    );
+
+    // 別のタブでスタンダードを始め、このタブは裏に回っていた
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    await tester.pump();
+    api.entitlement = Fixtures.subscriptionStartedWith(
+      SubscriptionPlan.standard,
+    ).entitlement;
+    api.calls.clear();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(api.calls, ['getMyEntitlement']);
+    expect(
+      find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+      findsNothing,
+    );
+    expect(find.text('月額契約へ進む'), findsNothing);
+    expect(find.text('月 2 回のうち残り 2 回'), findsOneWidget);
+    expect(find.text('プラン: スタンダード'), findsOneWidget);
+  });
 
   /// 自分の予約を開き、一覧の先頭（いま体験予約した予約）をキャンセルして閉じる（キャンセルできるよう、開始より前の時刻で描いておく）
   Future<void> cancelTrialInMyBookings(WidgetTester tester) async {

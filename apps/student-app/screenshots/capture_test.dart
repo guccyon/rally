@@ -278,7 +278,13 @@ final screens = <Screen>[
   }),
   Screen('lesson-completion', 'レッスンの完了', _toCompletion),
   Screen('lesson-review', 'レッスンの評価', _toReview),
+  // 契約の画面は開くと受講権を読み直すので、プランを選ぶ画面は契約の前の生徒で撮る
   Screen('subscription', '月額契約', (t) async {
+    await _toReview(t);
+    await tapText(t, '月額契約へ進む');
+  }, api: () => _api(subscribed: false)),
+  // 別のタブなどで契約済みの生徒が開いたとき（今のプランと残りの回数。プランの欄は出さない。#1606）
+  Screen('subscription-active', '月額契約: 契約済みで開いた', (t) async {
     await _toReview(t);
     await tapText(t, '月額契約へ進む');
   }),
@@ -290,12 +296,16 @@ final screens = <Screen>[
       await _register(t);
       await tapText(t, 'コーチを探す');
     }, width: width),
-    Screen('subscription-w${width.round()}', '月額契約（幅 ${width.round()}）', (
-      t,
-    ) async {
-      await _toReview(t);
-      await tapText(t, '月額契約へ進む');
-    }, width: width),
+    Screen(
+      'subscription-w${width.round()}',
+      '月額契約（幅 ${width.round()}）',
+      (t) async {
+        await _toReview(t);
+        await tapText(t, '月額契約へ進む');
+      },
+      width: width,
+      api: () => _api(subscribed: false),
+    ),
   ],
   Screen('message-threads', 'チャット: スレッドの一覧', (t) async {
     await _register(t);
@@ -321,6 +331,7 @@ final screens = <Screen>[
       await tapText(t, '月額契約を始める');
     },
     api: () => _api(
+      subscribed: false,
       failures: const {
         'sendMessage': StudentApiException(
           statusCode: 403,
@@ -355,13 +366,15 @@ final screens = <Screen>[
 ];
 
 /// キャプチャ用の API のモック。既定の見本に、受講権とお知らせとお気に入りのコーチを足して画面を埋める。
+/// [subscribed] が false なら受講権を足さない（月額契約の前の生徒）
 FakeStudentApi _api({
   Map<String, StudentApiException> failures = const {},
   List<MyBooking>? myBookings,
+  bool subscribed = true,
 }) => FakeStudentApi(
   failures: failures,
   myBookings: myBookings,
-  entitlement: Fixtures.subscriptionStarted.entitlement,
+  entitlement: subscribed ? Fixtures.subscriptionStarted.entitlement : null,
   favoriteCoaches: [Fixtures.favoriteCoach()],
   notifications: [
     ApiNotification(

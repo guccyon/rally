@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -36,7 +37,7 @@ void main() {
       chat: fromChat ? ChatState(thread: Fixtures.thread) : null,
       subscription: subscription,
     );
-    // 開いた直後に読むプランの一覧を待つ
+    // 開いた直後に読む受講権とプランの一覧を待つ
     await tester.pumpAndSettle();
     return api;
   }
@@ -62,7 +63,11 @@ void main() {
 
     await tapText(tester, '月額契約を始める');
 
-    expect(api.calls, ['listSubscriptionPlans', 'startSubscription']);
+    expect(api.calls, [
+      'listSubscriptionPlans',
+      'getMyEntitlement',
+      'startSubscription',
+    ]);
     final request = api.requests.single as StartSubscriptionRequest;
     expect(request.toJson(), {
       'sport': 'tennis',
@@ -92,34 +97,100 @@ void main() {
     expect(find.text('今月のビデオ通話: 月 4 回のうち残り 4 回'), findsOneWidget);
   });
 
-  testWidgets('別のタブで契約済みなら、押したプランではなくサーバーの契約のプランと残りの回数を出す', (
-    tester,
-  ) async {
-    final api = FakeStudentApi(
-      failures: const {
-        'startSubscription': StudentApiException(
-          statusCode: 409,
-          error: ApiError(
-            code: ErrorCode.subscriptionAlreadyActive,
-            message: 'already',
-          ),
-        ),
-      },
-    )..entitlement = Fixtures.subscriptionStartedWith(
-        SubscriptionPlan.standard,
-      ).entitlement;
-    await pumpSubscription(tester, api: api);
+  testWidgets(
+    '別のタブで契約済みのまま開くと、受講権を読み直して今のプランと残りの回数を出し、プランの欄と「月額契約を始める」を出さない（#1606）',
+    (tester) async {
+      // ホームを読んだときは契約の前だった（そのあと別のタブでスタンダードを始めた）
+      final api = FakeStudentApi()
+        ..entitlement = Fixtures.subscriptionStartedWith(
+          SubscriptionPlan.standard,
+        ).entitlement;
+      await pumpSubscription(
+        tester,
+        api: api,
+        subscription: SubscriptionState(noEntitlement: true),
+      );
 
-    await tapText(tester, 'プラス　ビデオ通話 月 4 回');
-    await tapText(tester, '月額契約を始める');
+      expect(api.calls, contains('getMyEntitlement'));
+      expect(find.text('今の月額契約'), findsOneWidget);
+      expect(find.text('月額契約を開始しました'), findsNothing);
+      expect(find.text('プラン: スタンダード'), findsOneWidget);
+      expect(find.text('今月のビデオ通話: 月 2 回のうち残り 2 回'), findsOneWidget);
+      expect(find.text('月額契約を始める'), findsNothing);
+      expect(find.byType(RadioGroup<SubscriptionPlan>), findsNothing);
+    },
+  );
 
-    expect(api.calls, contains('getMyEntitlement'));
-    expect(find.text('プラン: スタンダード'), findsOneWidget);
-    expect(find.text('プラン: プラス'), findsNothing);
-    expect(find.text('今月のビデオ通話: 月 2 回のうち残り 2 回'), findsOneWidget);
+  testWidgets('開いて受講権を読み直している間は、プランの欄と「月額契約を始める」を出さない（#1606）', (tester) async {
+    final gate = Completer<void>();
+    final api = FakeStudentApi()..entitlementGate = gate;
+    await pumpSubscription(
+      tester,
+      api: api,
+      subscription: SubscriptionState(noEntitlement: true),
+    );
+
+    expect(find.text('月額契約を読み込んでいます…'), findsOneWidget);
     expect(find.text('月額契約を始める'), findsNothing);
     expect(find.byType(RadioGroup<SubscriptionPlan>), findsNothing);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('月額契約を読み込んでいます…'), findsNothing);
+    expect(find.text('月額契約を始める'), findsOneWidget);
+    expect(find.byType(RadioGroup<SubscriptionPlan>), findsOneWidget);
   });
+
+  testWidgets('受講権を読み直せなくても、プランを選んで始められる', (tester) async {
+    final api = await pumpSubscription(
+      tester,
+      api: FakeStudentApi(failures: {'getMyEntitlement': Fixtures.unreachable}),
+    );
+
+    expect(find.text('月額契約を読み込んでいます…'), findsNothing);
+    await tapText(tester, '月額契約を始める');
+
+    expect(api.calls.last, 'startSubscription');
+    expect(find.text('月額契約を開始しました'), findsOneWidget);
+  });
+
+  testWidgets(
+    '始めるときに「すでに始まっています」を受けたら、押したプランではなくサーバーの契約のプランと残りの回数を出す（#1603・#1606）',
+    (tester) async {
+      final api = FakeStudentApi(
+        failures: const {
+          'startSubscription': StudentApiException(
+            statusCode: 409,
+            error: ApiError(
+              code: ErrorCode.subscriptionAlreadyActive,
+              message: 'already',
+            ),
+          ),
+        },
+      );
+      await pumpSubscription(tester, api: api);
+      // 開いて読み直したあとに、別のタブでスタンダードを始めた
+      api.entitlement = Fixtures.subscriptionStartedWith(
+        SubscriptionPlan.standard,
+      ).entitlement;
+
+      await tapText(tester, 'プラス　ビデオ通話 月 4 回');
+      await tapText(tester, '月額契約を始める');
+
+      expect(api.calls.sublist(api.calls.length - 2), [
+        'startSubscription',
+        'getMyEntitlement',
+      ]);
+      expect(find.text('月額契約はすでに始まっています。'), findsOneWidget);
+      expect(find.text('今の月額契約'), findsOneWidget);
+      expect(find.text('プラン: スタンダード'), findsOneWidget);
+      expect(find.text('プラン: プラス'), findsNothing);
+      expect(find.text('今月のビデオ通話: 月 2 回のうち残り 2 回'), findsOneWidget);
+      expect(find.text('月額契約を始める'), findsNothing);
+      expect(find.byType(RadioGroup<SubscriptionPlan>), findsNothing);
+    },
+  );
 
   testWidgets('プランに添える回数は、アプリに持たず listSubscriptionPlans の応答の値を出す', (
     tester,
@@ -185,18 +256,30 @@ void main() {
               baseUrl: Uri.parse('http://api.test'),
               accessToken: () => 'mock.student.x',
               client: MockClient(
-                (request) async => http.Response.bytes(
-                  utf8.encode(
-                    jsonEncode({
-                      'plans': [
-                        {'plan': 'standard', 'live_lessons_per_month': 0},
-                        {'plan': 'plus', 'live_lessons_per_month': 4},
-                      ],
-                    }),
-                  ),
-                  200,
-                  headers: {'content-type': 'application/json'},
-                ),
+                (request) async => request.url.path == '/entitlements/me'
+                    // 受講権はまだない（月額契約の前）
+                    ? http.Response.bytes(
+                        utf8.encode(
+                          jsonEncode({
+                            'code': 'not_found',
+                            'message': 'not found',
+                          }),
+                        ),
+                        404,
+                        headers: {'content-type': 'application/json'},
+                      )
+                    : http.Response.bytes(
+                        utf8.encode(
+                          jsonEncode({
+                            'plans': [
+                              {'plan': 'standard', 'live_lessons_per_month': 0},
+                              {'plan': 'plus', 'live_lessons_per_month': 4},
+                            ],
+                          }),
+                        ),
+                        200,
+                        headers: {'content-type': 'application/json'},
+                      ),
               ),
             ),
           ),

@@ -42,7 +42,8 @@ class SubscriptionState {
   /// [StudentFlowState.homeFailures] のまま）
   final bool entitlementFailed;
 
-  /// 月額契約が始まっているか（この端末で始めた契約か、読んだ受講権が月額）。契約の画面はこれでプランの欄を消す
+  /// 月額契約が始まっているか（この端末で始めた契約があるか、読んだ受講権が月額）。別のタブや端末で始めた契約も
+  /// 受講権を読み直せばここに出る（ADR 0010）。契約の画面はこれでプランの欄と「月額契約を始める」を消す
   bool get hasActiveSubscription =>
       subscription != null ||
       (entitlement?.contractType == ContractType.subscription &&
@@ -101,9 +102,10 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
     }
   }
 
-  /// プロフィールを開いたときに受講権を読む（[loadEntitlement]）。読めなければ [SubscriptionState.entitlementFailed] を立てるだけで投げない
-  /// （表示名の欄はそのまま使え、失敗の文言も出さない）
-  Future<void> loadForProfile() async {
+  /// 受講権を読み直す（[loadEntitlement]）。プロフィールと契約の画面を開いたとき、アプリやタブが前面に戻ったとき
+  /// （[StudentFlowNotifier.refreshEntitlementOnResume]）に呼ぶ。読めなければ [SubscriptionState.entitlementFailed] を
+  /// 立てるだけで投げない（ほかの欄はそのまま使え、失敗の文言も出さない）
+  Future<void> refreshEntitlement() async {
     state = state.copyWith(entitlementFailed: false);
     try {
       await loadEntitlement();
@@ -130,6 +132,8 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
 
   /// `startSubscription`。[plan] は選んだ契約プラン（既定は standard）。スポーツは生徒のもの（[StudentFlowState.student]）。
   /// 決済は Gen1 ではモックなので、決済手段のトークンも固定のモック。
+  /// 409 `subscription_already_active`（別のタブや端末で契約済み）なら、押したプランではなくサーバーの受講権を読み直して
+  /// 今の契約を表示の元にする（ADR 0010）。失敗の文言（「すでに始まっています」）はそのまま出す
   Future<void> startSubscription({
     SubscriptionPlan plan = SubscriptionPlan.standard,
   }) => ref.read(studentFlowProvider.notifier).run(() async {
@@ -143,13 +147,11 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
         ),
       );
     } on StudentApiException catch (e) {
-      // 別のタブなどで契約済みなら、押したプランではなくサーバーの契約を読み直して表示の元にする（ADR 0010）。
-      // 読み直せなければ、そのまま失敗の文言だけを出す
       if (e.error?.code == ErrorCode.subscriptionAlreadyActive) {
         try {
           await loadEntitlement();
         } on StudentApiException {
-          // 元の失敗を出す
+          // 読み直せなくても、元の失敗の文言を出す
         }
       }
       rethrow;
