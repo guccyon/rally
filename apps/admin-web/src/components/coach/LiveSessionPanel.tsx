@@ -77,7 +77,7 @@ const onOff = (on: boolean) => (on ? "入" : "切");
  * 通話への参加。開いたときに自分の予約の一覧（listMyCoachBookings）を、生徒が予約したときのレッスンメニューとともに出す。
  * 確定した予約の行は開始 5 分前から「入室前チェック」（PrejoinCheck）を開け、開始時刻から入室（セッションの開始）できる。
  * 開始 5 分前より早い行は開ける時刻を出し、開いたまま時刻をまたいだら読み込み直さずにボタンに切り替える。
- * 入室したら同じセッションを終了できる。相手の映像はモックなので出さない。
+ * 入室したら同じセッションを終了できる。通話中の表示と「通話を終了」は長い一覧の下に埋もれないよう、一覧より上に出す。相手の映像はモックなので出さない。
  * 時刻の判断は端末の時計ではなくサーバーに合わせた時計で行う。一覧を読んだ応答の Date ヘッダーでずれを決め、入室で 409 slot_not_started が
  * 返ったらその応答の Date で合わせ直す（入室は繰り返し送らない）。Date が読めなければ端末の時計のまま。
  * media はブラウザーのカメラ・マイク・スピーカー（テストでは作り物に差し替える）。
@@ -191,38 +191,7 @@ export function LiveSessionPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm">
-        あなたの枠に入った予約です。確定した予約は、開始 {PREJOIN_CHECK_LEAD_MINUTES} 分前から「入室前チェック」でカメラとマイクを確かめ、開始時刻から入室できます。
-      </p>
-      {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
-      {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
-      {list.kind === "loaded" && list.upcoming.length === 0 && list.past.length === 0 && (
-        <p className="text-sm">まだ予約はありません。</p>
-      )}
-      {list.kind === "loaded" && (list.upcoming.length > 0 || list.past.length > 0) && (
-        <>
-          <div className="space-y-2">
-            <h3 className="font-semibold">これからの予約</h3>
-            {list.upcoming.length === 0 ? (
-              <p className="text-sm">これからの予約はありません。</p>
-            ) : (
-              <BookingTable
-                label="これからの予約"
-                bookings={list.upcoming}
-                renderAction={renderAction}
-              />
-            )}
-          </div>
-          {list.past.length > 0 && (
-            <details>
-              <summary className="cursor-pointer font-semibold">
-                終わった予約（{list.past.length} 件）
-              </summary>
-              <BookingTable label="終わった予約" bookings={list.past} />
-            </details>
-          )}
-        </>
-      )}
+      <ResultMessage result={result} />
       {session && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
           <dt>状態</dt>
@@ -261,7 +230,38 @@ export function LiveSessionPanel({
           </Button>
         </>
       )}
-      <ResultMessage result={result} />
+      <p className="text-sm">
+        あなたの枠に入った予約です。確定した予約は、開始 {PREJOIN_CHECK_LEAD_MINUTES} 分前から「入室前チェック」でカメラとマイクを確かめ、開始時刻から入室できます。
+      </p>
+      {list.kind === "loading" && <p className="text-sm text-text-muted">読み込み中…</p>}
+      {list.kind === "failed" && <ResultMessage result={{ ok: false, message: list.message }} />}
+      {list.kind === "loaded" && list.upcoming.length === 0 && list.past.length === 0 && (
+        <p className="text-sm">まだ予約はありません。</p>
+      )}
+      {list.kind === "loaded" && (list.upcoming.length > 0 || list.past.length > 0) && (
+        <>
+          <div className="space-y-2">
+            <h3 className="font-semibold">これからの予約</h3>
+            {list.upcoming.length === 0 ? (
+              <p className="text-sm">これからの予約はありません。</p>
+            ) : (
+              <BookingTable
+                label="これからの予約"
+                bookings={list.upcoming}
+                renderAction={renderAction}
+              />
+            )}
+          </div>
+          {list.past.length > 0 && (
+            <details>
+              <summary className="cursor-pointer font-semibold">
+                終わった予約（{list.past.length} 件）
+              </summary>
+              <BookingTable label="終わった予約" bookings={list.past} />
+            </details>
+          )}
+        </>
+      )}
     </div>
   );
 }
