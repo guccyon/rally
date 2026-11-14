@@ -48,12 +48,10 @@ touches:
     - student-app.getMyNextActions
   events: [subscription.started]
 origin:
-  issues: ["guccyon/rally#1431", "guccyon/rally#1436", "guccyon/rally#1444", "guccyon/rally#1565"]
-  note: "2026-11-04 のデモの準備で、月額契約がバックエンドのメモリにしかないことが見つかった（factory-engine の ADR 0028 の文脈）。#1436 で、月額契約への入口をホームの「次にやること」・今月のビデオ通話の欄・プロフィールに足した（#1431。画面は specs/ux/issue-1436.yaml）"
+  issues: ["guccyon/rally#1431", "guccyon/rally#1436", "guccyon/rally#1444", "guccyon/rally#1565", "guccyon/rally#1597"]
+  note: "2026-11-04 のデモの準備で、月額契約がバックエンドのメモリにしかないことが見つかった（factory-engine の ADR 0028 の文脈）。#1436 で、月額契約への入口をホームの「次にやること」・今月のビデオ通話の欄・プロフィールに足した（#1431。画面は specs/ux/issue-1436.yaml）。#1597 で、iOS / Android でも登録の結果を端末（アプリのファイル）に残し、止めて起動し直しても同じ生徒のホームから始まるようにした（Web 版は #1528 からブラウザーに残している）"
   retro: true
 known_gaps:
   - step: 4
     note: "プロフィールの月額契約の欄の開始の日は、その端末で契約を始めたときだけ出る（getMyEntitlement に開始の日がなく、アプリを開き直したあとはプランだけを出し、行は押せない）（#1440）"
-  - step: 5
-    note: "生徒アプリはログインの状態を端末に残さず、ログインの画面もない（登録だけ）。アプリを開き直すと同じ生徒として戻れない"
 status: active
