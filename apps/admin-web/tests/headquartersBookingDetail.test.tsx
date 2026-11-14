@@ -185,6 +185,21 @@ describe("本部の予約の詳細", () => {
     expect(listOf(card, "キャンセルの経緯")).toBeUndefined();
   });
 
+  test("開始まで（hours_before_start）が載っていないキャンセルは、枠の時刻とキャンセルした日時から出し、説明文と食い違わない", async () => {
+    const rest: Schemas["BookingStatusChange"] = { ...LEGACY_CANCEL };
+    delete rest.hours_before_start;
+    render(
+      <BookingDetail
+        api={{ getBooking: detailOf({ ...DETAIL, status_changes: [CONFIRMED, rest] }) }}
+        bookingId={BOOKING_ID}
+      />,
+    );
+
+    const card = await screen.findByRole("article", { name: "10/22（木）18:30 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")?.[1]).toEqual(["開始まで", expect.stringMatching(/^開始の \d+ 時間/)]);
+    expect(within(card).getByRole("status")).toHaveTextContent("開始の何時間前かは、枠の時刻とキャンセルした日時から出しています");
+  });
+
   test("生徒のキャンセル（枠を使った）は、キャンセルした人・開始まで・ビデオ通話の枠を文で出し、理由の行を出さない", async () => {
     render(<BookingDetail api={{ getBooking: detailOf(DETAIL) }} bookingId={BOOKING_ID} />);
 
@@ -292,14 +307,14 @@ describe("本部の予約の詳細", () => {
     expect(within(cardNamed("10/20（火）10:00 確定済み")).queryByRole("status")).not.toBeInTheDocument();
   });
 
-  test("経緯の欄が載っていないキャンセル（欄ごと省いた）も、記録のない古いキャンセルと同じに出す", async () => {
+  test("経緯の欄が載っていないキャンセル（欄ごと省いた）も、記録のない古いキャンセルと同じに出す（開始までは枠の時刻とキャンセルした日時から出す）", async () => {
     const change: Schemas["BookingStatusChange"] = { status: "cancelled", changed_at: "2026-10-22T09:30:00Z" };
     render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);
 
     const card = await screen.findByRole("article", { name: "10/22（木）18:30 キャンセル済み" });
     expect(listOf(card, "キャンセルの経緯")).toEqual([
       ["キャンセルした人", "記録がありません"],
-      ["開始まで", "記録がありません"],
+      ["開始まで", "開始の 111 時間前（4 日 15 時間前）"],
       ["ビデオ通話の枠", "記録がありません"],
       ["理由", "記録がありません"],
     ]);
