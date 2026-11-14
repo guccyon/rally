@@ -19,6 +19,7 @@ import 'video_submit_screen.dart';
 /// 動画の添削の依頼（`submitVideo`）もここからでき、添削の依頼と返却は本文のメッセージと見分けられるカードで時間の順に並べる。
 /// 入力欄のそばの「スタンプ」から 8 種類のスタンプを選んで送れ、スタンプは本文より大きな絵文字で吹き出しなしに出す。
 /// 知らない種類のメッセージ（と、このアプリの版が知らないスタンプ）は隠さず、`body`（短い説明）を本文のメッセージとして出す。
+/// 送る前の本文はスレッドごとに [ChatState.drafts] に残し、画面を離れて（月額契約の画面など）同じスレッドに戻ったら欄に戻す。
 class MessagesScreen extends ConsumerStatefulWidget {
   const MessagesScreen({super.key});
 
@@ -32,7 +33,12 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
   @override
   void initState() {
     super.initState();
-    _body.addListener(() => setState(() {}));
+    final chat = ref.read(chatProvider);
+    _body.text = chat.drafts[chat.thread?.threadId] ?? '';
+    _body.addListener(() {
+      setState(() {});
+      ref.read(chatProvider.notifier).saveDraft(_body.text);
+    });
     // ホームの「添削を依頼する」から開いたら、すぐに添削の依頼（動画の選択）を出す
     if (ref.read(chatProvider).promptVideoReviewRequest) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -180,7 +186,9 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         if (notEntitled) ...[
           const SizedBox(height: 8),
           OutlinedButton(
-            onPressed: busy ? null : flowNotifier.goToSubscription,
+            onPressed: busy
+                ? null
+                : () => flowNotifier.goToSubscription(fromChat: true),
             child: const Text('月額契約へ進む'),
           ),
         ],

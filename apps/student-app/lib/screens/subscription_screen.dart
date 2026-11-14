@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../state/chat.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
 import '../ui/flow_scaffold.dart';
@@ -10,6 +11,7 @@ import '../ui/labels.dart';
 /// 月額契約の開始（`startSubscription`）。契約プランを選んで始める（既定はスタンダード）。決済は Gen1 ではモック。
 /// 開いたら契約プランの一覧（`listSubscriptionPlans`）を読み、各プランにビデオ通話の暦月の上限を添える。
 /// 読めなければ回数を出さずにプランの名前だけで選ばせる。
+/// チャットの「月額契約へ進む」から開いたときは、契約を始めたあとに開いていたスレッドへ戻る「チャットへ戻る」を出す。
 /// 契約と受講権の状態と操作は [subscriptionProvider]、契約するスポーツ（生徒）と busy は [studentFlowProvider] のもの。
 class SubscriptionScreen extends ConsumerStatefulWidget {
   const SubscriptionScreen({super.key});
@@ -88,6 +90,15 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           Text('プラン: ${subscriptionPlanLabel(subscription.plan)}'),
           Text('開始: ${formatDateTime(subscription.startedAt)}'),
           if (quota != null) Text('今月のビデオ通話: ${liveLessonQuotaLabel(quota)}'),
+          if (flow.subscriptionFromChat) ...[
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: flow.busy
+                  ? null
+                  : ref.read(chatProvider.notifier).returnFromSubscription,
+              child: const Text('チャットへ戻る'),
+            ),
+          ],
         ],
       ],
     );

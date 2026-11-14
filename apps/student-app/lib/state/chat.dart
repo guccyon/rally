@@ -17,11 +17,13 @@ class ChatState {
     List<Message>? messages,
     Map<String, VideoReview> reviews = const {},
     Set<String> reviewFailures = const {},
+    Map<String, String> drafts = const {},
     // 渡した元の一覧を後で変えても状態が変わらないよう、読み取り専用の写しを持つ
   }) : threads = threads == null ? null : List.unmodifiable(threads),
        messages = messages == null ? null : List.unmodifiable(messages),
        reviews = Map.unmodifiable(reviews),
-       reviewFailures = Set.unmodifiable(reviewFailures);
+       reviewFailures = Set.unmodifiable(reviewFailures),
+       drafts = Map.unmodifiable(drafts);
 
   /// チャットを閉じたときに戻る段（チャットを開いた段）
   final FlowStep? returnStep;
@@ -50,6 +52,10 @@ class ChatState {
   /// スレッドに返却が流れたが添削を読めなかった動画の ID（その返却のカードにだけ読めなかった旨を出し、次に確かめたときに読み直す）
   final Set<String> reviewFailures;
 
+  /// 送る前のメッセージ欄の本文（スレッドの ID ごと）。画面を離れても（月額契約の画面・アプリバーのほかの画面）残し、
+  /// 同じスレッドを開き直したら欄に戻す。アプリの中だけに持ち、端末には残さない
+  final Map<String, String> drafts;
+
   ChatState copyWith({
     FlowStep? returnStep,
     bool? promptVideoReviewRequest,
@@ -58,6 +64,7 @@ class ChatState {
     List<Message>? messages,
     Map<String, VideoReview>? reviews,
     Set<String>? reviewFailures,
+    Map<String, String>? drafts,
   }) => ChatState(
     returnStep: returnStep ?? this.returnStep,
     promptVideoReviewRequest:
@@ -67,6 +74,7 @@ class ChatState {
     messages: messages ?? this.messages,
     reviews: reviews ?? this.reviews,
     reviewFailures: reviewFailures ?? this.reviewFailures,
+    drafts: drafts ?? this.drafts,
   );
 }
 
@@ -118,6 +126,23 @@ class ChatNotifier extends Notifier<ChatState> {
       await _loadMessages(thread);
       _flow.moveTo(FlowStep.messages);
     });
+  }
+
+  /// 月額契約の画面（チャットの「月額契約へ進む」から開いた）から、開いていたスレッドへ戻る。読み直してから開く
+  /// （[openThread] と同じ順）。チャットを閉じたときに戻る段は、チャットを開いた段のまま変えない
+  Future<void> returnFromSubscription() => _run(() async {
+    await _loadMessages(state.thread!);
+    _flow.moveTo(FlowStep.messages);
+  });
+
+  /// 開いているスレッドの送る前の本文を [body] にする（空なら消す）
+  void saveDraft(String body) {
+    final threadId = state.thread?.threadId;
+    if (threadId == null || (state.drafts[threadId] ?? '') == body) return;
+    state = state.copyWith(
+      drafts: {...state.drafts, threadId: body}
+        ..removeWhere((_, b) => b.isEmpty),
+    );
   }
 
   /// ホームに出すコーチとのやり取り: 未読のあるスレッドと、最後のメッセージが添削の依頼か返却のスレッドを、最後のメッセージの新しい順に
