@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Section } from "@/components/ui/Section";
 
-/** 本部の画面（読むだけ）。完了記録の一覧はまだ使えないので、運営担当向けの言葉でそう伝える。 */
+/** 本部の画面（読むだけ）。完了記録の一覧は API が契約にまだないので出さない。 */
 export function HeadquartersHome() {
   return (
     <>
@@ -80,11 +80,6 @@ export function HeadquartersHome() {
         <Link href="/headquarters/unanswered-messages" className="text-primary underline">
           返事の遅れているやり取りを見る
         </Link>
-      </Section>
-      <Section title="完了記録の一覧">
-        <p className="rounded-md bg-surface p-2 text-sm text-text-muted">
-          完了したレッスンの一覧は、まだこの画面では見られません。準備ができるまでお待ちください。
-        </p>
       </Section>
     </>
   );
