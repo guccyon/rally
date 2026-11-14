@@ -44,6 +44,11 @@ const STARTS_IN_PAST =
 // 送る前の確かめ（periodError）をすり抜けた 422 の理由。サーバーの `message` は表示用ではない（契約）ので、直す場所をここで伝える。
 const VALIDATION_FAILED = `期間の指定が正しくありません。期間は 1〜${MAX_PERIOD_DAYS} 日で、終了日は開始日と同じかそれより後の日付にしてください。`;
 
+/** 開始がサーバーの現在時刻（端末の時計にサーバーとのずれを足したもの）以前か。 */
+function isNotAfterNow(starts: Date, clockOffsetMs = 0): boolean {
+  return starts.getTime() <= Date.now() + clockOffsetMs;
+}
+
 const NO_PERIOD: Period = { from: "", to: "" };
 
 type ListState =
@@ -260,7 +265,7 @@ export function PublishSlotForm({
     if (response.ok) {
       setResult({ ok: true, message: "枠を公開しました。" });
       await reloadSlots();
-    } else if (response.code === "validation_failed" && starts.getTime() <= Date.now() + (response.clockOffsetMs ?? 0)) {
+    } else if (response.code === "validation_failed" && isNotAfterNow(starts, response.clockOffsetMs)) {
       // 開始が過去なら、メニューの有無にかかわらず 422 の理由は開始（端末の時計はサーバーとのずれで直す）。
       setResult({ ok: false, message: STARTS_IN_PAST });
     } else if (selectedMenu && response.code === "validation_failed") {
