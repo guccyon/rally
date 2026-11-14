@@ -150,6 +150,14 @@ kpi:
                                   then 1 else 0 end)::numeric, 4)
             from completions f
             where f.is_first_lesson and f.completed_at >= now() - interval '90 days' and f.completed_at < now() - interval '60 days'))
+# 本番に出す前の DB の控え（factory-engine の ADR 0057 の決定 3）。shipper が本番に出す直前に、いま動いている版の DB をこのコマンドの標準出力で控える。
+# 置き場所は工場の shipper の作業場（直近 keep 個）。控えから戻すのは人の手（pg_restore。工場の README の「出荷と Rollback」）
+backup:
+  environments: [prod]
+  service: postgres
+  command: [pg_dump, -U, rally, -d, rally, -Fc]
+  suffix: .dump
+  keep: 10
 verify:
   service: backend
   url: http://127.0.0.1:8080/version   # {"app_version": "..."} が出した版と一致すること
