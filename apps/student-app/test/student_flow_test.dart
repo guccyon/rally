@@ -66,7 +66,8 @@ void main() {
   testWidgets('通話で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 通話 → 完了記録 → 評価 → 月額契約', (
     tester,
   ) async {
-    final api = FakeStudentApi();
+    // 登録したばかりの生徒（予約がないので体験予約できる）
+    final api = FakeStudentApi(myBookings: const []);
     await pumpApp(tester, api);
 
     await registerAndBook(tester);
@@ -86,6 +87,7 @@ void main() {
       'listMyNotifications',
       'listFavoriteCoaches',
       'listMyLessonCompletions',
+      'listMyBookings',
       'searchSlots',
       'getCoachReviewSummary',
       'createBooking',
@@ -103,6 +105,7 @@ void main() {
     '動画で受ける一周: 登録 → 検索 → 体験予約 → 確定 → 動画の送付 → 添削結果 → 完了記録 → 評価 → 月額契約',
     (tester) async {
       final api = FakeStudentApi(
+        myBookings: const [],
         reviews: [Fixtures.reviewInProgress, Fixtures.reviewReturned],
       );
       await pumpApp(tester, api);
@@ -129,6 +132,7 @@ void main() {
         'listMyNotifications',
         'listFavoriteCoaches',
         'listMyLessonCompletions',
+        'listMyBookings',
         'searchSlots',
         'getCoachReviewSummary',
         'createBooking',
@@ -148,7 +152,8 @@ void main() {
   testWidgets('チャット: 月額契約の後 → スレッドの一覧 → メッセージ（既読にする）→ 送信 → 一覧 → 閉じて元の画面', (
     tester,
   ) async {
-    final api = FakeStudentApi();
+    // 登録したばかりの生徒（予約がないので体験予約できる）
+    final api = FakeStudentApi(myBookings: const []);
     await pumpApp(tester, api);
 
     expect(find.byTooltip('チャット'), findsNothing);

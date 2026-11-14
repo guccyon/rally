@@ -246,6 +246,16 @@ class StudentFlowState {
   /// 自分の予約（`listMyBookings`。未取得なら null）。キャンセルしたらその予約を応答で置き換える
   final List<MyBooking>? myBookings;
 
+  /// スロットを体験予約として予約するか。サーバーの体験予約の決まり（`createBooking`: キャンセルされていない予約が 1 件でもあれば
+  /// 409 `trial_already_used`）に合わせ、[myBookings] にキャンセルされていない予約がなければ true。
+  /// 予約をまだ読めていない（null）ときは、登録したばかりの生徒の体験予約を止めないよう true
+  bool get canBookTrial {
+    final bookings = myBookings ?? const <MyBooking>[];
+    return bookings.every(
+      (item) => item.booking.status == BookingStatus.cancelled,
+    );
+  }
+
   /// 自分の動画の一覧を閉じたときに戻る段（一覧を開いた段）
   final FlowStep? videosReturnStep;
 
@@ -488,8 +498,21 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       clearSearchCoach: coach == null,
     );
     return run(
-      () => _search(coach?.sport ?? state.searchSport ?? state.student!.sport),
+      () => Future.wait([
+        _search(coach?.sport ?? state.searchSport ?? state.student!.sport),
+        _refreshMyBookingsQuietly(),
+      ]),
     );
+  }
+
+  /// 予約のボタンを体験予約にするか（[StudentFlowState.canBookTrial]）を今のサーバーの記録で決めるため、自分の予約を読み直す。
+  /// 読めなければ前に読んだ予約のまま（失敗の文言は出さない）
+  Future<void> _refreshMyBookingsQuietly() async {
+    try {
+      await _loadMyBookings();
+    } on StudentApiException {
+      return;
+    }
   }
 
   /// `searchSlots`。スポーツで絞る（コーチで絞っていればそのまま絞る）。
@@ -620,11 +643,21 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     }
   }
 
-  /// `createBooking`（体験予約）。作成直後は pending なので確定待ちへ。
-  Future<void> bookTrial(Slot slot) => run(() async {
-    final booking = await _api.createBooking(
-      CreateBookingRequest(slotId: slot.slotId, isTrial: true),
-    );
+  /// `createBooking`。体験予約をまだ使っていなければ体験予約（[StudentFlowState.canBookTrial]）、使っていれば通常の予約。
+  /// 作成直後は pending なので確定待ちへ。409 `trial_already_used`（読んだ予約が古かった）なら、失敗の文言を出したうえで
+  /// 自分の予約を読み直し、ボタンを通常の予約に切り替える
+  Future<void> bookSlot(Slot slot) => run(() async {
+    final Booking booking;
+    try {
+      booking = await _api.createBooking(
+        CreateBookingRequest(slotId: slot.slotId, isTrial: state.canBookTrial),
+      );
+    } on StudentApiException catch (e) {
+      if (e.error?.code == ErrorCode.trialAlreadyUsed) {
+        await _refreshMyBookingsQuietly();
+      }
+      rethrow;
+    }
     state = state.copyWith(
       bookedSlot: slot,
       booking: booking,

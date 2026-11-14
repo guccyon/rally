@@ -684,7 +684,10 @@ void main() {
     await tapText(tester, 'スロットを探して予約する');
 
     expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
-    expect(api.calls.first, 'searchSlots');
+    expect(
+      api.calls.take(2),
+      unorderedEquals(['searchSlots', 'listMyBookings']),
+    );
     expect(api.requests.whereType<Sport>().last, Sport.tennis);
   });
 
@@ -711,9 +714,35 @@ void main() {
     await tapText(tester, '次のレッスンを予約する');
 
     expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
-    expect(api.calls.first, 'searchSlots');
+    expect(
+      api.calls.take(2),
+      unorderedEquals(['searchSlots', 'listMyBookings']),
+    );
     expect(api.requests.whereType<Sport>().last, Sport.tennis);
   });
+
+  testWidgets(
+    '「次のレッスンを予約する」から開いたスロットは、体験予約を使った生徒には「予約する」で、押すと通常の予約になる（#1505）',
+    (tester) async {
+      final api = FakeStudentApi(
+        lessonCompletions: [Fixtures.lessonCompletions.first],
+      );
+      final container = await pumpHome(tester, api);
+      api.calls.clear();
+
+      await tapText(tester, '次のレッスンを予約する');
+
+      expect(api.calls, contains('listMyBookings'));
+      expect(find.text('体験予約する'), findsNothing);
+      await tapText(tester, '予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.bookingPending);
+      expect(state.errorMessage, isNull);
+    },
+  );
 
   testWidgets('受けたレッスンがまだない生徒には「次のレッスンを予約する」を出さない。月額契約の前の文言はそのまま', (
     tester,
