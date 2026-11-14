@@ -68,13 +68,13 @@ void main() {
     expect(find.byTooltip('自分の予約'), findsOneWidget);
   });
 
-  testWidgets('入口を出さない画面（showNavigation: false・未登録）では title に出す', (
-    tester,
-  ) async {
+  testWidgets('showNavigation: false の画面では title に出す', (tester) async {
     await pumpAt(tester, at(FlowStep.coachSearch), showNavigation: false);
     expect(appBar(tester).title, isNotNull);
     expect(appBar(tester).bottom, isNull);
+  });
 
+  testWidgets('未登録（アクセストークンなし）の画面では title に出す', (tester) async {
     await pumpAt(tester, at(FlowStep.coachSearch, signedIn: false));
     expect(appBar(tester).title, isNotNull);
     expect(appBar(tester).bottom, isNull);
