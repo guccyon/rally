@@ -79,11 +79,13 @@ describe("ロールでの出し分け", () => {
     expect(replace).toHaveBeenCalledWith("/");
   });
 
-  test("本部の完了記録の一覧は API がないので未実装と出す", () => {
+  test("本部の完了記録の一覧は開発者向けの語を使わず、まだ見られないと伝える", () => {
     render(<HeadquartersHome />);
 
     expect(screen.getByRole("region", { name: "予約" })).not.toHaveTextContent("未実装");
-    expect(screen.getByRole("region", { name: "完了記録の一覧" })).toHaveTextContent("未実装");
+    const records = screen.getByRole("region", { name: "完了記録の一覧" });
+    expect(records).toHaveTextContent("まだこの画面では見られません");
+    expect(records).not.toHaveTextContent(/未実装|API|契約/);
   });
 
   test("本部の画面から予約枠の需給の画面へ移れる", () => {

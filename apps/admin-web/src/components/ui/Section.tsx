@@ -12,8 +12,3 @@ export function Section({ title, children }: { title: string; children: ReactNod
     </section>
   );
 }
-
-/** 契約に API がまだない機能の表示。 */
-export function NotImplemented({ children }: { children: ReactNode }) {
-  return <p className="rounded-md bg-surface p-2 text-sm text-text-muted">未実装: {children}</p>;
-}

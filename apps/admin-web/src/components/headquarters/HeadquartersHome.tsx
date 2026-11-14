@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { NotImplemented, Section } from "@/components/ui/Section";
+import { Section } from "@/components/ui/Section";
 
-/** 本部の画面（読むだけ）。完了記録の一覧は API が admin-web の契約にまだないので「未実装」と出す。 */
+/** 本部の画面（読むだけ）。完了記録の一覧はまだ使えないので、運営担当向けの言葉でそう伝える。 */
 export function HeadquartersHome() {
   return (
     <>
@@ -82,7 +82,9 @@ export function HeadquartersHome() {
         </Link>
       </Section>
       <Section title="完了記録の一覧">
-        <NotImplemented>完了したレッスンの一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
+        <p className="rounded-md bg-surface p-2 text-sm text-text-muted">
+          完了したレッスンの一覧は、まだこの画面では見られません。準備ができるまでお待ちください。
+        </p>
       </Section>
     </>
   );
