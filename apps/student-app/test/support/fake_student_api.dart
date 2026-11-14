@@ -14,6 +14,7 @@ class FakeStudentApi implements StudentApi {
     NotificationSettings? notificationSettings,
     List<ApiNotification>? notifications,
     List<MyBooking>? myBookings,
+    this.trialAvailable,
     List<MyVideo>? myVideos,
     this.entitlement,
     List<SubscriptionPlanDetail>? subscriptionPlans,
@@ -75,6 +76,11 @@ class FakeStudentApi implements StudentApi {
   /// 自分の予約（`listMyBookings` が返す。`createBooking` で作った予約を足し、`confirmBooking` で確定済みに、
   /// `cancelBooking` でキャンセル済みにする）
   final List<MyBooking> myBookings;
+
+  /// `listMyBookings` が返す `trial_available`（サーバーの判定）。null なら [myBookings] にキャンセルされていない予約が
+  /// なければ true（完了したレッスンは見ない。それで使用済みになる場合はテストで false を入れる）。
+  /// テストで書き換えて「サーバーの判定が変わった」を表す
+  bool? trialAvailable;
 
   /// 自分が送った動画（`listMyVideos` が返す）
   final List<MyVideo> myVideos;
@@ -253,10 +259,19 @@ class FakeStudentApi implements StudentApi {
     myBookings.insert(0, MyBooking(booking: booking, slot: slot));
   }
 
+  /// `listMyBookings` が返す `trial_available`（[trialAvailable] がなければ、キャンセルされていない予約がないか）
+  bool get _trialAvailable =>
+      trialAvailable ??
+      myBookings.every((b) => b.booking.status == BookingStatus.cancelled);
+
   @override
   Future<MyBookingList> listMyBookings() => _answer(
     'listMyBookings',
-    () => MyBookingList(bookings: [...myBookings], clockOffset: clockOffset),
+    () => MyBookingList(
+      bookings: [...myBookings],
+      trialAvailable: _trialAvailable,
+      clockOffset: clockOffset,
+    ),
   );
 
   @override

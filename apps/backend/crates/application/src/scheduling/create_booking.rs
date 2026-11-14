@@ -172,6 +172,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
+        async_lesson::VideoId,
         catalog::Sport,
         catalog::{
             LessonDuration, LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId,
@@ -543,6 +544,34 @@ mod tests {
             .execute(command(OTHER_STUDENT, 14, true))
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn trial_is_used_by_an_async_lesson_completion_without_any_booking() {
+        // 予約はなく、動画の添削（非同期のレッスン）を受け終えた完了記録だけがある
+        let completions =
+            InMemoryLessonCompletionRepository::with_completions([LessonCompletion::restore(
+                LessonCompletionId::from_u128(1),
+                STUDENT,
+                COACH,
+                LessonSource::Async(VideoId::from_u128(1)),
+                NOW,
+                true,
+            )]);
+        let use_case = use_case_with_completions(completions);
+
+        assert_invalid(
+            use_case.execute(command(STUDENT, 10, true)).await,
+            SchedulingError::TrialAlreadyUsed,
+        );
+        assert!(use_case.bookings().all().is_empty(), "体験予約は保存しない");
+        assert!(
+            use_case.analytics().events().is_empty(),
+            "断った予約は発火しない"
+        );
+        // 通常の予約はできる
+        let regular = use_case.execute(command(STUDENT, 10, false)).await.unwrap();
+        assert!(!regular.is_trial());
     }
 
     #[tokio::test]
