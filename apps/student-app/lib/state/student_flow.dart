@@ -167,6 +167,7 @@ class StudentFlowState {
     this.completing,
     this.homeFailures = const {},
     this.settingsReturnStep,
+    this.subscriptionFromChat = false,
     this.notificationSettings,
     this.profileReturnStep,
     this.bookingsReturnStep,
@@ -264,6 +265,10 @@ class StudentFlowState {
   /// 通知の受け取り設定を閉じたときに戻る段（設定を開いた段）
   final FlowStep? settingsReturnStep;
 
+  /// 月額契約の画面をチャット（契約の前に送れなかったときの「月額契約へ進む」）から開いたか。
+  /// true なら、契約を始めたあとに開いていたスレッドへ戻る入口を出す（[ChatNotifier.returnFromSubscription]）
+  final bool subscriptionFromChat;
+
   /// 通知の受け取り設定（`getMyNotificationSettings`。未取得なら null）。
   /// 切り替えたときは保存を待たずに変え、保存に失敗したら元に戻す
   final NotificationSettings? notificationSettings;
@@ -333,6 +338,7 @@ class StudentFlowState {
     RecordLessonCompletionRequest? completing,
     Set<HomeSection>? homeFailures,
     FlowStep? settingsReturnStep,
+    bool? subscriptionFromChat,
     NotificationSettings? notificationSettings,
     FlowStep? profileReturnStep,
     FlowStep? bookingsReturnStep,
@@ -370,6 +376,7 @@ class StudentFlowState {
     completing: completing ?? this.completing,
     homeFailures: homeFailures ?? this.homeFailures,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
+    subscriptionFromChat: subscriptionFromChat ?? this.subscriptionFromChat,
     notificationSettings: notificationSettings ?? this.notificationSettings,
     profileReturnStep: profileReturnStep ?? this.profileReturnStep,
     bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
@@ -996,9 +1003,12 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// 完了したレッスンを評価する画面へ（評価の操作は [LessonReviewNotifier]）
   void goToReview() => state = state.copyWith(step: FlowStep.lessonReview);
 
-  /// 月額契約の画面へ（契約と受講権の操作は [SubscriptionNotifier]）
-  void goToSubscription() =>
-      state = state.copyWith(step: FlowStep.subscription);
+  /// 月額契約の画面へ（契約と受講権の操作は [SubscriptionNotifier]）。チャットから開くときは [fromChat] を true にする
+  /// （契約を始めたあとにチャットへ戻る入口を出す。ほかの入口から開いたら出さない）
+  void goToSubscription({bool fromChat = false}) => state = state.copyWith(
+    step: FlowStep.subscription,
+    subscriptionFromChat: fromChat,
+  );
 
   /// 通知の受け取り設定を開く（`getMyNotificationSettings`）。閉じたら今の段に戻る。
   Future<void> openNotificationSettings() {
@@ -1061,6 +1071,25 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// プロフィールを閉じて、開いた段に戻る
   void closeProfile() => returnTo(state.profileReturnStep ?? FlowStep.home);
+
+  /// ログアウト（プロフィールの「ログアウトする」）。端末に残した登録の結果（[sessionStoreProvider]）を消し、
+  /// 前の生徒の状態（トークン・生徒・予約・チャット・契約・お知らせなど）を捨てて登録の画面にする。
+  /// サーバーには何も送らない（トークンを失効させる API はない）。次の生徒のホームはサーバーから読み直す（ADR 0010）
+  void logout() {
+    ref.read(sessionStoreProvider).clear();
+    ref
+      ..invalidate(chatProvider)
+      ..invalidate(subscriptionProvider)
+      ..invalidate(favoriteCoachesProvider)
+      ..invalidate(nextActionsProvider)
+      ..invalidate(notificationsProvider)
+      ..invalidate(lessonCompletionsProvider)
+      ..invalidate(coachSearchProvider)
+      ..invalidate(coachProfileProvider)
+      ..invalidate(lessonReviewProvider)
+      ..invalidate(prejoinCheckProvider);
+    state = StudentFlowState();
+  }
 
   /// `updateMyStudentProfile`。表示名を [displayName] に変え、応答の生徒で [StudentFlowState.student] を置き換える
   /// （ホームなどの表示もこれで変わる）。保存できたら true。422 はサーバーの文言を出す（[profileErrorMessageOf]）

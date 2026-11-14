@@ -43,6 +43,12 @@ impl CancellationPolicy {
             .checked_sub(Self::QUOTA_CONSUMING_NOTICE)
     }
 
+    /// 見込みに載せる境目。[`Self::free_cancel_until`] が引けないとき（時刻の範囲の外）は `UNIX_EPOCH` に
+    /// 丸める（実質いつキャンセルしても消費する。契約は境目の無いのを「いつでも回数を使わない」ときに限るため）。
+    fn preview_boundary(booking: &Booking) -> SystemTime {
+        Self::free_cancel_until(booking).unwrap_or(SystemTime::UNIX_EPOCH)
+    }
+
     /// 予約 `booking` を `now` にキャンセルしたらどうなるかの見込み（キャンセルする前に生徒に見せる）。
     ///
     /// キャンセルできない予約（キャンセル済み）は `None`。`has_live_lesson_quota` は生徒がビデオ通話の暦月の枠を
@@ -58,15 +64,12 @@ impl CancellationPolicy {
             return None;
         }
         Some(if has_live_lesson_quota {
-            CancellationPreview {
-                consumes_quota: Self::decide(booking, now).consumes_quota,
-                free_cancel_until: Self::free_cancel_until(booking),
-            }
+            CancellationPreview::with_boundary(
+                Self::decide(booking, now).consumes_quota,
+                Self::preview_boundary(booking),
+            )
         } else {
-            CancellationPreview {
-                consumes_quota: false,
-                free_cancel_until: None,
-            }
+            CancellationPreview::without_quota()
         })
     }
 }
@@ -159,7 +162,7 @@ mod tests {
 
     #[test]
     fn preview_follows_the_decision_around_the_boundary() {
-        let until = Some(starts_at() - 24 * HOUR);
+        let until = starts_at() - 24 * HOUR;
         for (before_start, consumes_quota) in [
             (25 * HOUR, false),
             (24 * HOUR + Duration::from_nanos(1), false),
@@ -169,10 +172,7 @@ mod tests {
         ] {
             assert_eq!(
                 preview(before_start),
-                Some(CancellationPreview {
-                    consumes_quota,
-                    free_cancel_until: until,
-                }),
+                Some(CancellationPreview::with_boundary(consumes_quota, until)),
                 "{before_start:?}"
             );
             assert_eq!(consumes_quota, self::consumes_quota(before_start));
@@ -189,10 +189,7 @@ mod tests {
         ] {
             assert_eq!(
                 CancellationPolicy::preview(&booking(), now, false),
-                Some(CancellationPreview {
-                    consumes_quota: false,
-                    free_cancel_until: None,
-                })
+                Some(CancellationPreview::without_quota())
             );
         }
     }

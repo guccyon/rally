@@ -5,7 +5,7 @@ actor: coach
 goal: "生徒を待たせず、開始時刻ちょうどに整った映りと音でレッスンを始める。背景や映りは生徒からのコーチの印象と評価に効く"
 reader: [coach, student]
 entry: "コーチが admin-web のコーチの画面で通話のタブを開き、これからの予約の一覧を見ている。確定した予約のスロットの開始 5 分前を過ぎている"
-exit: "コーチが、開始時刻になってからその予約の作り物の通話（映像はモック）に入っていて、通話セッションは開始時刻より後に始まっている。カメラ・マイクの映像と音はブラウザーの外に出ていない"
+exit: "コーチが、開始時刻になってからその予約の作り物の通話（映像はモック）に入っていて、通話セッションは開始時刻より後に始まっている。カメラ・マイクの映像と音はブラウザーの外に出ていない。通話を終了したら「通話を終了しました。」を出したまま予約の一覧に戻っている"
 preconditions:
   - "コーチの枠に、生徒の確定したビデオ通話の予約がある"
   - "コーチはカメラ・マイク・スピーカーのある PC のブラウザーで admin-web を開いている"
@@ -29,7 +29,10 @@ steps:
     sees: "開始時刻の前は「開始時刻になると入室できます」と開始時刻（残りの時間）が出て、入室のボタンは押せない。開始時刻になると入室のボタンが押せるようになる"
   - where: "admin-web コーチの画面の入室前チェック"
     do: "「入室する」を押す"
-    sees: "通話が始まり（startLiveLessonSession）、状態が通話中になる。相手の映像は作り物（モック）で、チェックで選んだカメラ・マイクの入・切がそのまま引き継がれている"
+    sees: "通話が始まり（startLiveLessonSession）、予約の一覧と入れ替わって通話中の画面が出る。見出し「ビデオ通話中」に焦点が移って画面の先頭が見え、「通話を開始しました。」・状態の「通話中」・チェックで選んだカメラ・マイクの入・切（そのまま引き継がれている）・「通話を終了」がある。相手の映像は作り物（モック）。予約の一覧の表は出ない"
+  - where: "admin-web コーチの画面の通話中の画面"
+    do: "レッスンを終えて「通話を終了」を押す"
+    sees: "通話が終わり（endLiveLessonSession）、「通話を終了しました。」と通話時間を出したまま予約の一覧に戻る。終了に失敗したら通話中の画面のまま理由が出て、もう一度押せる"
 must_not:
   - "開始時刻より前に通話セッションを始める（#921。開始時刻より前の startLiveLessonSession は 409 slot_not_started で、画面も開始時刻の前は入室のボタンを押せなくする）"
   - "入室前チェックのために通話サービス（Twilio Video など）につなぐ、または接続情報（room_token）を取る"
@@ -40,6 +43,7 @@ must_not:
   - "確定していない・キャンセルした予約や、ほかのコーチの予約で入室前チェックを開ける"
   - "環境（開発・デモ・本番）ごとに 5 分前・開始時刻の決まりを変える"
   - "5 分という値を画面ごと・場所ごとに書き散らす（値は 1 か所の定数で持つ。glossary の prejoin_check）"
+  - "入室したあと、通話中の表示や「通話を終了」を予約の一覧の下に出して、一覧を下まで送らないと見えないようにする（#1609。通話中は一覧の代わりに通話中の画面を出す）"
 touches:
   apps: [admin-web]
   contexts: [live-lesson, scheduling]
@@ -47,8 +51,9 @@ touches:
   operations:
     - admin-web.listMyCoachBookings
     - admin-web.startLiveLessonSession
+    - admin-web.endLiveLessonSession
 origin:
-  issues: ["guccyon/rally#1039", "guccyon/rally#899", "guccyon/rally#921", "guccyon/rally#1009"]
+  issues: ["guccyon/rally#1039", "guccyon/rally#899", "guccyon/rally#921", "guccyon/rally#1009", "guccyon/rally#1609"]
   note: "窓口の相談 2（依頼者 builder）。Google Meet の入室前の体験を手本にする。通話はモックのまま、カメラ・マイク・スピーカーは PC の本物を使う。コーチは Gen1 では admin-web のコーチのロール（docs/adr/0002 Q3）"
   retro: false
 status: active

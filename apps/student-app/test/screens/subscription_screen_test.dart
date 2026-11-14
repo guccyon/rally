@@ -9,6 +9,7 @@ import 'package:rally_student_app/api/http_student_api.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/subscription_screen.dart';
+import 'package:rally_student_app/state/chat.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/state/subscription.dart';
 
@@ -20,6 +21,7 @@ void main() {
     WidgetTester tester, {
     SubscriptionState? subscription,
     FakeStudentApi? api,
+    bool fromChat = false,
   }) async {
     api ??= FakeStudentApi();
     await pumpScreen(
@@ -29,7 +31,9 @@ void main() {
       initial: StudentFlowState(
         step: FlowStep.subscription,
         student: Fixtures.student,
+        subscriptionFromChat: fromChat,
       ),
+      chat: fromChat ? ChatState(thread: Fixtures.thread) : null,
       subscription: subscription,
     );
     // 開いた直後に読むプランの一覧を待つ
@@ -44,6 +48,13 @@ void main() {
           matching: find.byType(RadioListTile<SubscriptionPlan>),
         ),
       );
+
+  testWidgets('開発用の言葉「モック」を出さず、料金の注記を生徒に分かる言葉で出す', (tester) async {
+    await pumpSubscription(tester);
+
+    expect(find.textContaining('モック'), findsNothing);
+    expect(find.text('いまは料金は請求されません。'), findsOneWidget);
+  });
 
   testWidgets('プランは月のビデオ通話の回数を添えて出し、既定のスタンダードで始めると今月の通話の枠を出す', (tester) async {
     final api = await pumpSubscription(tester);
@@ -86,6 +97,35 @@ void main() {
     expect(request.toJson()['plan'], 'plus');
     expect(find.text('プラン: プラス'), findsOneWidget);
     expect(find.text('今月のビデオ通話: 月 4 回のうち残り 4 回'), findsOneWidget);
+  });
+
+  testWidgets('別のタブで契約済みなら、押したプランではなくサーバーの契約のプランと残りの回数を出す', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      failures: const {
+        'startSubscription': StudentApiException(
+          statusCode: 409,
+          error: ApiError(
+            code: ErrorCode.subscriptionAlreadyActive,
+            message: 'already',
+          ),
+        ),
+      },
+    )..entitlement = Fixtures.subscriptionStartedWith(
+        SubscriptionPlan.standard,
+      ).entitlement;
+    await pumpSubscription(tester, api: api);
+
+    await tapText(tester, 'プラス　ビデオ通話 月 4 回');
+    await tapText(tester, '月額契約を始める');
+
+    expect(api.calls, contains('getMyEntitlement'));
+    expect(find.text('プラン: スタンダード'), findsOneWidget);
+    expect(find.text('プラン: プラス'), findsNothing);
+    expect(find.text('今月のビデオ通話: 月 2 回のうち残り 2 回'), findsOneWidget);
+    expect(find.text('月額契約を始める'), findsNothing);
+    expect(find.byType(RadioGroup<SubscriptionPlan>), findsNothing);
   });
 
   testWidgets('プランに添える回数は、アプリに持たず listSubscriptionPlans の応答の値を出す', (
@@ -233,5 +273,32 @@ void main() {
 
     expect(api.calls, isEmpty);
     expect(find.text('プラン: スタンダード'), findsOneWidget);
+  });
+  testWidgets('チャットから開いたときだけ、始めたあとに「チャットへ戻る」を出し、押すと開いていたスレッドを開く（#1565）', (
+    tester,
+  ) async {
+    final api = await pumpSubscription(tester, fromChat: true);
+    expect(find.text('チャットへ戻る'), findsNothing);
+
+    await tapText(tester, '月額契約を始める');
+    expect(find.text('月額契約を開始しました'), findsOneWidget);
+    await tapText(tester, 'チャットへ戻る');
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+    expect(container.read(studentFlowProvider).step, FlowStep.messages);
+    expect(api.calls.sublist(api.calls.length - 2), [
+      'markMessageThreadRead',
+      'listMessages',
+    ]);
+  });
+
+  testWidgets('チャット以外から開いたときは、始めたあとも「チャットへ戻る」を出さない', (tester) async {
+    await pumpSubscription(tester);
+
+    await tapText(tester, '月額契約を始める');
+    expect(find.text('月額契約を開始しました'), findsOneWidget);
+    expect(find.text('チャットへ戻る'), findsNothing);
   });
 }

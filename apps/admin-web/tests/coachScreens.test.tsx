@@ -126,6 +126,25 @@ describe("枠の公開", () => {
     expect(screen.queryByText("まだ枠を公開していません。")).not.toBeInTheDocument();
   });
 
+  test("過去の開始で 422 のときは「枠を公開しました。」を出さず、理由を終了エラーと同じ alert で出す", async () => {
+    const publishSlot = vi.fn<CoachApi["publishSlot"]>(async () => ({
+      ok: false,
+      code: "validation_failed",
+      message: "入力の内容が正しくありません。",
+    }));
+    const user = userEvent.setup();
+    render(<PublishSlotForm api={{ listMyLessonMenus: noMenus(), withdrawMySlot: vi.fn(), publishSlot, listMyCoachSlots: listOf([]) }} />);
+
+    await screen.findByText("まだ枠を公開していません。");
+    await user.type(screen.getByLabelText("開始"), "2020-01-01T10:00");
+    await user.type(screen.getByLabelText("終了"), "2020-01-01T11:00");
+    await user.click(screen.getByRole("button", { name: "枠を公開" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("開始の日時が過去");
+    expect(screen.queryByText("枠を公開しました。")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   test("スポーツの欄に契約の全スポーツを出し、水泳の枠を公開すると一覧に「水泳」で出る", async () => {
     const published = coachSlot("c0000000-0000-4000-8000-000000000007", "swimming", 72, "open", false);
     const publishSlot = vi.fn<CoachApi["publishSlot"]>(async () => ({

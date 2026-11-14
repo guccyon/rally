@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
+import '../state/chat.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
 import '../ui/flow_scaffold.dart';
@@ -10,6 +11,7 @@ import '../ui/labels.dart';
 /// 月額契約の開始（`startSubscription`）。契約プランを選んで始める（既定はスタンダード）。決済は Gen1 ではモック。
 /// 開いたら契約プランの一覧（`listSubscriptionPlans`）を読み、各プランにビデオ通話の暦月の上限を添える。
 /// 読めなければ回数を出さずにプランの名前だけで選ばせる。
+/// チャットの「月額契約へ進む」から開いたときは、契約を始めたあとに開いていたスレッドへ戻る「チャットへ戻る」を出す。
 /// 契約と受講権の状態と操作は [subscriptionProvider]、契約するスポーツ（生徒）と busy は [studentFlowProvider] のもの。
 class SubscriptionScreen extends ConsumerStatefulWidget {
   const SubscriptionScreen({super.key});
@@ -25,7 +27,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   void initState() {
     super.initState();
     // 契約の前だけ、プランごとの上限を読む（契約の後はサーバーが返す受講権の枠を出す）
-    if (ref.read(subscriptionProvider).subscription == null) {
+    if (!ref.read(subscriptionProvider).hasActiveSubscription) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ref.read(subscriptionProvider.notifier).loadSubscriptionPlans();
@@ -56,7 +58,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         Text('スポーツ: ${sportLabel(flow.student!.sport)}'),
         const Text('動画とチャットは送り放題です。ビデオ通話は、選んだプランの回数まで毎月使えます。'),
         const SizedBox(height: 16),
-        if (subscription == null) ...[
+        if (!state.hasActiveSubscription) ...[
           const Text('プランを選んでください'),
           RadioGroup<SubscriptionPlan>(
             groupValue: _plan,
@@ -75,7 +77,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           ),
           if (state.subscriptionPlansFailed)
             const Text('プランごとのビデオ通話の回数を読み込めませんでした。プランの名前で選んで始められます。'),
-          const Text('決済はモックです（請求は発生しません）。'),
+          const Text('いまは料金は請求されません。'),
           const SizedBox(height: 8),
           FilledButton(
             onPressed: flow.busy
@@ -84,10 +86,21 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             child: const Text('月額契約を始める'),
           ),
         ] else ...[
-          const Text('月額契約を開始しました'),
-          Text('プラン: ${subscriptionPlanLabel(subscription.plan)}'),
-          Text('開始: ${formatDateTime(subscription.startedAt)}'),
+          Text(subscription != null ? '月額契約を開始しました' : '今の月額契約'),
+          if ((subscription?.plan ?? state.entitlement?.plan) case final plan?)
+            Text('プラン: ${subscriptionPlanLabel(plan)}'),
+          if (subscription != null)
+            Text('開始: ${formatDateTime(subscription.startedAt)}'),
           if (quota != null) Text('今月のビデオ通話: ${liveLessonQuotaLabel(quota)}'),
+          if (flow.subscriptionFromChat) ...[
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: flow.busy
+                  ? null
+                  : ref.read(chatProvider.notifier).returnFromSubscription,
+              child: const Text('チャットへ戻る'),
+            ),
+          ],
         ],
       ],
     );
