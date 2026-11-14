@@ -1,0 +1,51 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0160
+pr: https://github.com/guccyon/rally/pull/1459
+decided_at: '2026-11-14'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - この PR は README.md の INDEX.md の行に、生成物として aggregates.yaml に宣言してあることを書き足すだけで、知見（K-*.yaml）の追加や状態の変更はありません。
+  - 書き足した作り直し方は同じ行の既存の記述と INDEX.md の見出しにある `core-gates/knowledge_check.py --index`
+    と同じで、作り直し方が 1 つであることも変わらず、食い違いはありません。
+  - '「手で編集しない」という決まりはそのまま残っていて、knowledge/committee/ の過去の議決にも Issue #1458 や aggregates.yaml
+    と食い違うものは見当たりません。'
+  - 知見の置き場の構造や確かさ・変更セットの決まりを変えておらず、specs/ の用語や業務ルールにも触れないので、人の判断に回す必要はありません。
+  - 知見ではないので確かさの上げ下げはなく、扱いの添付が要る既存の知見もありません。
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - この PR は README.md に INDEX.md の生成物の宣言先を書き足すだけで、新しい知見（K-*.yaml）も確かさの変更も含まないので、確かさのレベルを審査する対象はありません。
+  - '書き足した記述は Issue #1458 と Engine ADR 0051 の 2 を出典に挙げており、一次記録に辿れる形になっています。'
+  - '`.factory-config/aggregates.yaml` と ADR 0051 の本体は今回の材料にないため照合はしていませんが、出典があるので追跡は可能です。'
+  - 既存の INDEX.md の見出しは「core-gates/knowledge_check.py --index で作り直す」と書かれており、追記の「作り直し方は同じ
+    1 つ」と矛盾しません。
+  - 追記に利用者や人を特定できる情報は含まれていません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - 'この PR は README.md の決まりに、INDEX.md が `.factory-config/aggregates.yaml` に `compile:
+    generate` の生成物として宣言済みであることを書き足すだけで、新しい知見の主張や担保の案は足していません。'
+  - INDEX.md を作り直す方法は aggregates.yaml の宣言と `core-gates/knowledge_check.py --index`
+    で、すでに決定論で担保されています。この README の行はその仕組みを説明する文で、別の検査を作る必要はありません。
+  - README の記述と aggregates.yaml の宣言がずれることはあり得ます。ただ、ずれても困るのは説明が古くなる程度で済み、照らし合わせる検査を作って保つ費用のほうが大きいので、今は決定論で担保しません。
+  - 知見ファイルを変えていないので、確かさを上げ下げする対象はありません。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この変更は README.md の INDEX.md の行に説明を足すだけで、知見の決まりや置き場の構造は変えないので、範囲は狭いです。
+  - '足した文は INDEX.md が既に `.factory-config/aggregates.yaml` の `compile: generate` の生成物として宣言されていることと、作り直し方が
+    `core-gates/knowledge_check.py --index` の 1 つだけであることを書いています。これは既存の「自動生成。手で編集しない」と同じ向きで、反例は見つかりません。'
+  - '作業ディレクトリに `.factory-config/aggregates.yaml` が無いので、宣言が実際にあるかはここでは確かめられません。Issue
+    #1458 と Engine ADR 0051 への辿りは根拠の担当が確かめてください。'
+  - README に aggregates.yaml の `command` の中身を書き写したので、`command` が変わると README が古くなるおそれがあります。それでも今は
+    1 行の説明なので、止める理由にはなりません。
+  personal_data: false
+enforcement: []
