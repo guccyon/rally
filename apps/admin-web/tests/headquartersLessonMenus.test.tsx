@@ -106,7 +106,7 @@ function apiOf(
 }
 
 // 表の下の、直近 30 日の予約の数え方の注記。
-const NOTE = "この 30 日間に入った予約（キャンセルされていないもの）の数です。";
+const NOTE = "直近 30 日の予約は、今から 30 日前から今までに入った予約のうち、キャンセルされていないものの数です。";
 
 function cellsOf(row: HTMLElement) {
   return within(row).getAllByRole("cell").map((cell) => cell.textContent);

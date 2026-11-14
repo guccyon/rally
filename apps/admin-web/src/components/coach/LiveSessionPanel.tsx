@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
@@ -9,6 +9,7 @@ import { ResultMessage } from "@/components/ui/ResultMessage";
 import {
   BOOKING_STATUS_LABELS,
   formatDateTime,
+  formatTime,
   SESSION_STATUS_LABELS,
 } from "@/components/labels";
 
@@ -73,11 +74,53 @@ function BookingTable({
 
 const onOff = (on: boolean) => (on ? "入" : "切");
 
+/** セッションの状態・開始・終了・通話時間。joinedMedia があれば入室前チェックから引き継いだカメラとマイクの入切も出す。 */
+function SessionSummary({
+  session,
+  joinedMedia,
+}: {
+  session: Schemas["LiveLessonSession"];
+  joinedMedia: PrejoinMediaState | null;
+}) {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
+      <dt>状態</dt>
+      <dd>{SESSION_STATUS_LABELS[session.status]}</dd>
+      <dt>セッション ID</dt>
+      <dd className="font-mono">{session.session_id}</dd>
+      <dt>開始</dt>
+      <dd>{formatDateTime(session.started_at)}</dd>
+      {session.ended_at && (
+        <>
+          <dt>終了</dt>
+          <dd>{formatDateTime(session.ended_at)}</dd>
+        </>
+      )}
+      {joinedMedia && (
+        <>
+          <dt>カメラ・マイク</dt>
+          <dd>
+            カメラ: {onOff(joinedMedia.camera)}・マイク: {onOff(joinedMedia.mic)}（入室前チェックのまま）
+          </dd>
+        </>
+      )}
+      {session.duration_sec != null && (
+        <>
+          <dt>通話時間</dt>
+          <dd>{session.duration_sec} 秒</dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
 /**
  * 通話への参加。開いたときに自分の予約の一覧（listMyCoachBookings）を、生徒が予約したときのレッスンメニューとともに出す。
  * 確定した予約の行は開始 5 分前から「入室前チェック」（PrejoinCheck）を開け、開始時刻から入室（セッションの開始）できる。
  * 開始 5 分前より早い行は開ける時刻を出し、開いたまま時刻をまたいだら読み込み直さずにボタンに切り替える。
- * 入室したら同じセッションを終了できる。通話中の表示と「通話を終了」は長い一覧の下に埋もれないよう、一覧より上に出す。相手の映像はモックなので出さない。
+ * 入室したら（セッションが in_progress の間）一覧を描かず、通話中の画面（開始の知らせ・状態・カメラとマイクの入切・「通話を終了」）に入れ替える。
+ * 長い一覧の下に埋もれないよう、切り替わったら通話中の見出しに焦点を移して画面の先頭を見せる（#1609）。相手の映像はモックなので出さない。
+ * 終了したら「通話を終了しました。」を出したまま一覧に戻り、焦点を一覧の先頭に移す。
  * 時刻の判断は端末の時計ではなくサーバーに合わせた時計で行う。一覧を読んだ応答の Date ヘッダーでずれを決め、入室で 409 slot_not_started が
  * 返ったらその応答の Date で合わせ直す（入室は繰り返し送らない）。Date が読めなければ端末の時計のまま。
  * media はブラウザーのカメラ・マイク・スピーカー（テストでは作り物に差し替える）。
@@ -98,6 +141,20 @@ export function LiveSessionPanel({
   /** サーバーの時計と端末の時計のずれ（ミリ秒。serverClock.ts）。分かるまでは 0（端末の時計） */
   const [clockOffset, setClockOffset] = useState(0);
   const now = useNow() + clockOffset;
+  const inCall = session?.status === "in_progress";
+  const inCallHeadingRef = useRef<HTMLHeadingElement>(null);
+  const listTopRef = useRef<HTMLDivElement>(null);
+  /** 通話中の画面と一覧が入れ替わったか（開いた直後の一覧では焦点を動かさない） */
+  const switched = useRef(false);
+
+  // 入れ替わったら、通話中は見出しへ、終了して一覧に戻ったら一覧の先頭へ焦点を移し、その位置を画面の先頭に見せる
+  useEffect(() => {
+    if (!inCall && !switched.current) return;
+    switched.current = true;
+    const target = inCall ? inCallHeadingRef.current : listTopRef.current;
+    target?.scrollIntoView?.({ block: "start" });
+    target?.focus({ preventScroll: true });
+  }, [inCall]);
 
   const fetchBookings = useCallback(async (): Promise<{ list: ListState; clockOffset?: number }> => {
     const response = await api.listMyCoachBookings();
@@ -189,47 +246,42 @@ export function LiveSessionPanel({
     }
   }
 
+  if (session && inCall) {
+    const booking = list.kind === "loaded" ? list.upcoming.find((item) => item.booking.booking_id === session.booking_id) : undefined;
+    const menu = booking?.booking.lesson_menu ? bookingLessonMenuLabel(booking.booking.lesson_menu) : null;
+    return (
+      <section aria-labelledby="live-session-in-call-heading" className="space-y-4">
+        <div className="space-y-1">
+          <h3
+            id="live-session-in-call-heading"
+            ref={inCallHeadingRef}
+            tabIndex={-1}
+            className="text-xl font-black focus:outline-none"
+          >
+            ビデオ通話中
+          </h3>
+          {booking && (
+            <p>
+              {formatDateTime(booking.slot.starts_at)}〜{formatTime(booking.slot.ends_at)}・生徒:{" "}
+              {booking.student_display_name ?? "（名前を表示できません）"}
+              {menu && `・メニュー: ${menu}`}
+            </p>
+          )}
+        </div>
+        <ResultMessage result={result} />
+        <SessionSummary session={session} joinedMedia={joinedMedia} />
+        <p className="text-sm text-text-muted">映像はモックのため表示しません。</p>
+        <Button variant="danger" disabled={busy} onClick={onEnd}>
+          通話を終了
+        </Button>
+      </section>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div ref={listTopRef} tabIndex={-1} className="space-y-4 focus:outline-none">
       <ResultMessage result={result} />
-      {session && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
-          <dt>状態</dt>
-          <dd>{SESSION_STATUS_LABELS[session.status]}</dd>
-          <dt>セッション ID</dt>
-          <dd className="font-mono">{session.session_id}</dd>
-          <dt>開始</dt>
-          <dd>{formatDateTime(session.started_at)}</dd>
-          {session.ended_at && (
-            <>
-              <dt>終了</dt>
-              <dd>{formatDateTime(session.ended_at)}</dd>
-            </>
-          )}
-          {session.status === "in_progress" && joinedMedia && (
-            <>
-              <dt>カメラ・マイク</dt>
-              <dd>
-                カメラ: {onOff(joinedMedia.camera)}・マイク: {onOff(joinedMedia.mic)}（入室前チェックのまま）
-              </dd>
-            </>
-          )}
-          {session.duration_sec != null && (
-            <>
-              <dt>通話時間</dt>
-              <dd>{session.duration_sec} 秒</dd>
-            </>
-          )}
-        </dl>
-      )}
-      {session?.status === "in_progress" && (
-        <>
-          <p className="text-sm text-text-muted">映像はモックのため表示しません。</p>
-          <Button variant="danger" disabled={busy} onClick={onEnd}>
-            通話を終了
-          </Button>
-        </>
-      )}
+      {session && <SessionSummary session={session} joinedMedia={null} />}
       <p className="text-sm">
         あなたの枠に入った予約です。確定した予約は、開始 {PREJOIN_CHECK_LEAD_MINUTES} 分前から「入室前チェック」でカメラとマイクを確かめ、開始時刻から入室できます。
       </p>

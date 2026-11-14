@@ -246,6 +246,9 @@ enum ErrorCode {
     'live_lesson_session_ended_by_headquarters',
   ),
   slotNotStarted('slot_not_started'),
+  loginCodeInvalid('login_code_invalid'),
+  loginCodeExpired('login_code_expired'),
+  tooManyRequests('too_many_requests'),
 
   /// 契約にない（このアプリの版が知らない）値。契約の enum には含まれない。
   unknown('');
