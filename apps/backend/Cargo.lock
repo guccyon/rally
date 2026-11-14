@@ -1662,6 +1662,8 @@ dependencies = [
  "domain",
  "infra",
  "rand",
+ "serde_json",
+ "serde_yaml",
  "sqlx",
  "time",
  "tokio",

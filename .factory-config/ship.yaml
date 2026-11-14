@@ -42,6 +42,8 @@ touch:
     - { label: "生徒アプリ（スマートフォンのブラウザで開く。最初にアカウントを登録する）", port_env: STUDENT_WEB_PORT, path: /, qr: true }
     - { label: "本部・コーチの管理画面（ロールを選び、下のトークンでログイン）", port_env: ADMIN_WEB_PORT, path: /, qr: true }
   # ログインの手がかり。出力は JSON の配列 [{"label": ..., "value": ...}]（モックのトークン。apps/backend の README の「認証」）
+  # 本部も合成シードが登録したアカウントを指す（モックのトークンはどの ID でも本部として通るが、お休みなど本部の操作の記録は
+  # 実在の本部のアカウントへの外部キーを持ち、登録のない ID では 500 になる。Issue #1480。検査は apps/backend/crates/seed/tests/touch_accounts.rs）
   accounts:
     service: postgres
     command:
@@ -54,8 +56,8 @@ touch:
       - -c
       - >-
         select coalesce(json_agg(a), '[]') from (
-          select '本部（モックのトークン。どの ID でも本部として通る）' as label,
-                 'mock.headquarters.00000000-0000-4000-8000-000000000001' as value
+          select * from (select '本部: ' || display_name as label, 'mock.headquarters.' || account_id as value
+                         from identity.accounts where role = 'headquarters' order by created_at, account_id limit 1) h
           union all
           select * from (select 'コーチ: ' || display_name, 'mock.coach.' || account_id
                          from identity.accounts where role = 'coach' order by created_at, account_id limit 3) c
