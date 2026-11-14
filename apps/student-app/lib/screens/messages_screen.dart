@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/error_message.dart';
 import '../api/models.dart';
 import '../state/chat.dart';
 import '../state/student_flow.dart';
@@ -110,6 +111,12 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     // busy はアプリで 1 つ（チャットの操作も StudentFlowNotifier.run を通す）
     final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
     final notifier = ref.read(chatProvider.notifier);
+    final flowNotifier = ref.read(studentFlowProvider.notifier);
+    final notEntitled = ref.watch(
+      studentFlowProvider.select(
+        (s) => s.errorMessage == chatNotEntitledMessage,
+      ),
+    );
     final messages = state.messages ?? const <Message>[];
     // 添削の依頼が何回目か（スレッドの中で送った順。返却のカードもこの番号でどの依頼への返却かを示す）
     final requestNumbers = <String, int>{};
@@ -169,6 +176,14 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
           onPressed: busy || !_sendable ? null : _send,
           child: const Text('送信する'),
         ),
+        // 契約の前に送れなかったら、次にやること（月額契約）への入口を同じ場所に出す
+        if (notEntitled) ...[
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: busy ? null : flowNotifier.goToSubscription,
+            child: const Text('月額契約へ進む'),
+          ),
+        ],
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: busy ? null : _sendStamp,
