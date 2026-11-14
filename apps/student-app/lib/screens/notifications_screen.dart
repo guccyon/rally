@@ -78,6 +78,7 @@ class NotificationsScreen extends ConsumerWidget {
     NotificationKind.videoReviewReturned => Icons.rate_review_outlined,
     NotificationKind.messageReceived => Icons.chat_bubble_outline,
     NotificationKind.announcement => Icons.campaign_outlined,
+    NotificationKind.firstLessonFollowup => Icons.event_repeat_outlined,
     null => Icons.notifications_outlined,
   };
 }

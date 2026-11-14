@@ -708,6 +708,7 @@ void main() {
       'video_review_returned': true,
       'message_received': true,
       'announcement': true,
+      'first_lesson_followup': true,
     };
 
     final read = await apiReplying(200, settings).getMyNotificationSettings();
@@ -734,6 +735,12 @@ void main() {
     expect(updated.bookingConfirmed, isTrue);
     expect(updated.bookingCancelledByHeadquarters, isTrue);
     expect(updated.messageReceived, isTrue);
+    expect(updated.firstLessonFollowup, isTrue);
+
+    // フォローの項目を返さないサーバーの版でも読め、既定の true とみなす
+    final older = Map.of(settings)..remove('first_lesson_followup');
+    final readOlder = await apiReplying(200, older).getMyNotificationSettings();
+    expect(readOlder.firstLessonFollowup, isTrue);
   });
 
   test('お知らせの一覧と既読にする操作のパスと、知らない種類のお知らせ', () async {
@@ -780,6 +787,36 @@ void main() {
     expect(sent.single.url.path, '/notifications/me/read');
     expect(sent.single.body, isEmpty);
     expect(read.notifications.single.isRead, isTrue);
+  });
+
+  test('お知らせの開く先は種類に要る項目があるときだけ読み、ない・知らない先は null にする', () async {
+    Map<String, dynamic> followup(String id, Object? destination) => {
+      'notification_id': id,
+      'kind': 'first_lesson_followup',
+      'body': '初回レッスンおつかれさまでした。',
+      'created_at': '2026-10-26T03:00:00Z',
+      'is_read': false,
+      'destination': ?destination,
+    };
+    final list = await apiReplying(200, {
+      'notifications': [
+        followup('n1', {'kind': 'slot_search', 'sport': 'tennis'}),
+        followup('n2', {'kind': 'coach_profile', 'coach_id': 'c1'}),
+        followup('n3', null),
+        followup('n4', {'kind': 'something_new'}),
+        followup('n5', {'kind': 'slot_search'}),
+      ],
+    }).listMyNotifications();
+
+    final [slots, coach, none, unknown, incomplete] = list.notifications;
+    expect(slots.kind, NotificationKind.firstLessonFollowup);
+    expect(slots.destination!.kind, NotificationDestinationKind.slotSearch);
+    expect(slots.destination!.sport, Sport.tennis);
+    expect(coach.destination!.kind, NotificationDestinationKind.coachProfile);
+    expect(coach.destination!.coachId, 'c1');
+    expect(none.destination, isNull);
+    expect(unknown.destination, isNull);
+    expect(incomplete.destination, isNull);
   });
 
   test('自分のプロフィールの照会と表示名の変更のパスと、書いたとおりに送る表示名', () async {

@@ -204,6 +204,8 @@ fn samples_cover_every_event_of_events_yaml() {
         .as_sequence()
         .unwrap()
         .iter()
+        // 契約だけ先に置き、発火がまだないイベント（planned_by）は変種もないので見本に入らない
+        .filter(|event| event["planned_by"].is_null())
         .map(|event| event["name"].as_str().unwrap())
         .collect();
     let samples = samples();

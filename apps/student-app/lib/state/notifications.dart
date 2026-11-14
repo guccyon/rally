@@ -135,13 +135,15 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
   void close() => _flow.returnTo(state.returnStep ?? FlowStep.home);
 
   /// [notification] の行から進めるか（本部からのお知らせは本文がすべてで行き先がなく、このアプリの版が知らない種類も
-  /// 進めない）
+  /// 進めない。フォローのお知らせの開く先（`destination`）へ進むのはまだで、今は進めない）
   bool canOpen(ApiNotification notification) => switch (notification.kind) {
     NotificationKind.bookingConfirmed ||
     NotificationKind.bookingCancelledByHeadquarters ||
     NotificationKind.videoReviewReturned ||
     NotificationKind.messageReceived => true,
-    NotificationKind.announcement || null => false,
+    NotificationKind.announcement ||
+    NotificationKind.firstLessonFollowup ||
+    null => false,
   };
 
   /// 行を押したとき。お知らせは行き先の ID を持たないので、種類に応じた一覧の画面を開く
@@ -156,7 +158,9 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
         await _flow.openMyVideos();
       case NotificationKind.messageReceived:
         await ref.read(chatProvider.notifier).openChat();
-      case NotificationKind.announcement || null:
+      case NotificationKind.announcement ||
+          NotificationKind.firstLessonFollowup ||
+          null:
         return;
     }
   }

@@ -563,6 +563,7 @@ class FakeStudentApi implements StudentApi {
             body: n.body,
             createdAt: n.createdAt,
             isRead: true,
+            destination: n.destination,
           );
         }
         return NotificationList(notifications: notifications);
@@ -659,6 +660,7 @@ abstract final class Fixtures {
     videoReviewReturned: true,
     messageReceived: true,
     announcement: true,
+    firstLessonFollowup: true,
   );
 
   static final now = DateTime.utc(2026, 10, 26, 3);
