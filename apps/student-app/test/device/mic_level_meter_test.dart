@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rally_student_app/device/ios_local_media.dart';
+import 'package:rally_student_app/device/mic_level_meter.dart';
 
 /// 振幅 [amplitude]（0.0〜1.0）の正弦波を 16bit・リトルエンディアンの PCM にする
 Uint8List _sine(double amplitude, {int samples = 1600}) {
