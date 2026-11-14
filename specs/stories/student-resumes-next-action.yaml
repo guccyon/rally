@@ -11,7 +11,7 @@ preconditions:
   - "予約できる体験予約のスロット（同期レッスン）がある"
 time:
   - "予約したスロットの開始 5 分前・開始時刻・終了時刻をまたぐ（端末の時計ではなく、サーバーに合わせた時計で判断する）"
-  - "途中でアプリを開き直す（ログインし直しは #1404 の後。それまでは同じ生徒のままアプリの段の状態を捨ててホームを開く）"
+  - "途中でアプリを開き直す（iOS / Android はアプリを止めて起動し直し、Web 版はページを開き直す。登録の結果は端末に残っていて（iOS / Android はアプリのファイル、Web 版はブラウザー。#1597）、同じ生徒のままアプリの段の状態を捨ててホームを開く。ログインし直しは #1404 の後）"
 steps:
   - where: "student-app ホーム"
     do: "体験予約を確定せずにホームを開く"
@@ -71,7 +71,7 @@ touches:
     - student-app.getMyEntitlement
   events: [booking.confirmed, call.started, lesson.completed, subscription.started]
 origin:
-  issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431", "guccyon/rally#1514", "guccyon/rally#1364", "guccyon/rally#1519", "guccyon/rally#1560"]
+  issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431", "guccyon/rally#1514", "guccyon/rally#1364", "guccyon/rally#1519", "guccyon/rally#1560", "guccyon/rally#1597"]
   note: "生徒アプリで「次の操作がその直後の画面にしかなく、一度離れると戻れない」不具合がまとまって見つかり、1 件ずつ当て布をせずサーバーの状態から次の操作を出すことにした（ADR 0010。画面は specs/ux/issue-1436.yaml）"
   retro: false
 status: active

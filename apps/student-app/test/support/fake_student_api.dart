@@ -14,7 +14,6 @@ class FakeStudentApi implements StudentApi {
     NotificationSettings? notificationSettings,
     List<ApiNotification>? notifications,
     List<MyBooking>? myBookings,
-    bool? trialAvailable,
     List<MyVideo>? myVideos,
     this.entitlement,
     List<SubscriptionPlanDetail>? subscriptionPlans,
@@ -34,8 +33,6 @@ class FakeStudentApi implements StudentApi {
        nextActions = List.of(nextActions ?? const []),
        slots = slots ?? [Fixtures.slot],
        myBookings = List.of(myBookings ?? Fixtures.myBookings),
-       trialAvailable =
-           trialAvailable ?? (myBookings ?? Fixtures.myBookings).isEmpty,
        myVideos = List.of(myVideos ?? Fixtures.myVideos),
        lessonCompletions = List.of(
          lessonCompletions ?? Fixtures.lessonCompletions,
@@ -79,9 +76,14 @@ class FakeStudentApi implements StudentApi {
   /// `cancelBooking` でキャンセル済みにする）
   final List<MyBooking> myBookings;
 
-  /// 体験予約できるかのサーバーの判定（`listMyBookings` の `trial_available`）。null なら応答に載せない。
-  /// 渡さなければ、予約がまだない生徒（[myBookings] が空）だけ true。体験予約を作ったら false にする
-  bool? trialAvailable;
+  /// `listMyBookings` の `trial_available`。サーバーと同じく、キャンセルされていない予約がなく、
+  /// 受けたレッスン（[lessonCompletions]）もなければ true
+  bool get trialAvailable =>
+      myBookings.every((b) => b.booking.status == BookingStatus.cancelled) &&
+      lessonCompletions.isEmpty;
+
+  /// true にすると、`listMyBookings` の応答に `trial_available` を載せない（古いサーバーの応答）
+  bool omitTrialAvailable = false;
 
   /// 自分が送った動画（`listMyVideos` が返す）
   final List<MyVideo> myVideos;
@@ -226,8 +228,7 @@ class FakeStudentApi implements StudentApi {
           Fixtures.bookingPending,
           bookingLessonMenu,
         );
-        // サーバーと同じく、作った予約は `listMyBookings` にも出し、体験予約なら体験を使ったことにする
-        if (body.isTrial) trialAvailable = false;
+        // サーバーと同じく、作った予約は `listMyBookings` にも出す
         _putMyBooking(
           booking,
           slots.where((s) => s.slotId == body.slotId).firstOrNull ??
@@ -266,7 +267,7 @@ class FakeStudentApi implements StudentApi {
     'listMyBookings',
     () => MyBookingList(
       bookings: [...myBookings],
-      trialAvailable: trialAvailable,
+      trialAvailable: omitTrialAvailable ? null : trialAvailable,
       clockOffset: clockOffset,
     ),
   );
