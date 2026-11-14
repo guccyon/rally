@@ -189,6 +189,11 @@ describe("入室前チェック", () => {
     expect(await screen.findByText("通話中")).toBeInTheDocument();
     expect(screen.getByText("通話を開始しました。")).toBeInTheDocument();
     expect(screen.getByText("カメラ: 入・マイク: 切（入室前チェックのまま）")).toBeInTheDocument();
+    // 長い一覧の下に埋もれないよう、通話中の表示と「通話を終了」は予約の一覧より前にある
+    const listTable = screen.getByRole("table", { name: "これからの予約" });
+    for (const node of [screen.getByText("通話中"), screen.getByRole("button", { name: "通話を終了" })]) {
+      expect(node.compareDocumentPosition(listTable) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
     expect(fake.live()).toEqual([]);
     expect(fake.probes.every((probe) => probe.closed)).toBe(true);
   });
