@@ -46,10 +46,32 @@ class FlowScaffold extends ConsumerWidget {
     );
     final hasUnreadNotifications =
         state.step == FlowStep.home && notificationsUnread;
+    // ホーム以外は入口のアイコンが 7 つ並び、狭い幅ではタイトルの幅が残らない。
+    // その画面ではタイトルをアイコンの行の下に 1 行で出し、切れずに読めるようにする。
+    final showIcons =
+        showNavigation && state.accessToken != null && !state.step.isAside;
+    final titleBelow = showIcons && state.step != FlowStep.home;
     return Scaffold(
       appBar: AppBar(
         leading: leading,
-        title: Text(title),
+        title: titleBelow ? null : Text(title),
+        bottom: titleBelow
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(48),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).appBarTheme.titleTextStyle,
+                    ),
+                  ),
+                ),
+              )
+            : null,
         actions: [
           if (showNavigation &&
               state.accessToken != null &&
