@@ -22,6 +22,7 @@ import {
 import { BookingStatusBadge } from "./BookingStatusBadge";
 import {
   cancellerLabel,
+  hoursBeforeStart,
   hoursBeforeStartLabel,
   isCoachLeaveCancel,
   isLegacyCancel,
@@ -45,6 +46,8 @@ const NO_CHANGES = "まだ確定もキャンセルもしていない予約です
 const LEGACY_CANCEL =
   "この予約は、キャンセルの経緯を残し始める前にキャンセルされました。キャンセルした人とビデオ通話の枠を使ったかは分かりません。" +
   "開始の何時間前かは、枠の時刻とキャンセルした日時から出しています。";
+const LEGACY_CANCEL_NO_HOURS =
+  "この予約は、キャンセルの経緯を残し始める前にキャンセルされました。キャンセルした人とビデオ通話の枠を使ったかは分かりません。";
 const LEAVE_MISSING = "お休みの記録を読み込めませんでした。開発の担当に知らせてください。";
 
 /** 枠の時刻。終わりが開始と同じ日（日本時間）なら終わりは時刻だけにする。 */
@@ -75,18 +78,19 @@ function CoachLeaveRecord({ leave }: { leave: Schemas["CoachLeave"] }) {
 }
 
 /** キャンセルの経緯。値ごとに文にし、記録のない値は「記録がありません」と書く（推測で埋めない）。 */
-function CancelDetails({ change }: { change: BookingStatusChange }) {
+function CancelDetails({ change, slotStartsAt }: { change: BookingStatusChange; slotStartsAt: string }) {
+  const hours = hoursBeforeStart(change, slotStartsAt);
   const reason = reasonLabel(change);
   const items: DescriptionItem[] = [
     { term: "キャンセルした人", value: cancellerLabel(change) },
-    { term: "開始まで", value: hoursBeforeStartLabel(change.hours_before_start) },
+    { term: "開始まで", value: hoursBeforeStartLabel(hours) },
     { term: "ビデオ通話の枠", value: quotaLabel(change) },
     ...(reason === undefined ? [] : [{ term: "理由", value: reason }]),
   ];
   return (
     <>
       <DescriptionList items={items} label="キャンセルの経緯" />
-      {isLegacyCancel(change) && <Notice message={LEGACY_CANCEL} status="info" />}
+      {isLegacyCancel(change) && <Notice message={hours === undefined ? LEGACY_CANCEL_NO_HOURS : LEGACY_CANCEL} status="info" />}
       {isCoachLeaveCancel(change) &&
         (change.coach_leave ? (
           <CoachLeaveRecord leave={change.coach_leave} />
@@ -98,7 +102,7 @@ function CancelDetails({ change }: { change: BookingStatusChange }) {
 }
 
 /** 状態が変わった記録 1 件のカード（押せない）。頭に状態のタグと日時。 */
-function StatusChangeCard({ change }: { change: BookingStatusChange }) {
+function StatusChangeCard({ change, slotStartsAt }: { change: BookingStatusChange; slotStartsAt: string }) {
   const time = formatShortDateTime(change.changed_at);
   return (
     <article aria-label={`${time} ${BOOKING_STATUS_LABELS[change.status]}`}>
@@ -110,7 +114,7 @@ function StatusChangeCard({ change }: { change: BookingStatusChange }) {
           </time>
         </div>
         {change.status === "confirmed" && <p className="text-sm">予約が確定しました。</p>}
-        {change.status === "cancelled" && <CancelDetails change={change} />}
+        {change.status === "cancelled" && <CancelDetails change={change} slotStartsAt={slotStartsAt} />}
       </Card>
     </article>
   );
@@ -181,7 +185,7 @@ export function BookingDetail({
         ) : (
           <div className="flex flex-col gap-2">
             {status_changes.map((change, index) => (
-              <StatusChangeCard key={`${change.status}-${change.changed_at}-${index}`} change={change} />
+              <StatusChangeCard key={`${change.status}-${change.changed_at}-${index}`} change={change} slotStartsAt={slot.starts_at} />
             ))}
           </div>
         )}

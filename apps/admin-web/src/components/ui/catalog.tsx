@@ -11,6 +11,7 @@ import { dateRangeError, type DateRange } from "./dateRange";
 import { DescriptionList, type DescriptionItem } from "./DescriptionList";
 import { EmptyState } from "./EmptyState";
 import { JoinBar } from "./JoinBar";
+import { KPI_DIRECTION_LABELS, KpiCell, KpiFigure, type KpiDirection, type KpiUnit, type KpiValue } from "./KpiFigure";
 import { LevelMeter } from "./LevelMeter";
 import { ListRow } from "./ListRow";
 import { LoadingBar, SectionLoading, Spinner } from "./Loading";
@@ -40,6 +41,14 @@ export const NOT_IN_ADMIN_WEB: {
   variant?: string;
   reason: string;
 }[] = [
+  {
+    component: "app_bar",
+    reason: "components.yaml の not_for に admin-web とある（見出しと「本部の画面へ戻る」）",
+  },
+  {
+    component: "chip",
+    reason: "components.yaml の not_for に admin-web とある（select を使う）",
+  },
   {
     component: "score_panel",
     reason: "components.yaml の not_for に admin-web とある",
@@ -252,6 +261,34 @@ function TableFrame({ children, narrow = false }: { children: ReactNode; narrow?
 function DialogFrame({ children }: { children: ReactNode }) {
   return <div className="relative h-72 overflow-hidden rounded-md border [transform:translateZ(0)]">{children}</div>;
 }
+
+/** 指標の値の組の見本（kpi.yaml の指標。北極星は hero、ほかは表の cell）。 */
+const NORTH_STAR = {
+  label: "初回レッスン後の 1 ヶ月継続率",
+  unit: "percent",
+  direction: "up_is_good",
+} as const;
+
+type KpiRow = { label: string; unit: KpiUnit; direction: KpiDirection; current: KpiValue; previous: KpiValue };
+
+const KPI_ROWS: KpiRow[] = [
+  { label: "コーチの予約枠充足率", unit: "percent", direction: "up_is_good", current: 74.0, previous: 71.5 },
+  {
+    label: "コーチ別継続率の分散",
+    unit: "none",
+    direction: "down_is_good",
+    current: { reason: "too_few" },
+    previous: 0.012,
+  },
+  { label: "添削の返却リードタイム", unit: "hours", direction: "down_is_good", current: 18.5, previous: 21.0 },
+];
+
+const KPI_COLUMNS: DataTableColumn<KpiRow>[] = [
+  { header: "指標", cell: (row) => row.label },
+  { header: "見方", cell: (row) => <span className="text-text-muted">{KPI_DIRECTION_LABELS[row.direction]}</span> },
+  { header: "今月", variant: "numeric", cell: (row) => <KpiCell value={row.current} unit={row.unit} /> },
+  { header: "前月", variant: "numeric", cell: (row) => <KpiCell value={row.previous} unit={row.unit} previous /> },
+];
 
 /** ラベルと値の並びの見本（予約の詳細）。値がない項目も消さず「—」。 */
 const BOOKING_DETAIL_ITEMS: DescriptionItem[] = [
@@ -750,6 +787,56 @@ export const CATALOG: CatalogEntry[] = [
     component: "timeline",
     state: "empty",
     render: () => <Timeline label="状態が変わった記録" events={[]} empty="状態が変わった記録はありません" />,
+  },
+  {
+    component: "kpi_figure",
+    variant: "hero",
+    state: "default",
+    render: () => (
+      <TableFrame narrow>
+        <KpiFigure {...NORTH_STAR} current={62.4} previous={58.1} />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "kpi_figure",
+    variant: "hero",
+    state: "unavailable",
+    render: () => (
+      <TableFrame narrow>
+        <KpiFigure {...NORTH_STAR} current={{ reason: "not_yet", availableOn: "2026-11-30" }} previous={58.1} />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "kpi_figure",
+    variant: "hero",
+    state: "loading",
+    render: () => (
+      <TableFrame narrow>
+        <KpiFigure {...NORTH_STAR} loading />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "kpi_figure",
+    variant: "hero",
+    state: "error",
+    render: () => (
+      <TableFrame narrow>
+        <KpiFigure {...NORTH_STAR} error />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "kpi_figure",
+    variant: "cell",
+    state: "unavailable",
+    render: () => (
+      <TableFrame>
+        <DataTable label="ほかの指標" columns={KPI_COLUMNS} rows={KPI_ROWS} rowKey={(row) => row.label} />
+      </TableFrame>
+    ),
   },
   ...([false, true] as const).map((danger) => ({
     component: "confirm_dialog",

@@ -64,3 +64,17 @@
 - 理由: #1030 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025）。admin-web の 7 か所の dl に、ラベルの幅と狭い幅の形がなかった。経緯はお知らせの取り下げなどでも要る。トークンと既存の名前・値は変えていない。must の追加はない
 - 効く画面: 正本の上では admin-web の dl のある画面（`hq-booking-detail`・`hq-coach-overview`・`hq-coach-reviews*`・`hq-student-activity`・`hq-coach-leave*`・`hq-announcement-confirm`・`coach-live`）と `design-catalog`。この版で画面が変わるのは両アプリの `design-catalog` だけ。7 か所の dl の `DescriptionList` への置き換えと、予約の詳細の「状態が変わった記録」の `Timeline` への置き換えは別のタスク
 - 承認: 工場（部品・should・lint の追加。must はない）
+
+## 0.9.0（2026-11-14）
+
+- 変えたもの: `components.yaml` に `kpi_figure`（指標の値の組。種類は `hero`（card の plain に今月を figure、右に前月を small text_muted、見方を small text_muted。北極星だけ）と `cell`（data_table の numeric のセル。前月の列は text_muted）。状態は通常・押下（押せない）・無効（使わない）・読み込み中（hero は label を残し「読み込み中…」、cell は data_table の loading）・失敗（hero は error_text、cell は data_table の error）・出せない（`unavailable`。「—」と理由。hero は 1 文、cell は 10 字までの語））と `preview_css` を足し、`card` の `not_for` と `data_table` の `numeric` の注に `kpi_figure` を書き足した。字数の上限のため既存の見本を 19 個絞り、使わなくなった `preview_css` を消した（部品の定めは同じ）。`governance.yaml` の lint に `one-kpi-hero`、`requests` に `tokens-figure-use`（tokens.yaml の figure の用途に北極星を足す。次の版）と `trend_indicator`（前月からの向き。API が向きを返すと決まるまで保留）を足した。admin-web に `KpiFigure`・`KpiCell`（`src/components/ui/KpiFigure.tsx`）を足してカタログに見本を置き、student-app のカタログからは理由付きで除いた。`catalog/catalog.html` を組み立て直した
+- 理由: #1462 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025）。figure の数字はホームのまとめの数だけで、指標の前月の弱め方と、値を出せないときの「—」と理由の出し方（表のセルと card の 2 か所）がなかった。トークンと既存の名前・値は変えていない。must の追加はない
+- 効く画面: 正本の上では本部の指標の画面（id は #1462 で足す）と `design-catalog`。この版で画面が変わるのは admin-web の `design-catalog` だけ。student-app は変わらない
+- 承認: 工場（部品・should・lint の追加。must はない）
+
+## 0.10.0（2026-11-14）
+
+- 変えたもの: `components.yaml` に `app_bar`（アプリバー。種類は `top`（戻るなし）・`back`（戻るあり）、入口は ホーム・自分の予約・自分の動画・チャット・お知らせ・通知の設定・プロフィールの順、しるしはチャットが count・お知らせが dot。状態は通常・押下・フォーカス・無効（送信中。戻ると入口と端末の戻るを止める）・読み込み中（下に 4px の bar）・失敗（バーは変えない））と `chip`（チップ（選択）。種類は `choice`・`filter`、状態は通常・押下・フォーカス・無効（送信中）・読み込み中・失敗（select の `load_failed` の文言）・誤り（「{label}が選ばれていません。1 つ選んでください。」））と `preview_css` を足し、`button` と `select` の `not_for` を `chip` に向けた。字数の上限で既存の見本を絞り、文の経緯の注を削った（部品の定めは同じ）。`governance.yaml` の lint の `button-shape` から chip を除き、`a11y-labels` に label のない chip の group を足した。student-app に `RallyAppBar`（`lib/ui/components/rally_app_bar.dart`）と `RallyChoiceChips`（`lib/ui/components/rally_choice_chips.dart`）を足し、カタログに見本を置いた。admin-web のカタログには置かない（両部品とも `not_for` に admin-web）。`catalog/catalog.html` を組み立て直した
+- 理由: #1404 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025。#1454）。今の `FlowScaffold`（Material の AppBar と `rally_theme.dart` の `appBarTheme`）と `SportSelector`（ピルの選択）を写して正本にした。トークンと既存の名前・値は変えていない。must の追加はない
+- 効く画面: 正本の上では student-app の全画面のアプリバー（`FlowScaffold`）、登録とスロットを探す画面のスポーツ（`SportSelector`）、#1404 の studentLaunch・studentLogin・studentLoginCode と `design-catalog`。この版で画面が変わるのは student-app の `design-catalog` だけ。`FlowScaffold` と `SportSelector` の部品への置き換えは別のタスク
+- 承認: 工場（部品・should・lint の追加。must はない）

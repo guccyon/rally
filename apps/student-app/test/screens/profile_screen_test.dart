@@ -7,6 +7,7 @@ import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/screens/student_flow_screen.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/state/subscription.dart';
+import 'package:rally_student_app/ui/components/rally_button.dart';
 import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_student_api.dart';
@@ -241,6 +242,50 @@ void main() {
     expect(container.read(studentFlowProvider).step, FlowStep.subscription);
     expect(find.text('月額契約を開始しました'), findsOneWidget);
   });
+
+  testWidgets(
+    'ホームの次にやることからプラスで契約し、ホームに戻ってプロフィールを開くと、月額契約の欄にプランと開始の日を出す（#1509）',
+    (tester) async {
+      final api = FakeStudentApi(nextActions: [Fixtures.nextStartSubscription]);
+      final container = await pumpScreen(
+        tester,
+        const StudentFlowScreen(),
+        api: api,
+        initial: atHome,
+      );
+      await container.read(studentFlowProvider.notifier).refreshHome();
+      await tester.pumpAndSettle();
+
+      final entry = find.widgetWithText(RallyButton, '月額契約へ進む');
+      await tester.ensureVisible(entry);
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      await tapText(tester, 'プラス　ビデオ通話 月 4 回');
+      await tapText(tester, '月額契約を始める');
+      expect(find.text('月額契約を開始しました'), findsOneWidget);
+
+      // ホームに戻る（ホームのプランと残りの回数は変わらない）
+      api.nextActions.clear();
+      await tester.tap(find.byTooltip('ホーム'));
+      await tester.pumpAndSettle();
+      expect(find.text('月 4 回のうち残り 4 回'), findsOneWidget);
+
+      await openProfile(tester);
+      final started = api.requests.whereType<StartSubscriptionRequest>();
+      expect(started.single.plan, SubscriptionPlan.plus);
+      final summary = subscriptionSummaryLabel(
+        SubscriptionPlan.plus,
+        startedAt: Fixtures.now,
+      );
+      // 欄の見出しと、契約の行の題の 2 つ
+      expect(find.text('月額契約'), findsNWidgets(2));
+      expect(find.widgetWithText(ListTile, '月額契約'), findsOneWidget);
+      expect(find.widgetWithText(ListTile, summary), findsOneWidget);
+      expect(find.text('月額契約へ進む'), findsNothing);
+      // 表示名の欄はそのまま使える
+      expect(fieldText(tester), '山田');
+    },
+  );
 
   testWidgets('サーバーの受講権だけがある（開き直した）ときはプランを出し、行は押せない（契約の前の画面に戻さない）', (
     tester,

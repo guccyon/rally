@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { NotImplemented, Section } from "@/components/ui/Section";
+import { Section } from "@/components/ui/Section";
 
-/** 本部の画面（読むだけ）。完了記録の一覧は API が admin-web の契約にまだないので「未実装」と出す。 */
+/** 本部の画面（読むだけ）。完了記録の一覧は API が契約にまだないので出さない。 */
 export function HeadquartersHome() {
   return (
     <>
@@ -80,9 +80,6 @@ export function HeadquartersHome() {
         <Link href="/headquarters/unanswered-messages" className="text-primary underline">
           返事の遅れているやり取りを見る
         </Link>
-      </Section>
-      <Section title="完了記録の一覧">
-        <NotImplemented>完了したレッスンの一覧を取る API が admin-web の契約にまだありません。</NotImplemented>
       </Section>
     </>
   );

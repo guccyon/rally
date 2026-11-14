@@ -63,7 +63,7 @@ void main() {
     await tapText(tester, '予約を確定する');
     await tapText(tester, 'ビデオ通話で受ける');
     await tapText(tester, '入室する');
-    expect(find.text('通話中（映像はモック）'), findsOneWidget);
+    expect(find.text('コーチと通話中です\n映像が表示されなくても、故障ではありません'), findsOneWidget);
   }
 
   testWidgets('登録からホームへは履歴を置き換え、スロット検索の「戻る」でホームに戻る。ホームが履歴の底で、登録の画面には戻らない', (
@@ -162,11 +162,11 @@ void main() {
     await history.back();
     expect(history.leftApp, isFalse);
     expect(find.text('通話を終了しますか？'), findsOneWidget);
-    expect(find.text('通話中（映像はモック）'), findsOneWidget);
+    expect(find.text('コーチと通話中です\n映像が表示されなくても、故障ではありません'), findsOneWidget);
 
     await tapText(tester, '通話を続ける');
     expect(find.text('通話を終了しますか？'), findsNothing);
-    expect(find.text('通話中（映像はモック）'), findsOneWidget);
+    expect(find.text('コーチと通話中です\n映像が表示されなくても、故障ではありません'), findsOneWidget);
     expect(api.calls, isNot(contains('endLiveLessonSession')));
 
     // 確認を出したまま「戻る」を押すと、確認を閉じるだけ（通話は続く）
@@ -175,7 +175,7 @@ void main() {
     await history.back();
     expect(history.leftApp, isFalse);
     expect(find.text('通話を終了しますか？'), findsNothing);
-    expect(find.text('通話中（映像はモック）'), findsOneWidget);
+    expect(find.text('コーチと通話中です\n映像が表示されなくても、故障ではありません'), findsOneWidget);
     expect(api.calls, isNot(contains('endLiveLessonSession')));
   });
 
