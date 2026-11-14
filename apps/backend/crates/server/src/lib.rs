@@ -134,6 +134,10 @@ pub fn router() -> Router {
 /// メニューは評価の一覧と同じく完了記録の元が持つ写しを、コーチの表示名は `ProfileCoachDisplayNameLookup` で、評価を
 /// 付けたかは評価の保存先から（`ReviewLessonCompletionReviewLookup`）読む（完了記録は profile・review を直接読まない）。
 ///
+/// 生徒の次の操作（`GET /me/next-actions`。ADR 0010）は予約・通話セッション・動画・完了記録・受講権の保存先から本人の分を
+/// 読んで domain の `NextAction::decide` で決め、コーチの表示名を `ProfileCoachDisplayNameLookup` で添える
+/// （`GetMyNextActions`）。読むだけで、ビデオ通話の枠は消費しない。
+///
 /// 本部によるコーチの受付の停止・再開（`POST /coaches/{coach_id}/suspend`・`/resume`）は、コーチがいるかをアカウントの
 /// 保存先に問い合わせ（`ProfileCoachIntroductionLookup`）、コーチの受付の保存先に書く（`SuspendCoach`・`ResumeCoach`）。
 /// 受付の状態はスロットの検索と予約の作成が同じ中身を読み、コーチの一覧（`GET /coaches`）は scheduling に問い合わせて
