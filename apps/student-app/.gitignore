@@ -47,3 +47,9 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 /screenshots/out/
+
+# ios/ は Runner/Info.plist だけを置く（README）。flutter pub get と flutter create が足すほかの雛形は残さない
+/ios/*
+!/ios/Runner/
+/ios/Runner/*
+!/ios/Runner/Info.plist

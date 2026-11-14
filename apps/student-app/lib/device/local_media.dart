@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'local_media_unsupported.dart'
+import 'local_media_native.dart'
     if (dart.library.js_interop) 'web_local_media.dart';
 
 /// 端末のカメラ・マイクを開いた結果（カメラとマイクは別々に扱う）。
@@ -16,7 +16,7 @@ enum MediaDeviceStatus {
   missing,
 }
 
-/// 端末のカメラ・マイク・スピーカーを触る所（入室前チェックのポート）。本物は [createLocalMedia]（Web 版はブラウザー）、
+/// 端末のカメラ・マイク・スピーカーを触る所（入室前チェックのポート）。本物は [createLocalMedia]（Web 版はブラウザー、iOS 版は端末）、
 /// テストは作り物に差し替える（[localMediaProvider]）。
 /// 映像と音は端末の中で見せて聞かせるだけで、録らない・残さない・外へ送らない（governance の media-no-record）。
 /// 通話サービスにはつながない。
@@ -45,7 +45,7 @@ abstract class LocalMedia {
   /// 鳴っている試し音を止める
   void stopTestTone();
 
-  /// 端末のこのアプリの設定を開けるか（Web 版のブラウザーは開けない）
+  /// 端末のこのアプリの設定を開けるか（Web 版のブラウザーは開けない。iOS 版は開ける）
   bool get canOpenSettings;
 
   /// 端末のこのアプリの設定を開く
