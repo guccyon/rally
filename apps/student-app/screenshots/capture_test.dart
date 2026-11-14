@@ -183,11 +183,11 @@ final screens = <Screen>[
     await _register(t);
     await tapText(t, 'スロットを探して予約する');
   }),
-  // 予約がまだない生徒（体験予約をまだ使っていないので「体験予約する」）
+  // 予約も受けたレッスンもまだない生徒（サーバーの trial_available が true なので「体験予約する」）
   Screen('slot-search-trial', 'スロットを探す: 体験予約', (t) async {
     await _register(t);
     await tapText(t, 'スロットを探して予約する');
-  }, api: () => _api(myBookings: const [])),
+  }, api: () => _api(myBookings: const [], lessonCompletions: const [])),
   Screen('slot-search-coach', 'スロットを探す: コーチで絞る', (t) async {
     await _register(t);
     await tapText(t, 'コーチを探す');
@@ -358,9 +358,11 @@ final screens = <Screen>[
 FakeStudentApi _api({
   Map<String, StudentApiException> failures = const {},
   List<MyBooking>? myBookings,
+  List<MyLessonCompletion>? lessonCompletions,
 }) => FakeStudentApi(
   failures: failures,
   myBookings: myBookings,
+  lessonCompletions: lessonCompletions,
   entitlement: Fixtures.subscriptionStarted.entitlement,
   favoriteCoaches: [Fixtures.favoriteCoach()],
   notifications: [

@@ -279,7 +279,7 @@ void main() {
   testWidgets('「このコーチの空き枠を見る」でそのコーチに絞った予約枠の検索へ移り、見出しの「絞り込みを外す」で外せる', (
     tester,
   ) async {
-    final api = FakeStudentApi(myBookings: const []);
+    final api = FakeStudentApi(myBookings: const [], lessonCompletions: const []);
     final container = await openCoachProfile(tester, api);
     api.calls.clear();
 
@@ -310,7 +310,7 @@ void main() {
   });
 
   testWidgets('コーチで絞った検索から、今までどおり体験予約して確定待ちに進む', (tester) async {
-    final api = FakeStudentApi(myBookings: const []);
+    final api = FakeStudentApi(myBookings: const [], lessonCompletions: const []);
     final container = await openCoachProfile(tester, api);
     await tapText(tester, 'このコーチの空き枠を見る');
 
@@ -324,7 +324,7 @@ void main() {
   });
 
   testWidgets('コーチで絞った検索の読み込みの間は、読み込み中の旨を出し、前の検索結果を出さない', (tester) async {
-    final api = FakeStudentApi(myBookings: const []);
+    final api = FakeStudentApi(myBookings: const [], lessonCompletions: const []);
     final container = await openCoachProfile(tester, api);
     // 先に絞らずに探した結果がある状態にしておく
     await container
@@ -363,7 +363,7 @@ void main() {
 
   testWidgets('そのコーチの空き枠を読めなければ、その旨と読み直しのボタンを出し、同じ絞り込みで読み直せる', (tester) async {
     final failures = {'searchSlots': Fixtures.unreachable};
-    final api = FakeStudentApi(myBookings: const [], failures: failures);
+    final api = FakeStudentApi(myBookings: const [], lessonCompletions: const [], failures: failures);
     final container = await openCoachProfile(tester, api);
 
     await tapText(tester, 'このコーチの空き枠を見る');

@@ -172,6 +172,7 @@ class StudentFlowState {
     this.profileReturnStep,
     this.bookingsReturnStep,
     this.myBookings,
+    this.canBookTrial = false,
     this.videosReturnStep,
     List<MyVideo>? myVideos,
     this.myVideoReview,
@@ -282,15 +283,10 @@ class StudentFlowState {
   /// 自分の予約（`listMyBookings`。未取得なら null）。キャンセルしたらその予約を応答で置き換える
   final List<MyBooking>? myBookings;
 
-  /// スロットを体験予約として予約するか。サーバーの体験予約の決まり（`createBooking`: キャンセルされていない予約が 1 件でもあれば
-  /// 409 `trial_already_used`）に合わせ、[myBookings] にキャンセルされていない予約がなければ true。
-  /// 予約をまだ読めていない（null）ときは、登録したばかりの生徒の体験予約を止めないよう true
-  bool get canBookTrial {
-    final bookings = myBookings ?? const <MyBooking>[];
-    return bookings.every(
-      (item) => item.booking.status == BookingStatus.cancelled,
-    );
-  }
+  /// スロットを体験予約として予約するか。サーバーの判定（`listMyBookings` の `trial_available`。`createBooking` の
+  /// 409 `trial_already_used` と同じ条件の否定）をそのまま持ち、予約や完了したレッスンの件数からアプリで数え直さない（ADR 0006）。
+  /// 自分の予約をまだ読めていないときや、応答に `trial_available` が載っていないときは通常の予約（false）
+  final bool canBookTrial;
 
   /// 自分の動画の一覧を閉じたときに戻る段（一覧を開いた段）
   final FlowStep? videosReturnStep;
@@ -343,6 +339,7 @@ class StudentFlowState {
     FlowStep? profileReturnStep,
     FlowStep? bookingsReturnStep,
     List<MyBooking>? myBookings,
+    bool? canBookTrial,
     FlowStep? videosReturnStep,
     List<MyVideo>? myVideos,
     VideoReview? myVideoReview,
@@ -384,6 +381,7 @@ class StudentFlowState {
     myBookings: myBookings != null
         ? List.unmodifiable(myBookings)
         : this.myBookings,
+    canBookTrial: canBookTrial ?? this.canBookTrial,
     videosReturnStep: videosReturnStep ?? this.videosReturnStep,
     myVideos: myVideos ?? this.myVideos,
     myVideoReview: myVideoReview ?? this.myVideoReview,
@@ -1170,7 +1168,10 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   Future<void> _loadMyBookings() async {
     final list = await _api.listMyBookings();
     ref.read(serverClockProvider.notifier).adjust(list.clockOffset);
-    state = state.copyWith(myBookings: list.bookings);
+    state = state.copyWith(
+      myBookings: list.bookings,
+      canBookTrial: list.trialAvailable ?? false,
+    );
   }
 
   /// 自分の動画の一覧を開く（`listMyVideos`）。閉じたら今の段に戻る。

@@ -37,7 +37,7 @@ touches:
     - student-app.listMyBookings
     - student-app.createBooking
 origin:
-  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523"]
+  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594"]
   note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから"
   retro: false
 known_gaps:

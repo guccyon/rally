@@ -76,6 +76,15 @@ class FakeStudentApi implements StudentApi {
   /// `cancelBooking` でキャンセル済みにする）
   final List<MyBooking> myBookings;
 
+  /// `listMyBookings` の `trial_available`。サーバーと同じく、キャンセルされていない予約がなく、
+  /// 受けたレッスン（[lessonCompletions]）もなければ true
+  bool get trialAvailable =>
+      myBookings.every((b) => b.booking.status == BookingStatus.cancelled) &&
+      lessonCompletions.isEmpty;
+
+  /// true にすると、`listMyBookings` の応答に `trial_available` を載せない（古いサーバーの応答）
+  bool omitTrialAvailable = false;
+
   /// 自分が送った動画（`listMyVideos` が返す）
   final List<MyVideo> myVideos;
 
@@ -256,7 +265,11 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<MyBookingList> listMyBookings() => _answer(
     'listMyBookings',
-    () => MyBookingList(bookings: [...myBookings], clockOffset: clockOffset),
+    () => MyBookingList(
+      bookings: [...myBookings],
+      trialAvailable: omitTrialAvailable ? null : trialAvailable,
+      clockOffset: clockOffset,
+    ),
   );
 
   @override

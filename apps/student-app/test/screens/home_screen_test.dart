@@ -767,6 +767,29 @@ void main() {
     },
   );
 
+  testWidgets(
+    '予約を作らずに動画添削で受け終えた生徒も、サーバーの trial_available false で「予約する」になり、通常の予約に進める（#1594）',
+    (tester) async {
+      // キャンセルされていない予約は 0 件。予約の件数から決めると「体験予約する」になってしまう
+      final api = FakeStudentApi(
+        myBookings: const [],
+        lessonCompletions: [Fixtures.lessonCompletions.first],
+      );
+      final container = await pumpHome(tester, api);
+
+      await tapText(tester, '次のレッスンを予約する');
+
+      expect(find.text('体験予約する'), findsNothing);
+      await tapText(tester, '予約する');
+
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.bookingPending);
+      expect(state.errorMessage, isNull);
+    },
+  );
+
   testWidgets('受けたレッスンがまだない生徒には「次のレッスンを予約する」を出さない。月額契約の前の文言はそのまま', (
     tester,
   ) async {

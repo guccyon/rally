@@ -574,6 +574,26 @@ async fn second_trial_after_cancelling_a_completed_trial_booking_is_409_trial_al
     create(&app.router, STUDENT, 11, false).await;
 }
 
+/// 予約を作らずに（動画添削などで）レッスンを受け終えた生徒（#1594）。予約は 0 件でも体験は使用済みで、通常の予約は通る
+#[tokio::test]
+async fn student_with_a_completed_lesson_and_no_booking_is_not_offered_a_trial() {
+    let app = app();
+    record_completion(&app).await;
+    assert!(
+        !trial_available(&app).await,
+        "予約がなくても、受けたレッスンがあれば使用済み"
+    );
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, true)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "trial_already_used");
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, false)).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_create_contract(status, &body);
+    assert_eq!(body["is_trial"], false);
+}
+
 #[tokio::test]
 async fn trial_is_available_again_after_cancelling_a_trial_booking_not_taken() {
     let app = app();
