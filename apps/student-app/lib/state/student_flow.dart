@@ -5,6 +5,7 @@ import '../api/http_student_api.dart';
 import '../api/models.dart';
 import '../api/server_clock.dart';
 import '../api/student_api.dart';
+import '../session/session_store.dart';
 import 'chat.dart';
 import 'coach_profile.dart';
 import 'coach_search.dart';
@@ -453,8 +454,49 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       student: response.student,
       step: FlowStep.home,
     );
+    _rememberSession();
     await _loadHome();
   });
+
+  /// 起動したときに、端末に残した登録の結果（[sessionStoreProvider]）があれば同じ生徒でホームから始める。
+  /// 残していなければ登録の画面のまま。段・予約・通話セッションは残していないので、ホームの欄（と次にやること）は
+  /// サーバーから読む（ADR 0010）。最初に `getMyStudentProfile` でトークンを確かめて生徒を読み直し、401 なら残したものを消して
+  /// 登録の画面にする。通信の失敗などそれ以外は、残した生徒のままホームの欄を読む（読めない欄はホームが出す）
+  Future<void> resumeSavedSession() async {
+    final saved = ref.read(sessionStoreProvider).read();
+    if (saved == null) return;
+    state = state.copyWith(
+      accessToken: saved.accessToken,
+      student: saved.student,
+      step: FlowStep.home,
+    );
+    await run(() async {
+      try {
+        final student = await _api.getMyStudentProfile();
+        if (!ref.mounted) return;
+        state = state.copyWith(student: student);
+        _rememberSession();
+      } on StudentApiException catch (e) {
+        if (e.statusCode == 401) {
+          ref.read(sessionStoreProvider).clear();
+          // run が最後に busy を外す
+          state = StudentFlowState(busy: true);
+          return;
+        }
+      }
+      await _loadHome();
+    });
+  }
+
+  /// 今のトークンと生徒を端末に残す（開き直したときに [resumeSavedSession] が読む）。段などほかの状態は残さない
+  void _rememberSession() {
+    final accessToken = state.accessToken;
+    final student = state.student;
+    if (accessToken == null || student == null) return;
+    ref
+        .read(sessionStoreProvider)
+        .save(SavedSession(accessToken: accessToken, student: student));
+  }
 
   /// ホームへ戻る（欄を読み直す）
   Future<void> goHome() {
@@ -969,6 +1011,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         UpdateStudentProfileRequest(displayName: displayName),
       );
       state = state.copyWith(student: student);
+      _rememberSession();
       saved = true;
     }, messageOf: profileErrorMessageOf);
     return saved;
@@ -977,6 +1020,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   Future<void> _loadProfile() async {
     final student = await _api.getMyStudentProfile();
     state = state.copyWith(student: student);
+    _rememberSession();
   }
 
   /// 自分の予約の一覧を開く（`listMyBookings`）。閉じたら今の段に戻る。
