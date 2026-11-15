@@ -125,6 +125,7 @@ fn app() -> App {
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             application::in_memory::InMemoryLessonCompletionRepository::default(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock,
         ),

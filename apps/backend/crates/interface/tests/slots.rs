@@ -125,6 +125,7 @@ fn app() -> App {
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             application::in_memory::InMemoryLessonCompletionRepository::default(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             clock,
         ),

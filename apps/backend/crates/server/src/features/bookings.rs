@@ -18,6 +18,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.bookings(),
             CatalogLessonMenuLookup::new(ports.lesson_menus()),
             ports.completions(),
+            EntitlementQuotaGate::new(ports.entitlements()),
             ports.analytics(),
             ports.clock(),
         ),

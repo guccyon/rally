@@ -39,6 +39,9 @@ pub enum SchedulingError {
     SlotAlreadyBookedByStudent,
     /// 体験予約はその生徒の初回の予約だけ（キャンセルされていない予約がすでにあるか、完了したレッスンがある）
     TrialAlreadyUsed,
+    /// 月額契約の前の生徒（ビデオ通話の暦月の枠を持たない）は、体験を使った後は通常の予約もできない（体験を使い終えた
+    /// 生徒が通常の予約で無料のビデオ通話を受け続けないため。[`super::Booking::is_regular_booking_available`]）
+    LiveLessonNotEntitled,
     /// 予約が確定前（`Pending`）でない（`status` は今の状態）
     BookingNotPending { status: BookingStatus },
     /// 予約はすでにキャンセルしてある

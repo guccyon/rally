@@ -103,6 +103,22 @@ impl Booking {
                 .any(|b| b.status.is_active() && b.student_id == student_id)
     }
 
+    /// 生徒 `student_id` が今通常の予約（体験予約でない）をできるか。ビデオ通話の暦月の枠を持つ（月額契約の受講権がある。
+    /// `has_live_lesson_quota`）なら true（暦月の上限は確定のときに entitlement が確かめる）。持たない生徒（月額契約の前・
+    /// ワンショット）は、体験をまだ使っていない（[`Booking::is_trial_available`] と同じ判定）ときだけ true。
+    ///
+    /// 体験を使い終えた月額契約の前の生徒が、通常の予約で無料のビデオ通話を何度でも受けられないようにする規則。体験の
+    /// 使用済みの判定は体験予約と同じものを使い、ここで数え直さない。
+    pub fn is_regular_booking_available<'a>(
+        student_id: AccountId,
+        bookings: impl IntoIterator<Item = &'a Booking>,
+        has_completed_lesson: bool,
+        has_live_lesson_quota: bool,
+    ) -> bool {
+        has_live_lesson_quota
+            || Self::is_trial_available(student_id, bookings, has_completed_lesson)
+    }
+
     /// 作ったばかりの予約（[`Booking::reserve`] の結果）に、予約したスロット `slot` に結びついたレッスンメニュー
     /// `menu`（catalog から引いた今のメニュー。引けなければ `None`）の写しを残す。
     ///
@@ -994,6 +1010,48 @@ mod tests {
         .unwrap();
         // キャンセルした予約は初回に数えない
         reserve(7, STUDENT, true, &mut next_slot, &[cancelled(trial)]).unwrap();
+    }
+
+    #[test]
+    fn regular_booking_needs_the_live_lesson_quota_once_the_trial_is_used() {
+        let mut first_slot = slot_with_capacity(10, SlotStatus::Open, 2);
+        let trial = reserve(1, STUDENT, true, &mut first_slot, &[]).unwrap();
+        let used = std::slice::from_ref(&trial);
+        // 体験をまだ使っていなければ、枠がなくても通常の予約はできる
+        assert!(Booking::is_regular_booking_available(
+            STUDENT,
+            &[],
+            false,
+            false
+        ));
+        // 体験を使った（キャンセルされていない予約がある・完了したレッスンがある）月額契約の前の生徒はできない
+        assert!(!Booking::is_regular_booking_available(
+            STUDENT, used, false, false
+        ));
+        assert!(!Booking::is_regular_booking_available(
+            STUDENT,
+            &[],
+            true,
+            false
+        ));
+        // 受け終えた体験予約をキャンセルしても、完了したレッスンが残るのでできない
+        assert!(!Booking::is_regular_booking_available(
+            STUDENT,
+            &[cancelled(trial.clone())],
+            true,
+            false
+        ));
+        // 月額契約の生徒（枠を持つ）は体験を使った後もできる
+        assert!(Booking::is_regular_booking_available(
+            STUDENT, used, true, true
+        ));
+        // 別の生徒の予約は関係ない
+        assert!(Booking::is_regular_booking_available(
+            OTHER_STUDENT,
+            used,
+            false,
+            false
+        ));
     }
 
     #[test]

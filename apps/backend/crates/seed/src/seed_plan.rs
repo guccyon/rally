@@ -312,7 +312,9 @@ impl History {
                 else {
                     return sorted(steps);
                 };
-                confirm = cancelled + rng.random_range(DAY..5 * DAY);
+                // 取り直しの枠の公開（確定の最大 7 日前）が、キャンセルした予約の連なりより後になるようにする
+                // （連なりが重なると、前の予約の前に次の枠を公開し、前の予約が次の枠を取ってしまう）
+                confirm = cancelled + 7 * DAY + rng.random_range(DAY..5 * DAY);
             }
             let Outcome::Complete(done) =
                 self.live(rng, calendar, &mut steps, end, confirm, true, None)
@@ -330,15 +332,21 @@ impl History {
             Retention::Within30Days => rng.random_bool(0.3),
             _ => rng.random_bool(0.9),
         };
+        let mut subscribed_at = None;
         if subscribes {
             let at = first_done + rng.random_range(HOUR..7 * DAY);
             if at < end {
                 steps.push(Step::Subscribe { at: time(at) });
+                subscribed_at = Some(at);
             }
         }
 
-        if !video_first || rng.random_bool(0.3) {
-            let mut confirm = first_confirm;
+        // 体験の後の通常の予約は、月額契約を始めた生徒だけ（月額契約の前の生徒は体験の後の通常の予約を断られる。#1656）。
+        // 最初の予約は契約の後（確定の間隔は契約の時点から数える）
+        if (!video_first || rng.random_bool(0.3))
+            && let Some(subscribed_at) = subscribed_at
+        {
+            let mut confirm = first_confirm.max(subscribed_at);
             loop {
                 confirm += rng.random_range(MIN_DAYS_BETWEEN_CONFIRMS * DAY..35 * DAY);
                 if confirm >= end {
