@@ -590,6 +590,7 @@ class FakeStudentApi implements StudentApi {
             body: n.body,
             createdAt: n.createdAt,
             isRead: true,
+            bookingId: n.bookingId,
           );
         }
         return NotificationList(notifications: notifications);

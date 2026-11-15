@@ -20,7 +20,7 @@
 
 ## 結果
 
-- 鍵を入れた環境では、手で作った `mock.` のトークンと改ざんしたトークンはどの役割の操作でも 401（`crates/server/tests/signed_access_tokens.rs`）
+- 鍵を入れた環境では、手で作った `mock.` のトークンと改ざんしたトークンはどの役割の操作でも 401（`crates/server/tests/it/signed_access_tokens.rs`）
 - 鍵を入れるまでは本番も staging も今までどおりモックで動く（起動時に `access tokens are unsigned mock tokens` と書く）。**本番と staging に鍵を配る（置き場を用意して shipper に渡す）のは人の作業で、それが済むまでなりすましは塞がらない**。運用 operating の前に済ませる
 - 本番と staging は別の鍵にする（staging のトークンで本番に入れないように）
 - 期限がないので、漏れたトークンは鍵を替えるまで使える。期限・更新・失効（coach-app の `revokeCoachSession`）は、ログイン（#1416・#1418・ADR 0012）を backend に入れるときに別に決める

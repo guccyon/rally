@@ -398,6 +398,14 @@ FakeStudentApi _api({
   favoriteCoaches: [Fixtures.favoriteCoach()],
   notifications: [
     ApiNotification(
+      notificationId: '99999999-9999-4999-8999-999999999994',
+      kind: NotificationKind.lessonReminder,
+      body: '予約したレッスンが 1 時間以内に始まります',
+      createdAt: Fixtures.now.subtract(const Duration(minutes: 30)),
+      isRead: false,
+      bookingId: Fixtures.bookingId,
+    ),
+    ApiNotification(
       notificationId: '99999999-9999-4999-8999-999999999991',
       kind: NotificationKind.bookingConfirmed,
       body: '10/28（水）12:00 の予約が確定しました。',

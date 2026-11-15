@@ -2,7 +2,7 @@
 //!
 //! DB の `identity.accounts.role` / `sport`（CHECK 制約の値）と、モックのトークン
 //! （[`crate::MockTokenService`]）の役割はこの表だけを通す。CHECK との一致は
-//! `tests/schema.rs` が確かめる。
+//! `tests/it/schema.rs` が確かめる。
 
 use domain::{catalog::Sport, identity::Role};
 

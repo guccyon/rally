@@ -8,7 +8,7 @@
 - ストーリーは「あるべき流れ」で書く。既存の機能に遡って書いて、今の実装が満たしていないところは `known_gaps` に書く（直したら消す）
 - `touches` には正本にある id だけを書く（`context-map.yaml` の id、`glossary.yaml` の id、`<app>.<operationId>`、`analytics/events.yaml` の name）
 
-検査は `apps/backend/crates/application/tests/user_stories.rs`（必須の欄があること、id とファイル名が揃うこと、`actors.yaml` と `touches` の id が正本にあること）。
+検査は `apps/backend/crates/application/tests/it/user_stories.rs`（必須の欄があること、id とファイル名が揃うこと、`actors.yaml` と `touches` の id が正本にあること）。
 
 ## いまのストーリー
 
@@ -21,4 +21,5 @@
 | `student-books-after-first-lesson` | 生徒 | 初回レッスンを受け終えたあと、ホームの「次のレッスンを予約する」から 2 回目の予約に進む。体験を使い終えたあとの添削の依頼は断られ、月額契約へ進む入口が出る（#1360・#1659） |
 | `student-resumes-next-action` | 生徒 | 予約やレッスンの途中で画面を離れても、ホームの「次にやること」（サーバーの状態から出す）から同じ次の操作に戻れる（#1436） |
 | `student-logs-out` | 生徒 | プロフィールの「ログアウトする」で自分でログアウトし、同じブラウザーを開き直した人には前の生徒の予約・相談・契約が見えず、登録の画面が出る。開いたままのほかのタブも登録の画面になる（#1588・#1669） |
+| `student-opens-prejoin-from-reminder` | 生徒 | お知らせのレッスンのリマインドから、その予約の入口を開いて入室前チェックに進む。通知の設定でリマインドを切ると、以後のリマインドは届かない（#1463・#1477） |
 | `coach-prejoin-check` | コーチ | 開始 5 分前から入室前チェックでカメラの映りと背景・マイク・スピーカーを確かめ、開始時刻からビデオ通話（モック）に入る（#1039） |

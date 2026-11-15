@@ -27,12 +27,14 @@ void main() {
     required String body,
     required int minutesAgo,
     bool isRead = false,
+    String? bookingId,
   }) => ApiNotification(
     notificationId: id,
     kind: kind,
     body: body,
     createdAt: Fixtures.now.subtract(Duration(minutes: minutesAgo)),
     isRead: isRead,
+    bookingId: bookingId,
   );
 
   final booking = notification(
@@ -59,6 +61,15 @@ void main() {
     body: 'コーチからメッセージが届きました',
     minutesAgo: 3,
     isRead: true,
+  );
+
+  /// 開始 1 時間前のレッスンのリマインド（結び付く予約は [Fixtures.bookingId]）
+  final reminder = notification(
+    'n-reminder',
+    kind: NotificationKind.lessonReminder,
+    body: '予約したレッスンが 1 時間以内に始まります',
+    minutesAgo: 1,
+    bookingId: Fixtures.bookingId,
   );
 
   /// このアプリの版が知らない種類（`kind` が null）のお知らせ
@@ -340,6 +351,88 @@ void main() {
       api.calls.clear();
 
       await tester.tap(tileOf(cancelled));
+      await tester.pumpAndSettle();
+
+      expect(api.calls, ['listMyBookings']);
+      expect(container.read(studentFlowProvider).step, FlowStep.myBookings);
+    });
+
+    testWidgets('レッスンのリマインドは booking_id の予約の入口を開き、開始 5 分前から入室前チェックに進める', (
+      tester,
+    ) async {
+      final startsAt = Fixtures.now.add(const Duration(minutes: 3));
+      final api = FakeStudentApi(
+        notifications: [reminder],
+        myBookings: [
+          Fixtures.myBooking(
+            bookingId: 'booking-other',
+            startsIn: Duration.zero,
+          ),
+          Fixtures.myBooking(
+            bookingId: Fixtures.bookingId,
+            startsIn: startsAt.difference(Fixtures.now),
+          ),
+        ],
+      );
+      final container = await pumpHome(tester, api);
+      await openNotifications(tester);
+      expect(
+        (tester.widget<ListTile>(tileOf(reminder)).leading! as Icon).icon,
+        Icons.alarm_outlined,
+      );
+      api.calls.clear();
+
+      await tester.tap(tileOf(reminder));
+      await tester.pumpAndSettle();
+
+      expect(api.calls, ['listMyBookings']);
+      var state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.bookingPending);
+      expect(state.booking?.bookingId, Fixtures.bookingId);
+      expect(state.booking?.startsAt, startsAt);
+
+      await tapText(tester, 'ビデオ通話で受ける');
+
+      state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.prejoinCheck);
+      expect(state.booking?.bookingId, Fixtures.bookingId);
+    });
+
+    testWidgets('予約の入口は開いた時点のサーバーの記録で出し、キャンセル済みなら入室の道を出さない', (tester) async {
+      final api = FakeStudentApi(
+        notifications: [reminder],
+        myBookings: [
+          Fixtures.myBooking(
+            bookingId: Fixtures.bookingId,
+            startsIn: const Duration(hours: 1),
+            status: BookingStatus.cancelled,
+          ),
+        ],
+      );
+      final container = await pumpHome(tester, api);
+      await openNotifications(tester);
+
+      await tester.tap(tileOf(reminder));
+      await tester.pumpAndSettle();
+
+      expect(container.read(studentFlowProvider).step, FlowStep.bookingPending);
+      expect(find.text('ビデオ通話で受ける'), findsNothing);
+      expect(find.text('ホームに戻る'), findsOneWidget);
+    });
+
+    testWidgets('booking_id のないリマインドは自分の予約を開く', (tester) async {
+      final withoutBooking = notification(
+        'n-reminder-old',
+        kind: NotificationKind.lessonReminder,
+        body: '予約したレッスンが近づいています',
+        minutesAgo: 1,
+      );
+      final api = FakeStudentApi(notifications: [withoutBooking]);
+      final container = await pumpHome(tester, api);
+      await openNotifications(tester);
+      api.calls.clear();
+
+      await tester.tap(tileOf(withoutBooking));
       await tester.pumpAndSettle();
 
       expect(api.calls, ['listMyBookings']);

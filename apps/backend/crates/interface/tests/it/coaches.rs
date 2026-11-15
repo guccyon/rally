@@ -1,0 +1,947 @@
+//! `GET /coaches` の統合テスト。本部には admin-web の `listCoaches`、生徒には student-app の
+//! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。本部には直近 30 日に終わった
+//! レッスンの数を、生徒にはその生徒のお気に入りかを添える。本部の一覧は未対応の低い評価のあるコーチと、返事のない
+//! メッセージのあるコーチと、返却の遅れている動画のあるコーチに絞れる。コーチは 403。
+
+use std::time::{Duration, SystemTime};
+
+use application::{
+    async_lesson::AsyncLessonCoachPendingVideoReviewCountsLookup,
+    catalog::CatalogPublishedLessonMenuCountLookup,
+    identity::{
+        AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
+        account_id_uuid,
+    },
+    in_memory::{
+        FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
+        InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
+        InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
+        InMemoryMessageThreadRepository, InMemoryVideoRepository,
+    },
+    lesson::LessonCoachRecentLessonCountLookup,
+    matching::ListCoachesForStudent,
+    messaging::MessagingCoachUnansweredMessageThreadCountLookup,
+    profile::{ListCoaches, ProfileCoachCandidateLookup, ProfileStudentSportLookup},
+    review::{ReviewCoachLowRatedReviewCountLookup, ReviewCoachReviewSummaryLookup},
+    scheduling::{CoachAcceptanceRepository, SchedulingCoachAcceptanceLookup},
+};
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header},
+};
+use domain::{
+    async_lesson::{ReviewComment, Video, VideoId, VideoReviewId},
+    catalog::{
+        LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
+        LessonMenuName, Sport,
+    },
+    identity::{Account, AccountId, Email, Role},
+    lesson::{LessonCompletion, LessonCompletionId, LessonSource},
+    live_lesson::SessionId,
+    matching::FavoriteCoach,
+    messaging::{MessageBody, MessageContent, MessageId, MessageThread, MessageThreadId},
+    profile::DisplayName,
+    review::{LessonReview, LessonReviewComment, LessonReviewId, LowRatedReviewHandling, Rating},
+};
+use serde_json::{Value, json};
+use tower::ServiceExt;
+
+use crate::support;
+
+/// 受付を止める・再開する本部のアカウント。
+const HEADQUARTERS_ID: AccountId = AccountId::from_u128(900);
+
+/// `<役割>:<ID の数値>` の形のトークンを通す偽物（interface は infra のモックに依存できない）。
+struct FakeTokens;
+
+impl TokenIssuer for FakeTokens {
+    fn issue(&self, _claims: TokenClaims) -> AccessToken {
+        unreachable!("このテストでは発行しない")
+    }
+}
+
+impl TokenVerifier for FakeTokens {
+    fn verify(&self, token: &str) -> Result<TokenClaims, InvalidToken> {
+        let (role, id) = token.split_once(':').ok_or(InvalidToken)?;
+        let role = match role {
+            "student" => Role::Student,
+            "coach" => Role::Coach,
+            "headquarters" => Role::Headquarters,
+            _ => return Err(InvalidToken),
+        };
+        let id = id.parse().map_err(|_| InvalidToken)?;
+        Ok(TokenClaims {
+            account_id: AccountId::from_u128(id),
+            role,
+        })
+    }
+}
+
+const HEADQUARTERS: &str = "headquarters:1";
+const STUDENT: &str = "student:3";
+const GOLF_STUDENT: &str = "student:6";
+
+fn account(id: u128, display_name: &str, role: Role, sports: &[Sport]) -> Account {
+    Account::new(
+        AccountId::from_u128(id),
+        Email::new(format!("user{id}@example.com")).unwrap(),
+        DisplayName::new(display_name).unwrap(),
+        role,
+        sports.iter().copied(),
+        SystemTime::UNIX_EPOCH,
+    )
+    .unwrap()
+}
+
+/// コーチ 3 人（うち 2 人は同じ表示名）と、テニスの生徒・ゴルフの生徒（seed などでしか作れない）・本部が 1 人ずつ。
+async fn accounts() -> InMemoryAccountRepository {
+    let accounts = InMemoryAccountRepository::default();
+    for account in [
+        account(1, "本部", Role::Headquarters, &[]),
+        account(2, "たなか", Role::Coach, &[Sport::Tennis]),
+        account(3, "あおき", Role::Student, &[Sport::Tennis]),
+        account(5, "いとう", Role::Coach, &[Sport::Soccer, Sport::Golf]),
+        account(4, "いとう", Role::Coach, &[Sport::Baseball, Sport::Tennis]),
+        account(6, "ごるふ", Role::Student, &[Sport::Golf]),
+    ] {
+        accounts.insert(account).await.unwrap();
+    }
+    accounts
+}
+
+fn review(id: u128, coach_id: u128, rating: i64) -> LessonReview {
+    LessonReview::restore(
+        LessonReviewId::from_u128(id),
+        LessonCompletionId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        Rating::new(rating).unwrap(),
+        LessonReviewComment::new("よい").unwrap(),
+        SystemTime::UNIX_EPOCH,
+    )
+}
+
+fn menu(id: u128, coach_id: u128, sport: Sport, is_published: bool) -> LessonMenu {
+    LessonMenu::restore(
+        LessonMenuId::from_u128(id),
+        AccountId::from_u128(coach_id),
+        LessonMenuContent {
+            sport,
+            format: LessonFormat::Async,
+            name: LessonMenuName::new("添削").unwrap(),
+            description: LessonMenuDescription::default(),
+        },
+        is_published,
+        SystemTime::UNIX_EPOCH,
+    )
+}
+
+/// 照会した時刻（2026-10-31T00:00:00Z）。
+fn now() -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_793_404_800)
+}
+
+const DAY: Duration = Duration::from_secs(24 * 3600);
+
+fn completion(id: u128, coach_id: u128, live: bool, at: SystemTime) -> LessonCompletion {
+    let source = if live {
+        LessonSource::Live(SessionId::from_u128(id))
+    } else {
+        LessonSource::Async(VideoId::from_u128(id))
+    };
+    LessonCompletion::restore(
+        LessonCompletionId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        source,
+        at,
+        false,
+    )
+}
+
+/// 点が `rating` で `at` に送られた、コーチ `coach_id` への評価。
+fn review_at(id: u128, coach_id: u128, rating: i64, at: SystemTime) -> LessonReview {
+    LessonReview::restore(
+        LessonReviewId::from_u128(id),
+        LessonCompletionId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        Rating::new(rating).unwrap(),
+        LessonReviewComment::new("いまひとつ").unwrap(),
+        at,
+    )
+}
+
+const HOUR: Duration = Duration::from_secs(3600);
+
+/// テニスの生徒（3）とコーチ `coach_id` のスレッドを照会の 10 日前に開き、`exchange` の順に（生徒が送ったか, 送信時刻）で
+/// 本文を送る。
+fn message_thread(id: u128, coach_id: u128, exchange: &[(bool, SystemTime)]) -> MessageThread {
+    let student = AccountId::from_u128(3);
+    let coach = AccountId::from_u128(coach_id);
+    let mut thread = MessageThread::open(
+        MessageThreadId::from_u128(id),
+        student,
+        coach,
+        now() - 10 * DAY,
+    )
+    .unwrap();
+    for (n, (by_student, at)) in exchange.iter().enumerate() {
+        thread
+            .send(
+                MessageId::from_u128(id * 100 + n as u128),
+                if *by_student { student } else { coach },
+                MessageContent::Text(MessageBody::new("質問です").unwrap()),
+                true,
+                *at,
+            )
+            .unwrap();
+    }
+    thread
+}
+
+/// テニスの生徒（3）がコーチ `coach_id` に `submitted_at` に送った動画。`returned` なら照会の時刻に返却済み。
+fn video(id: u128, coach_id: u128, submitted_at: SystemTime, returned: bool) -> Video {
+    Video::restore(
+        VideoId::from_u128(id),
+        AccountId::from_u128(3),
+        AccountId::from_u128(coach_id),
+        Sport::Tennis,
+        submitted_at,
+        returned.then(|| {
+            (
+                VideoReviewId::from_u128(id + 100),
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                now(),
+            )
+        }),
+        None,
+    )
+    .unwrap()
+}
+
+/// テニスの生徒（3）のお気に入りはコーチ 4 だけ（ほかの生徒のお気に入りは数えない）。直近 30 日に終わったレッスンは
+/// コーチ 2 が通話 1・添削 1（30 日前ちょうどを含む。31 日前の添削は数えない）、コーチ 5 が添削 1。コーチ 4 は 0。
+/// 本部が見る直近の低い評価は、コーチ 4 が今日の ★1（未対応）と ★3、コーチ 2 が 30 日前ちょうどの ★2（未対応）、
+/// コーチ 5 が対応済みの ★2 と 31 日前の ★1（期間の外）。
+/// 返信のないまま既定の 24 時間の過ぎたスレッドは、コーチ 4 が 30 時間前の発言、コーチ 5 が 24 時間ちょうど前の発言。
+/// コーチ 2 は返信済みと 24 時間に 1 秒足りないものだけ。
+/// 返却待ちのうち送付から 48 時間以上たった動画は、コーチ 2 が 48 時間ちょうど前、コーチ 4 が 72 時間前のもの。
+/// コーチ 5 は 47 時間前の返却待ちと、200 時間前に送って返却済みのものだけ。
+fn app(accounts: InMemoryAccountRepository) -> Router {
+    app_with(accounts, InMemoryCoachAcceptanceRepository::default())
+}
+
+/// [`app`] と同じで、コーチの受付の状態は `acceptances`。
+fn app_with(
+    accounts: InMemoryAccountRepository,
+    acceptances: InMemoryCoachAcceptanceRepository,
+) -> Router {
+    let reviews = InMemoryLessonReviewRepository::with_reviews([
+        review(1, 2, 4),
+        review(2, 2, 3),
+        review(3, 4, 5),
+        review(4, 5, 2),
+    ]);
+    let menus = InMemoryLessonMenuRepository::with_menus([
+        menu(1, 2, Sport::Tennis, true),
+        menu(2, 2, Sport::Tennis, false),
+        menu(3, 5, Sport::Soccer, true),
+        menu(4, 5, Sport::Golf, true),
+    ]);
+    let completions = InMemoryLessonCompletionRepository::with_completions([
+        completion(1, 2, true, now() - DAY),
+        completion(2, 2, false, now() - 30 * DAY),
+        completion(3, 2, false, now() - 31 * DAY),
+        completion(4, 5, false, now()),
+    ]);
+    let low_rated_reviews = InMemoryLessonReviewRepository::with_reviews([
+        review_at(11, 4, 1, now()),
+        review_at(12, 4, 3, now()),
+        review_at(13, 2, 2, now() - 30 * DAY),
+        review_at(14, 5, 2, now() - DAY)
+            .with_handling(Some(LowRatedReviewHandling::new(HEADQUARTERS_ID, now()))),
+        review_at(15, 5, 1, now() - 31 * DAY),
+    ]);
+    let threads = InMemoryMessageThreadRepository::with_threads([
+        message_thread(1, 4, &[(true, now() - 30 * HOUR)]),
+        message_thread(2, 5, &[(true, now() - 24 * HOUR)]),
+        message_thread(3, 2, &[(true, now() - 50 * HOUR), (false, now() - HOUR)]),
+        message_thread(4, 2, &[(true, now() - 24 * HOUR + Duration::from_secs(1))]),
+    ]);
+    let videos = InMemoryVideoRepository::with_videos([
+        video(1, 2, now() - 48 * HOUR, false),
+        video(2, 4, now() - 72 * HOUR, false),
+        video(3, 5, now() - 47 * HOUR, false),
+        video(4, 5, now() - 200 * HOUR, true),
+    ]);
+    let acceptances = SchedulingCoachAcceptanceLookup::new(acceptances);
+    interface::coaches_router(
+        ListCoaches::new(
+            accounts.clone(),
+            acceptances.clone(),
+            LessonCoachRecentLessonCountLookup::new(completions, FixedClock(now())),
+            ReviewCoachLowRatedReviewCountLookup::new(low_rated_reviews, FixedClock(now())),
+            MessagingCoachUnansweredMessageThreadCountLookup::new(threads, FixedClock(now())),
+            AsyncLessonCoachPendingVideoReviewCountsLookup::new(videos, FixedClock(now())),
+        ),
+        ListCoachesForStudent::new(
+            ProfileStudentSportLookup::new(accounts.clone()),
+            ProfileCoachCandidateLookup::new(accounts),
+            ReviewCoachReviewSummaryLookup::new(reviews),
+            CatalogPublishedLessonMenuCountLookup::new(menus),
+            InMemoryFavoriteCoachRepository::with_favorites([
+                FavoriteCoach::restore(
+                    AccountId::from_u128(3),
+                    AccountId::from_u128(4),
+                    SystemTime::UNIX_EPOCH,
+                ),
+                FavoriteCoach::restore(
+                    AccountId::from_u128(6),
+                    AccountId::from_u128(2),
+                    SystemTime::UNIX_EPOCH,
+                ),
+            ]),
+            acceptances,
+        ),
+        FakeTokens,
+    )
+}
+
+/// `GET /coaches<query>`。レスポンスを `app`（admin-web / student-app）の契約で検査する。
+async fn list_coaches(
+    router: &Router,
+    app: &str,
+    query: &str,
+    token: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut request = Request::get(format!("/coaches{query}"));
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let response = router
+        .clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    let body = serde_json::from_slice(&bytes).unwrap();
+    support::Contract::load(app).assert_response("get", "/coaches", status, &body);
+    (status, body)
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_in_display_name_order() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(&router, "admin-web", "", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "coaches": [
+                // 同じ表示名は ID の順
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000004",
+                    "display_name": "いとう",
+                    "acceptance_status": "accepting",
+                    "recent_lesson_count": 0,
+                },
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000005",
+                    "display_name": "いとう",
+                    "acceptance_status": "accepting",
+                    "recent_lesson_count": 1,
+                },
+                {
+                    // 同期と非同期の合計。31 日前のレッスンは数えない
+                    "coach_id": "00000000-0000-0000-0000-000000000002",
+                    "display_name": "たなか",
+                    "acceptance_status": "accepting",
+                    "recent_lesson_count": 2,
+                },
+            ],
+        })
+    );
+}
+
+#[tokio::test]
+async fn suspended_coaches_are_listed_to_headquarters_with_their_status_but_not_to_students() {
+    let acceptances = InMemoryCoachAcceptanceRepository::default();
+    acceptances
+        .update(AccountId::from_u128(4), |a| {
+            a.suspend(
+                HEADQUARTERS_ID,
+                domain::scheduling::CoachSuspensionReason::default(),
+                SystemTime::UNIX_EPOCH,
+            )
+        })
+        .await
+        .unwrap();
+    let router = app_with(accounts().await, acceptances);
+
+    let (status, body) = list_coaches(&router, "admin-web", "", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let statuses: Vec<(&str, &str)> = body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["coach_id"].as_str().unwrap(),
+                c["acceptance_status"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            ("00000000-0000-0000-0000-000000000004", "suspended"),
+            ("00000000-0000-0000-0000-000000000005", "accepting"),
+            ("00000000-0000-0000-0000-000000000002", "accepting"),
+        ]
+    );
+
+    let (status, body) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let ids: Vec<&str> = body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["coach_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        ["00000000-0000-0000-0000-000000000002"],
+        "受付を止めたテニスのコーチ（4）は生徒の一覧に出ない"
+    );
+}
+
+/// コーチ 4（野球とテニス）の受付を止めた [`app_with`]。
+async fn app_with_coach_4_suspended() -> Router {
+    let acceptances = InMemoryCoachAcceptanceRepository::default();
+    acceptances
+        .update(AccountId::from_u128(4), |a| {
+            a.suspend(
+                HEADQUARTERS_ID,
+                domain::scheduling::CoachSuspensionReason::default(),
+                SystemTime::UNIX_EPOCH,
+            )
+        })
+        .await
+        .unwrap();
+    app_with(accounts().await, acceptances)
+}
+
+/// 一覧の `coach_id` を、並びのまま ID の数値にする。
+fn coach_ids(body: &Value) -> Vec<u128> {
+    body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            account_id_uuid::parse(c["coach_id"].as_str().unwrap())
+                .unwrap()
+                .as_u128()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn headquarters_filters_by_acceptance_status_and_sport_keeping_the_order() {
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?acceptance_status=suspended", vec![4]),
+        ("?acceptance_status=accepting", vec![5, 2]),
+        // 提供スポーツのどれかが一致すれば載る。ゴルフも絞れる
+        ("?sport=tennis", vec![4, 2]),
+        ("?sport=golf", vec![5]),
+        ("?sport=swimming", vec![]),
+        ("?sport=tennis&acceptance_status=accepting", vec![2]),
+        ("?acceptance_status=suspended&sport=soccer", vec![]),
+        ("", vec![4, 5, 2]),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+
+    let (_, body) = list_coaches(
+        &router,
+        "admin-web",
+        "?acceptance_status=suspended",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        body,
+        json!({
+            "coaches": [{
+                "coach_id": "00000000-0000-0000-0000-000000000004",
+                "display_name": "いとう",
+                "acceptance_status": "suspended",
+                "recent_lesson_count": 0,
+            }],
+        })
+    );
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_without_lessons_in_the_last_30_days_combined_with_other_filters()
+ {
+    // 直近 30 日のレッスンはコーチ 2 が 2・コーチ 5 が 1・コーチ 4（停止中）が 0（31 日前の添削は数えない）
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?inactive=true", vec![4]),
+        // false・付けないときは絞らない
+        ("?inactive=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?inactive=true&sport=tennis", vec![4]),
+        ("?inactive=true&acceptance_status=suspended", vec![4]),
+        ("?inactive=true&acceptance_status=accepting", vec![]),
+        ("?inactive=true&sport=soccer", vec![]),
+        ("?inactive=true&q=%E3%81%84%E3%81%A8", vec![4]),
+        ("?inactive=false&acceptance_status=accepting", vec![5, 2]),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+        if query.contains("inactive=true") {
+            for coach in body["coaches"].as_array().unwrap() {
+                assert_eq!(coach["recent_lesson_count"], 0, "{query}: {coach}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn headquarters_inactive_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?inactive=yes",
+        "?inactive=1",
+        "?inactive=",
+        "?inactive=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_with_unhandled_low_rated_reviews_combined_with_other_filters()
+ {
+    // 未対応の低い評価はコーチ 4（停止中）と 2 にある。コーチ 5 は対応済みと期間の外だけ。いとう = %E3%81%84%E3%81%A8
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?has_unhandled_low_rated=true", vec![4, 2]),
+        // false・付けないときは絞らない
+        ("?has_unhandled_low_rated=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?has_unhandled_low_rated=true&sport=tennis", vec![4, 2]),
+        ("?has_unhandled_low_rated=true&sport=soccer", vec![]),
+        (
+            "?has_unhandled_low_rated=true&acceptance_status=suspended",
+            vec![4],
+        ),
+        (
+            "?has_unhandled_low_rated=true&acceptance_status=accepting",
+            vec![2],
+        ),
+        ("?has_unhandled_low_rated=true&inactive=true", vec![4]),
+        (
+            "?has_unhandled_low_rated=true&q=%E3%81%84%E3%81%A8",
+            vec![4],
+        ),
+        (
+            "?has_unhandled_low_rated=false&inactive=false&acceptance_status=accepting",
+            vec![5, 2],
+        ),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_has_unhandled_low_rated_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?has_unhandled_low_rated=yes",
+        "?has_unhandled_low_rated=1",
+        "?has_unhandled_low_rated=",
+        "?has_unhandled_low_rated=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_has_unhandled_low_rated_as_before() {
+    let router = app(accounts().await);
+    let (status, all) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let (status, body) = list_coaches(
+        &router,
+        "student-app",
+        "?has_unhandled_low_rated=true",
+        Some(STUDENT),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, all);
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_with_unanswered_threads_combined_with_other_filters() {
+    // 返事のないメッセージはコーチ 4（停止中）と 5 にある。コーチ 2 は返信済みと時間に満たないものだけ。
+    // たな = %E3%81%9F%E3%81%AA
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?has_unanswered=true", vec![4, 5]),
+        // false・付けないときは絞らない
+        ("?has_unanswered=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?has_unanswered=true&sport=tennis", vec![4]),
+        ("?has_unanswered=true&sport=soccer", vec![5]),
+        ("?has_unanswered=true&acceptance_status=suspended", vec![4]),
+        ("?has_unanswered=true&acceptance_status=accepting", vec![5]),
+        ("?has_unanswered=true&inactive=true", vec![4]),
+        ("?has_unanswered=true&has_unhandled_low_rated=true", vec![4]),
+        ("?has_unanswered=true&q=%E3%81%9F%E3%81%AA", vec![]),
+        (
+            "?has_unanswered=false&acceptance_status=accepting",
+            vec![5, 2],
+        ),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_has_unanswered_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?has_unanswered=yes",
+        "?has_unanswered=1",
+        "?has_unanswered=",
+        "?has_unanswered=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_has_unanswered_as_before() {
+    let router = app(accounts().await);
+    let (status, all) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let (status, body) = list_coaches(
+        &router,
+        "student-app",
+        "?has_unanswered=true",
+        Some(STUDENT),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, all);
+}
+
+#[tokio::test]
+async fn headquarters_lists_only_coaches_with_overdue_videos_combined_with_other_filters() {
+    // 返却の遅れている動画はコーチ 4（停止中）と 2 にある。コーチ 5 は 48 時間に満たないものと返却済みだけ。
+    // たな = %E3%81%9F%E3%81%AA
+    let router = app_with_coach_4_suspended().await;
+    for (query, expected) in [
+        ("?has_overdue_video=true", vec![4, 2]),
+        // false・付けないときは絞らない
+        ("?has_overdue_video=false", vec![4, 5, 2]),
+        ("", vec![4, 5, 2]),
+        ("?has_overdue_video=true&sport=tennis", vec![4, 2]),
+        ("?has_overdue_video=true&sport=soccer", vec![]),
+        (
+            "?has_overdue_video=true&acceptance_status=suspended",
+            vec![4],
+        ),
+        (
+            "?has_overdue_video=true&acceptance_status=accepting",
+            vec![2],
+        ),
+        ("?has_overdue_video=true&inactive=true", vec![4]),
+        (
+            "?has_overdue_video=true&has_unhandled_low_rated=true",
+            vec![4, 2],
+        ),
+        ("?has_overdue_video=true&has_unanswered=true", vec![4]),
+        ("?has_overdue_video=true&q=%E3%81%9F%E3%81%AA", vec![2]),
+        (
+            "?has_overdue_video=false&acceptance_status=accepting",
+            vec![5, 2],
+        ),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_has_overdue_video_other_than_true_or_false_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?has_overdue_video=yes",
+        "?has_overdue_video=1",
+        "?has_overdue_video=",
+        "?has_overdue_video=TRUE",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_has_overdue_video_as_before() {
+    let router = app(accounts().await);
+    let (status, all) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    let (status, body) = list_coaches(
+        &router,
+        "student-app",
+        "?has_overdue_video=true",
+        Some(STUDENT),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, all);
+}
+
+#[tokio::test]
+async fn headquarters_unknown_acceptance_status_or_sport_is_422() {
+    let router = app(accounts().await);
+    for query in [
+        "?acceptance_status=paused",
+        "?acceptance_status=",
+        "?sport=cricket",
+        "?sport=tennis&acceptance_status=Suspended",
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_searches_by_display_name_combined_with_other_filters_keeping_the_order() {
+    let router = app_with_coach_4_suspended().await;
+    // いと = %E3%81%84%E3%81%A8、た = %E3%81%9F、全角の空白 = %E3%80%80
+    for (query, expected) in [
+        ("?q=%E3%81%84%E3%81%A8", vec![4, 5]),
+        ("?q=%E3%81%9F", vec![2]),
+        // 前後の空白（全角を含む）は除く
+        ("?q=%E3%80%80%E3%81%84%E3%81%A8+", vec![4, 5]),
+        ("?q=%E3%81%84%E3%81%AA%E3%81%84", vec![]),
+        // 空・空白だけは絞らない
+        ("?q=", vec![4, 5, 2]),
+        ("?q=+%E3%80%80+", vec![4, 5, 2]),
+        // ほかの絞り込みと組み合わせる
+        ("?q=%E3%81%84%E3%81%A8&sport=tennis", vec![4]),
+        ("?q=%E3%81%84%E3%81%A8&acceptance_status=accepting", vec![5]),
+        ("?q=%E3%81%9F&acceptance_status=suspended", vec![]),
+        // 生徒（あおき）は表示名が一致しても載らない
+        ("?q=%E3%81%82%E3%81%8A%E3%81%8D", vec![]),
+    ] {
+        let (status, body) = list_coaches(&router, "admin-web", query, Some(HEADQUARTERS)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(coach_ids(&body), expected, "{query}");
+    }
+}
+
+#[tokio::test]
+async fn headquarters_query_longer_than_50_characters_is_422() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(
+        &router,
+        "admin-web",
+        &format!("?q=+{}+", "a".repeat(50)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "前後の空白を除いて 50 文字まで: {body}"
+    );
+    assert_eq!(coach_ids(&body), Vec::<u128>::new());
+
+    let (status, body) = list_coaches(
+        &router,
+        "admin-web",
+        &format!("?q={}", "a".repeat(51)),
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+#[tokio::test]
+async fn students_ignore_q_as_before() {
+    let router = app(accounts().await);
+    let (_, before) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    for query in ["?q=%E3%81%9F".to_string(), format!("?q={}", "a".repeat(51))] {
+        let (status, body) = list_coaches(&router, "student-app", &query, Some(STUDENT)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(body, before, "{query}: 生徒の一覧は q で変わらない");
+    }
+}
+
+#[tokio::test]
+async fn students_ignore_acceptance_status_as_before() {
+    let router = app_with_coach_4_suspended().await;
+    let (_, before) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    for query in ["?acceptance_status=suspended", "?acceptance_status=paused"] {
+        let (status, body) = list_coaches(&router, "student-app", query, Some(STUDENT)).await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(
+            body, before,
+            "{query}: 生徒の一覧は受付の状態の条件で変わらない"
+        );
+    }
+}
+
+#[tokio::test]
+async fn no_coaches_is_an_empty_list() {
+    let router = app(InMemoryAccountRepository::default());
+    let (status, body) = list_coaches(&router, "admin-web", "", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "coaches": [] }));
+}
+
+#[tokio::test]
+async fn student_lists_coaches_of_own_sport_by_average_rating() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "coaches": [
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000004",
+                    "display_name": "いとう",
+                    "sport": "tennis",
+                    "review_count": 1,
+                    "average_rating": 5.0,
+                    "published_lesson_menu_count": 0,
+                    "is_favorite": true,
+                },
+                {
+                    "coach_id": "00000000-0000-0000-0000-000000000002",
+                    "display_name": "たなか",
+                    "sport": "tennis",
+                    "review_count": 2,
+                    "average_rating": 3.5,
+                    "published_lesson_menu_count": 1,
+                    "is_favorite": false,
+                },
+            ],
+        }),
+        "生徒のスポーツ（テニス）を提供するコーチだけ。非公開のメニューは数えない。お気に入りはその生徒の分だけ"
+    );
+}
+
+#[tokio::test]
+async fn student_filters_by_sport() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(&router, "student-app", "?sport=soccer", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({
+            "coaches": [{
+                "coach_id": "00000000-0000-0000-0000-000000000005",
+                "display_name": "いとう",
+                "sport": "soccer",
+                "review_count": 1,
+                "average_rating": 2.0,
+                "published_lesson_menu_count": 1,
+                "is_favorite": false,
+            }],
+        }),
+        "ゴルフのメニューは数えない"
+    );
+
+    let (status, body) =
+        list_coaches(&router, "student-app", "?sport=swimming", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "coaches": [] }));
+}
+
+#[tokio::test]
+async fn golf_or_unknown_sport_is_422_and_golf_student_gets_an_empty_list() {
+    let router = app(accounts().await);
+    for query in ["?sport=golf", "?sport=cricket"] {
+        let (status, body) = list_coaches(&router, "student-app", query, Some(STUDENT)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
+        assert_eq!(body["code"], "validation_failed");
+    }
+
+    let (status, body) = list_coaches(&router, "student-app", "", Some(GOLF_STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, json!({ "coaches": [] }), "ゴルフは golf-app の範囲");
+}
+
+#[tokio::test]
+async fn student_without_account_is_401_when_sport_is_omitted() {
+    let router = app(accounts().await);
+    let (status, body) = list_coaches(&router, "student-app", "", Some("student:99")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert_eq!(body["code"], "unauthorized");
+}
+
+#[tokio::test]
+async fn coach_is_403_and_no_token_is_401() {
+    let router = app(accounts().await);
+    for contract in ["admin-web", "student-app"] {
+        let (status, body) = list_coaches(&router, contract, "", Some("coach:2")).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{contract}: {body}");
+        assert_eq!(body["code"], "forbidden");
+
+        let (status, body) = list_coaches(&router, contract, "", None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{contract}: {body}");
+        assert_eq!(body["code"], "unauthorized");
+    }
+}
+
+#[tokio::test]
+async fn recent_lesson_count_is_kept_when_filtered_and_not_given_to_students() {
+    let router = app_with_coach_4_suspended().await;
+    let (status, body) = list_coaches(
+        &router,
+        "admin-web",
+        "?sport=tennis&acceptance_status=accepting",
+        Some(HEADQUARTERS),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["coaches"][0]["recent_lesson_count"], 2);
+
+    let (status, body) = list_coaches(&router, "student-app", "", Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for coach in body["coaches"].as_array().unwrap() {
+        assert!(
+            coach.get("recent_lesson_count").is_none(),
+            "生徒の一覧（student-app の CoachListing）には載せない: {coach}"
+        );
+    }
+}

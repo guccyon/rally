@@ -25,6 +25,7 @@ void main() {
     '動画の添削が返ってきたとき',
     '担当コーチからメッセージが届いたとき',
     '本部からのお知らせが届いたとき',
+    'レッスンの前日と開始 1 時間前',
   ];
 
   Future<void> openSettings(WidgetTester tester) async {
@@ -63,8 +64,7 @@ void main() {
         ))
           (tile.title! as Text).data,
       ], labels);
-      // レッスンのリマインドのスイッチは backend が設定を保存するまで出さない（#1477 で出す）
-      expect(find.text('レッスンの前日と開始 1 時間前'), findsNothing);
+      expect(switchOf(tester, 'レッスンの前日と開始 1 時間前'), isTrue);
       expect(switchOf(tester, '予約が確定したとき'), isTrue);
       expect(switchOf(tester, '動画の添削が返ってきたとき'), isTrue);
       expect(switchOf(tester, '担当コーチからメッセージが届いたとき'), isFalse);
@@ -116,6 +116,38 @@ void main() {
       'video_review_returned': true,
     });
     expect(switchOf(tester, '動画の添削が返ってきたとき'), isTrue);
+  });
+
+  testWidgets('レッスンのリマインドを切ると lesson_reminder だけを保存し、開き直してもオフのまま', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    final container = await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+      subscription: subscribed,
+    );
+    await openSettings(tester);
+
+    await tapText(tester, 'レッスンの前日と開始 1 時間前');
+
+    expect(
+      (api.requests.single as UpdateNotificationSettingsRequest).toJson(),
+      {'lesson_reminder': false},
+    );
+    expect(api.notificationSettings.lessonReminder, isFalse);
+    expect(switchOf(tester, 'レッスンの前日と開始 1 時間前'), isFalse);
+    expect(switchOf(tester, '予約が確定したとき'), isTrue);
+
+    await tester.tap(find.byTooltip('通知の設定を閉じる'));
+    await tester.pumpAndSettle();
+    expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+    await openSettings(tester);
+
+    expect(api.calls.last, 'getMyNotificationSettings');
+    expect(switchOf(tester, 'レッスンの前日と開始 1 時間前'), isFalse);
   });
 
   testWidgets('保存に失敗したらスイッチを元に戻し、失敗を知らせる', (tester) async {

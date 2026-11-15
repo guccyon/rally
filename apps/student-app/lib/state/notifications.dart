@@ -145,15 +145,21 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
     NotificationKind.announcement || null => false,
   };
 
-  /// 行を押したとき。お知らせは行き先の ID を持たないので、種類に応じた一覧の画面を開く
-  /// （予約の確定・本部による予約のキャンセル・レッスンのリマインドは自分の予約・添削の返却は自分の動画・メッセージの受信は
-  /// チャットのスレッドの一覧）。
-  /// 開いた画面を閉じるとお知らせの画面に戻る
+  /// 行を押したとき。レッスンのリマインドは結び付く予約（`booking_id`）の入口を開く（予約の画面。サーバーの記録から読み直し、
+  /// 確定済みなら開始 5 分前から「ビデオ通話で受ける」で入室前チェックへ進める。ADR 0010・ADR 0013）。予約の画面を閉じると
+  /// ホームに戻る（ホームの「次にやること」から開いたときと同じ）。`booking_id` のないリマインドと、行き先の ID を持たない
+  /// ほかの種類は、種類に応じた一覧の画面を開く（予約の確定・本部による予約のキャンセルは自分の予約・添削の返却は自分の動画・
+  /// メッセージの受信はチャットのスレッドの一覧）。一覧の画面を閉じるとお知らせの画面に戻る
   Future<void> select(ApiNotification notification) async {
     switch (notification.kind) {
+      case NotificationKind.lessonReminder:
+        if (notification.bookingId case final bookingId?) {
+          await _flow.openBooking(bookingId);
+        } else {
+          await _flow.openMyBookings();
+        }
       case NotificationKind.bookingConfirmed ||
-          NotificationKind.bookingCancelledByHeadquarters ||
-          NotificationKind.lessonReminder:
+          NotificationKind.bookingCancelledByHeadquarters:
         await _flow.openMyBookings();
       case NotificationKind.videoReviewReturned:
         await _flow.openMyVideos();

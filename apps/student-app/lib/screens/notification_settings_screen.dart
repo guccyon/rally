@@ -8,7 +8,7 @@ import '../ui/labels.dart';
 
 /// 通知の受け取り設定（`getMyNotificationSettings` / `updateMyNotificationSettings`）。
 /// 種類ごとのスイッチで、切り替えたらすぐ保存し、保存に失敗したら元に戻して知らせる。
-/// レッスンのリマインドは、backend が設定を保存して返すようになる（#1476）まで出さない（#1477 で出す）。
+/// レッスンのリマインドを切ると、以後のリマインドはお知らせも作られない（ADR 0013。ほかの種類はお知らせには残る）。
 class NotificationSettingsScreen extends ConsumerWidget {
   const NotificationSettingsScreen({super.key});
 
@@ -29,9 +29,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
         const Text('オフにしている間に届くはずだった通知は、あとでオンに戻しても届きません。'),
         const SizedBox(height: 8),
         if (settings != null)
-          for (final kind in NotificationKind.values.where(
-            (kind) => kind != NotificationKind.lessonReminder,
-          ))
+          for (final kind in NotificationKind.values)
             SwitchListTile(
               title: Text(notificationKindLabel(kind)),
               value: settings.receives(kind),

@@ -280,7 +280,7 @@ fn in_memory_repositories() -> Repositories<
 
 /// 保存先をすべて infra の Postgres の実装にしたルーター（`pool` はマイグレーション `infra::MIGRATOR` を当てた DB）。
 /// 保存先のほかは [`router_with_analytics`] と同じで、境界間イベントはインメモリのイベントバス、通話基盤・動画の
-/// 保存先・プッシュ通知の送り先・アクセストークンは infra のモック。一周シナリオの E2E（`tests/walking_skeleton.rs`）が使う。
+/// 保存先・プッシュ通知の送り先・アクセストークンは infra のモック。一周シナリオの E2E（`tests/it/walking_skeleton.rs`）が使う。
 pub fn router_with_postgres<C, A>(pool: PgPool, clock: C, analytics: A) -> Router
 where
     C: Clock + Clone + 'static,

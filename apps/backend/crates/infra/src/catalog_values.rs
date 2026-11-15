@@ -2,7 +2,7 @@
 //!
 //! `catalog.lesson_menus.lesson_type`（CHECK 制約の値）はこの表だけを通す。行動イベント `lesson.completed` の
 //! `lesson_type` 属性も同じ値（[`crate::analytics_event_payload::lesson_type_value`] はこれを指す）。CHECK との一致は
-//! `tests/schema.rs` が確かめる。`catalog.lesson_menu_publication_changes.action`（本部が非公開にした・公開に戻した記録の操作）も
+//! `tests/it/schema.rs` が確かめる。`catalog.lesson_menu_publication_changes.action`（本部が非公開にした・公開に戻した記録の操作）も
 //! この表だけを通す。
 
 use domain::{
