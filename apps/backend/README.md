@@ -210,7 +210,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 不変条件は `domain::scheduling::Booking` が持つ: 公開中（`open`）のスロットにしか予約できない（予約済みは 409 `slot_already_booked`、閉じた枠はない枠と同じ 404）、1 スロットに有効な（キャンセルされていない）予約は 1 件（二重予約は 409 `slot_already_booked`）、体験予約はその生徒の初回だけ（キャンセルされていない予約が 1 件でもあるか、完了したレッスン（lesson_completion）が 1 件でもあれば 409 `trial_already_used`。受け終えた体験予約をあとでキャンセルしても使用済みのまま。判定は `Booking::is_trial_available` の 1 か所で、`CreateBooking` は体験予約のときだけ完了記録の保存先 `LessonCompletionRepository` から有無を読む。`listMyBookings` の `trial_available` も同じ判定）
 - ポート `BookingRepository` は予約とスロットを一緒に読み書きし、判定は domain に任せて読み取りから保存までを直列にする。`server` は当面インメモリ（`InMemoryBookingRepository`。スロットの保存先と中身を共有）。Postgres の実装はアカウント・スロットの保存先を Postgres にするときに足す（DB は `bookings_one_active_per_slot` でも二重予約を防ぐ）
 - 境界間イベントはポート `DomainEventPublisher`（発行の失敗でユースケースを失敗させない）。Gen1 はメッセージ基盤を選定していないので、`server` は infra の `InMemoryDomainEventBus`（`LoggingDomainEventPublisher` と同じ `domain_event BookingConfirmed {...}` の 1 行を標準出力に書き、同じプロセスの購読側（entitlement）に渡す）で組み立てる
-- 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・二重予約・体験予約の 1 回限り・確定でスロットが埋まること・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで一周の入口を通す）、`crates/infra/tests/domain_event_payload.rs`（`BookingConfirmed` のペイロードが AsyncAPI の `required` と一致すること）
+- 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・二重予約・体験予約の 1 回限り・確定でスロットが埋まること・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで一周の入口を通す。予約をせずに動画の添削を受け終えて完了を記録した生徒は `trial_available` が false で、体験予約は 409 `trial_already_used`・通常の予約は通る）、`crates/infra/tests/domain_event_payload.rs`（`BookingConfirmed` のペイロードが AsyncAPI の `required` と一致すること）
 
 | 何の文字列か | 置き場所 |
 |---|---|

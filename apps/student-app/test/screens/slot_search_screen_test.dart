@@ -145,6 +145,34 @@ void main() {
       },
     );
 
+    testWidgets(
+      '受け終えた体験予約をキャンセルした生徒（キャンセル済みの予約だけで、受けたレッスンがあり trial_available false）には「予約する」を出し、通常の予約にする（#1595）',
+      (tester) async {
+        final api = FakeStudentApi(
+          myBookings: [
+            for (final item in Fixtures.myBookings)
+              if (item.booking.status == BookingStatus.cancelled) item,
+          ],
+          lessonCompletions: [Fixtures.lessonCompletions.first],
+        );
+        final container = await openSlotSearch(tester, api);
+
+        expect(container.read(studentFlowProvider).canBookTrial, isFalse);
+        expect(find.text('体験予約する'), findsNothing);
+        await tapText(tester, '予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': false,
+        });
+        expect(
+          container.read(studentFlowProvider).step,
+          FlowStep.bookingPending,
+        );
+      },
+    );
+
     testWidgets('trial_available が応答に載っていなければ、予約の件数から決めずに通常の予約にする', (
       tester,
     ) async {
