@@ -382,12 +382,19 @@ void main() {
       },
     );
 
+    /// 入口は画面の下の方（依頼のボタンのそば）に出るので、押せるよう縦に長い画面にする
+    Future<void> useTallSurface(WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+    }
+
     Future<void> requestReview(WidgetTester tester) async {
       await tapText(tester, '動画を選ぶ');
       await tapText(tester, '依頼する');
     }
 
     testWidgets('チャットの「添削を依頼する」から', (tester) async {
+      await useTallSurface(tester);
       final api = notEntitledApi();
       final container = await pumpScreen(
         tester,
@@ -413,6 +420,7 @@ void main() {
     });
 
     testWidgets('ホームの「添削を依頼する」から（スレッドを開いてすぐに依頼を出す）', (tester) async {
+      await useTallSurface(tester);
       final api = notEntitledApi();
       final container = await pumpScreen(
         tester,
