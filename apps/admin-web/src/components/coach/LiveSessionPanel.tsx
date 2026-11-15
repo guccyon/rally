@@ -25,13 +25,20 @@ type ListState =
   | { kind: "loaded"; upcoming: CoachBooking[]; past: CoachBooking[] }
   | { kind: "failed"; message: string };
 
+/** 一覧の項目に通話中のセッション（live_lesson_session）が載っているか。載っていれば通話に戻れる */
+function isInCall(item: CoachBooking): boolean {
+  return item.live_lesson_session?.status === "in_progress";
+}
+
 /**
  * API の並び（開始時刻の古い順）を、終わっていない予約（終了時刻が今より後）と終わった予約に分ける。
+ * 終了時刻を過ぎても通話中の予約は、通話に戻れるよう終わっていない側に残す。
  * これからの予約は API の順のまま、終わった予約は新しい順（API の逆順）にする。
  */
 function splitBookings(bookings: CoachBooking[], now: number) {
-  const upcoming = bookings.filter((item) => new Date(item.slot.ends_at).getTime() > now);
-  const past = bookings.filter((item) => new Date(item.slot.ends_at).getTime() <= now).reverse();
+  const isUpcoming = (item: CoachBooking) => new Date(item.slot.ends_at).getTime() > now || isInCall(item);
+  const upcoming = bookings.filter(isUpcoming);
+  const past = bookings.filter((item) => !isUpcoming(item)).reverse();
   return { upcoming, past };
 }
 
@@ -119,6 +126,9 @@ function SessionSummary({
  * 入室したら（セッションが in_progress の間）一覧を描かず、通話中の画面（開始の知らせ・状態・カメラとマイクの入切・「通話を終了」）に入れ替える。
  * 長い一覧の下に埋もれないよう、切り替わったら通話中の見出しに焦点を移して画面の先頭を見せる（#1609）。相手の映像はモックなので出さない。
  * 終了したら「通話を終了しました。」を出したまま一覧に戻り、焦点を一覧の先頭に移す。
+ * 一覧の項目に通話中のセッション（live_lesson_session）が載っていれば（入室したあと画面を読み込み直した）、その行に「通話中」と
+ * 「通話に戻る」を出す。押すと入室前チェックを通さずに startLiveLessonSession を呼び（通話中なら同じセッションが 201 で返る）、
+ * 通話中の画面に戻って終了できる。
  * 時刻の判断は端末の時計ではなくサーバーに合わせた時計で行う。一覧を読んだ応答の Date ヘッダーでずれを決め、入室で 409 slot_not_started が
  * 返ったらその応答の Date で合わせ直す（入室は繰り返し送らない）。Date が読めなければ端末の時計のまま。
  * media はブラウザーのカメラ・マイク・スピーカー（テストでは作り物に差し替える）。
@@ -199,8 +209,39 @@ export function LiveSessionPanel({
     setPrejoin(item);
   }
 
+  /** 通話中の行の「通話に戻る」。同じセッションが返るので、入室と同じに通話中の画面にする（カメラ・マイクの入切は引き継がない）。 */
+  async function onResume(bookingId: string) {
+    setResult(null);
+    setBusy(true);
+    const response = await api.startLiveLessonSession({ booking_id: bookingId });
+    setBusy(false);
+    if (!response.ok) {
+      setResult(response);
+      return;
+    }
+    setSession(response.data);
+    setJoinedMedia(null);
+    setResult({ ok: true, message: "通話に戻りました。" });
+  }
+
   function renderAction(item: CoachBooking): ReactNode {
-    if (item.booking.status !== "confirmed" || session?.booking_id === item.booking.booking_id) return "—";
+    if (
+      session?.booking_id === item.booking.booking_id ||
+      (session && session.session_id === item.live_lesson_session?.session_id)
+    ) {
+      return "—";
+    }
+    if (isInCall(item)) {
+      return (
+        <span className="inline-flex items-center gap-3">
+          <span className="font-bold">通話中</span>
+          <Button variant="secondary" disabled={busy} onClick={() => onResume(item.booking.booking_id)}>
+            通話に戻る
+          </Button>
+        </span>
+      );
+    }
+    if (item.booking.status !== "confirmed") return "—";
     if (!canOpenPrejoinCheck(item.slot.starts_at, now)) {
       return (
         <span className="text-sm text-text-muted">
