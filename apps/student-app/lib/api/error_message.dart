@@ -38,6 +38,8 @@ String errorMessageOf(Object error) {
     ErrorCode.loginCodeInvalid => '確認コードが違います。メールに届いた 6 桁のコードを確かめてください。',
     ErrorCode.loginCodeExpired => '確認コードの有効期限が切れました。コードを送り直してください。',
     ErrorCode.tooManyRequests => '試した回数が多すぎます。しばらく待ってからやり直してください。',
+    ErrorCode.videoReviewNotEntitled =>
+      '体験はすでに使っています。動画の添削は月額契約を始めると使えます。',
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
 }
