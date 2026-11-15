@@ -148,7 +148,6 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
         slots.push((is_trial, slot["slot_id"].clone()));
     }
     slots.sort_by_key(|(is_trial, _)| !is_trial);
-    subscribe(&router, &taro_token).await;
     let mut booked = Vec::new();
     for (is_trial, slot_id) in slots {
         let (status, booking) = send(
@@ -162,6 +161,11 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
         .await;
         assert_eq!(status, StatusCode::CREATED, "{booking}");
         booked.push(booking);
+        // 体験予約の後に月額契約を始める（月額契約の生徒は体験予約できず（#1653）、月額契約の前の生徒は体験を使った後に
+        // 通常の予約をできない（#1656））
+        if is_trial {
+            subscribe(&router, &taro_token).await;
+        }
     }
 
     let (status, body) = send(&router, get("/bookings", &hq_token)).await;

@@ -11,7 +11,9 @@ use domain::{
     DomainError,
     async_lesson::{Video, VideoContentType, VideoId, VideoReviewId},
     catalog::{LessonMenu, LessonMenuId, LessonMenuPublicationChange},
-    entitlement::{Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId},
+    entitlement::{
+        Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId, TrialUsage,
+    },
     identity::{Account, AccountId},
     lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
@@ -34,15 +36,15 @@ use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     async_lesson::{
-        AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoStorage,
-        VideoSubmissionGate, video_id_uuid, video_review_id_uuid,
+        AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoReviewGate,
+        VideoStorage, video_id_uuid, video_review_id_uuid,
     },
     catalog::{ChangeLessonMenuPublicationError, LessonMenuRepository, lesson_menu_id_uuid},
     clock::Clock,
     domain_event::{DomainEvent, DomainEventPublisher},
     entitlement::{
-        EntitlementRepository, InsertEntitlementError, UpdateEntitlementError, entitlement_id_uuid,
-        subscription_id_uuid,
+        EntitlementRepository, InsertEntitlementError, TrialUsageLookup, UpdateEntitlementError,
+        entitlement_id_uuid, subscription_id_uuid,
     },
     identity::{AccountRepository, InsertAccountError, account_id_uuid},
     lesson::{LessonCompletionRepository, RecordCompletionError, lesson_completion_id_uuid},
@@ -1150,20 +1152,6 @@ impl VideoCallProvider for FixedVideoCallProvider {
     }
 }
 
-/// 誰でも何本でも送れる [`VideoSubmissionGate`]（体験の制限を使わないテスト・ローカル起動用）。
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OpenVideoSubmissionGate;
-
-impl VideoSubmissionGate for OpenVideoSubmissionGate {
-    async fn may_submit_video(
-        &self,
-        _student_id: AccountId,
-        _sent_videos: usize,
-    ) -> Result<bool, Unavailable> {
-        Ok(true)
-    }
-}
-
 /// [`VideoRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
 ///
 /// 読み取りから保存までは 1 つのロックの中で行うので、同じ動画の返却は直列になる。
@@ -1292,6 +1280,28 @@ impl VideoStorage for FixedVideoStorage {
             "https://fixed-storage.invalid/videos/{}",
             video_id_uuid::format(video_id)
         ))
+    }
+}
+
+/// 常に決まった体験の使用状況を返す [`TrialUsageLookup`]（テスト用）。既定値は体験を使っていない生徒
+/// （[`TrialUsage::default`]）で、予約の有無は呼ぶ側の予約で決まる。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FixedTrialUsage(pub TrialUsage);
+
+impl TrialUsageLookup for FixedTrialUsage {
+    async fn find_trial_usage(&self, _student_id: AccountId) -> Result<TrialUsage, Unavailable> {
+        Ok(self.0)
+    }
+}
+
+/// 常に決まった答えを返す [`VideoReviewGate`]（テスト用）。`FixedVideoReviewGate(true)` は誰の添削の依頼も受け付け、
+/// `FixedVideoReviewGate(false)` は誰の依頼も断る。どちらも何も変えない（体験予約も解放しない）。
+#[derive(Debug, Clone, Copy)]
+pub struct FixedVideoReviewGate(pub bool);
+
+impl VideoReviewGate for FixedVideoReviewGate {
+    async fn admit_video_review(&self, _student_id: AccountId) -> Result<bool, Unavailable> {
+        Ok(self.0)
     }
 }
 

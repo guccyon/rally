@@ -4,12 +4,13 @@ use std::{
 };
 
 use domain::{
+    entitlement::TrialUsage,
     identity::AccountId,
     scheduling::{Booking, CancellationPolicy, Slot},
 };
 
 use super::{BookingRepository, CoachIntroductionLookup, MyBookingList, QuotaGate};
-use crate::{Unavailable, clock::Clock, lesson::LessonCompletionRepository};
+use crate::{Unavailable, clock::Clock, entitlement::TrialUsageLookup};
 
 /// 本人の予約の一覧のユースケース（student-app の `listMyBookings`。生徒だけが呼ぶ）。
 ///
@@ -19,29 +20,30 @@ use crate::{Unavailable, clock::Clock, lesson::LessonCompletionRepository};
 /// 回数を使うかの見込みを domain の [`CancellationPolicy::preview`] で添える（規則はそこだけ。生徒が通話の枠を
 /// 持つかは entitlement に問い合わせる [`QuotaGate::has_live_lesson_quota`]）。一覧の外に、生徒が今体験予約できるか
 /// （`createBooking` の体験予約の判定と同じ domain の [`Booking::is_trial_available`]）を添える。キャンセルされていない
-/// 予約がなければ、完了記録の保存先（[`LessonCompletionRepository`]）から完了したレッスンの有無を読む。読むだけで何も変えない。
-pub struct ListMyBookings<B, I, G, R, C> {
+/// 予約がなければ、体験の使用状況の照会（[`TrialUsageLookup`]。完了したレッスン・送った動画・月額の受講権）を読む。
+/// 読むだけで何も変えない。
+pub struct ListMyBookings<B, I, G, T, C> {
     bookings: B,
     coaches: I,
     quota: G,
-    completions: R,
+    trial_usage: T,
     clock: C,
 }
 
-impl<B, I, G, R, C> ListMyBookings<B, I, G, R, C>
+impl<B, I, G, T, C> ListMyBookings<B, I, G, T, C>
 where
     B: BookingRepository,
     I: CoachIntroductionLookup,
     G: QuotaGate,
-    R: LessonCompletionRepository,
+    T: TrialUsageLookup,
     C: Clock,
 {
-    pub fn new(bookings: B, coaches: I, quota: G, completions: R, clock: C) -> Self {
+    pub fn new(bookings: B, coaches: I, quota: G, trial_usage: T, clock: C) -> Self {
         Self {
             bookings,
             coaches,
             quota,
-            completions,
+            trial_usage,
             clock,
         }
     }
@@ -87,26 +89,18 @@ where
         })
     }
 
-    /// 生徒が今体験予約できるか。キャンセルされていない予約があれば完了記録を読まずに false。
+    /// 生徒が今体験予約できるか。キャンセルされていない予約があれば体験の使用状況を読まずに false。
     async fn trial_available(
         &self,
         student_id: AccountId,
         items: &[(Booking, Slot)],
     ) -> Result<bool, Unavailable> {
         let bookings = || items.iter().map(|(booking, _)| booking);
-        if !Booking::is_trial_available(student_id, bookings(), false) {
+        if !Booking::is_trial_available(student_id, bookings(), TrialUsage::default()) {
             return Ok(false);
         }
-        let has_completed_lesson = !self
-            .completions
-            .completions_of_student(student_id)
-            .await?
-            .is_empty();
-        Ok(Booking::is_trial_available(
-            student_id,
-            bookings(),
-            has_completed_lesson,
-        ))
+        let usage = self.trial_usage.find_trial_usage(student_id).await?;
+        Ok(Booking::is_trial_available(student_id, bookings(), usage))
     }
 }
 
@@ -119,7 +113,7 @@ mod tests {
     };
 
     use domain::{
-        async_lesson::VideoId,
+        async_lesson::{Video, VideoId},
         catalog::Sport,
         entitlement::{
             Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
@@ -133,10 +127,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        entitlement::EntitlementQuotaGate,
+        entitlement::{EntitlementQuotaGate, EntitlementTrialUsageLookup},
         in_memory::{
             FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
-            InMemoryLessonCompletionRepository, InMemorySlotRepository,
+            InMemoryLessonCompletionRepository, InMemorySlotRepository, InMemoryVideoRepository,
         },
         scheduling::CoachIntroduction,
     };
@@ -194,7 +188,11 @@ mod tests {
         InMemoryBookingRepository,
         RecordingLookup,
         EntitlementQuotaGate<InMemoryEntitlementRepository>,
-        InMemoryLessonCompletionRepository,
+        EntitlementTrialUsageLookup<
+            InMemoryEntitlementRepository,
+            InMemoryLessonCompletionRepository,
+            InMemoryVideoRepository,
+        >,
         FixedClock,
     >;
 
@@ -213,13 +211,16 @@ mod tests {
         entitlements: impl IntoIterator<Item = Entitlement>,
         now_hour: u64,
     ) -> UseCase {
+        let entitlements = InMemoryEntitlementRepository::with_entitlements(entitlements);
         ListMyBookings::new(
             bookings,
             lookup,
-            EntitlementQuotaGate::new(InMemoryEntitlementRepository::with_entitlements(
+            EntitlementQuotaGate::new(entitlements.clone()),
+            EntitlementTrialUsageLookup::new(
                 entitlements,
-            )),
-            InMemoryLessonCompletionRepository::default(),
+                InMemoryLessonCompletionRepository::default(),
+                InMemoryVideoRepository::default(),
+            ),
             FixedClock(at(now_hour)),
         )
     }
@@ -385,17 +386,47 @@ mod tests {
         bookings: InMemoryBookingRepository,
         completions: impl IntoIterator<Item = LessonCompletion>,
     ) -> bool {
+        trial_available_with(bookings, completions, [], []).await
+    }
+
+    /// 生徒の一覧を、完了記録 `completions`・受講権 `entitlements`・送った動画 `videos` のもとで読む。
+    async fn trial_available_with(
+        bookings: InMemoryBookingRepository,
+        completions: impl IntoIterator<Item = LessonCompletion>,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+        videos: impl IntoIterator<Item = Video>,
+    ) -> bool {
+        let entitlements = InMemoryEntitlementRepository::with_entitlements(entitlements);
         ListMyBookings::new(
             bookings,
             RecordingLookup::default(),
-            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
-            InMemoryLessonCompletionRepository::with_completions(completions),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            EntitlementTrialUsageLookup::new(
+                entitlements,
+                InMemoryLessonCompletionRepository::with_completions(completions),
+                InMemoryVideoRepository::with_videos(videos),
+            ),
             FixedClock(at(5)),
         )
         .execute(STUDENT)
         .await
         .unwrap()
         .trial_available
+    }
+
+    #[tokio::test]
+    async fn trial_is_not_available_after_a_video_or_with_a_monthly_entitlement() {
+        let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::default());
+        let awaiting_review =
+            Video::submit(VideoId::from_u128(1), STUDENT, COACH, Sport::Tennis, at(1));
+        assert!(
+            !trial_available_with(bookings.clone(), [], [], [awaiting_review]).await,
+            "添削待ちの動画を送っていれば使用済み"
+        );
+        assert!(
+            !trial_available_with(bookings, [], [monthly()], []).await,
+            "月額契約の生徒は体験予約できない"
+        );
     }
 
     #[tokio::test]

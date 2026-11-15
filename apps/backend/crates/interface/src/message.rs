@@ -23,6 +23,11 @@ pub(crate) const fn role_label(role: Role) -> &'static str {
 /// 枠に結びつける・動画で選んだレッスンメニューがない（admin-web の `publishSlot`・student-app の `submitVideo` の 422）。
 pub(crate) const LESSON_MENU_NOT_FOUND: &str = "指定したレッスンメニューがない";
 
+/// 月額契約の前で体験（通話か動画添削のどちらか 1 回）を使い終えた生徒の動画の送付（student-app の `submitVideo` の 403
+/// `video_review_not_entitled`）。
+pub(crate) const VIDEO_REVIEW_NOT_ENTITLED: &str =
+    "体験を使い終えたので、動画の添削を依頼できるのは月額契約（送り放題）の生徒だけ";
+
 /// 不変条件の違反の説明。
 pub(crate) fn domain_error(error: &DomainError) -> String {
     match error {

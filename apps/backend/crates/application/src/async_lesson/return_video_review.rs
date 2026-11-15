@@ -210,13 +210,13 @@ mod tests {
         let analytics = RecordingAnalyticsSink::default();
         let clock = ManualClock::new(submitted_at());
         let submit = SubmitVideo::new(
-            crate::in_memory::OpenVideoSubmissionGate,
             videos.clone(),
             crate::catalog::CatalogLessonMenuLookup::new(
                 crate::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            crate::in_memory::FixedVideoReviewGate(true),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock.clone(),

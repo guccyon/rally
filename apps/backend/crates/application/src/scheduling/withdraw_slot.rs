@@ -147,7 +147,7 @@ mod tests {
     ) -> CreateBooking<
         InMemoryBookingRepository,
         CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
-        crate::in_memory::InMemoryLessonCompletionRepository,
+        crate::in_memory::FixedTrialUsage,
         crate::entitlement::EntitlementQuotaGate<crate::in_memory::InMemoryEntitlementRepository>,
         RecordingAnalyticsSink,
         FixedClock,
@@ -155,7 +155,7 @@ mod tests {
         CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
-            crate::in_memory::InMemoryLessonCompletionRepository::default(),
+            crate::in_memory::FixedTrialUsage::default(),
             crate::entitlement::EntitlementQuotaGate::new(
                 crate::in_memory::InMemoryEntitlementRepository::default(),
             ),

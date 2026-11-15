@@ -124,7 +124,7 @@ fn app() -> App {
         CreateBooking::new(
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             clock,
@@ -161,7 +161,7 @@ fn app() -> App {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(
@@ -201,13 +201,13 @@ fn app() -> App {
             clock,
         ),
         SubmitVideo::new(
-            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            application::in_memory::FixedVideoReviewGate(true),
             RecordingAnalyticsSink::default(),
             application::in_memory::RecordingDomainEventPublisher::default(),
             clock,
