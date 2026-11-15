@@ -750,6 +750,9 @@ abstract final class Fixtures {
     status: BookingStatus.pending,
     startsAt: slot.startsAt,
     createdAt: now,
+    endsAt: slot.endsAt,
+    sport: Sport.tennis,
+    coachDisplayName: '山田 花子',
   );
 
   static final bookingConfirmed = Booking(
@@ -781,6 +784,9 @@ abstract final class Fixtures {
     confirmedAt: booking.confirmedAt,
     cancelledAt: cancelledAt ?? booking.cancelledAt,
     lessonMenu: booking.lessonMenu,
+    endsAt: booking.endsAt,
+    sport: booking.sport,
+    coachDisplayName: booking.coachDisplayName,
   );
 
   /// [booking] に予約した時点のレッスンメニューの写しを載せたもの（[lessonMenu] が null ならメニューなし）
@@ -799,6 +805,9 @@ abstract final class Fixtures {
     confirmedAt: booking.confirmedAt,
     cancelledAt: booking.cancelledAt,
     lessonMenu: lessonMenu,
+    endsAt: booking.endsAt,
+    sport: booking.sport,
+    coachDisplayName: booking.coachDisplayName,
   );
 
   /// 自分の予約の一覧の 1 件。スロットは [now] から [startsIn] 後に始まる 1 時間（過去なら負の値）。
