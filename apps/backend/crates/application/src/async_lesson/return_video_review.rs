@@ -216,6 +216,7 @@ mod tests {
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            crate::in_memory::FixedVideoReviewGate(true),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock.clone(),

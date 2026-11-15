@@ -213,6 +213,16 @@ async fn headquarters_sees_lessons_completed_in_the_last_30_days_of_each_coach(p
     .await;
     assert_eq!(status, StatusCode::CREATED, "{account}");
     let student = account["access_token"].as_str().unwrap().to_string();
+    // 動画を何本も送るので月額契約を結ぶ（月額契約の前は体験として 1 本だけ。#1653）
+    let (status, body) = send(
+        &router,
+        "POST",
+        "/subscriptions",
+        Some(&student),
+        Some(json!({ "sport": "tennis", "payment_method_token": "tok_mock" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 
     // 日 0（の 60 秒後）にいとうと 1 回、日 10 にたなかと 2 回・いとうと 1 回、動画添削を終える
     complete_async_lesson(&router, &student, &ito_id, &ito).await;

@@ -4,7 +4,8 @@
 //! [`Entitlement`]）と、月額の契約（glossary の subscription。[`Subscription`]）。Gen1 で実装するのは月額だけだが、
 //! ワンショットも型として持つ。月額で消費されるのはビデオ通話の暦月の枠（[`LiveLessonQuota`]。上限は契約プラン
 //! [`SubscriptionPlan`] で決まる）だけで、動画とチャットは送り放題。どのスポーツがどの契約種別で結べるかは
-//! [`ContractType::covers`] の 1 か所に置く。不変条件の違反は [`EntitlementError`]。
+//! [`ContractType::covers`] の 1 か所に置く。体験（通話か動画添削のどちらか 1 回）を使ったかの規則は [`TrialUsage`] の
+//! 1 か所に置く。不変条件の違反は [`EntitlementError`]。
 
 mod contract_type;
 // 1 ファイル 1 公開型の規約で、型 `Entitlement` のファイル名をコンテキスト名と同じにしている
@@ -17,6 +18,7 @@ mod subscription;
 mod subscription_id;
 mod subscription_plan;
 mod subscription_status;
+mod trial_usage;
 mod year_month;
 
 pub use contract_type::ContractType;
@@ -28,4 +30,5 @@ pub use subscription::Subscription;
 pub use subscription_id::SubscriptionId;
 pub use subscription_plan::SubscriptionPlan;
 pub use subscription_status::SubscriptionStatus;
+pub use trial_usage::TrialUsage;
 pub use year_month::YearMonth;

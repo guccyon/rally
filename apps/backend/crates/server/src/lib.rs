@@ -87,7 +87,12 @@ pub fn router() -> Router {
 /// 終了時に接続品質の指標を乱数で生成する）で組み立て、開始は scheduling の予約の保存先に予約を問い合わせる（`SchedulingBookingLookup`）。
 ///
 /// 動画の送付は動画の保存先のモック（`MockVideoStorage`。固定の形のアップロード URL を返す）と AI の一次フィードバックの
-/// モック（`MockAiFeedbackGenerator`。スポーツごとの決まった文を返す）で、添削の返却は
+/// モック（`MockAiFeedbackGenerator`。スポーツごとの決まった文を返す）で組み立て、送る前に entitlement に生徒が添削を
+/// 依頼してよいかを問い合わせる（`EntitlementVideoReviewGate`。月額は送り放題、月額契約の前は体験として 1 本だけで、
+/// 使い終えていれば 403 `video_review_not_entitled`）。体験として受け付けるときは、まだ受けていない体験予約を scheduling の
+/// `CancelBooking` で解放する。体験の使用状況（月額の受講権・完了したレッスン・送った動画）は受講権・完了記録・動画の
+/// 保存先から読み（`EntitlementTrialUsageLookup`）、体験予約の作成と自分の予約の一覧の `trial_available` も同じ照会を使う。
+/// 添削の返却は
 /// entitlement に着手してよいかを問い合わせて（`EntitlementReviewGate`。月額は常に通し、ゴルフは通さない）組み立てる。
 /// 動画と添削の保存先は当面インメモリ。
 ///

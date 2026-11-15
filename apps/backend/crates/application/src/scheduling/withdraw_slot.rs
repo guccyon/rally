@@ -147,14 +147,14 @@ mod tests {
     ) -> CreateBooking<
         InMemoryBookingRepository,
         CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
-        crate::in_memory::InMemoryLessonCompletionRepository,
+        crate::in_memory::FixedTrialUsage,
         RecordingAnalyticsSink,
         FixedClock,
     > {
         CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
-            crate::in_memory::InMemoryLessonCompletionRepository::default(),
+            crate::in_memory::FixedTrialUsage::default(),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         )

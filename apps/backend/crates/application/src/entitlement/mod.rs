@@ -7,6 +7,8 @@ pub mod entitlement_id_uuid;
 mod entitlement_quota_gate;
 mod entitlement_review_gate;
 mod entitlement_student_contract_lookup;
+mod entitlement_trial_usage_lookup;
+mod entitlement_video_review_gate;
 mod get_entitlement;
 mod insert_entitlement_error;
 mod list_subscription_plans;
@@ -15,6 +17,7 @@ mod release_live_lesson_quota;
 mod repository;
 mod start_subscription;
 pub mod subscription_id_uuid;
+mod trial_usage_lookup;
 mod update_entitlement_error;
 
 pub use consume_live_lesson_quota::{
@@ -24,6 +27,8 @@ pub use entitlement_chat_gate::EntitlementChatGate;
 pub use entitlement_quota_gate::EntitlementQuotaGate;
 pub use entitlement_review_gate::EntitlementReviewGate;
 pub use entitlement_student_contract_lookup::EntitlementStudentContractLookup;
+pub use entitlement_trial_usage_lookup::EntitlementTrialUsageLookup;
+pub use entitlement_video_review_gate::EntitlementVideoReviewGate;
 pub use get_entitlement::{GetEntitlement, GetEntitlementError, GetEntitlementQuery};
 pub use insert_entitlement_error::InsertEntitlementError;
 pub use list_subscription_plans::ListSubscriptionPlans;
@@ -33,4 +38,5 @@ pub use release_live_lesson_quota::{
 };
 pub use repository::EntitlementRepository;
 pub use start_subscription::{StartSubscription, StartSubscriptionCommand, StartSubscriptionError};
+pub use trial_usage_lookup::TrialUsageLookup;
 pub use update_entitlement_error::UpdateEntitlementError;

@@ -7,6 +7,7 @@ use super::{
 };
 use crate::{
     catalog::{LessonMenu, LessonMenuId},
+    entitlement::TrialUsage,
     identity::{Account, AccountId},
     profile::CoachSportFilter,
 };
@@ -49,8 +50,8 @@ impl Booking {
     /// - 有効な予約（未確定か確定）はスロットの定員まで（[`SchedulingError::SlotAlreadyBooked`]）
     /// - 同じ生徒が同じスロットに有効な予約を 2 つは持てない（[`SchedulingError::SlotAlreadyBookedByStudent`]）
     /// - 体験予約はその生徒の初回の予約だけ。キャンセルされていない予約が 1 件でもあれば
-    ///   [`SchedulingError::TrialAlreadyUsed`]（完了したレッスンの有無は見ない。それも合わせた判定は
-    ///   [`Booking::is_trial_available`]）
+    ///   [`SchedulingError::TrialAlreadyUsed`]（予約のほかの材料（完了したレッスン・送った動画・月額の受講権）は
+    ///   見ない。それも合わせた判定は [`Booking::is_trial_available`]）
     pub fn reserve(
         id: BookingId,
         student_id: AccountId,
@@ -64,7 +65,7 @@ impl Booking {
         if active().any(|b| b.slot_id == slot.id() && b.student_id == student_id) {
             return Err(SchedulingError::SlotAlreadyBookedByStudent);
         }
-        if is_trial && !Self::is_trial_available(student_id, existing, false) {
+        if is_trial && !Self::is_trial_available(student_id, existing, TrialUsage::default()) {
             return Err(SchedulingError::TrialAlreadyUsed);
         }
         slot.hold()?;
@@ -86,21 +87,22 @@ impl Booking {
         })
     }
 
-    /// 生徒 `student_id` が今体験予約できるか（体験をまだ使っていないか）。`bookings` にその生徒のキャンセルされていない
-    /// 予約が 1 件もなく、完了したレッスン（lesson_completion。同期・非同期のどちらでも）もない
-    /// （`has_completed_lesson` が false）ときだけ true。
+    /// 生徒 `student_id` が今体験予約できるか（体験をまだ使っていないか）。予約のほかの材料（完了したレッスン・送った
+    /// 動画・月額の受講権）を `usage` で受け、キャンセルされていない予約の有無を `bookings` から決めて、entitlement の
+    /// 規則 [`TrialUsage::is_trial_available`] に任せる（`usage` の予約の有無は使わない）。
     ///
-    /// 受け終えた体験予約をあとでキャンセルしても、完了したレッスンが残るので false のまま。受けていない体験予約を
-    /// キャンセルしただけなら true。`bookings` の別の生徒の予約は判定に影響しない。
+    /// `bookings` の別の生徒の予約は判定に影響しない。
     pub fn is_trial_available<'a>(
         student_id: AccountId,
         bookings: impl IntoIterator<Item = &'a Booking>,
-        has_completed_lesson: bool,
+        usage: TrialUsage,
     ) -> bool {
-        !has_completed_lesson
-            && !bookings
-                .into_iter()
-                .any(|b| b.status.is_active() && b.student_id == student_id)
+        let has_active_booking = bookings
+            .into_iter()
+            .any(|b| b.status.is_active() && b.student_id == student_id);
+        usage
+            .with_active_booking(has_active_booking)
+            .is_trial_available()
     }
 
     /// 作ったばかりの予約（[`Booking::reserve`] の結果）に、予約したスロット `slot` に結びついたレッスンメニュー
@@ -998,31 +1000,55 @@ mod tests {
 
     #[test]
     fn trial_is_not_available_after_a_completed_lesson_even_if_the_booking_is_cancelled() {
+        let unused = TrialUsage::default();
+        let completed = unused.with_completed_lesson(true);
         let mut first_slot = slot_with_capacity(10, SlotStatus::Open, 2);
         let trial = reserve(1, STUDENT, true, &mut first_slot, &[]).unwrap();
-        assert!(Booking::is_trial_available(STUDENT, &[], false));
+        assert!(Booking::is_trial_available(STUDENT, &[], unused));
         assert!(!Booking::is_trial_available(
             STUDENT,
             std::slice::from_ref(&trial),
-            false
+            unused
         ));
         let cancelled_trial = cancelled(trial);
         // 受けていない体験予約をキャンセルしただけなら、もう一度体験予約できる
         assert!(Booking::is_trial_available(
             STUDENT,
             std::slice::from_ref(&cancelled_trial),
-            false
+            unused
         ));
         // 受け終えたレッスンがあれば、予約がキャンセル済みだけでも体験は使用済み
         assert!(!Booking::is_trial_available(
             STUDENT,
             std::slice::from_ref(&cancelled_trial),
-            true
+            completed
         ));
-        assert!(!Booking::is_trial_available(STUDENT, &[], true));
+        assert!(!Booking::is_trial_available(STUDENT, &[], completed));
         // 別の生徒の有効な予約は関係ない
         let other = reserve(2, OTHER_STUDENT, false, &mut first_slot, &[]).unwrap();
-        assert!(Booking::is_trial_available(STUDENT, &[other], false));
+        assert!(Booking::is_trial_available(STUDENT, &[other], unused));
+    }
+
+    #[test]
+    fn trial_is_not_available_after_a_video_or_with_a_monthly_entitlement() {
+        // 予約がなくても、送った動画（添削待ちを含む）か月額の受講権があれば体験予約できない
+        let unused = TrialUsage::default();
+        assert!(!Booking::is_trial_available(
+            STUDENT,
+            &[],
+            unused.with_submitted_video(true)
+        ));
+        assert!(!Booking::is_trial_available(
+            STUDENT,
+            &[],
+            unused.with_monthly_entitlement(true)
+        ));
+        // 予約の有無は `bookings` から決める（`usage` の予約の有無は使わない）
+        assert!(Booking::is_trial_available(
+            STUDENT,
+            &[],
+            unused.with_active_booking(true)
+        ));
     }
 
     #[test]

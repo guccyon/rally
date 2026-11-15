@@ -169,7 +169,7 @@ fn router(now: SystemTime) -> Router {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
             analytics.clone(),
             clock,
         ),
@@ -205,7 +205,7 @@ fn router(now: SystemTime) -> Router {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(entitlements.clone()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(
@@ -252,6 +252,7 @@ fn router(now: SystemTime) -> Router {
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            application::in_memory::FixedVideoReviewGate(true),
             RecordingAnalyticsSink::default(),
             application::in_memory::RecordingDomainEventPublisher::default(),
             clock,

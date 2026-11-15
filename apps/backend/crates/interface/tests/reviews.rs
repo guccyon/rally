@@ -173,7 +173,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
             analytics.clone(),
             clock,
         ),
@@ -209,7 +209,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(
@@ -256,6 +256,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            application::in_memory::FixedVideoReviewGate(true),
             analytics.clone(),
             application::in_memory::RecordingDomainEventPublisher::default(),
             clock,

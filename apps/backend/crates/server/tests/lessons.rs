@@ -2,7 +2,8 @@
 //! 通話基盤・動画の保存先・トークンは infra のモックで、完了記録は通話セッション・動画の保存先と同じ中身を読む。
 //!
 //! - 体験予約 → 確定 → 通話の開始・終了 → 完了の記録で、`is_first_lesson` が true になる
-//! - 同じ生徒が動画を送り、添削が返されてから完了を記録すると、2 回目なので `is_first_lesson` は false
+//! - 体験の通話を受け終えた未契約の生徒の動画の送付は 403 `video_review_not_entitled`（#1653）
+//! - 月額契約を結んだ同じ生徒が動画を送り、添削が返されてから完了を記録すると、2 回目なので `is_first_lesson` は false
 //! - 生徒が完了したレッスンを 1 回だけ評価でき、本部とコーチ本人と生徒がコーチの評価の件数と平均を読める
 //! - 生徒が受けたレッスンの一覧（`GET /lessons/completions/me`）に、通話と動画添削の両方が新しい順に、評価済みの印付きで出る
 
@@ -154,6 +155,31 @@ async fn live_and_async_lessons_are_completed_and_only_the_first_is_the_first_le
     assert_eq!(first["student_id"], student_id);
     assert_eq!(first["is_first_lesson"], true);
     assert_eq!(first["completed_at"], "2026-11-01T10:45:00Z");
+
+    // 体験の通話を受け終えた未契約の生徒は、無料で動画の添削を依頼できない（#1653）
+    let video_request = json!({
+        "coach_id": "00000000-0000-0000-0000-00000000002a",
+        "sport": "tennis",
+        "content_type": "video/mp4"
+    });
+    let refused = post_ok(
+        &router,
+        "/videos",
+        &student,
+        video_request.clone(),
+        StatusCode::FORBIDDEN,
+    )
+    .await;
+    assert_eq!(refused["code"], "video_review_not_entitled");
+    // 月額契約を結べば送れる
+    post_ok(
+        &router,
+        "/subscriptions",
+        &student,
+        json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
+        StatusCode::CREATED,
+    )
+    .await;
 
     // 同じ生徒が動画を送り、翌日に添削が返される
     let video = post_ok(

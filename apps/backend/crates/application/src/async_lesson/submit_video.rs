@@ -9,8 +9,8 @@ use domain::{
 use uuid::Uuid;
 
 use super::{
-    AiFeedbackGenerator, AiFeedbackRequest, VideoLessonMenuLookup, VideoRepository, VideoStorage,
-    video_id_uuid,
+    AiFeedbackGenerator, AiFeedbackRequest, VideoLessonMenuLookup, VideoRepository,
+    VideoReviewGate, VideoStorage, video_id_uuid,
 };
 use crate::{
     Unavailable,
@@ -49,7 +49,9 @@ pub enum SubmitVideoError {
     Invalid(DomainError),
     /// 選んだレッスンメニューがない
     LessonMenuNotFound,
-    /// 保存先・動画の保存先の障害
+    /// 生徒が動画の添削を依頼できない（月額契約の前で、体験を使い終えている。[`VideoReviewGate`] が断った）
+    NotEntitled,
+    /// 保存先・動画の保存先・問い合わせ先の障害
     Unavailable(Unavailable),
 }
 
@@ -76,33 +78,42 @@ impl From<DomainError> for SubmitVideoError {
 /// （[`Video::submit_with_lesson_menu`]）を確かめ、送った時点の ID・名前を動画に写す。選べなければ何も保存せず、
 /// イベントも発火しない。
 ///
+/// レッスンメニューを確かめた後、何かを保存する前に、生徒が添削を依頼してよいかを entitlement に問い合わせる
+/// （[`VideoReviewGate`]。月額は送り放題、月額契約の前は体験として 1 本だけ。判定は domain の
+/// [`domain::entitlement::TrialUsage`]）。断られたら [`SubmitVideoError::NotEntitled`] で、何も保存せず、イベントも
+/// 発火しない。体験として受け付けるときは、まだ受けていない体験予約を門が解放する（送付の時点でキャンセル扱い）。
+///
 /// 添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ）は返却のときに問い合わせる
 /// （[`super::ReturnVideoReview`]）。
-pub struct SubmitVideo<V, M, S, F, A, P, C> {
+pub struct SubmitVideo<V, M, S, F, G, A, P, C> {
     videos: V,
     lesson_menus: M,
     storage: S,
     ai_feedback: F,
+    gate: G,
     analytics: A,
     events: P,
     clock: C,
 }
 
-impl<V, M, S, F, A, P, C> SubmitVideo<V, M, S, F, A, P, C>
+impl<V, M, S, F, G, A, P, C> SubmitVideo<V, M, S, F, G, A, P, C>
 where
     V: VideoRepository,
     M: VideoLessonMenuLookup,
     S: VideoStorage,
     F: AiFeedbackGenerator,
+    G: VideoReviewGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         videos: V,
         lesson_menus: M,
         storage: S,
         ai_feedback: F,
+        gate: G,
         analytics: A,
         events: P,
         clock: C,
@@ -112,6 +123,7 @@ where
             lesson_menus,
             storage,
             ai_feedback,
+            gate,
             analytics,
             events,
             clock,
@@ -150,6 +162,14 @@ where
             }
         }
         .with_note(command.note.clone());
+        if !self
+            .gate
+            .admit_video_review(command.student_id)
+            .await
+            .map_err(SubmitVideoError::Unavailable)?
+        {
+            return Err(SubmitVideoError::NotEntitled);
+        }
         let upload_url = self
             .storage
             .issue_upload_url(video.id(), command.content_type)
@@ -258,8 +278,9 @@ mod tests {
     use crate::{
         catalog::CatalogLessonMenuLookup,
         in_memory::{
-            FixedAiFeedbackGenerator, FixedClock, FixedVideoStorage, InMemoryLessonMenuRepository,
-            InMemoryVideoRepository, RecordingAnalyticsSink, RecordingDomainEventPublisher,
+            FixedAiFeedbackGenerator, FixedClock, FixedVideoReviewGate, FixedVideoStorage,
+            InMemoryLessonMenuRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
+            RecordingDomainEventPublisher,
         },
     };
 
@@ -277,6 +298,7 @@ mod tests {
         Menus,
         FixedVideoStorage,
         FixedAiFeedbackGenerator,
+        FixedVideoReviewGate,
         RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
         FixedClock,
@@ -291,6 +313,7 @@ mod tests {
         Menus,
         FixedVideoStorage,
         F,
+        FixedVideoReviewGate,
         RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
         FixedClock,
@@ -300,6 +323,7 @@ mod tests {
             menus(),
             FixedVideoStorage,
             ai_feedback,
+            FixedVideoReviewGate(true),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             FixedClock(now()),
@@ -463,6 +487,36 @@ mod tests {
             "{published:?}"
         );
         assert_eq!(published[0].name(), "VideoReviewRequested");
+    }
+
+    #[tokio::test]
+    async fn refused_by_the_gate_saves_nothing_and_emits_nothing() {
+        let use_case = SubmitVideo::new(
+            InMemoryVideoRepository::default(),
+            menus(),
+            FixedVideoStorage,
+            FixedAiFeedbackGenerator,
+            FixedVideoReviewGate(false),
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
+            FixedClock(now()),
+        );
+
+        let result = use_case.execute(command()).await;
+
+        assert!(
+            matches!(result, Err(SubmitVideoError::NotEntitled)),
+            "{result:?}"
+        );
+        assert!(use_case.videos().all().is_empty(), "動画は保存しない");
+        assert!(
+            use_case.analytics().events().is_empty(),
+            "video.submitted は出さない"
+        );
+        assert!(
+            use_case.events().events().is_empty(),
+            "VideoReviewRequested は出さない"
+        );
     }
 
     #[tokio::test]
