@@ -9,9 +9,12 @@ pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
 // アクセストークンの選択も infra に置き（staging でトークンを作る seed の `access-token` と共有）、ここでも公開する
 pub use infra::{AccessTokenBackend, InvalidSigningKey};
 
+mod app;
 mod assembly;
 mod features;
 mod ports;
+
+pub use app::{App, LESSON_REMINDER_INTERVAL};
 
 use application::{
     analytics::AnalyticsSink,
@@ -37,11 +40,13 @@ use application::{
     notification::{
         AnnouncementDraftRepository, AnnouncementRepository, NotificationRepository,
         NotificationSettingsRepository, PushNotificationSubscriber, PushSender,
+        SendLessonReminders,
     },
     profile::CoachProfileRepository,
     review::LessonReviewRepository,
     scheduling::{
-        BookingRepository, CoachAcceptanceRepository, CoachLeaveRepository, SlotRepository,
+        BookingRepository, CoachAcceptanceRepository, CoachLeaveRepository,
+        SchedulingLessonReminderTargetLookup, SlotRepository,
     },
 };
 use axum::Router;
@@ -151,6 +156,11 @@ pub fn router() -> Router {
 /// 受付の状態はスロットの検索と予約の作成が同じ中身を読み、コーチの一覧（`GET /coaches`）は scheduling に問い合わせて
 /// 添える・除く（`SchedulingCoachAcceptanceLookup`）。インメモリの組み立てではスロットの保存先と中身を共有する。
 ///
+/// レッスンのリマインド（確定した同期レッスンの予約の、開始の前日と 1 時間前の生徒とコーチへのお知らせ）は、ルーターと
+/// 同じ保存先・時計・送り先で組み立てた定期の処理（[`App::lesson_reminders`]。`SendLessonReminders`）が作る。対象の予約は
+/// 予約の保存先から読む（`SchedulingLessonReminderTargetLookup`）。ルーターだけを返すこの関数たちは定期の処理を捨てる
+/// （`main` は [`app_with_access_tokens`]・[`app_with_postgres_and_access_tokens`] で両方を受け取って回す）。
+///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
 where
@@ -178,9 +188,21 @@ where
     router_with_access_tokens(clock, analytics, video, AccessTokenBackend::default())
 }
 
-/// [`router_with_video_call`] のアクセストークンを `tokens` に替えたルーター（`DATABASE_URL` がないときの `main` が
-/// [`AccessTokenBackend`] で選んで使う）。本部・コーチ・生徒のどの操作も、トークンの発行と検証に `tokens` を使う。
+/// [`router_with_video_call`] のアクセストークンを `tokens` に替えたルーター。本部・コーチ・生徒のどの操作も、トークンの
+/// 発行と検証に `tokens` を使う。
 pub fn router_with_access_tokens<C, A, V, T>(clock: C, analytics: A, video: V, tokens: T) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
+{
+    app_with_access_tokens(clock, analytics, video, tokens).router
+}
+
+/// [`router_with_access_tokens`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理（`DATABASE_URL` がないときの
+/// `main` が [`AccessTokenBackend`] で選んだ `tokens` で使う）。
+pub fn app_with_access_tokens<C, A, V, T>(clock: C, analytics: A, video: V, tokens: T) -> App
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
@@ -212,6 +234,7 @@ where
         VideoCallBackend::default(),
         AccessTokenBackend::default(),
     )
+    .router
 }
 
 /// 保存先をすべてインメモリにした集約ごとの保存先。
@@ -266,8 +289,7 @@ where
     router_with_postgres_and_video_call(pool, clock, analytics, VideoCallBackend::default())
 }
 
-/// [`router_with_postgres`] の通話基盤を `video` に替えたルーター（`DATABASE_URL` があるときの `main` が
-/// [`VideoCallBackend`] で選んで使う）。
+/// [`router_with_postgres`] の通話基盤を `video` に替えたルーター（[`VideoCallBackend`] で選ぶ）。
 pub fn router_with_postgres_and_video_call<C, A, V>(
     pool: PgPool,
     clock: C,
@@ -288,8 +310,8 @@ where
     )
 }
 
-/// [`router_with_postgres_and_video_call`] のアクセストークンを `tokens` に替えたルーター（`DATABASE_URL` があるときの
-/// `main` が [`AccessTokenBackend`] で選んで使う。`ACCESS_TOKEN_SIGNING_KEY` があれば署名付き）。
+/// [`router_with_postgres_and_video_call`] のアクセストークンを `tokens` に替えたルーター（[`AccessTokenBackend`] で選ぶ。
+/// `ACCESS_TOKEN_SIGNING_KEY` があれば署名付き）。
 pub fn router_with_postgres_and_access_tokens<C, A, V, T>(
     pool: PgPool,
     clock: C,
@@ -297,6 +319,24 @@ pub fn router_with_postgres_and_access_tokens<C, A, V, T>(
     video: V,
     tokens: T,
 ) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
+{
+    app_with_postgres_and_access_tokens(pool, clock, analytics, video, tokens).router
+}
+
+/// [`router_with_postgres_and_access_tokens`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理
+/// （`DATABASE_URL` があるときの `main` が使う）。
+pub fn app_with_postgres_and_access_tokens<C, A, V, T>(
+    pool: PgPool,
+    clock: C,
+    analytics: A,
+    video: V,
+    tokens: T,
+) -> App
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
@@ -370,7 +410,8 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。境界間イベントのバスを作り、機能ごとの組み立て（[`features`]）に
-/// ポートの実装をまとめて渡す。アクセストークンは本部・コーチ・生徒のどの機能にも同じ `tokens` を渡す。
+/// ポートの実装をまとめて渡す。アクセストークンは本部・コーチ・生徒のどの機能にも同じ `tokens` を渡す。レッスンのリマインドの
+/// 定期の処理も同じ保存先・時計・送り先で組み立てる。
 #[allow(clippy::type_complexity)]
 fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V, T>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
@@ -379,7 +420,7 @@ fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V, T>(
     push: P,
     video: V,
     tokens: T,
-) -> Router
+) -> App
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
@@ -415,7 +456,14 @@ where
             ),
         ),
     ));
-    features::router(&Assembly {
+    let reminders = SendLessonReminders::new(
+        SchedulingLessonReminderTargetLookup::new(repositories.bookings.clone()),
+        repositories.notification_settings.clone(),
+        repositories.notifications.clone(),
+        push.clone(),
+        clock.clone(),
+    );
+    let router = features::router(&Assembly {
         repositories,
         clock,
         analytics,
@@ -423,5 +471,6 @@ where
         push,
         events,
         tokens,
-    })
+    });
+    App::new(router, reminders)
 }

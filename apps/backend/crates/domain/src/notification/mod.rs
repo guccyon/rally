@@ -13,6 +13,11 @@
 //! 本部は送る前のお知らせを下書き（[`AnnouncementDraft`]）として残し、あとで直してから送れる。下書きは生徒に届かない。
 //! 本部が下書きを題で探すときの検索語は [`AnnouncementTitleQuery`]。送ったお知らせと下書きを競技で絞る条件は
 //! [`AnnouncementSportFilter`]。
+//!
+//! 確定した同期レッスンの予約には、開始の前日と開始 1 時間前（[`LessonReminderTiming`]）に、生徒とコーチへレッスンの
+//! リマインド（[`PushNotification::LessonReminder`]・[`PushNotification::CoachLessonReminder`]）を作る。きっかけは境界間
+//! イベントでなく時刻の経過で、(予約, 時点, 宛先) ごとに 1 件。リマインドだけは例外で、生徒の受け取り設定でオフならお知らせも
+//! 作らない（[`NotificationSettings::records`]）。コーチには受け取り設定によらず作る。
 
 mod announcement;
 mod announcement_body;
@@ -23,6 +28,7 @@ mod announcement_sport_filter;
 mod announcement_title;
 mod announcement_title_query;
 mod announcement_withdrawal;
+mod lesson_reminder_timing;
 #[allow(clippy::module_inception)]
 mod notification;
 mod notification_error;
@@ -41,6 +47,7 @@ pub use announcement_sport_filter::AnnouncementSportFilter;
 pub use announcement_title::AnnouncementTitle;
 pub use announcement_title_query::AnnouncementTitleQuery;
 pub use announcement_withdrawal::AnnouncementWithdrawal;
+pub use lesson_reminder_timing::LessonReminderTiming;
 pub use notification::Notification;
 pub use notification_error::NotificationError;
 pub use notification_id::NotificationId;

@@ -7,7 +7,7 @@ use domain::{
     scheduling::{Booking, SchedulingError, Slot, SlotId},
 };
 
-use super::{BookingRepository, LessonMenuLookup, ReserveSlotError};
+use super::{BookingRepository, LessonMenuLookup, QuotaGate, ReserveSlotError};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
@@ -29,7 +29,8 @@ pub enum CreateBookingError {
     /// スロットがない
     SlotNotFound,
     /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、体験を使った生徒の体験予約（完了した
-    /// レッスン・送った動画・月額の受講権があるときを含む）、コーチが受付を止めている）
+    /// レッスン・送った動画・月額の受講権があるときを含む）、体験を使った月額契約の前の生徒の通常の予約、コーチが受付を
+    /// 止めている）
     Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -50,30 +51,45 @@ pub enum CreateBookingError {
 /// レッスン（lesson_completion。同期・非同期のどちらでも。docs/adr/0006）・送った動画（添削待ちを含む）・月額の受講権）は
 /// 体験の使用状況の照会（[`TrialUsageLookup`]）から読み、判定は domain の [`Booking::is_trial_available`]
 /// （entitlement の [`domain::entitlement::TrialUsage`] の規則）に任せる（受け終えた体験予約をあとでキャンセルしても、
-/// 動画を送っていても、月額契約の生徒でも体験予約はできない）。照会は体験予約のときだけで、予約を保存する
+/// 動画を送っていても、月額契約の生徒でも体験予約はできない）。
+/// 通常の予約は、ビデオ通話の暦月の枠を持たない生徒（月額契約の前・ワンショット。entitlement に [`QuotaGate`] で
+/// 問い合わせる）が体験をすでに使っていれば断る（[`SchedulingError::LiveLessonNotEntitled`]。体験を使い終えた生徒が
+/// 通常の予約で無料のビデオ通話を受け続けないため。判定は体験予約と同じ材料で domain の
+/// [`Booking::is_regular_booking_available`]）。枠を持つ月額契約の生徒の通常の予約は今までどおり（暦月の上限は確定で確かめる）。
+/// 体験の使用状況を照会するのは体験予約と、枠を持たない生徒の通常の予約のときだけで、受講権・使用状況とも予約を保存する
 /// トランザクションの前に読む（受付の状態と同じ）。
 /// 保存したら行動イベント `booking.created` を 1 回発火する。拒否・保存の失敗では発火しない。
-pub struct CreateBooking<B, M, T, A, C> {
+pub struct CreateBooking<B, M, T, Q, A, C> {
     bookings: B,
     lesson_menus: M,
     trial_usage: T,
+    quota: Q,
     analytics: A,
     clock: C,
 }
 
-impl<B, M, T, A, C> CreateBooking<B, M, T, A, C>
+impl<B, M, T, Q, A, C> CreateBooking<B, M, T, Q, A, C>
 where
     B: BookingRepository,
     M: LessonMenuLookup,
     T: TrialUsageLookup,
+    Q: QuotaGate,
     A: AnalyticsSink,
     C: Clock,
 {
-    pub fn new(bookings: B, lesson_menus: M, trial_usage: T, analytics: A, clock: C) -> Self {
+    pub fn new(
+        bookings: B,
+        lesson_menus: M,
+        trial_usage: T,
+        quota: Q,
+        analytics: A,
+        clock: C,
+    ) -> Self {
         Self {
             bookings,
             lesson_menus,
             trial_usage,
+            quota,
             analytics,
             clock,
         }
@@ -106,7 +122,14 @@ where
             .find_coach_acceptance(slot.coach_id())
             .await
             .map_err(CreateBookingError::Unavailable)?;
-        let trial_usage = if is_trial {
+        // 通常の予約は、ビデオ通話の暦月の枠を持たない生徒だけ体験の使用済みを確かめる
+        let has_live_lesson_quota = !is_trial
+            && self
+                .quota
+                .has_live_lesson_quota(student_id)
+                .await
+                .map_err(CreateBookingError::Unavailable)?;
+        let trial_usage = if is_trial || !has_live_lesson_quota {
             self.trial_usage
                 .find_trial_usage(student_id)
                 .await
@@ -121,6 +144,17 @@ where
                 // 枠の状態・予約の判定の後で、完了したレッスン・送った動画・月額の受講権があれば体験は使用済み
                 if is_trial && !Booking::is_trial_available(student_id, existing, trial_usage) {
                     return Err(SchedulingError::TrialAlreadyUsed);
+                }
+                // 体験を使った月額契約の前の生徒は、通常の予約でも無料のビデオ通話を受けられない
+                if !is_trial
+                    && !Booking::is_regular_booking_available(
+                        student_id,
+                        existing,
+                        trial_usage,
+                        has_live_lesson_quota,
+                    )
+                {
+                    return Err(SchedulingError::LiveLessonNotEntitled);
                 }
                 // 枠の状態の判定（閉じた枠はない枠と同じに扱う）の後で、コーチが受付を止めていないかを確かめる
                 acceptance.ensure_accepting_bookings()?;
@@ -195,7 +229,7 @@ mod tests {
     use super::*;
     use crate::{
         catalog::{CatalogLessonMenuLookup, LessonMenuRepository},
-        entitlement::EntitlementTrialUsageLookup,
+        entitlement::{EntitlementQuotaGate, EntitlementTrialUsageLookup},
         in_memory::{
             FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
             InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
@@ -218,6 +252,7 @@ mod tests {
         InMemoryBookingRepository,
         CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
         Usage,
+        EntitlementQuotaGate<InMemoryEntitlementRepository>,
         RecordingAnalyticsSink,
         FixedClock,
     >;
@@ -331,6 +366,7 @@ mod tests {
             InMemoryBookingRepository::new(slots),
             CatalogLessonMenuLookup::new(menus.clone()),
             usage_with_completions(InMemoryLessonCompletionRepository::default()),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );
@@ -493,13 +529,16 @@ mod tests {
             use_case.execute(command(STUDENT, 11, true)).await,
             SchedulingError::TrialAlreadyUsed,
         );
-        // 通常の予約と、別の生徒の体験予約はできる
-        use_case.execute(command(STUDENT, 11, false)).await.unwrap();
+        // 月額契約の前なので通常の予約もできない。別の生徒の体験予約はできる
+        assert_invalid(
+            use_case.execute(command(STUDENT, 11, false)).await,
+            SchedulingError::LiveLessonNotEntitled,
+        );
         use_case
             .execute(command(OTHER_STUDENT, 14, true))
             .await
             .unwrap();
-        assert_eq!(use_case.analytics().events().len(), 3);
+        assert_eq!(use_case.analytics().events().len(), 2);
     }
 
     /// [`use_case`] の予約を使い、完了記録の保存先だけを `completions` にしたユースケース。
@@ -514,6 +553,7 @@ mod tests {
             base.bookings,
             base.lesson_menus,
             usage,
+            base.quota,
             base.analytics,
             base.clock,
         )
@@ -567,8 +607,11 @@ mod tests {
             1,
             "断った予約は発火しない"
         );
-        // 通常の予約と、別の生徒の体験予約はできる
-        use_case.execute(command(STUDENT, 11, false)).await.unwrap();
+        // 月額契約の前なので通常の予約もできない。別の生徒の体験予約はできる
+        assert_invalid(
+            use_case.execute(command(STUDENT, 11, false)).await,
+            SchedulingError::LiveLessonNotEntitled,
+        );
         use_case
             .execute(command(OTHER_STUDENT, 14, true))
             .await
@@ -598,9 +641,105 @@ mod tests {
             use_case.analytics().events().is_empty(),
             "断った予約は発火しない"
         );
-        // 通常の予約はできる
-        let regular = use_case.execute(command(STUDENT, 10, false)).await.unwrap();
-        assert!(!regular.is_trial());
+        // 月額契約の前なので通常の予約もできない
+        assert_invalid(
+            use_case.execute(command(STUDENT, 10, false)).await,
+            SchedulingError::LiveLessonNotEntitled,
+        );
+        assert!(use_case.bookings().all().is_empty());
+    }
+
+    /// [`use_case`] の予約を使い、完了記録の保存先を `completions` に、生徒 `STUDENT` を月額契約（standard）の生徒にした
+    /// ユースケース。
+    fn use_case_with_monthly_student(completions: InMemoryLessonCompletionRepository) -> UseCase {
+        let base = use_case();
+        let monthly = Entitlement::monthly(
+            EntitlementId::from_u128(100),
+            STUDENT,
+            Sport::Tennis,
+            SubscriptionId::from_u128(200),
+            LiveLessonQuota::fresh(SubscriptionPlan::Standard, YearMonth::new(1970, 1).unwrap()),
+        )
+        .unwrap();
+        let entitlements = InMemoryEntitlementRepository::with_entitlements([monthly]);
+        CreateBooking::new(
+            base.bookings,
+            base.lesson_menus,
+            EntitlementTrialUsageLookup::new(
+                entitlements.clone(),
+                completions,
+                InMemoryVideoRepository::default(),
+            ),
+            EntitlementQuotaGate::new(entitlements),
+            base.analytics,
+            base.clock,
+        )
+    }
+
+    #[tokio::test]
+    async fn regular_booking_after_the_trial_is_rejected_only_without_a_monthly_entitlement() {
+        // 体験予約を受け終えた（完了したレッスンがある）月額契約の前の生徒
+        let completions = InMemoryLessonCompletionRepository::default();
+        let use_case = use_case_with_completions(completions.clone());
+        let trial = use_case.execute(command(STUDENT, 10, true)).await.unwrap();
+        completions
+            .record(STUDENT, |_| Ok(completion_of(&trial)))
+            .await
+            .unwrap();
+        assert_invalid(
+            use_case.execute(command(STUDENT, 11, false)).await,
+            SchedulingError::LiveLessonNotEntitled,
+        );
+        assert_eq!(use_case.bookings().all().len(), 1, "断った予約は保存しない");
+        assert_eq!(
+            use_case.analytics().events().len(),
+            1,
+            "断った予約は発火しない"
+        );
+        // 枠の状態・同じ枠の 2 回目の判定が先
+        assert_invalid(
+            use_case.execute(command(STUDENT, 13, false)).await,
+            SchedulingError::SlotNotOpen {
+                status: SlotStatus::Closed,
+            },
+        );
+        assert_invalid(
+            use_case.execute(command(STUDENT, 10, false)).await,
+            SchedulingError::SlotAlreadyBooked,
+        );
+
+        // 月額契約の生徒は、体験を使った後も通常の予約を何件でも作れる（暦月の上限は確定で確かめる）
+        let completions = InMemoryLessonCompletionRepository::default();
+        let use_case = use_case_with_monthly_student(completions.clone());
+        let first = use_case.execute(command(STUDENT, 10, false)).await.unwrap();
+        completions
+            .record(STUDENT, |_| Ok(completion_of(&first)))
+            .await
+            .unwrap();
+        for slot in [11, 14] {
+            let booking = use_case
+                .execute(command(STUDENT, slot, false))
+                .await
+                .unwrap();
+            assert!(!booking.is_trial());
+        }
+        assert_eq!(use_case.bookings().all().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn regular_booking_is_accepted_while_the_trial_is_not_used() {
+        // 体験をまだ使っていない月額契約の前の生徒は、通常の予約を 1 件作れる（それで体験を使ったことになる）
+        let first = use_case();
+        first.execute(command(STUDENT, 10, false)).await.unwrap();
+        assert_invalid(
+            first.execute(command(STUDENT, 11, false)).await,
+            SchedulingError::LiveLessonNotEntitled,
+        );
+        // 受けていない予約をキャンセルしただけなら、また作れる
+        let fresh = use_case();
+        let regular = fresh.execute(command(STUDENT, 10, false)).await.unwrap();
+        cancel(&fresh, &regular).await;
+        fresh.execute(command(STUDENT, 11, false)).await.unwrap();
     }
 
     #[tokio::test]
@@ -624,8 +763,11 @@ mod tests {
         );
         assert!(use_case.bookings().all().is_empty(), "体験予約は保存しない");
         assert!(use_case.analytics().events().is_empty());
-        // 通常の予約と、別の生徒の体験予約はできる
-        use_case.execute(command(STUDENT, 10, false)).await.unwrap();
+        // 月額契約の前なので通常の予約もできない（#1656）。別の生徒の体験予約はできる
+        assert_invalid(
+            use_case.execute(command(STUDENT, 10, false)).await,
+            SchedulingError::LiveLessonNotEntitled,
+        );
         use_case
             .execute(command(OTHER_STUDENT, 11, true))
             .await
@@ -634,21 +776,7 @@ mod tests {
 
     #[tokio::test]
     async fn monthly_students_never_book_a_trial() {
-        let use_case = use_case_with_usage(EntitlementTrialUsageLookup::new(
-            InMemoryEntitlementRepository::with_entitlements([Entitlement::monthly(
-                EntitlementId::from_u128(1),
-                STUDENT,
-                Sport::Tennis,
-                SubscriptionId::from_u128(1),
-                LiveLessonQuota::fresh(
-                    SubscriptionPlan::Standard,
-                    YearMonth::new(1970, 1).unwrap(),
-                ),
-            )
-            .unwrap()]),
-            InMemoryLessonCompletionRepository::default(),
-            InMemoryVideoRepository::default(),
-        ));
+        let use_case = use_case_with_monthly_student(InMemoryLessonCompletionRepository::default());
 
         assert_invalid(
             use_case.execute(command(STUDENT, 10, true)).await,
@@ -872,6 +1000,7 @@ mod tests {
             BrokenRepository,
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
             usage_with_completions(InMemoryLessonCompletionRepository::default()),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );

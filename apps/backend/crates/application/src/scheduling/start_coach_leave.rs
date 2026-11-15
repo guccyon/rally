@@ -206,12 +206,14 @@ mod tests {
         for (slot, student, confirm) in [
             (10, STUDENT, true),
             (11, OTHER_STUDENT, false),
-            (13, STUDENT, true),
+            // 月額契約の前の生徒の 2 件目の通常の予約は断られるので、期間の外の予約は別の生徒にする
+            (13, AccountId::from_u128(3), true),
         ] {
             let booking = CreateBooking::new(
                 bookings.clone(),
                 CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
                 crate::in_memory::FixedTrialUsage::default(),
+                EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
                 RecordingAnalyticsSink::default(),
                 FixedClock(SystemTime::UNIX_EPOCH),
             )

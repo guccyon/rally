@@ -185,6 +185,9 @@ mod tests {
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
             crate::in_memory::FixedTrialUsage::default(),
+            crate::entitlement::EntitlementQuotaGate::new(
+                crate::in_memory::InMemoryEntitlementRepository::default(),
+            ),
             RecordingAnalyticsSink::default(),
             FixedClock(SystemTime::UNIX_EPOCH),
         )

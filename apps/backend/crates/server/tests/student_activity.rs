@@ -149,6 +149,7 @@ async fn headquarters_sees_upcoming_bookings_cancellations_lessons_and_videos_of
     let student = account["access_token"].as_str().unwrap().to_string();
 
     // 2 つの枠を予約し、遅いほうをキャンセルする
+    subscribe(&router, &student).await;
     let mut booking_ids = Vec::new();
     for day in ["2099-01-01", "2099-01-02"] {
         let slot = post_ok(
@@ -212,15 +213,8 @@ async fn headquarters_sees_upcoming_bookings_cancellations_lessons_and_videos_of
     )
     .await;
 
-    // 月額契約を結び（月額契約の前は動画を体験として 1 本だけ送れる。#1653）、もう 2 本送り、どちらも返却を待っている
-    post_ok(
-        &router,
-        "/subscriptions",
-        &student,
-        json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
-        StatusCode::CREATED,
-    )
-    .await;
+    // もう 2 本送り、どちらも返却を待っている（はじめに月額契約を結んだので送り放題。月額契約の前は動画を体験として
+    // 1 本だけ送れる。#1653）
     for _ in 0..2 {
         post_ok(
             &router,
@@ -580,4 +574,17 @@ async fn counts_low_rated_reviews_by_the_student_as_the_low_rated_list_from_post
         counts(&router, &headquarters, &students[0]).await,
         [(2, 1), (2, 1)]
     );
+}
+
+/// `token` の生徒がテニスの月額契約（standard）を始める（月額契約の前の生徒は、体験を使った後の通常の予約を断られるので。#1656）。
+async fn subscribe(router: &Router, token: &str) {
+    let (status, body) = send(
+        router,
+        "POST",
+        "/subscriptions",
+        Some(token),
+        Some(json!({ "sport": "tennis", "payment_method_token": "tok_mock" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 }

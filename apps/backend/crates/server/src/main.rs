@@ -6,8 +6,10 @@
 //! `mock.` のトークンや改ざんしたトークンを 401 にする。なければ署名なしのモック（ローカルの起動とテスト用）で、起動時に
 //! そのことを標準エラー出力に書く。鍵は秘密情報で、値はどこにも書き出さない。
 //!
-//! `DATABASE_URL` があれば保存先を Postgres にし（[`server::router_with_postgres_and_access_tokens`]）、待ち受ける前に
-//! [`infra::run_migrations`] でマイグレーションを当てる。なければ保存先はインメモリ（[`server::router_with_access_tokens`]）。
+//! `DATABASE_URL` があれば保存先を Postgres にし（[`server::app_with_postgres_and_access_tokens`]）、待ち受ける前に
+//! [`infra::run_migrations`] でマイグレーションを当てる。なければ保存先はインメモリ（[`server::app_with_access_tokens`]）。
+//! 待ち受ける前に、レッスンのリマインドの定期の処理（[`server::App::lesson_reminders`]。[`server::LESSON_REMINDER_INTERVAL`]
+//! ごと）を tokio のタスクで回し始める。
 //! `GET /version` は `APP_VERSION` の版を返す（[`server::with_app_version`]）。
 //!
 //! `CLOCK_OFFSET_SECONDS`（既定 0）は、サーバーの時計を実際より進める秒数（[`application::offset_clock::OffsetClock`]）。
@@ -50,7 +52,7 @@ async fn run() -> Result<(), String> {
     if clock.offset() > Duration::ZERO {
         println!("clock is {} seconds ahead", clock.offset().as_secs());
     }
-    let router = match env::var("DATABASE_URL") {
+    let app = match env::var("DATABASE_URL") {
         Ok(url) => {
             let pool = PgPool::connect(&url)
                 .await
@@ -59,11 +61,13 @@ async fn run() -> Result<(), String> {
             infra::run_migrations(&pool)
                 .await
                 .map_err(|error| format!("マイグレーションを当てられない: {error}"))?;
-            server::router_with_postgres_and_access_tokens(pool, clock, analytics, video, tokens)
+            server::app_with_postgres_and_access_tokens(pool, clock, analytics, video, tokens)
         }
-        Err(_) => server::router_with_access_tokens(clock, analytics, video, tokens),
+        Err(_) => server::app_with_access_tokens(clock, analytics, video, tokens),
     };
-    let router = server::with_app_version(router, |name| env::var(name).ok());
+    // レッスンのリマインドは、ルーターと同じ保存先・時計で定期に作る（進めた時計なら進めた時刻の窓で作る）
+    tokio::spawn(app.lesson_reminders);
+    let router = server::with_app_version(app.router, |name| env::var(name).ok());
     // 応答の Date も進めた時計で付ける（画面がサーバーの時刻に合わせるため。本番は進めないので実際の時刻）
     let router = server::with_server_date(router, clock);
     let listener = tokio::net::TcpListener::bind(&addr)

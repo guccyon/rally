@@ -103,7 +103,7 @@ mod tests {
     use crate::{
         catalog::CatalogLessonMenuLookup,
         domain_event::DomainEvent,
-        entitlement::EntitlementTrialUsageLookup,
+        entitlement::{EntitlementQuotaGate, EntitlementTrialUsageLookup},
         in_memory::{
             FixedClock, FixedTrialUsage, InMemoryBookingRepository, InMemoryEntitlementRepository,
             InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
@@ -152,6 +152,18 @@ mod tests {
         .unwrap()
     }
 
+    /// 生徒 `STUDENT` の月額（standard）の受講権。
+    fn monthly() -> Entitlement {
+        Entitlement::monthly(
+            EntitlementId::from_u128(1),
+            STUDENT,
+            Sport::Tennis,
+            SubscriptionId::from_u128(1),
+            LiveLessonQuota::fresh(SubscriptionPlan::Standard, YearMonth::new(1970, 1).unwrap()),
+        )
+        .unwrap()
+    }
+
     /// 生徒 `STUDENT` の体験予約（枠 10）と通常の予約（枠 11）、別の生徒の体験予約（枠 12）を置いた門と、置いた予約。
     async fn gate(materials: Materials) -> (Gate, [Booking; 3]) {
         let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([
@@ -163,6 +175,10 @@ mod tests {
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
             FixedTrialUsage::default(),
+            // 生徒 `STUDENT` が体験予約の後に通常の予約も置けるよう、予約を置くときだけ月額契約の生徒にする（#1656）
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::with_entitlements(
+                [monthly()],
+            )),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );
@@ -180,19 +196,7 @@ mod tests {
             booked.push(create.execute(command).await.unwrap());
         }
         let entitlements =
-            InMemoryEntitlementRepository::with_entitlements(materials.monthly.then(|| {
-                Entitlement::monthly(
-                    EntitlementId::from_u128(1),
-                    STUDENT,
-                    Sport::Tennis,
-                    SubscriptionId::from_u128(1),
-                    LiveLessonQuota::fresh(
-                        SubscriptionPlan::Standard,
-                        YearMonth::new(1970, 1).unwrap(),
-                    ),
-                )
-                .unwrap()
-            }));
+            InMemoryEntitlementRepository::with_entitlements(materials.monthly.then(monthly));
         let completions =
             InMemoryLessonCompletionRepository::with_completions(materials.completed.then(|| {
                 LessonCompletion::restore(

@@ -153,6 +153,29 @@ fn app_with(extra: impl IntoIterator<Item = Slot>) -> App {
     app_with_entitlements(extra, InMemoryEntitlementRepository::default())
 }
 
+/// [`app_with`] の生徒 `STUDENT` を月額契約（standard）の生徒にする（体験を使った後も通常の予約を何件でも作れる）。
+fn app_with_monthly(extra: impl IntoIterator<Item = Slot>) -> App {
+    app_with_entitlements(
+        extra,
+        InMemoryEntitlementRepository::with_entitlements([monthly_entitlement()]),
+    )
+}
+
+/// 生徒 `STUDENT` が月額契約（standard）を始める（`POST /subscriptions`）。体験予約を取った後に通常の予約を足す試験で使う
+/// （月額契約の生徒は体験予約できず（#1653）、月額契約の前の生徒は体験を使った後に通常の予約をできない（#1656））。
+async fn start_monthly(app: &App) {
+    let body = json!({ "sport": "tennis", "plan": "standard", "payment_method_token": "tok_mock" });
+    let request = Request::post("/subscriptions")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {STUDENT}"));
+    let (status, body) = send(
+        &app.router,
+        request.body(Body::from(body.to_string())).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+}
+
 /// [`app_with`] の受講権の保存先を `entitlements` にする。
 fn app_with_entitlements(
     extra: impl IntoIterator<Item = Slot>,
@@ -206,6 +229,7 @@ fn app_with_entitlements(
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             trial_usage.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock,
         ),
@@ -528,8 +552,8 @@ async fn trial_booking_is_only_once_per_student() {
     assert_create_contract(status, &body);
     assert_eq!(body["code"], "trial_already_used");
 
-    // 2 件目でも通常の予約はできる。別の生徒は初回なので体験予約できる
-    create(&app.router, STUDENT, 11, false).await;
+    // 月額契約の前なので、体験を使った後は通常の予約もできない。別の生徒は初回なので体験予約できる
+    assert_not_entitled(&app, 11).await;
     create(&app.router, OTHER_STUDENT, 12, true).await;
     let trials: Vec<bool> = app
         .analytics
@@ -540,7 +564,50 @@ async fn trial_booking_is_only_once_per_student() {
             other => panic!("{other:?}"),
         })
         .collect();
-    assert_eq!(trials, [true, false, true]);
+    assert_eq!(trials, [true, true]);
+}
+
+/// 月額契約の前で体験を使った生徒 `STUDENT` の、枠 `slot` の通常の予約が 403 `live_lesson_not_entitled` で断られ、
+/// 行動イベントも増えないこと。
+async fn assert_not_entitled(app: &App, slot: u128) {
+    let created = app.analytics.events().len();
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(slot, false)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_create_contract(status, &body);
+    assert_eq!(body["code"], "live_lesson_not_entitled");
+    assert_eq!(
+        app.analytics.events().len(),
+        created,
+        "断った予約は発火しない"
+    );
+}
+
+/// 体験を使い終えた月額契約の前の生徒は、通常の予約でも無料のビデオ通話を受けられない（#1656）。月額契約の生徒は
+/// 体験を使った後も通常の予約を作れる。
+#[tokio::test]
+async fn regular_booking_after_the_trial_is_403_live_lesson_not_entitled_unless_monthly() {
+    // 体験予約を確定して受け終えた、月額契約の前の生徒
+    let app = app();
+    let trial = create(&app.router, STUDENT, 10, true).await;
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &trial).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    record_completion(&app).await;
+    assert_not_entitled(&app, 11).await;
+    // 体験をまだ使っていない別の生徒の通常の予約は今までどおり
+    let (status, body) = post_bookings(&app.router, Some(OTHER_STUDENT), booking(11, false)).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // 月額契約の生徒は、受け終えたレッスンがあっても通常の予約を作れる
+    let app = app_with_monthly([]);
+    let first = create(&app.router, STUDENT, 10, false).await;
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &first).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    record_completion(&app).await;
+    for slot in [11, 12] {
+        let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(slot, false)).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_create_contract(status, &body);
+    }
 }
 
 /// 生徒 `STUDENT` が予約した通話のレッスンを受け終えた完了記録を保存する（通話セッションの準備を省き、
@@ -603,11 +670,12 @@ async fn second_trial_after_cancelling_a_completed_trial_booking_is_409_trial_al
         "断った予約は発火しない"
     );
 
-    // 通常の予約は通る
-    create(&app.router, STUDENT, 11, false).await;
+    // 月額契約の前なので通常の予約も通らない
+    assert_not_entitled(&app, 11).await;
 }
 
-/// 予約を作らずに（動画添削などで）レッスンを受け終えた生徒（#1594）。予約は 0 件でも体験は使用済みで、通常の予約は通る
+/// 予約を作らずに（動画添削などで）レッスンを受け終えた生徒（#1594）。予約は 0 件でも体験は使用済みで、月額契約の前なので
+/// 通常の予約も通らない（#1656）
 #[tokio::test]
 async fn student_with_a_completed_lesson_and_no_booking_is_not_offered_a_trial() {
     let app = app();
@@ -621,10 +689,7 @@ async fn student_with_a_completed_lesson_and_no_booking_is_not_offered_a_trial()
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "trial_already_used");
 
-    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, false)).await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_create_contract(status, &body);
-    assert_eq!(body["is_trial"], false);
+    assert_not_entitled(&app, 10).await;
 }
 
 /// `token` の生徒がコーチ `COACH` にテニスの動画を送る（`POST /videos`）。
@@ -640,7 +705,8 @@ async fn post_video(router: &Router, token: &str) -> (StatusCode, Value) {
     send(router, request.body(Body::from(body.to_string())).unwrap()).await
 }
 
-/// 動画を送った（添削待ちのまま）生徒（#1653）。体験は動画添削で使ったので、体験予約は 409 で通常の予約は通る
+/// 動画を送った（添削待ちのまま）生徒（#1653）。体験は動画添削で使ったので、体験予約は 409 で、月額契約の前なので
+/// 通常の予約も 403（#1656）
 #[tokio::test]
 async fn student_who_submitted_a_video_is_not_offered_a_trial() {
     let app = app();
@@ -655,7 +721,7 @@ async fn student_who_submitted_a_video_is_not_offered_a_trial() {
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_create_contract(status, &body);
     assert_eq!(body["code"], "trial_already_used");
-    create(&app.router, STUDENT, 10, false).await;
+    assert_not_entitled(&app, 10).await;
     // 2 本目の動画は送れない（月額契約の前で体験を使い終えた）
     let (status, body) = post_video(&app.router, STUDENT).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
@@ -1333,6 +1399,7 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
     let first = create(&app.router, STUDENT, 10, true).await;
     let (status, body) = post_confirm(&app.router, Some(STUDENT), &first).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    start_monthly(&app).await;
     let cancelled = create(&app.router, STUDENT, 12, false).await;
     let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1396,7 +1463,9 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
         assert_eq!(item["booking"]["coach_display_name"], "たなか", "{item}");
     }
     assert_eq!(items[2]["booking"]["ends_at"], "2026-11-01T11:00:00Z");
-    // 受講権のない生徒なので、キャンセルできる予約は枠を使わない。キャンセル済みは null
+    // 月額契約の生徒で、境目（開始の 24 時間前）の前なので、キャンセルできる予約は枠を使わない。キャンセル済みは null
+    // （体験を使った後も通常の予約を作れるよう月額契約の生徒にしている。受講権のない生徒は
+    // bookings_of_students_without_the_monthly_entitlement_never_consume_the_quota）
     assert_eq!(
         items
             .iter()
@@ -1404,8 +1473,8 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
             .collect::<Vec<_>>(),
         [
             (&Value::Null, &Value::Null),
-            (&json!(false), &Value::Null),
-            (&json!(false), &Value::Null),
+            (&json!(false), &json!("2026-10-31T11:00:00Z")),
+            (&json!(false), &json!("2026-10-31T10:00:00Z")),
         ]
     );
     // 照会では何も発火しない
@@ -1595,6 +1664,7 @@ async fn coach_lists_bookings_of_own_slots_oldest_slot_first_including_cancelled
     let confirmed = create(&app.router, STUDENT, 10, true).await;
     let (status, body) = post_confirm(&app.router, Some(STUDENT), &confirmed).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    start_monthly(&app).await;
     // 別のコーチの枠への予約は出ない
     create(&app.router, STUDENT, 20, false).await;
     let analytics = app.analytics.events().len();
@@ -1711,7 +1781,7 @@ async fn bookings_in_a_call_carry_the_live_lesson_session_summary() {
         )
         .unwrap()
     };
-    let app = app_with([started(30, 1, 3), started(31, 2, 1)]);
+    let app = app_with_monthly([started(30, 1, 3), started(31, 2, 1)]);
     let first = confirmed_booking(&app, 100, STUDENT, 30).await;
     let second = confirmed_booking(&app, 101, OTHER_STUDENT, 30).await;
     let ended = confirmed_booking(&app, 102, STUDENT, 31).await;
@@ -1811,7 +1881,7 @@ async fn coach_narrows_own_bookings_by_the_date_the_slot_starts_in_japan() {
         domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
-    let app = app_with([slot(15, SlotStatus::Open), other_coach_slot]);
+    let app = app_with_monthly([slot(15, SlotStatus::Open), other_coach_slot]);
     let early = create(&app.router, STUDENT, 10, false).await;
     let next_day = create(&app.router, STUDENT, 15, false).await;
     create(&app.router, OTHER_STUDENT, 20, false).await;
@@ -1968,6 +2038,7 @@ async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_bo
     let confirmed = create(&app.router, STUDENT, 10, true).await;
     let (status, body) = post_confirm(&app.router, Some(STUDENT), &confirmed).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    start_monthly(&app).await;
     create(&app.router, OTHER_STUDENT, 11, false).await;
     let cancelled = create(&app.router, STUDENT, 12, false).await;
     let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;
@@ -2119,7 +2190,7 @@ async fn bookings_carry_the_lesson_menu_of_the_time_of_booking() {
     let bound = |id, menu| {
         slot(id, SlotStatus::Open).with_restored_lesson_menu(Some(LessonMenuId::from_u128(menu)))
     };
-    let app = app_with([bound(30, 50), bound(31, 51)]);
+    let app = app_with_monthly([bound(30, 50), bound(31, 51)]);
     register_coach(&app).await;
     register_student(&app).await;
     app.lesson_menus

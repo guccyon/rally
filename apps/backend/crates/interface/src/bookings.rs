@@ -40,7 +40,7 @@ use crate::{
 
 /// `/bookings` のハンドラーが使うユースケース。`describe_booking` は返す予約にスロットとコーチの表示名を添える。
 pub struct BookingsState<B, J, M, G, A, P, C, K> {
-    pub create_booking: CreateBooking<B, J, M, A, C>,
+    pub create_booking: CreateBooking<B, J, M, G, A, C>,
     pub confirm_booking: ConfirmBooking<B, G, A, P, C>,
     pub cancel_booking: CancelBooking<B, A, P, C>,
     pub describe_booking: DescribeBooking<B, K>,
@@ -265,7 +265,7 @@ pub(crate) fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLesso
 /// どれも生徒だけ。同じパスの `GET /bookings`（本部が見る予約の一覧）は [`crate::headquarters_bookings_router`] にあり、
 /// `merge` で 1 つのパスにまとまる。
 pub fn bookings_router<B, J, M, G, A, P, C, K, T>(
-    create_booking: CreateBooking<B, J, M, A, C>,
+    create_booking: CreateBooking<B, J, M, G, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     describe_booking: DescribeBooking<B, K>,

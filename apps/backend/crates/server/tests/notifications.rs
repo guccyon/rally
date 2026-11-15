@@ -665,6 +665,7 @@ async fn notification_settings_are_saved_in_postgres(pool: sqlx::PgPool) {
         "video_review_returned": true,
         "message_received": true,
         "announcement": true,
+        "lesson_reminder": true,
     });
     assert_eq!(
         call(

@@ -8,6 +8,7 @@ entry: "初回レッスン（通話か動画添削）の完了を記録した生
 exit: "生徒がスロットを探す画面で自分のスポーツの予約できるスロットを見て、そこから 2 回目の予約（体験予約ではない通常の予約）を作り、予約の確定待ちを見ている。月額契約の前に動画の添削を頼もうとしても無料では通らず、月額契約へ進む入口が出ている"
 preconditions:
   - "生徒の完了したレッスン（lesson_completion）が 1 件以上ある"
+  - "生徒が月額契約を始めている（受講権がある）。月額契約の前の生徒は、体験を使った後の通常の予約を `createBooking` の 403 `live_lesson_not_entitled` で断られ、月額契約へ進む（#1656）"
 steps:
   - where: "student-app ホーム"
     do: "ホームを開く（レッスンの評価や月額契約のあとにホームへ戻る、またはアプリバーの「ホーム」）"
@@ -34,10 +35,12 @@ must_not:
   - "添削の依頼が 403 `video_review_not_entitled` で断られたあと、断りの文言だけを出して月額契約へ進む入口を出さない"
   - "体験を使ったかをアプリで判定して、依頼の前に「添削を依頼する」を隠す・止める（判定はサーバー。ADR 0014）"
   - "予約がまだない（または受けていない体験予約をキャンセルしただけの）生徒から「体験予約する」を外す"
+  - "体験を使い終えた月額契約の前の生徒の通常の予約を通す（無料のビデオ通話を何度でも受けられてしまう）、または断ったときに月額契約へ進む入口（スロットを探す画面の「月額契約へ進む」）を出さない（#1656）"
+  - "月額契約の生徒の 2 回目以降の通常の予約を、受講権がないとして断る"
 touches:
   apps: [student-app]
   contexts: [scheduling, live-lesson, async-lesson, messaging, entitlement]
-  terms: [lesson_completion, slot, booking, video_review_request, subscription]
+  terms: [lesson_completion, slot, booking, entitlement, video_review_request, subscription]
   operations:
     - student-app.listMyLessonCompletions
     - student-app.searchSlots
@@ -45,7 +48,7 @@ touches:
     - student-app.createBooking
     - student-app.submitVideo
 origin:
-  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1659", "guccyon/rally#1700"]
+  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1656", "guccyon/rally#1659", "guccyon/rally#1700"]
   note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから"
   retro: false
 known_gaps:

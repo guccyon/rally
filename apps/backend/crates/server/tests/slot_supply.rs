@@ -221,6 +221,11 @@ async fn headquarters_reads_the_supply_of_next_week_from_postgres(pool: PgPool) 
         )
         .await;
         assert_eq!(status, StatusCode::CREATED, "{booking}");
+        // 体験予約の後に月額契約を始める（月額契約の生徒は体験予約できず（#1653）、月額契約の前の生徒は体験を使った後に
+        // 通常の予約をできない（#1656））
+        if is_trial {
+            subscribe(&router, &student).await;
+        }
     }
 
     let (status, body) = send(
@@ -584,4 +589,18 @@ async fn headquarters_reads_the_supply_of_a_lesson_menu_from_postgres(pool: PgPo
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
     assert_eq!(body["message"], "lesson_menu_id が UUID でない");
+}
+
+/// `token` の生徒がテニスの月額契約（standard）を始める（月額契約の前の生徒は、体験を使った後の通常の予約を断られるので。#1656）。
+async fn subscribe(router: &Router, token: &str) {
+    let (status, body) = send(
+        router,
+        post_json(
+            "/subscriptions",
+            token,
+            json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 }
