@@ -109,11 +109,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
-            application::entitlement::EntitlementTrialUsageLookup::new(
-                application::in_memory::InMemoryEntitlementRepository::default(),
-                application::in_memory::InMemoryLessonCompletionRepository::default(),
-                application::in_memory::InMemoryVideoRepository::default(),
-            ),
+            application::in_memory::FixedTrialUsage::default(),
             EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock,
@@ -150,11 +146,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(entitlements.clone()),
-            application::entitlement::EntitlementTrialUsageLookup::new(
-                application::in_memory::InMemoryEntitlementRepository::default(),
-                application::in_memory::InMemoryLessonCompletionRepository::default(),
-                application::in_memory::InMemoryVideoRepository::default(),
-            ),
+            application::in_memory::FixedTrialUsage::default(),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(
@@ -196,13 +188,13 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
             clock,
         ),
         SubmitVideo::new(
-            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            application::in_memory::FixedVideoReviewGate(true),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,

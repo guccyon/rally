@@ -9,12 +9,13 @@ use application::{
     catalog::lesson_menu_id_uuid,
     clock::Clock,
     domain_event::DomainEventPublisher,
+    entitlement::TrialUsageLookup,
     identity::{TokenVerifier, account_id_uuid},
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CancelBookingCommand,
         ConfirmBooking, ConfirmBookingCommand, CreateBooking, CreateBookingCommand,
-        DescribeBooking, DescribedBooking, LessonMenuLookup, QuotaGate, TrialUsageLookup,
-        booking_id_uuid, slot_id_uuid,
+        DescribeBooking, DescribedBooking, LessonMenuLookup, QuotaGate, booking_id_uuid,
+        slot_id_uuid,
     },
 };
 use axum::{

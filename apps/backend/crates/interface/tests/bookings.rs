@@ -23,8 +23,8 @@ use application::{
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     domain_event::DomainEvent,
     entitlement::{
-        EntitlementQuotaGate, EntitlementReviewGate, EntitlementTrialUsageLookup, GetEntitlement,
-        StartSubscription,
+        EntitlementQuotaGate, EntitlementReviewGate, EntitlementTrialUsageLookup,
+        EntitlementVideoReviewGate, GetEntitlement, StartSubscription,
     },
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
@@ -139,8 +139,6 @@ struct App {
     accounts: InMemoryAccountRepository,
     /// 完了記録の保存先（体験予約の判定と予約の一覧の `trial_available` が読む）
     completions: InMemoryLessonCompletionRepository,
-    /// 送った動画の保存先（`POST /videos` が書き、体験予約の判定と予約の一覧の `trial_available` が読む）
-    videos: InMemoryVideoRepository,
     analytics: RecordingAnalyticsSink,
     events: RecordingDomainEventPublisher,
 }
@@ -161,6 +159,21 @@ fn app_with_monthly(extra: impl IntoIterator<Item = Slot>) -> App {
         extra,
         InMemoryEntitlementRepository::with_entitlements([monthly_entitlement()]),
     )
+}
+
+/// 生徒 `STUDENT` が月額契約（standard）を始める（`POST /subscriptions`）。体験予約を取った後に通常の予約を足す試験で使う
+/// （月額契約の生徒は体験予約できず（#1653）、月額契約の前の生徒は体験を使った後に通常の予約をできない（#1656））。
+async fn start_monthly(app: &App) {
+    let body = json!({ "sport": "tennis", "plan": "standard", "payment_method_token": "tok_mock" });
+    let request = Request::post("/subscriptions")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {STUDENT}"));
+    let (status, body) = send(
+        &app.router,
+        request.body(Body::from(body.to_string())).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 }
 
 /// [`app_with`] の受講権の保存先を `entitlements` にする。
@@ -186,6 +199,8 @@ fn app_with_entitlements(
     let lesson_menus = application::in_memory::InMemoryLessonMenuRepository::default();
     let completions = InMemoryLessonCompletionRepository::default();
     let videos = InMemoryVideoRepository::default();
+    let trial_usage =
+        EntitlementTrialUsageLookup::new(entitlements.clone(), completions.clone(), videos.clone());
     let sessions = InMemoryLiveLessonSessionRepository::default();
     let router = interface::router_with(
         RegisterAccount::new(
@@ -213,11 +228,7 @@ fn app_with_entitlements(
         CreateBooking::new(
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            EntitlementTrialUsageLookup::new(
-                entitlements.clone(),
-                completions.clone(),
-                videos.clone(),
-            ),
+            trial_usage.clone(),
             EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock,
@@ -245,11 +256,7 @@ fn app_with_entitlements(
             bookings.clone(),
             application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
             EntitlementQuotaGate::new(entitlements.clone()),
-            EntitlementTrialUsageLookup::new(
-                entitlements.clone(),
-                completions.clone(),
-                videos.clone(),
-            ),
+            trial_usage.clone(),
             clock,
         ),
         ListCoachBookings::new(
@@ -287,13 +294,16 @@ fn app_with_entitlements(
             clock,
         ),
         SubmitVideo::new(
-            application::in_memory::OpenVideoSubmissionGate,
-            videos.clone(),
+            videos,
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            EntitlementVideoReviewGate::new(
+                trial_usage,
+                CancelBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
+            ),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             clock,
@@ -379,7 +389,6 @@ fn app_with_entitlements(
         lesson_menus,
         accounts,
         completions,
-        videos,
         analytics,
         events,
     }
@@ -683,66 +692,88 @@ async fn student_with_a_completed_lesson_and_no_booking_is_not_offered_a_trial()
     assert_not_entitled(&app, 10).await;
 }
 
-/// 月額契約を始めただけの生徒（予約も完了したレッスンも送った動画もない。#1711）。体験の対象ではないので
-/// `trial_available` は false、体験予約は 409 `trial_already_used` で、通常の予約は通る
+/// `token` の生徒がコーチ `COACH` にテニスの動画を送る（`POST /videos`）。
+async fn post_video(router: &Router, token: &str) -> (StatusCode, Value) {
+    let body = json!({
+        "coach_id": account_id_uuid::format(COACH),
+        "sport": "tennis",
+        "content_type": "video/mp4",
+    });
+    let request = Request::post("/videos")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"));
+    send(router, request.body(Body::from(body.to_string())).unwrap()).await
+}
+
+/// 動画を送った（添削待ちのまま）生徒（#1653）。体験は動画添削で使ったので、体験予約は 409 で、月額契約の前なので
+/// 通常の予約も 403（#1656）
 #[tokio::test]
-async fn monthly_student_without_bookings_is_not_offered_a_trial() {
-    let monthly = Entitlement::monthly(
-        EntitlementId::from_u128(30),
-        account_id(STUDENT),
-        Sport::Tennis,
-        SubscriptionId::from_u128(40),
-        LiveLessonQuota::fresh(
-            SubscriptionPlan::Standard,
-            YearMonth::new(2026, 10).unwrap(),
-        ),
-    )
-    .unwrap();
-    let app = app_with_entitlements(
-        [],
-        InMemoryEntitlementRepository::with_entitlements([monthly]),
+async fn student_who_submitted_a_video_is_not_offered_a_trial() {
+    let app = app();
+    let (status, body) = post_video(&app.router, STUDENT).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert!(
+        !trial_available(&app).await,
+        "添削待ちの動画を送っていれば使用済み"
     );
-    assert!(!trial_available(&app).await, "月額契約がある");
 
     let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, true)).await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_create_contract(status, &body);
     assert_eq!(body["code"], "trial_already_used");
-    assert!(app.analytics.events().is_empty(), "断った予約は発火しない");
-
-    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, false)).await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
-    assert_eq!(body["is_trial"], false);
-    // 契約のない別の生徒は体験予約できる
-    create(&app.router, OTHER_STUDENT, 11, true).await;
+    assert_not_entitled(&app, 10).await;
+    // 2 本目の動画は送れない（月額契約の前で体験を使い終えた）
+    let (status, body) = post_video(&app.router, STUDENT).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "video_review_not_entitled");
 }
 
-/// 予約をせずに動画を送った生徒（添削待ち）。体験は通話か動画添削のどちらか 1 回なので、`trial_available` は false で、
-/// 体験予約は 409 `trial_already_used`。月額契約の前なので通常の予約も 403 `live_lesson_not_entitled`
+/// まだ受けていない体験予約を動画の添削に切り替えると、送付の時点でその予約がキャンセル扱いで解放される（#1653）
 #[tokio::test]
-async fn student_who_sent_a_video_is_not_offered_a_trial() {
-    use application::async_lesson::VideoRepository;
-    use domain::async_lesson::Video;
-
+async fn submitting_a_video_releases_the_trial_booking_not_taken() {
     let app = app();
-    assert!(trial_available(&app).await, "まだ何もしていない");
-    app.videos
-        .insert(Video::submit(
-            app.videos.next_video_id(),
-            account_id(STUDENT),
-            COACH,
-            Sport::Tennis,
-            nov1(0),
-        ))
-        .await
-        .unwrap();
-    assert!(!trial_available(&app).await, "添削待ちの動画がある");
+    let trial = create(&app.router, STUDENT, 10, true).await;
+    let (status, body) = post_confirm(&app.router, Some(STUDENT), &trial).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 
+    let (status, body) = post_video(&app.router, STUDENT).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    let (status, body) = get_my_bookings(&app.router, Some(STUDENT)).await;
+    assert_list_contract(status, &body);
+    assert_eq!(body["bookings"][0]["booking"]["booking_id"], trial);
+    assert_eq!(body["bookings"][0]["booking"]["status"], "cancelled");
+    assert_eq!(body["trial_available"], false, "{body}");
+    assert!(
+        app.events.events().iter().any(|event| matches!(
+            event,
+            DomainEvent::BookingCancelled { booking_id, .. }
+                if booking_id_uuid::format(*booking_id) == trial
+        )),
+        "{:?}",
+        app.events.events()
+    );
+    // 枠は空いて、別の生徒が予約できる
+    create(&app.router, OTHER_STUDENT, 10, false).await;
+}
+
+/// 月額契約の生徒は体験予約できない（#1653）
+#[tokio::test]
+async fn monthly_students_are_not_offered_a_trial() {
+    let app = app_with_entitlements(
+        [],
+        InMemoryEntitlementRepository::with_entitlements([monthly_entitlement()]),
+    );
+    assert!(!trial_available(&app).await);
     let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, true)).await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "trial_already_used");
-    // 月額契約の前なので通常の予約も通らない（#1656）
-    assert_not_entitled(&app, 10).await;
+    create(&app.router, STUDENT, 10, false).await;
+    // 添削は何本でも送れる
+    for _ in 0..2 {
+        let (status, body) = post_video(&app.router, STUDENT).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
 }
 
 #[tokio::test]
@@ -1363,11 +1394,12 @@ async fn register_coach(app: &App) {
 
 #[tokio::test]
 async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones() {
-    let app = app_with_monthly([]);
+    let app = app();
     register_coach(&app).await;
-    let first = create(&app.router, STUDENT, 10, false).await;
+    let first = create(&app.router, STUDENT, 10, true).await;
     let (status, body) = post_confirm(&app.router, Some(STUDENT), &first).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    start_monthly(&app).await;
     let cancelled = create(&app.router, STUDENT, 12, false).await;
     let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1420,7 +1452,7 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
         }),
         "自己紹介文を書いていないコーチは coach_bio を載せない"
     );
-    assert_eq!(items[2]["booking"]["is_trial"], false);
+    assert_eq!(items[2]["booking"]["is_trial"], true);
     // 予約にも、添えたスロットと同じ終了時刻・スポーツ・コーチの表示名を載せる
     for item in items {
         assert_eq!(
@@ -1623,15 +1655,16 @@ async fn coach_lists_bookings_of_own_slots_oldest_slot_first_including_cancelled
         domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
-    let app = app_with_monthly([other_coach_slot]);
+    let app = app_with([other_coach_slot]);
     register_student(&app).await;
     let cancelled = create(&app.router, STUDENT, 12, false).await;
     let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let pending = create(&app.router, OTHER_STUDENT, 11, false).await;
-    let confirmed = create(&app.router, STUDENT, 10, false).await;
+    let confirmed = create(&app.router, STUDENT, 10, true).await;
     let (status, body) = post_confirm(&app.router, Some(STUDENT), &confirmed).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    start_monthly(&app).await;
     // 別のコーチの枠への予約は出ない
     create(&app.router, STUDENT, 20, false).await;
     let analytics = app.analytics.events().len();
@@ -1682,7 +1715,7 @@ async fn coach_lists_bookings_of_own_slots_oldest_slot_first_including_cancelled
         items[0]["booking"]["student_id"],
         account_id_uuid::format(account_id(STUDENT))
     );
-    assert_eq!(items[0]["booking"]["is_trial"], false);
+    assert_eq!(items[0]["booking"]["is_trial"], true);
     assert_eq!(items[0]["student_display_name"], "あおき");
     assert_eq!(items[2]["student_display_name"], "あおき");
     assert!(
@@ -2000,11 +2033,12 @@ async fn coach_lists_own_slots_oldest_first_including_ended_ones_with_whether_bo
         domain::scheduling::SlotSeats::default(),
     )
     .unwrap();
-    let app = app_with_monthly([ended, other_coach_slot]);
+    let app = app_with([ended, other_coach_slot]);
     // 10 は確定、11 は未確定、12 はキャンセル済みの予約だけ、13（閉じた枠）は予約なし
-    let confirmed = create(&app.router, STUDENT, 10, false).await;
+    let confirmed = create(&app.router, STUDENT, 10, true).await;
     let (status, body) = post_confirm(&app.router, Some(STUDENT), &confirmed).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    start_monthly(&app).await;
     create(&app.router, OTHER_STUDENT, 11, false).await;
     let cancelled = create(&app.router, STUDENT, 12, false).await;
     let (status, body) = post_cancel(&app.router, Some(STUDENT), &cancelled, None).await;

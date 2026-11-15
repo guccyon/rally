@@ -4,10 +4,9 @@ use std::sync::Arc;
 
 use application::{
     clock::Clock,
+    entitlement::TrialUsageLookup,
     identity::TokenVerifier,
-    scheduling::{
-        BookingRepository, CoachIntroductionLookup, ListMyBookings, QuotaGate, TrialUsageLookup,
-    },
+    scheduling::{BookingRepository, CoachIntroductionLookup, ListMyBookings, QuotaGate},
 };
 use axum::{Json, Router, extract::State, routing::get};
 use domain::identity::Role;

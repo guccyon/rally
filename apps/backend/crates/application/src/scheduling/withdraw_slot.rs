@@ -142,18 +142,12 @@ mod tests {
         WithdrawSlotCommand { coach_id, slot_id }
     }
 
-    type Trials = crate::entitlement::EntitlementTrialUsageLookup<
-        crate::in_memory::InMemoryEntitlementRepository,
-        crate::in_memory::InMemoryLessonCompletionRepository,
-        crate::in_memory::InMemoryVideoRepository,
-    >;
-
     fn create_booking(
         bookings: &InMemoryBookingRepository,
     ) -> CreateBooking<
         InMemoryBookingRepository,
         CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
-        Trials,
+        crate::in_memory::FixedTrialUsage,
         crate::entitlement::EntitlementQuotaGate<crate::in_memory::InMemoryEntitlementRepository>,
         RecordingAnalyticsSink,
         FixedClock,
@@ -161,11 +155,7 @@ mod tests {
         CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
-            crate::entitlement::EntitlementTrialUsageLookup::new(
-                crate::in_memory::InMemoryEntitlementRepository::default(),
-                crate::in_memory::InMemoryLessonCompletionRepository::default(),
-                crate::in_memory::InMemoryVideoRepository::default(),
-            ),
+            crate::in_memory::FixedTrialUsage::default(),
             crate::entitlement::EntitlementQuotaGate::new(
                 crate::in_memory::InMemoryEntitlementRepository::default(),
             ),

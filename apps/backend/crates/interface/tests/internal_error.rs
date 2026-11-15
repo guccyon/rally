@@ -139,11 +139,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
-            application::entitlement::EntitlementTrialUsageLookup::new(
-                application::in_memory::InMemoryEntitlementRepository::default(),
-                application::in_memory::InMemoryLessonCompletionRepository::default(),
-                application::in_memory::InMemoryVideoRepository::default(),
-            ),
+            application::in_memory::FixedTrialUsage::default(),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             clock,
@@ -178,11 +174,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
             application::profile::ProfileCoachIntroductionLookup::new(BrokenRepository),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
-            application::entitlement::EntitlementTrialUsageLookup::new(
-                application::in_memory::InMemoryEntitlementRepository::default(),
-                application::in_memory::InMemoryLessonCompletionRepository::default(),
-                application::in_memory::InMemoryVideoRepository::default(),
-            ),
+            application::in_memory::FixedTrialUsage::default(),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(
@@ -222,13 +214,13 @@ async fn storage_failure_is_500_internal_without_the_reason() {
             clock,
         ),
         SubmitVideo::new(
-            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            application::in_memory::FixedVideoReviewGate(true),
             RecordingAnalyticsSink::default(),
             application::in_memory::RecordingDomainEventPublisher::default(),
             clock,

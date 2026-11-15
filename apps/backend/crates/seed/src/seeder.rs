@@ -9,7 +9,7 @@ use application::{
         LiveLessonQuotaSubscriber, StartSubscription, StartSubscriptionCommand,
     },
     identity::{RegisterAccount, RegisterAccountCommand},
-    in_memory::ManualClock,
+    in_memory::{FixedVideoReviewGate, ManualClock},
     lesson::{RecordLessonCompletion, RecordLessonCompletionCommand},
     live_lesson::{
         EndLiveLessonSession, EndLiveLessonSessionCommand, StartLiveLessonSession,
@@ -52,6 +52,10 @@ const REVIEW_COMMENTS: [&str; 4] = [
 /// 通話の枠の消費を同じプロセスで購読する）、通話基盤はモック（計画の `seed` で乱数を固定する）、時計は
 /// 出来事ごとに計画の時刻に合わせる。行動イベントは `analytics` に発火する（不変条件も発火もユースケースの
 /// とおりで、迂回しない）。
+///
+/// ただし動画の送付だけは、添削の依頼を受け付けてよいかの門（`EntitlementVideoReviewGate`。月額契約の前は体験として
+/// 1 本だけ）を通さない（[`FixedVideoReviewGate`] で常に受け付ける）。計画は門ができる前の生徒の振る舞い（体験の後に
+/// 月額契約をせずに動画を送り続ける生徒を含む）を合成していて、計画を変えずに書けるようにする。
 pub struct Seeder<A> {
     pool: PgPool,
     analytics: A,
@@ -144,11 +148,11 @@ where
             clock.clone(),
         );
         let submit = SubmitVideo::new(
-            application::in_memory::OpenVideoSubmissionGate, // 初期データは体験の制限をかけずに送る
             videos.clone(),
             CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
             MockVideoStorage,
             MockAiFeedbackGenerator,
+            FixedVideoReviewGate(true),
             analytics.clone(),
             events.clone(),
             clock.clone(),

@@ -5,8 +5,8 @@
 //! コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は本人の枠への予約だけを生徒の表示名と一緒に返し、コーチ以外は 403。
 //! 本部が見る予約の一覧（`GET /bookings`）は同じパスの `POST /bookings`（生徒）と並んで、すべてのコーチの枠への予約を
 //! 日付（日本時間）で絞って返し、本部以外は 403。
-//! 予約をせずに動画を送った・動画の添削を受け終えた（完了を記録した）生徒は、体験を使用済み（`trial_available` false・
-//! 体験予約は 409）とする。
+//! 予約をせずに動画を送った（添削待ちを含む）生徒は、体験を使用済み（`trial_available` false・体験予約は 409・2 本目の動画は
+//! 403 `video_review_not_entitled`）とする。
 //! 体験を使った月額契約の前の生徒の通常の予約は 403 `live_lesson_not_entitled`（月額契約を始めれば作れる）。
 
 use application::identity::{TokenClaims, TokenIssuer};
@@ -302,11 +302,6 @@ async fn coach_lists_only_bookings_of_own_slots_with_student_display_names() {
     let student = register(&router, "taro@example.com").await;
     let mut booking_ids = Vec::new();
     for (slot, is_trial) in [(&slots[0], true), (&slots[1], false), (&slots[2], false)] {
-        // 体験予約の後に月額契約を始める（月額契約の生徒は体験予約できず、月額契約の前の生徒は体験を使った後の
-        // 通常の予約を断られる）
-        if booking_ids.len() == 1 {
-            subscribe(&router, &student).await;
-        }
         let (status, booking) = send(
             &router,
             post_json(
@@ -318,6 +313,11 @@ async fn coach_lists_only_bookings_of_own_slots_with_student_display_names() {
         .await;
         assert_eq!(status, StatusCode::CREATED, "{booking}");
         booking_ids.push(booking["booking_id"].clone());
+        // 体験予約の後に月額契約を始める（月額契約の生徒は体験予約できず（#1653）、月額契約の前の生徒は体験を使った後に
+        // 通常の予約をできない（#1656））
+        if is_trial {
+            subscribe(&router, &student).await;
+        }
     }
 
     let get = |token: &str| {
@@ -387,11 +387,6 @@ async fn headquarters_lists_bookings_of_every_coach_by_date_in_japan() {
     let student = register(&router, "taro@example.com").await;
     let mut booking_ids = Vec::new();
     for (slot, is_trial) in [(&slots[0], true), (&slots[1], false), (&slots[2], false)] {
-        // 体験予約の後に月額契約を始める（月額契約の生徒は体験予約できず、月額契約の前の生徒は体験を使った後の
-        // 通常の予約を断られる）
-        if booking_ids.len() == 1 {
-            subscribe(&router, &student).await;
-        }
         let (status, booking) = send(
             &router,
             post_json(
@@ -403,6 +398,11 @@ async fn headquarters_lists_bookings_of_every_coach_by_date_in_japan() {
         .await;
         assert_eq!(status, StatusCode::CREATED, "{booking}");
         booking_ids.push(booking["booking_id"].clone());
+        // 体験予約の後に月額契約を始める（月額契約の生徒は体験予約できず（#1653）、月額契約の前の生徒は体験を使った後に
+        // 通常の予約をできない（#1656））
+        if is_trial {
+            subscribe(&router, &student).await;
+        }
     }
 
     let get = |path: &str, token: &str| {
@@ -504,10 +504,6 @@ async fn student_who_received_a_video_review_cannot_book_a_trial() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{video}");
-    // 体験は通話か動画添削のどちらか 1 回なので、動画を送れば添削待ちでも使用済み（ADR 0014）
-    let (status, list) = send(&router, my_bookings()).await;
-    assert_eq!(status, StatusCode::OK, "{list}");
-    assert_eq!(list["trial_available"], false, "{list}");
     let video_id = video["video_id"].as_str().unwrap();
     let review_path = format!("/videos/{video_id}/review");
     let (status, body) = send(
@@ -520,6 +516,26 @@ async fn student_who_received_a_video_review_cannot_book_a_trial() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    // 動画を送った時点で体験は動画添削で使った（受け終える前でも。#1653）
+    let (status, list) = send(&router, my_bookings()).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["trial_available"], false, "{list}");
+    // 月額契約の前なので、2 本目の添削は依頼できない
+    let (status, body) = send(
+        &router,
+        post_json(
+            "/videos",
+            Some(&student),
+            json!({
+                "coach_id": "00000000-0000-0000-0000-00000000002a",
+                "sport": "tennis",
+                "content_type": "video/quicktime"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "video_review_not_entitled", "{body}");
     let (status, completion) = send(
         &router,
         post_json(

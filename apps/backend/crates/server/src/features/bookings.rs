@@ -1,7 +1,7 @@
 //! 生徒の予約の作成・確定・キャンセル（`POST /bookings`・`/bookings/{booking_id}/confirm`・`/cancel`）。確定は
-//! entitlement に通話の枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。体験予約は、月額契約・完了したレッスン・
-//! 送った動画で体験を使い終えたかを entitlement に問い合わせる（`EntitlementTrialUsageLookup`。ADR 0014）。返す予約に添えるコーチの表示名は
-//! アカウントの保存先から読む。
+//! entitlement に通話の枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。体験予約の作成は、体験の使用状況
+//! （月額の受講権・完了したレッスン・送った動画）を受講権・完了記録・動画の保存先から読む（`EntitlementTrialUsageLookup`）。
+//! 返す予約に添えるコーチの表示名はアカウントの保存先から読む。
 
 use application::{
     catalog::CatalogLessonMenuLookup,

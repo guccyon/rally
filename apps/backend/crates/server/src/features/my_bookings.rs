@@ -1,6 +1,6 @@
 //! 生徒の自分の予約の一覧（`GET /bookings/me`）。
-//! コーチの表示名と自己紹介文をアカウントの保存先から読んで添える（`ProfileCoachIntroductionLookup`）。`trial_available` は
-//! 月額契約・完了したレッスン・送った動画を entitlement に問い合わせて出す（`EntitlementTrialUsageLookup`。ADR 0014）。
+//! コーチの表示名と自己紹介文をアカウントの保存先から読んで添える（`ProfileCoachIntroductionLookup`）。体験予約できるか
+//! （`trial_available`）は、予約の作成と同じ体験の使用状況の照会（`EntitlementTrialUsageLookup`）で決める。
 
 use application::{
     entitlement::{EntitlementQuotaGate, EntitlementTrialUsageLookup},
