@@ -37,7 +37,7 @@ const TABS: { id: Tab; title: string }[] = [
 
 /**
  * お知らせの種類 → 行を押したときに移るタブ（お知らせは行き先の ID を持たないので、その種類の一覧の画面）。
- * 新しい予約とレッスンのリマインドは「通話への参加」（自分の予約の一覧）、添削の依頼は「動画の添削」、メッセージは「チャット」。
+ * 新しい予約とレッスンのリマインドは「通話への参加」（自分の予約の一覧。booking_id があればその予約の行を開く）、添削の依頼は「動画の添削」、メッセージは「チャット」。
  */
 const NOTIFICATION_TABS: Record<Schemas["NotificationKind"], Tab> = {
   booking_confirmed: "live",
@@ -50,8 +50,8 @@ const NOTIFICATION_DESTINATIONS: Record<string, string> = Object.fromEntries(
   Object.entries(NOTIFICATION_TABS).map(([kind, tab]) => [kind, TABS.find((item) => item.id === tab)!.title]),
 );
 
-/** 対応待ちから移るときに、移った先の画面で開いておくもの（添削する動画・チャットのスレッド）。 */
-type Focus = { videoId?: string; threadId?: string };
+/** 対応待ちから移るときに、移った先の画面で開いておくもの（添削する動画・チャットのスレッド・予約）。 */
+type Focus = { videoId?: string; threadId?: string; bookingId?: string };
 
 /**
  * コーチの画面: メニュー（タブ）で、対応待ち・枠の公開・レッスンメニューの登録と編集・添削の返却・
@@ -150,7 +150,13 @@ export function CoachHome({ token }: { token: string }) {
             api={api}
             destinations={NOTIFICATION_DESTINATIONS}
             onLoaded={(notifications) => setUnreadNotifications(countUnreadNotifications(notifications))}
-            onOpen={(kind) => open(NOTIFICATION_TABS[kind])}
+            onOpen={(notification) =>
+              open(
+                NOTIFICATION_TABS[notification.kind],
+                // リマインドなど予約を持つお知らせは、その予約を開く
+                notification.booking_id ? { bookingId: notification.booking_id } : {},
+              )
+            }
           />
         </Section>
       )}
@@ -172,7 +178,7 @@ export function CoachHome({ token }: { token: string }) {
             {tab === "menus" && <LessonMenus api={api} />}
             {tab === "videos" && <ReturnVideoReviewForm api={api} initialVideoId={focus.videoId} />}
             {tab === "chat" && <CoachChat api={api} initialThreadId={focus.threadId} />}
-            {tab === "live" && <LiveSessionPanel api={api} />}
+            {tab === "live" && <LiveSessionPanel api={api} initialBookingId={focus.bookingId} />}
             {tab === "reviews" && <MyCoachReviews api={api} />}
             {tab === "profile" && <CoachProfileForm api={api} />}
           </Section>

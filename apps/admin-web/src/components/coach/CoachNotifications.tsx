@@ -19,7 +19,7 @@ export function countUnreadNotifications(notifications: Notification[]): number 
  * コーチのお知らせ（glossary の notification）の一覧。開いたときに一覧を読み（新しい順＝API の順のまま）、
  * 未読があればすべて既読にする（markMyNotificationsRead）。開いたときに未読だったものには「新着」と添える。
  * 既読にできなくても一覧は出し（失敗の文言は出さない）、未読のまま次に開いたときにもう一度既読にする。
- * お知らせは行き先の ID を持たないので、行を押すと種類に応じた画面（`destinations` にある種類だけ）へ移る。
+ * 行を押すと種類に応じた画面（`destinations` にある種類だけ）へ移る。予約を持つお知らせ（レッスンのリマインド）は、その予約を開く。
  * 知らない種類の行は押せない。
  */
 export function CoachNotifications({
@@ -33,7 +33,7 @@ export function CoachNotifications({
   destinations: Partial<Record<string, string>>;
   /** 一覧を読んだ（既読にした）あとの一覧。見出しの未読の数を直すのに使う */
   onLoaded: (notifications: Notification[]) => void;
-  onOpen: (kind: Schemas["NotificationKind"]) => void;
+  onOpen: (notification: Notification) => void;
 }) {
   const [result, setResult] = useState<Result<Notification[]> | null>(null);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
@@ -108,7 +108,7 @@ export function CoachNotifications({
             {destination ? (
               <button
                 type="button"
-                onClick={() => onOpen(notification.kind)}
+                onClick={() => onOpen(notification)}
                 className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-surface"
               >
                 <span>{content}</span>

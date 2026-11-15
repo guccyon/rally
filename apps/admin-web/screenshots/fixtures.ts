@@ -403,8 +403,16 @@ const LOW_REVIEWS: Schemas["LowRatedLessonReview"][] = [
   },
 ];
 
-// 作った時刻の新しい順。未読 2 件・既読 1 件（見出しの「お知らせ」のバッジは 2）。
+// 作った時刻の新しい順。未読 3 件・既読 1 件（見出しの「お知らせ」のバッジは 3）。
 const NOTIFICATIONS: Schemas["Notification"][] = [
+  {
+    notification_id: id("9999", 4),
+    kind: "lesson_reminder",
+    body: "レッスンの開始 1 時間前です",
+    created_at: at(-0.5),
+    is_read: false,
+    booking_id: id("4444", 1),
+  },
   {
     notification_id: id("9999", 3),
     kind: "message_received",

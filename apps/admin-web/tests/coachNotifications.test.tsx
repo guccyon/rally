@@ -18,8 +18,10 @@ function notification(
   kind: Schemas["NotificationKind"],
   body: string,
   isRead: boolean,
+  bookingId?: string,
 ): Schemas["Notification"] {
   return {
+    ...(bookingId ? { booking_id: bookingId } : {}),
     notification_id: `99999999-9999-4999-8999-99999999999${n}`,
     kind,
     body,
@@ -161,6 +163,52 @@ describe("コーチのお知らせ", () => {
     expect(screen.getByRole("tab", { name: new RegExp(`^${tabName}`) })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("region", { name: tabName })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "お知らせ" })).not.toBeInTheDocument();
+  });
+
+  test("リマインドの行を押すと、その booking_id の予約の行を目立たせて開く", async () => {
+    const bookingId = "44444444-4444-4444-8444-444444444442";
+    const reminder = notification(4, "lesson_reminder", "レッスンの開始 1 時間前です", false, bookingId);
+    const slot = (n: number) => ({
+      slot_id: `55555555-5555-4555-8555-55555555555${n}`,
+      coach_id: "33333333-3333-4333-8333-333333333333",
+      starts_at: "2099-01-01T03:00:00Z",
+      ends_at: "2099-01-01T04:00:00Z",
+      status: "booked",
+      remaining_seats: 0,
+      lesson_menu: null,
+    });
+    const coachBooking = (n: number, id: string) =>
+      ({
+        booking: { booking_id: id, slot_id: slot(n).slot_id, status: "confirmed", lesson_menu: null },
+        slot: slot(n),
+        student_display_name: `生徒${n}`,
+      }) as unknown as Schemas["CoachBooking"];
+    const { user } = setup({
+      listMyNotifications: vi.fn<CoachApi["listMyNotifications"]>(async () => ({
+        ok: true,
+        data: { notifications: [reminder] },
+      })),
+      markMyNotificationsRead: vi.fn<CoachApi["markMyNotificationsRead"]>(async () => ({
+        ok: true,
+        data: { notifications: allRead([reminder]) },
+      })),
+      listMyCoachBookings: vi.fn<CoachApi["listMyCoachBookings"]>(async () => ({
+        ok: true,
+        data: {
+          bookings: [coachBooking(1, "44444444-4444-4444-8444-444444444441"), coachBooking(2, bookingId)],
+        },
+      })),
+    });
+    await user.click(notificationsButton());
+    const list = await screen.findByRole("list", { name: "お知らせの一覧" });
+
+    await user.click(within(list).getByRole("button", { name: /レッスンの開始 1 時間前です/ }));
+
+    expect(screen.getByRole("tab", { name: /^通話への参加/ })).toHaveAttribute("aria-selected", "true");
+    const table = await screen.findByRole("table", { name: "これからの予約" });
+    const current = within(table).getAllByRole("row").filter((row) => row.getAttribute("aria-current") === "true");
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveTextContent("生徒2");
   });
 
   test("このアプリが知らない種類の行は押せない", async () => {
