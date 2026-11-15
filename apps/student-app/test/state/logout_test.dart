@@ -9,6 +9,7 @@ import 'package:rally_student_app/state/chat.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/state/subscription.dart';
 import 'package:rally_student_app/ui/components/rally_button.dart';
+import 'package:rally_student_app/ui/labels.dart';
 
 import '../support/fake_local_media.dart';
 import '../support/fake_student_api.dart';
@@ -22,13 +23,15 @@ void main() {
   Future<ProviderContainer> openApp(
     WidgetTester tester,
     FakeStudentApi api,
-    SessionStore store,
-  ) async {
+    SessionStore store, {
+    DateTime? now,
+  }) async {
     final container = ProviderContainer(
       overrides: [
         studentApiProvider.overrideWithValue(api),
         sessionStoreProvider.overrideWithValue(store),
         localMediaProvider.overrideWithValue(FakeLocalMedia()),
+        if (now != null) clockProvider.overrideWithValue(() => now),
       ],
     );
     addTearDown(container.dispose);
@@ -207,9 +210,7 @@ void main() {
       expect(container.read(subscriptionProvider).entitlement, isNull);
     }
 
-    testWidgets('開いていたタブもチャットとホームの状態を捨てて登録の画面になり、サーバーには何も送らない', (
-      tester,
-    ) async {
+    testWidgets('開いていたタブもチャットとホームの状態を捨てて登録の画面になり、サーバーには何も送らない', (tester) async {
       final store = savedStore();
       final api = FakeStudentApi();
       final container = await openThread(tester, api, store);
@@ -222,9 +223,7 @@ void main() {
       expect(api.calls, callsBefore);
     });
 
-    testWidgets('次の人が別のタブで登録しても、このタブに前の生徒は出ず、次の人の登録の結果は消さない', (
-      tester,
-    ) async {
+    testWidgets('次の人が別のタブで登録しても、このタブに前の生徒は出ず、次の人の登録の結果は消さない', (tester) async {
       final store = savedStore();
       final api = FakeStudentApi();
       final container = await openThread(tester, api, store);
@@ -255,9 +254,7 @@ void main() {
       expect(api.requests.whereType<SendMessageRequest>(), isEmpty);
     });
 
-    testWidgets('ほかのタブが同じ生徒のまま残し直しただけ（表示名を変えたなど）なら、このタブはそのまま', (
-      tester,
-    ) async {
+    testWidgets('ほかのタブが同じ生徒のまま残し直しただけ（表示名を変えたなど）なら、このタブはそのまま', (tester) async {
       final store = savedStore();
       final container = await openApp(tester, FakeStudentApi(), store);
 
@@ -274,6 +271,175 @@ void main() {
         container.read(studentFlowProvider).accessToken,
         Fixtures.registered.accessToken,
       );
+    });
+  });
+
+  group('確定待ちの予約があるとき（#1718）', () {
+    /// [Fixtures.now] の時計で開く。[Fixtures.myBookings] のうち確定待ちでまだ始まっていないのは 12 時間後の `booking-soon` だけ
+    Future<ProviderContainer> openAtFixtureNow(
+      WidgetTester tester,
+      FakeStudentApi api,
+      SessionStore store,
+    ) => openApp(tester, api, store, now: Fixtures.now);
+
+    MyBooking soon(FakeStudentApi api) => api.myBookings.singleWhere(
+      (b) => b.booking.bookingId == 'booking-soon',
+    );
+
+    testWidgets('確かめに確定待ちの予約をキャンセルすることを書き、「ログアウトする」でキャンセルしてから登録の画面にする', (
+      tester,
+    ) async {
+      final store = savedStore();
+      final api = FakeStudentApi();
+      final container = await openAtFixtureNow(tester, api, store);
+      final slot = soon(api).slot;
+
+      await openProfile(tester);
+      await tapText(tester, 'ログアウトする');
+
+      // 確定待ちの予約の有無はサーバーから読む（ADR 0010）
+      expect(api.calls.last, 'listMyBookings');
+      expect(find.text('ログアウトしますか？'), findsOneWidget);
+      expect(
+        find.text(
+          '確定待ちの予約（${formatTimeRange(slot.startsAt, slot.endsAt)}）があります。'
+          'ログアウトするとこの予約を確定できなくなるため、キャンセルしてからログアウトします。'
+          '$cancelConsumesQuotaNotice'
+          '山田さんの予約・チャット・月額契約をこの端末に出さないようにし、登録の画面に戻ります。'
+          'ログインの画面はまだないため、ログアウトするとこのアカウントには戻れません。',
+        ),
+        findsOneWidget,
+      );
+      final callsBefore = api.calls.length;
+
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+
+      expect(api.calls.sublist(callsBefore), ['cancelBooking']);
+      expect(soon(api).booking.status, BookingStatus.cancelled);
+      // 確定待ちでない予約（確定済み・キャンセル済み・終わったもの）には触らない
+      expect(
+        api.myBookings
+            .where((b) => b.booking.bookingId != 'booking-soon')
+            .map((b) => b.booking.status),
+        [
+          BookingStatus.confirmed,
+          BookingStatus.cancelled,
+          BookingStatus.confirmed,
+        ],
+      );
+      expect(find.text('アカウント登録'), findsOneWidget);
+      expect(store.raw, isNull);
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.register);
+      expect(state.accessToken, isNull);
+      expect(state.myBookings, isNull);
+    });
+
+    testWidgets('確定待ちの予約が 2 件あれば、開始のいちばん早い予約の日時と残りの件数を書き、どちらもキャンセルする', (
+      tester,
+    ) async {
+      final store = savedStore();
+      final api = FakeStudentApi(
+        myBookings: [
+          Fixtures.myBooking(
+            bookingId: 'booking-pending-later',
+            startsIn: const Duration(days: 3),
+            status: BookingStatus.pending,
+          ),
+          Fixtures.myBooking(
+            bookingId: 'booking-pending-soon',
+            startsIn: const Duration(days: 2),
+            status: BookingStatus.pending,
+          ),
+        ],
+      );
+      await openAtFixtureNow(tester, api, store);
+      final slot = api.myBookings.last.slot;
+
+      await openProfile(tester);
+      await tapText(tester, 'ログアウトする');
+
+      expect(
+        find.textContaining(
+          '確定待ちの予約（${formatTimeRange(slot.startsAt, slot.endsAt)} ほか 1 件）があります。',
+        ),
+        findsOneWidget,
+      );
+      // どちらも枠を使わずにキャンセルできる（24 時間より前）ので、枠の案内は出さない
+      expect(find.textContaining(cancelConsumesQuotaNotice), findsNothing);
+
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        api.myBookings.map((b) => b.booking.status),
+        everyElement(BookingStatus.cancelled),
+      );
+      expect(find.text('アカウント登録'), findsOneWidget);
+    });
+
+    testWidgets('キャンセルできなければログアウトせず、プロフィールのまま失敗を知らせる', (tester) async {
+      final store = savedStore();
+      final api = FakeStudentApi(
+        failures: {'cancelBooking': Fixtures.unreachable},
+      );
+      final container = await openAtFixtureNow(tester, api, store);
+
+      await openProfile(tester);
+      await tapText(tester, 'ログアウトする');
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          '確定待ちの予約をキャンセルできなかったため、ログアウトしていません。'
+          'サーバーにつながりませんでした。通信状態を確かめてください。',
+        ),
+        findsOneWidget,
+      );
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.profile);
+      expect(state.accessToken, Fixtures.registered.accessToken);
+      expect(store.read(), isNotNull);
+      expect(soon(api).booking.status, BookingStatus.pending);
+    });
+
+    testWidgets('「やめる」を押せば、キャンセルもログアウトもしない', (tester) async {
+      final store = savedStore();
+      final api = FakeStudentApi();
+      final container = await openAtFixtureNow(tester, api, store);
+
+      await openProfile(tester);
+      await tapText(tester, 'ログアウトする');
+      await tapText(tester, 'やめる');
+
+      expect(api.calls, isNot(contains('cancelBooking')));
+      expect(soon(api).booking.status, BookingStatus.pending);
+      expect(container.read(studentFlowProvider).step, FlowStep.profile);
+      expect(store.read(), isNotNull);
+    });
+
+    testWidgets('予約を読めなければ確かめを出さず、ログアウトせずに失敗を知らせる', (tester) async {
+      final store = savedStore();
+      final api = FakeStudentApi(
+        failures: {'listMyBookings': Fixtures.unreachable},
+      );
+      final container = await openAtFixtureNow(tester, api, store);
+
+      await openProfile(tester);
+      await tapText(tester, 'ログアウトする');
+
+      expect(find.text('ログアウトしますか？'), findsNothing);
+      expect(
+        find.text(
+          '確定待ちの予約があるかを確かめられなかったため、ログアウトしていません。'
+          'サーバーにつながりませんでした。通信状態を確かめてください。',
+        ),
+        findsOneWidget,
+      );
+      expect(container.read(studentFlowProvider).step, FlowStep.profile);
+      expect(store.read(), isNotNull);
     });
   });
 }
