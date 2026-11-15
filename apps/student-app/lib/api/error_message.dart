@@ -6,6 +6,7 @@ const chatNotEntitledMessage = 'チャットは月額契約を始めると使え
 
 /// 体験を使った後の通常の予約を断られた（月額契約の前）ときの文言。画面はこれと一致したときに、月額契約へ進む入口を添える
 const liveLessonNotEntitledMessage = '体験はすでに使っています。ビデオ通話のレッスンは月額契約を始めると予約できます。';
+
 /// 動画の添削を依頼できなかった（403 `video_review_not_entitled`。体験を使い終えた月額契約の前）ときの文言。
 /// 画面はこれと一致したときに、月額契約へ進む入口を添える
 const videoReviewNotEntitledMessage = '体験はすでに使っています。動画の添削は月額契約を始めると使えます。';
@@ -63,3 +64,11 @@ String profileErrorMessageOf(Object error) {
   }
   return errorMessageOf(error);
 }
+
+/// ログアウトの前に確定待ちの予約があるかを読めなかった（`listMyBookings` の失敗）ときの文言。ログアウトはしない（#1718）
+String logoutBookingsErrorMessageOf(Object error) =>
+    '確定待ちの予約があるかを確かめられなかったため、ログアウトしていません。${errorMessageOf(error)}';
+
+/// ログアウトの前に確定待ちの予約をキャンセルできなかった（`cancelBooking` の失敗）ときの文言。ログアウトはしない（#1718）
+String logoutCancelErrorMessageOf(Object error) =>
+    '確定待ちの予約をキャンセルできなかったため、ログアウトしていません。${errorMessageOf(error)}';

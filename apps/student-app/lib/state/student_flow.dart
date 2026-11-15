@@ -1122,11 +1122,38 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// ログアウト（プロフィールの「ログアウトする」）。端末に残した登録の結果（[sessionStoreProvider]）を消し、
   /// 前の生徒の状態（トークン・生徒・予約・チャット・契約・お知らせなど）を捨てて登録の画面にする。
-  /// サーバーには何も送らない（トークンを失効させる API はない）。次の生徒のホームはサーバーから読み直す（ADR 0010）
+  /// サーバーには何も送らない（トークンを失効させる API はない。確定待ちの予約があれば、先に [cancelPendingAndLogout] でキャンセルする）。
+  /// 次の生徒のホームはサーバーから読み直す（ADR 0010）
   void logout() {
     ref.read(sessionStoreProvider).clear();
     _discardSession();
   }
+
+  /// ログアウトの確かめの前に、キャンセルしてからログアウトする確定待ちの予約を読む（`listMyBookings`）。
+  /// 予約の有無は端末の状態でなくサーバーの状態から読む（ADR 0010）。ログアウトすると確定もキャンセルもできなくなり、
+  /// スロットを開始まで押さえ続けるため（#1718）。対象は [canConfirm] の予約（確定待ちで、まだ始まっていない）。
+  /// 読めなければ失敗の文言を出して null（ログアウトの確かめは出さない）
+  Future<List<MyBooking>?> loadPendingBookingsBeforeLogout() async {
+    List<MyBooking>? pending;
+    await run(() async {
+      await _loadMyBookings();
+      pending = [
+        for (final item in state.myBookings ?? const <MyBooking>[])
+          if (canConfirm(item.booking)) item,
+      ];
+    }, messageOf: logoutBookingsErrorMessageOf);
+    return pending;
+  }
+
+  /// 確定待ちの予約 [pending] を順にキャンセルしてから（`cancelBooking`）ログアウトする（[logout]）。
+  /// 1 件でもキャンセルできなければログアウトせず、失敗の文言を出す（キャンセルできた予約はそのまま。
+  /// もう一度「ログアウトする」を押すと読み直して残りだけをキャンセルする）
+  Future<void> cancelPendingAndLogout(List<MyBooking> pending) => run(() async {
+    for (final item in pending) {
+      await _api.cancelBooking(item.booking.bookingId);
+    }
+    if (ref.mounted) logout();
+  }, messageOf: logoutCancelErrorMessageOf);
 
   /// ほかのタブ（[SessionStore.changesElsewhere]）が残した登録の結果を変えた・消したとき。このタブの生徒のトークンが
   /// 残っていなければ（ログアウトした・次の人が登録した）、残したものには触らずに（次の人のものなので消さない）前の生徒の状態を捨てて

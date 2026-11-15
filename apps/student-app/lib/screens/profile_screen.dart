@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/models.dart';
 import '../state/student_flow.dart';
 import '../state/subscription.dart';
 import '../ui/components/confirm_dialog.dart';
@@ -111,23 +112,52 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 }
 
 /// ログアウトの欄。行を押すと確かめ、ログアウトしたら登録の画面になる。ログインの画面はまだなく、
-/// ログアウトすると同じ生徒には戻れないので、取り消せない操作として確かめる（patterns.yaml の confirm）
+/// ログアウトすると同じ生徒には戻れないので、取り消せない操作として確かめる（patterns.yaml の confirm）。
+/// 確かめの前に確定待ちの予約をサーバーから読み（ADR 0010）、あれば確かめにその予約をキャンセルすることを書き、
+/// 「ログアウトする」でキャンセルしてからログアウトする（ログアウトすると確定もキャンセルもできず、スロットを押さえ続けるため。#1718）。
+/// 読めない・キャンセルできないときはログアウトせず、失敗の文言を出す
 class _LogoutSection extends ConsumerWidget {
   const _LogoutSection();
 
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(studentFlowProvider.notifier);
+    final pending = await notifier.loadPendingBookingsBeforeLogout();
+    if (pending == null || !context.mounted) return;
     final displayName = ref.read(studentFlowProvider).student?.displayName;
     final who = displayName == null ? 'この生徒' : '$displayNameさん';
     final confirmed = await showConfirmDialog(
       context,
       title: 'ログアウトしますか？',
       body:
+          '${pending.isEmpty ? '' : _pendingNotice(pending, usesQuota: pending.any(notifier.cancellationUsesQuota))}'
           '$whoの予約・チャット・月額契約をこの端末に出さないようにし、登録の画面に戻ります。'
           'ログインの画面はまだないため、ログアウトするとこのアカウントには戻れません。',
       confirmLabel: 'ログアウトする',
       danger: true,
     );
-    if (confirmed) ref.read(studentFlowProvider.notifier).logout();
+    if (!confirmed) return;
+    if (pending.isEmpty) {
+      notifier.logout();
+    } else {
+      await notifier.cancelPendingAndLogout(pending);
+    }
+  }
+
+  /// 確定待ちの予約があるときに確かめの本文の頭に置く文。予約の日時（1 件なら日時、複数なら開始のいちばん早い予約の日時と残りの件数）と、
+  /// ログアウトすると確定できないのでキャンセルしてからログアウトすること。今キャンセルすると枠を使うならそれも添える
+  static String _pendingNotice(
+    List<MyBooking> pending, {
+    required bool usesQuota,
+  }) {
+    final first = pending
+        .map((item) => item.slot)
+        .reduce((a, b) => b.startsAt.isBefore(a.startsAt) ? b : a);
+    final when = formatTimeRange(first.startsAt, first.endsAt);
+    final which = pending.length == 1
+        ? '（$when）'
+        : '（$when ほか ${pending.length - 1} 件）';
+    return '確定待ちの予約$whichがあります。ログアウトするとこの予約を確定できなくなるため、'
+        'キャンセルしてからログアウトします。${usesQuota ? cancelConsumesQuotaNotice : ''}';
   }
 
   @override
