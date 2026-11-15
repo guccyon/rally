@@ -5,6 +5,7 @@
 use std::time::{Duration, SystemTime};
 
 use application::identity::AccountRepository;
+use application::scheduling::SlotRepository;
 use application::{
     analytics::AnalyticsEvent,
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
@@ -36,6 +37,7 @@ use domain::{
     catalog::Sport,
     identity::{Account, AccountId, Email, Role},
     profile::{CoachBio, DisplayName},
+    scheduling::{Slot, SlotCapacity},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -87,6 +89,8 @@ struct App {
     accounts: InMemoryAccountRepository,
     /// `POST /slots` と `GET /slots` が枠に結びついたレッスンメニューを引く保存先
     lesson_menus: application::in_memory::InMemoryLessonMenuRepository,
+    /// `POST /slots` と `GET /slots` の枠の保存先（API では公開できない過去の開始の枠を直接入れる）
+    slots: InMemorySlotRepository,
 }
 
 fn app() -> App {
@@ -112,7 +116,7 @@ fn app() -> App {
             clock,
         ),
         SearchSlots::new(
-            slots,
+            slots.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
             clock,
@@ -283,6 +287,7 @@ fn app() -> App {
         analytics,
         accounts,
         lesson_menus,
+        slots,
     }
 }
 
@@ -770,6 +775,42 @@ async fn search_by_a_coach_without_slots_is_an_empty_page_not_404() {
         assert!(item_ids(&body).is_empty(), "{id}");
         assert_eq!(body["next_cursor"], Value::Null);
     }
+}
+
+/// コーチ `coach` の `starts_at`〜`ends_at` の枠を、API を通さず保存先へ直接入れ、slot_id を返す。
+async fn store(app: &App, coach: AccountId, starts_at: SystemTime, ends_at: SystemTime) -> String {
+    let id = app.slots.next_id();
+    let slot = Slot::publish(
+        id,
+        coach,
+        Sport::Tennis,
+        starts_at,
+        ends_at,
+        SlotCapacity::ONE,
+    )
+    .unwrap();
+    app.slots
+        .add_to_calendar(slot, |calendar, slot| calendar.publish(slot))
+        .await
+        .unwrap();
+    slot_id_uuid::format(id)
+}
+
+#[tokio::test]
+async fn search_starts_from_now_by_default() {
+    let app = app();
+    let now = SystemTime::UNIX_EPOCH + NOW;
+    let hour = Duration::from_secs(3600);
+    // 公開は開始が現在より後の枠しか受け付けないので、過去とちょうど現在の開始の枠は保存先へ直接入れる
+    store(&app, AccountId::from_u128(1), now - 2 * hour, now - hour).await;
+    // 既定の始点は現在時刻（以降。契約の `starts_after`）なので、ちょうど現在に始まる枠は出る
+    let from_now = store(&app, AccountId::from_u128(1), now, now + hour).await;
+    let future = publish(&app.router, COACH_A, "tennis", 10).await;
+
+    let (status, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_student_app(status, &body);
+    assert_eq!(item_ids(&body), [from_now, future]);
 }
 
 #[tokio::test]
