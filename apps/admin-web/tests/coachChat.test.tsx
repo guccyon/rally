@@ -84,8 +84,12 @@ function booking(studentId: string, name?: string): Schemas["CoachBooking"] {
 
 const AI_COMMENT = "フォームの安定性に注目して、コーチの添削をお待ちください。";
 
+const NOTE = "サーブのトスが安定しません。見てもらえますか？";
+const RETURNED_NOTE = "バックハンドの握りを見てください";
+
 const WAITING_VIDEO: Schemas["CoachVideo"] = {
   video_id: VIDEO_ID,
+  note: NOTE,
   submitted_at: "2026-10-20T01:00:00Z",
   review_status: "in_progress",
   student_display_name: "佐藤さん",
@@ -93,6 +97,7 @@ const WAITING_VIDEO: Schemas["CoachVideo"] = {
 };
 const RETURNED_VIDEO: Schemas["CoachVideo"] = {
   video_id: RETURNED_VIDEO_ID,
+  note: RETURNED_NOTE,
   submitted_at: "2026-10-10T01:00:00Z",
   review_status: "returned",
   returned_at: "2026-10-12T01:00:00Z",
@@ -297,8 +302,18 @@ describe("コーチのチャット", () => {
     await openThread(user, /佐藤さん/);
 
     const card = screen.getByRole("article", { name: "添削の依頼（2 回目）" });
+    // 相談内容はカードに出る。返却済みの 1 回目のカードでも読める。
+    expect(within(card).getByRole("region", { name: "生徒の相談内容" })).toHaveTextContent(NOTE);
+    expect(
+      within(screen.getByRole("article", { name: "添削の依頼（1 回目）" })).getByRole("region", {
+        name: "生徒の相談内容",
+      }),
+    ).toHaveTextContent(RETURNED_NOTE);
     await user.click(within(card).getByRole("button", { name: "添削する" }));
     const form = within(card).getByRole("form", { name: "添削を書く" });
+    // 欄を開いている間は欄の中に 1 つだけ出る。
+    expect(within(card).getAllByRole("region", { name: "生徒の相談内容" })).toHaveLength(1);
+    expect(within(form).getByRole("region", { name: "生徒の相談内容" })).toHaveTextContent(NOTE);
     expect(form).toHaveTextContent("佐藤さんの動画");
     // 「動画の添削」と同じく、AI の一次フィードバックを参考として欄の上に出し、コメントには入れない。
     const ai = within(form).getByRole("region", { name: "AI の一次フィードバック（参考）" });

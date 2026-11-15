@@ -19,6 +19,23 @@ function aiFeedbackComment(video: CoachVideo) {
   return comment && comment.trim() !== "" ? comment : null;
 }
 
+/** 生徒が動画を送ったときに書いたコーチへの相談内容。ない（null・載っていない・空白だけ）ときは null。 */
+export function studentNote(video: CoachVideo) {
+  return video.note && video.note.trim() !== "" ? video.note : null;
+}
+
+/** 生徒の相談内容の表示。ないときは何も出さない。 */
+export function StudentNote({ video }: { video: CoachVideo }) {
+  const note = studentNote(video);
+  if (!note) return null;
+  return (
+    <section aria-label="生徒の相談内容" className="rounded-md border bg-surface p-2 text-sm">
+      <h4 className="font-semibold">生徒の相談内容</h4>
+      <p className="mt-1 whitespace-pre-wrap">{note}</p>
+    </section>
+  );
+}
+
 /**
  * 1 本の動画の添削を書いて返却（returnVideoReview）する欄。「動画の添削」の一覧とチャットの添削依頼のカードで共通。
  * 欄の上には AI の一次フィードバック（glossary の ai_feedback）を参考として出す。コーチの添削とは別のもので、
@@ -65,6 +82,7 @@ export function VideoReviewCommentForm({
       <p className="text-sm">
         {studentName}の動画（{formatDateTime(video.submitted_at)} に届いたもの）
       </p>
+      <StudentNote video={video} />
       {aiFeedback && (
         <section
           aria-label="AI の一次フィードバック（参考）"
