@@ -10,6 +10,9 @@
 //! 本部は送る前のお知らせを下書きとして残し（[`CreateAnnouncementDraft`]・[`UpdateAnnouncementDraft`]・
 //! [`DeleteAnnouncementDraft`]・[`ListAnnouncementDrafts`]。保存先は [`AnnouncementDraftRepository`]）、下書きから送る
 //! （[`SendAnnouncementDraft`]。送るのは [`SendAnnouncement`] と同じで、送ったら下書きを消す）。下書きは生徒に届かない。
+//!
+//! レッスンのリマインドは境界間イベントでなく時刻の経過で作る（[`SendLessonReminders`]。組み立て用のクレートが定期に
+//! 呼ぶ）。対象の確定した同期レッスンの予約は scheduling に問い合わせる（[`LessonReminderTargetLookup`]）。
 
 mod announcement_draft_error;
 pub mod announcement_draft_id_uuid;
@@ -23,6 +26,8 @@ mod coach_leave_notice_lookup;
 mod create_announcement_draft;
 mod delete_announcement_draft;
 mod get_notification_settings;
+mod lesson_reminder_target;
+mod lesson_reminder_target_lookup;
 mod list_announcement_drafts;
 mod list_announcement_drafts_error;
 mod list_announcement_drafts_query;
@@ -41,6 +46,7 @@ mod push_sender;
 mod repository;
 mod send_announcement;
 mod send_announcement_draft;
+mod send_lesson_reminders;
 mod update_announcement_draft;
 mod update_notification_settings;
 mod withdraw_announcement;
@@ -56,6 +62,8 @@ pub use coach_leave_notice_lookup::CoachLeaveNoticeLookup;
 pub use create_announcement_draft::CreateAnnouncementDraft;
 pub use delete_announcement_draft::DeleteAnnouncementDraft;
 pub use get_notification_settings::GetNotificationSettings;
+pub use lesson_reminder_target::LessonReminderTarget;
+pub use lesson_reminder_target_lookup::LessonReminderTargetLookup;
 pub use list_announcement_drafts::ListAnnouncementDrafts;
 pub use list_announcement_drafts_error::ListAnnouncementDraftsError;
 pub use list_announcement_drafts_query::ListAnnouncementDraftsQuery;
@@ -73,6 +81,7 @@ pub use push_sender::PushSender;
 pub use repository::NotificationSettingsRepository;
 pub use send_announcement::{SendAnnouncement, SendAnnouncementCommand, SendAnnouncementError};
 pub use send_announcement_draft::SendAnnouncementDraft;
+pub use send_lesson_reminders::SendLessonReminders;
 pub use update_announcement_draft::UpdateAnnouncementDraft;
 pub use update_notification_settings::{
     UpdateNotificationSettings, UpdateNotificationSettingsCommand,

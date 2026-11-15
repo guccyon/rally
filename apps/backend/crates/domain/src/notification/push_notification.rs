@@ -1,4 +1,4 @@
-use super::{AnnouncementId, NotificationKind};
+use super::{AnnouncementId, LessonReminderTiming, NotificationKind};
 use crate::{
     async_lesson::{VideoId, VideoReviewId},
     identity::AccountId,
@@ -56,6 +56,20 @@ pub enum PushNotification {
         student_id: AccountId,
         announcement_id: AnnouncementId,
     },
+    /// 確定した同期レッスンの予約の開始が近いこと（前日・開始 1 時間前）を、予約した生徒に知らせる（レッスンのリマインド）
+    LessonReminder {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        timing: LessonReminderTiming,
+    },
+    /// 確定した同期レッスンの予約の開始が近いこと（前日・開始 1 時間前）を、予約を受けたコーチに知らせる（レッスンのリマインド）
+    CoachLessonReminder {
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        timing: LessonReminderTiming,
+    },
 }
 
 impl PushNotification {
@@ -65,9 +79,11 @@ impl PushNotification {
             PushNotification::BookingConfirmed { student_id, .. }
             | PushNotification::BookingCancelledByHeadquarters { student_id, .. }
             | PushNotification::VideoReviewReturned { student_id, .. }
-            | PushNotification::Announcement { student_id, .. } => student_id,
+            | PushNotification::Announcement { student_id, .. }
+            | PushNotification::LessonReminder { student_id, .. } => student_id,
             PushNotification::BookingReceived { coach_id, .. }
-            | PushNotification::VideoReviewRequested { coach_id, .. } => coach_id,
+            | PushNotification::VideoReviewRequested { coach_id, .. }
+            | PushNotification::CoachLessonReminder { coach_id, .. } => coach_id,
             PushNotification::MessageReceived {
                 student_id,
                 coach_id,
@@ -93,6 +109,44 @@ impl PushNotification {
             PushNotification::VideoReviewReturned { .. } => NotificationKind::VideoReviewReturned,
             PushNotification::MessageReceived { .. } => NotificationKind::MessageReceived,
             PushNotification::Announcement { .. } => NotificationKind::Announcement,
+            PushNotification::LessonReminder { .. }
+            | PushNotification::CoachLessonReminder { .. } => NotificationKind::LessonReminder,
+        }
+    }
+
+    /// 確定した同期レッスンの予約の、時点 `timing` のリマインド（生徒へ, コーチへ）。
+    pub const fn lesson_reminders(
+        student_id: AccountId,
+        coach_id: AccountId,
+        booking_id: BookingId,
+        timing: LessonReminderTiming,
+    ) -> [PushNotification; 2] {
+        [
+            PushNotification::LessonReminder {
+                student_id,
+                coach_id,
+                booking_id,
+                timing,
+            },
+            PushNotification::CoachLessonReminder {
+                student_id,
+                coach_id,
+                booking_id,
+                timing,
+            },
+        ]
+    }
+
+    /// レッスンのリマインドなら、結び付く予約（お知らせから予約を開くため）と時点。
+    pub const fn lesson_reminder(&self) -> Option<(BookingId, LessonReminderTiming)> {
+        match *self {
+            PushNotification::LessonReminder {
+                booking_id, timing, ..
+            }
+            | PushNotification::CoachLessonReminder {
+                booking_id, timing, ..
+            } => Some((booking_id, timing)),
+            _ => None,
         }
     }
 
@@ -207,6 +261,44 @@ mod tests {
             notification.announcement_id(),
             Some(AnnouncementId::from_u128(3))
         );
+    }
+
+    #[test]
+    fn lesson_reminders_go_to_the_student_and_the_coach_as_one_kind() {
+        let booking_id = BookingId::from_u128(3);
+        let [to_student, to_coach] = PushNotification::lesson_reminders(
+            STUDENT,
+            COACH,
+            booking_id,
+            LessonReminderTiming::HourBefore,
+        );
+        assert_eq!(to_student.recipient(), STUDENT);
+        assert_eq!(to_coach.recipient(), COACH);
+        for reminder in [to_student, to_coach] {
+            assert_eq!(reminder.kind(), NotificationKind::LessonReminder);
+            assert_eq!(
+                reminder.lesson_reminder(),
+                Some((booking_id, LessonReminderTiming::HourBefore))
+            );
+            assert_eq!(reminder.announcement_id(), None);
+        }
+        let day_before = PushNotification::lesson_reminders(
+            STUDENT,
+            COACH,
+            booking_id,
+            LessonReminderTiming::DayBefore,
+        );
+        assert_ne!(day_before[0], to_student, "時点が違えば別の通知");
+    }
+
+    #[test]
+    fn only_a_lesson_reminder_has_a_reminded_booking() {
+        let confirmed = PushNotification::BookingConfirmed {
+            student_id: STUDENT,
+            coach_id: COACH,
+            booking_id: BookingId::from_u128(3),
+        };
+        assert_eq!(confirmed.lesson_reminder(), None);
     }
 
     #[test]

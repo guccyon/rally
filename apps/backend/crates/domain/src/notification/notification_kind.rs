@@ -14,15 +14,19 @@ pub enum NotificationKind {
     Announcement,
     /// 本部による予約のキャンセル（コーチのお休み。`BookingCancelled` の `cancelled_by` が本部）の通知。予約した生徒への知らせ
     BookingCancelledByHeadquarters,
+    /// 確定した同期レッスンの、開始の前日と開始 1 時間前のリマインド（境界間イベントでなく時刻の経過がきっかけ）。生徒と
+    /// コーチへの知らせの両方。生徒の受け取り設定でオフなら、プッシュ通知もお知らせも作らない（ほかの種類と違う）
+    LessonReminder,
 }
 
 impl NotificationKind {
-    pub const ALL: [NotificationKind; 6] = [
+    pub const ALL: [NotificationKind; 7] = [
         NotificationKind::BookingConfirmed,
         NotificationKind::VideoReviewRequested,
         NotificationKind::VideoReviewReturned,
         NotificationKind::MessageReceived,
         NotificationKind::Announcement,
         NotificationKind::BookingCancelledByHeadquarters,
+        NotificationKind::LessonReminder,
     ];
 }

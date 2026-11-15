@@ -2,7 +2,8 @@
 //! 新しい順・同じプッシュ通知（同じ動画の添削の依頼を含む）を 2 件にしないこと・すべて既読（最初に読んだ時刻のまま、
 //! 後に作ったものは読まない。生徒とコーチのどちらも自分の分だけ）・本部からのお知らせ（コーチを持たず、送った記録を指す）の往復と、
 //! 生徒 1 人の本部からのお知らせだけを新しい順に上限まで読むこと・本部からのお知らせごとの既読の数（ほかの種類と、ほかの
-//! お知らせは数えない。上限の時刻があればそれまでに既読になったものだけ）。
+//! お知らせは数えない。上限の時刻があればそれまでに既読になったものだけ）・レッスンのリマインド（生徒へとコーチへの往復と、
+//! (予約, 時点, 宛先) で 1 件。新しく残したかを返す）。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -17,7 +18,8 @@ use domain::{
     identity::{AccountId, Role},
     messaging::{MessageId, MessageSender, MessageThreadId},
     notification::{
-        Announcement, AnnouncementBody, AnnouncementTitle, Notification, PushNotification,
+        Announcement, AnnouncementBody, AnnouncementTitle, LessonReminderTiming, Notification,
+        PushNotification,
     },
     scheduling::BookingId,
 };
@@ -523,5 +525,65 @@ async fn read_notifications_are_counted_per_announcement(pool: PgPool) {
             .await
             .unwrap()
             .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_reminders_round_trip_and_are_kept_once_per_booking_timing_and_recipient(
+    pool: PgPool,
+) {
+    let notifications = PgNotificationRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    let booking = BookingId::from_u128(1);
+    let [day_to_student, day_to_coach] = PushNotification::lesson_reminders(
+        student,
+        coach,
+        booking,
+        LessonReminderTiming::DayBefore,
+    );
+    let [hour_to_student, hour_to_coach] = PushNotification::lesson_reminders(
+        student,
+        coach,
+        booking,
+        LessonReminderTiming::HourBefore,
+    );
+    let [confirmed, received, ..] = pushes(student, coach);
+
+    let mut saved = Vec::new();
+    for (push, hour) in [
+        (confirmed, 1),
+        (received, 1),
+        (day_to_student, 2),
+        (day_to_coach, 2),
+        (hour_to_student, 3),
+        (hour_to_coach, 3),
+    ] {
+        let notification = Notification::new(notifications.next_id(), push, at(hour));
+        assert!(
+            notifications.insert(notification).await.unwrap(),
+            "同じ予約の予約の確定・ほかの時点・ほかの宛先とは別の 1 件 {push:?}"
+        );
+        saved.push(notification);
+    }
+    // 同じ (予約, 時点, 宛先) は、定期の処理が何度残そうとしても 1 件
+    for push in [day_to_student, day_to_coach, hour_to_student] {
+        assert!(
+            !notifications
+                .insert(Notification::new(notifications.next_id(), push, at(4)))
+                .await
+                .unwrap()
+        );
+    }
+
+    assert_eq!(
+        notifications.find_by_recipient(student).await.unwrap(),
+        [saved[4], saved[2], saved[0]],
+        "生徒へのリマインドは生徒への変種で読む"
+    );
+    assert_eq!(
+        notifications.find_by_recipient(coach).await.unwrap(),
+        [saved[5], saved[3], saved[1]],
+        "コーチへのリマインドはコーチへの変種で読む"
     );
 }

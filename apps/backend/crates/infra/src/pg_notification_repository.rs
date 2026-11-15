@@ -23,7 +23,8 @@ use crate::{
     messaging_values::{message_sender_from_value, message_sender_value},
     notification_values::{
         ANNOUNCEMENT, BOOKING_CANCELLED_BY_HEADQUARTERS, BOOKING_CONFIRMED, BOOKING_RECEIVED,
-        MESSAGE_RECEIVED, VIDEO_REVIEW_REQUESTED, VIDEO_REVIEW_RETURNED,
+        LESSON_REMINDER, MESSAGE_RECEIVED, VIDEO_REVIEW_REQUESTED, VIDEO_REVIEW_RETURNED,
+        lesson_reminder_timing_from_value, lesson_reminder_timing_value,
         push_notification_kind_value,
     },
     pg_support::timestamp,
@@ -34,7 +35,9 @@ use crate::{
 /// お知らせ 1 件で 1 行。プッシュ通知の中身は種類（`kind`）ごとの列に分けて持つ（形は `notifications_kind_shape`）。
 /// 本部からのお知らせはコーチを持たない（`coach_id` は NULL）で、送った記録（`announcement_id`）を指す。
 /// 同じプッシュ通知のお知らせは 1 件（`notifications_one_per_push` と、添削の依頼は `notifications_one_per_video_review_request`、
-/// 本部からのお知らせは `notifications_one_per_announcement`。残すときは `ON CONFLICT DO NOTHING`）。新しい順は
+/// 本部からのお知らせは `notifications_one_per_announcement`、レッスンのリマインドは (予約, 時点, 宛先) の
+/// `notifications_one_per_lesson_reminder`。残すときは `ON CONFLICT DO NOTHING` で、入った行の数で新しく残したかを返す）。
+/// リマインドは生徒へもコーチへも種類 `lesson_reminder` で、どちらへかは `recipient_id` で読み分ける。新しい順は
 /// 作った時刻（`created_at`）と残した順（`seq`）で並べる。既読は、受け取る人のまだ読んでいない行をロック（`FOR UPDATE`）
 /// して domain の [`Notification::mark_read`] に通してから書く。本部からのお知らせごとの既読の数は、送った記録を指す
 /// 行（`kind = 'announcement'`）のうち `read_at` のあるもの（上限の時刻があればそれまでのもの）を数える
@@ -50,11 +53,12 @@ impl PgNotificationRepository {
     }
 }
 
-/// お知らせの列（notification_id, kind, student_id, coach_id, booking_id, video_id, review_id, thread_id, message_id,
-/// sender_role, announcement_id, created_at, read_at）。
+/// お知らせの列（notification_id, kind, recipient_id, student_id, coach_id, booking_id, video_id, review_id, thread_id,
+/// message_id, sender_role, announcement_id, lesson_reminder_timing, created_at, read_at）。
 type NotificationRow = (
     Uuid,
     String,
+    Uuid,
     Uuid,
     Option<Uuid>,
     Option<Uuid>,
@@ -64,22 +68,23 @@ type NotificationRow = (
     Option<Uuid>,
     Option<String>,
     Option<Uuid>,
+    Option<String>,
     OffsetDateTime,
     Option<OffsetDateTime>,
 );
 
 /// `recipient_id = $1` のお知らせ（新しい順）。
 const NOTIFICATIONS_OF: &str =
-    "SELECT notification_id, kind, student_id, coach_id, booking_id, video_id, review_id,
-            thread_id, message_id, sender_role, announcement_id, created_at, read_at
+    "SELECT notification_id, kind, recipient_id, student_id, coach_id, booking_id, video_id, review_id,
+            thread_id, message_id, sender_role, announcement_id, lesson_reminder_timing, created_at, read_at
      FROM notification.notifications
      WHERE recipient_id = $1
      ORDER BY created_at DESC, seq DESC";
 
 /// `recipient_id = $1` のまだ読んでいないお知らせ（新しい順）。行のロックを取る。
 const UNREAD_NOTIFICATIONS_OF_FOR_UPDATE: &str =
-    "SELECT notification_id, kind, student_id, coach_id, booking_id, video_id,
-            review_id, thread_id, message_id, sender_role, announcement_id, created_at, read_at
+    "SELECT notification_id, kind, recipient_id, student_id, coach_id, booking_id, video_id, review_id,
+            thread_id, message_id, sender_role, announcement_id, lesson_reminder_timing, created_at, read_at
      FROM notification.notifications
      WHERE recipient_id = $1 AND read_at IS NULL
      ORDER BY created_at DESC, seq DESC
@@ -98,14 +103,15 @@ const READ_COUNTS_OF_ANNOUNCEMENTS: &str = "SELECT n.announcement_id, count(*)
 /// `recipient_id = $1` で種類が `$2`（本部からのお知らせ）のお知らせ（新しい順に最大 `$3` 件）。`$4` が true なら未読
 /// （`read_at` がないもの）だけに絞ってから `$3` 件を数える。
 const ANNOUNCEMENT_NOTIFICATIONS_OF: &str =
-    "SELECT notification_id, kind, student_id, coach_id, booking_id, video_id, review_id,
-            thread_id, message_id, sender_role, announcement_id, created_at, read_at
+    "SELECT notification_id, kind, recipient_id, student_id, coach_id, booking_id, video_id, review_id,
+            thread_id, message_id, sender_role, announcement_id, lesson_reminder_timing, created_at, read_at
      FROM notification.notifications
      WHERE recipient_id = $1 AND kind = $2 AND (NOT $4 OR read_at IS NULL)
      ORDER BY created_at DESC, seq DESC
      LIMIT $3";
 
-/// プッシュ通知の中身の列（booking_id, video_id, review_id, thread_id, message_id, sender_role, announcement_id）。
+/// プッシュ通知の中身の列（booking_id, video_id, review_id, thread_id, message_id, sender_role, announcement_id,
+/// lesson_reminder_timing）。
 type PushColumns = (
     Option<Uuid>,
     Option<Uuid>,
@@ -114,6 +120,7 @@ type PushColumns = (
     Option<Uuid>,
     Option<&'static str>,
     Option<Uuid>,
+    Option<&'static str>,
 );
 
 impl NotificationRepository for PgNotificationRepository {
@@ -121,16 +128,24 @@ impl NotificationRepository for PgNotificationRepository {
         notification_id_uuid::from_uuid(Uuid::new_v4())
     }
 
-    async fn insert(&self, notification: Notification) -> Result<(), Unavailable> {
+    async fn insert(&self, notification: Notification) -> Result<bool, Unavailable> {
         let push = notification.push();
         let (student_id, coach_id) = parties(&push);
-        let (booking_id, video_id, review_id, thread_id, message_id, sender_role, announcement_id) =
-            push_columns(&push);
-        sqlx::query(
+        let (
+            booking_id,
+            video_id,
+            review_id,
+            thread_id,
+            message_id,
+            sender_role,
+            announcement_id,
+            lesson_reminder_timing,
+        ) = push_columns(&push);
+        let inserted = sqlx::query(
             "INSERT INTO notification.notifications
                  (notification_id, recipient_id, kind, student_id, coach_id, booking_id, video_id, review_id,
-                  thread_id, message_id, sender_role, announcement_id, created_at, read_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                  thread_id, message_id, sender_role, announcement_id, created_at, read_at, lesson_reminder_timing)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
              ON CONFLICT DO NOTHING",
         )
         .bind(notification_id_uuid::to_uuid(notification.id()))
@@ -147,10 +162,11 @@ impl NotificationRepository for PgNotificationRepository {
         .bind(announcement_id)
         .bind(timestamp(notification.created_at()))
         .bind(notification.read_at().map(timestamp))
+        .bind(lesson_reminder_timing)
         .execute(&self.pool)
         .await
         .map_err(Unavailable::new)?;
-        Ok(())
+        Ok(inserted.rows_affected() > 0)
     }
 
     async fn find_by_recipient(
@@ -253,6 +269,7 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
     let (
         id,
         kind,
+        recipient_id,
         student_id,
         coach_id,
         booking_id,
@@ -262,6 +279,7 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
         message_id,
         sender_role,
         announcement_id,
+        lesson_reminder_timing,
         created_at,
         read_at,
     ) = row;
@@ -312,6 +330,20 @@ fn notification_from_row(row: NotificationRow) -> Result<Notification, Unavailab
                 .and_then(message_sender_from_value)
                 .ok_or_else(broken)?,
         },
+        LESSON_REMINDER => {
+            let booking_id = booking_id_uuid::from_uuid(booking_id.ok_or_else(broken)?);
+            let timing = lesson_reminder_timing
+                .as_deref()
+                .and_then(lesson_reminder_timing_from_value)
+                .ok_or_else(broken)?;
+            let [to_student, to_coach] =
+                PushNotification::lesson_reminders(student_id, coach_id, booking_id, timing);
+            if recipient_id == account_id_uuid::to_uuid(student_id) {
+                to_student
+            } else {
+                to_coach
+            }
+        }
         _ => return Err(Unavailable::new(format!("未知の kind: {kind}"))),
     };
     restore(id, push, created_at, read_at)
@@ -364,6 +396,16 @@ fn parties(push: &PushNotification) -> (AccountId, Option<AccountId>) {
             student_id,
             coach_id,
             ..
+        }
+        | PushNotification::LessonReminder {
+            student_id,
+            coach_id,
+            ..
+        }
+        | PushNotification::CoachLessonReminder {
+            student_id,
+            coach_id,
+            ..
         } => (student_id, Some(coach_id)),
         PushNotification::Announcement { student_id, .. } => (student_id, None),
     }
@@ -381,10 +423,12 @@ fn push_columns(push: &PushNotification) -> PushColumns {
             None,
             None,
             None,
+            None,
         ),
         PushNotification::VideoReviewRequested { video_id, .. } => (
             None,
             Some(video_id_uuid::to_uuid(video_id)),
+            None,
             None,
             None,
             None,
@@ -403,6 +447,7 @@ fn push_columns(push: &PushNotification) -> PushColumns {
             None,
             None,
             None,
+            None,
         ),
         PushNotification::MessageReceived {
             thread_id,
@@ -417,6 +462,7 @@ fn push_columns(push: &PushNotification) -> PushColumns {
             Some(message_id_uuid::to_uuid(message_id)),
             Some(message_sender_value(sender)),
             None,
+            None,
         ),
         PushNotification::Announcement {
             announcement_id, ..
@@ -428,6 +474,22 @@ fn push_columns(push: &PushNotification) -> PushColumns {
             None,
             None,
             Some(announcement_id_uuid::to_uuid(announcement_id)),
+            None,
+        ),
+        PushNotification::LessonReminder {
+            booking_id, timing, ..
+        }
+        | PushNotification::CoachLessonReminder {
+            booking_id, timing, ..
+        } => (
+            Some(booking_id_uuid::to_uuid(booking_id)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(lesson_reminder_timing_value(timing)),
         ),
     }
 }

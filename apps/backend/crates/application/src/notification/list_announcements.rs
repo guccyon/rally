@@ -801,7 +801,7 @@ mod tests {
             unreachable!()
         }
 
-        async fn insert(&self, _notification: Notification) -> Result<(), Unavailable> {
+        async fn insert(&self, _notification: Notification) -> Result<bool, Unavailable> {
             unreachable!()
         }
 

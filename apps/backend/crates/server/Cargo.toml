@@ -11,7 +11,7 @@ infra.workspace = true
 interface.workspace = true
 axum.workspace = true
 sqlx.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
 domain.workspace = true

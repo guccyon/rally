@@ -7,6 +7,7 @@ use crate::identity::AccountId;
 /// 見られるように残したもの。中身のプッシュ通知と、作った時刻と、受け取る人が読んだ時刻（既読。読むまでは `None`）を持つ。
 ///
 /// 受け取り設定（[`super::NotificationSettings`]）でその種類をオフにしていても作る（オフが止めるのはプッシュ通知だけ）。
+/// 生徒へのレッスンのリマインドだけは例外で、オフなら作らない（[`super::NotificationSettings::records`]）。
 /// 表示する本文は境界のアダプタがプッシュ通知の中身から決める。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Notification {

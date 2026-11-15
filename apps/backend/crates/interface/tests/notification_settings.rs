@@ -316,6 +316,7 @@ async fn a_student_who_has_not_changed_anything_gets_every_kind_on() {
             "message_received": true,
             "announcement": true,
             "booking_cancelled_by_headquarters": true,
+            "lesson_reminder": true,
         })
     );
     assert!(settings.all().is_empty(), "照会では保存しない");
@@ -343,6 +344,7 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
             "message_received": false,
             "announcement": false,
             "booking_cancelled_by_headquarters": false,
+            "lesson_reminder": true,
         })
     );
 
@@ -367,6 +369,7 @@ async fn put_changes_only_the_written_kinds_of_the_caller() {
                 "message_received": false,
                 "announcement": false,
                 "booking_cancelled_by_headquarters": false,
+                "lesson_reminder": true,
             })
         );
     }

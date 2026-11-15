@@ -47,15 +47,31 @@ impl NotificationSettings {
     }
 
     /// 通知 `notification` を送ってよいか（その種類がオンか）。受け取る人がこの設定のアカウントかは確かめない。
+    /// コーチへのレッスンのリマインドは、コーチに受け取り設定がないので常に送る。
     pub fn allows(&self, notification: &PushNotification) -> bool {
-        self.is_enabled(notification.kind())
+        match notification {
+            PushNotification::CoachLessonReminder { .. } => true,
+            _ => self.is_enabled(notification.kind()),
+        }
+    }
+
+    /// 通知 `notification` をお知らせとして残すか。ほかの種類はオフでも残す（オフが止めるのはプッシュ通知だけ）が、
+    /// 生徒へのレッスンのリマインドは例外で、オフならお知らせも作らない（あとでオンに戻しても作り直さない）。コーチへの
+    /// リマインドは常に残す。受け取る人がこの設定のアカウントかは確かめない。
+    pub fn records(&self, notification: &PushNotification) -> bool {
+        match notification {
+            PushNotification::LessonReminder { .. } => {
+                self.is_enabled(NotificationKind::LessonReminder)
+            }
+            _ => true,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scheduling::BookingId;
+    use crate::{notification::LessonReminderTiming, scheduling::BookingId};
 
     const STUDENT: AccountId = AccountId::from_u128(1);
 
@@ -96,5 +112,28 @@ mod tests {
         assert!(settings.allows(&confirmed));
         settings.set(NotificationKind::BookingConfirmed, false);
         assert!(!settings.allows(&confirmed));
+        assert!(settings.records(&confirmed), "オフでもお知らせには残す");
+    }
+
+    #[test]
+    fn a_student_who_turned_reminders_off_gets_neither_push_nor_notification() {
+        let [to_student, to_coach] = PushNotification::lesson_reminders(
+            STUDENT,
+            AccountId::from_u128(9),
+            BookingId::from_u128(3),
+            LessonReminderTiming::DayBefore,
+        );
+        let mut settings = NotificationSettings::new(STUDENT);
+        assert!(settings.allows(&to_student) && settings.records(&to_student));
+        settings.set(NotificationKind::LessonReminder, false);
+        assert!(!settings.allows(&to_student));
+        assert!(
+            !settings.records(&to_student),
+            "リマインドだけはお知らせも作らない"
+        );
+        assert!(
+            settings.allows(&to_coach) && settings.records(&to_coach),
+            "コーチへのリマインドは設定によらず作る"
+        );
     }
 }

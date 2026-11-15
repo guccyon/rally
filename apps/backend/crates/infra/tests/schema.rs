@@ -2680,7 +2680,10 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
     );
     assert_eq!(
         (code.as_str(), constraint.as_str()),
-        (UNIQUE_VIOLATION, "notifications_one_per_push")
+        (
+            UNIQUE_VIOLATION,
+            "notifications_one_per_push_except_lesson_reminder"
+        )
     );
     // 同じ動画の添削の依頼も 1 件（同じ動画の添削の返却とは別）
     let (code, constraint) = violation(
@@ -2784,6 +2787,143 @@ async fn notifications_have_the_shape_of_their_push_and_are_one_per_push(pool: P
         .await,
     );
     assert_eq!(code, FOREIGN_KEY_VIOLATION, "{constraint}");
+}
+
+/// レッスンのリマインドの行を入れる（予約 `booking_id`、時点 `timing`）。`kind` を変えて形の違反も確かめる。
+async fn insert_lesson_reminder(
+    pool: &PgPool,
+    recipient_id: &str,
+    kind: &str,
+    (student_id, coach_id): (&str, &str),
+    booking_id: Option<&str>,
+    timing: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO notification.notifications
+             (notification_id, recipient_id, kind, student_id, coach_id, booking_id, lesson_reminder_timing,
+              created_at)
+         VALUES (gen_random_uuid(), $1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, '2026-11-01T10:00:00Z')",
+    )
+    .bind(recipient_id)
+    .bind(kind)
+    .bind(student_id)
+    .bind(coach_id)
+    .bind(booking_id)
+    .bind(timing)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_reminders_have_a_booking_and_a_timing_and_are_one_per_booking_timing_recipient(
+    pool: PgPool,
+) {
+    use domain::notification::LessonReminderTiming;
+    use infra::notification_values::lesson_reminder_timing_value;
+
+    let timings: Vec<&str> = LessonReminderTiming::ALL
+        .into_iter()
+        .map(lesson_reminder_timing_value)
+        .collect();
+    assert_eq!(
+        check_values(
+            &pool,
+            "notification.notifications",
+            "notifications_lesson_reminder_timing_check"
+        )
+        .await,
+        timings
+    );
+
+    let student_id = student(&pool).await;
+    let coach_id = coach(&pool).await;
+    let parties = (student_id.as_str(), coach_id.as_str());
+    const A: &str = "00000000-0000-4000-8000-00000000000a";
+
+    // 同じ予約の、時点・宛先の違うリマインドと予約の確定は別の行
+    for (recipient, timing) in [
+        (&student_id, "day_before"),
+        (&coach_id, "day_before"),
+        (&student_id, "hour_before"),
+        (&coach_id, "hour_before"),
+    ] {
+        insert_lesson_reminder(
+            &pool,
+            recipient,
+            "lesson_reminder",
+            parties,
+            Some(A),
+            Some(timing),
+        )
+        .await
+        .unwrap();
+    }
+    insert_notification(
+        &pool,
+        &student_id,
+        "booking_confirmed",
+        parties,
+        (Some(A), None, None, None, None, None),
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 同じ (予約, 時点, 宛先) は 1 件
+    let (code, constraint) = violation(
+        insert_lesson_reminder(
+            &pool,
+            &coach_id,
+            "lesson_reminder",
+            parties,
+            Some(A),
+            Some("hour_before"),
+        )
+        .await,
+    );
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (UNIQUE_VIOLATION, "notifications_one_per_lesson_reminder")
+    );
+
+    // リマインドは予約と時点を必ず持ち、時点を持つのはリマインドだけ
+    for (kind, booking_id, timing, expected) in [
+        (
+            "lesson_reminder",
+            Some(A),
+            None,
+            "notifications_lesson_reminder_timing_shape",
+        ),
+        (
+            "lesson_reminder",
+            None,
+            Some("day_before"),
+            "notifications_kind_shape",
+        ),
+        (
+            "booking_confirmed",
+            Some("00000000-0000-4000-8000-00000000000b"),
+            Some("day_before"),
+            "notifications_lesson_reminder_timing_shape",
+        ),
+        (
+            "lesson_reminder",
+            Some(A),
+            Some("week_before"),
+            "notifications_lesson_reminder_timing_check",
+        ),
+    ] {
+        let (code, constraint) = violation(
+            insert_lesson_reminder(&pool, &student_id, kind, parties, booking_id, timing).await,
+        );
+        assert_eq!(
+            (code.as_str(), constraint.as_str()),
+            (CHECK_VIOLATION, expected),
+            "{kind} {booking_id:?} {timing:?}"
+        );
+    }
 }
 
 /// 本部 `created_by` の下書きを入れる。
