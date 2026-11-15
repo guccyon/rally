@@ -173,6 +173,50 @@ void main() {
       },
     );
 
+    testWidgets(
+      '予約も受けたレッスンも 0 件でも、trial_available false なら「予約する」で通常の予約にする（#1645）',
+      (tester) async {
+        // アプリが件数から数えると体験予約になる組み合わせ。判定はサーバーの trial_available だけ
+        final api = FakeStudentApi(
+          myBookings: const [],
+          lessonCompletions: const [],
+        )..trialAvailableAnswer = false;
+        final container = await openSlotSearch(tester, api);
+
+        expect(container.read(studentFlowProvider).canBookTrial, isFalse);
+        expect(find.text('体験予約する'), findsNothing);
+        await tapText(tester, '予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': false,
+        });
+        expect(
+          container.read(studentFlowProvider).step,
+          FlowStep.bookingPending,
+        );
+      },
+    );
+
+    testWidgets(
+      '予約がキャンセルされていなくても、trial_available true なら「体験予約する」で体験予約にする（#1645）',
+      (tester) async {
+        // 既定の予約にはキャンセルされていないものがある。件数から数えると通常の予約になる組み合わせ
+        final api = FakeStudentApi()..trialAvailableAnswer = true;
+        await openSlotSearch(tester, api);
+
+        expect(find.text('予約する'), findsNothing);
+        await tapText(tester, '体験予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': true,
+        });
+      },
+    );
+
     testWidgets('trial_available が応答に載っていなければ、予約の件数から決めずに通常の予約にする', (
       tester,
     ) async {
@@ -256,6 +300,53 @@ void main() {
       expect(find.text('予約する'), findsOneWidget);
       expect(find.text('体験予約する'), findsNothing);
     });
+
+    testWidgets(
+      '予約 0 件で 409 trial_already_used のあとに読み直すと、trial_available false に従って通常の予約で進める（#1645）',
+      (tester) async {
+        final failures = <String, StudentApiException>{
+          'createBooking': const StudentApiException(
+            statusCode: 409,
+            error: ApiError(
+              code: ErrorCode.trialAlreadyUsed,
+              message: 'trial already used',
+            ),
+          ),
+        };
+        // 画面が古い判定（true）を持ったまま、サーバーではもう使い済み。予約は 0 件のまま
+        final api = FakeStudentApi(
+          myBookings: const [],
+          lessonCompletions: const [],
+          failures: failures,
+        )..trialAvailableAnswer = false;
+        final container = await pumpScreen(
+          tester,
+          const SlotSearchScreen(),
+          api: api,
+          initial: registered,
+        );
+
+        await tapText(tester, 'テニス');
+        await tapText(tester, '体験予約する');
+
+        expect(find.text('体験予約はすでに使っています。'), findsOneWidget);
+        expect(container.read(studentFlowProvider).canBookTrial, isFalse);
+        expect(find.text('体験予約する'), findsNothing);
+
+        failures.clear();
+        await tapText(tester, '予約する');
+
+        final request = api.requests.last as CreateBookingRequest;
+        expect(request.toJson(), {
+          'slot_id': Fixtures.slotId,
+          'is_trial': false,
+        });
+        expect(
+          container.read(studentFlowProvider).step,
+          FlowStep.bookingPending,
+        );
+      },
+    );
   });
 
   testWidgets('そのスポーツのスロットがなければその旨を出す', (tester) async {
