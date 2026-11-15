@@ -200,6 +200,7 @@ fn app() -> App {
             clock,
         ),
         SubmitVideo::new(
+            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
