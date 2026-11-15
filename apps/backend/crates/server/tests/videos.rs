@@ -139,3 +139,36 @@ async fn a_submitted_video_is_reviewed_and_returned() {
     let (status, _) = send(&router, get("/videos/me", &coach)).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn a_student_without_a_contract_cannot_send_a_second_video() {
+    let router = server::router_at(ManualClock::new(oct26_10()));
+    let (status, account) = send(
+        &router,
+        Request::post("/accounts")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({ "email": "taro@example.com", "display_name": "たろう", "sport": "tennis" })
+                    .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{account}");
+    let student = account["access_token"].as_str().unwrap().to_string();
+    let body = json!({
+        "coach_id": "00000000-0000-0000-0000-00000000002a",
+        "sport": "tennis",
+        "content_type": "video/mp4"
+    });
+
+    let (status, first) = send(&router, post_json("/videos", &student, body.clone())).await;
+    assert_eq!(status, StatusCode::CREATED, "{first}");
+    let (status, second) = send(&router, post_json("/videos", &student, body)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{second}");
+    assert_eq!(second["code"], "video_review_not_entitled");
+
+    let (status, list) = send(&router, get("/videos/me", &student)).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["videos"].as_array().unwrap().len(), 1, "{list}");
+}

@@ -217,6 +217,7 @@ fn app() -> App {
         ),
         EndLiveLessonSession::new(sessions, video, analytics.clone(), clock.clone()),
         SubmitVideo::new(
+            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),

@@ -26,6 +26,7 @@ mod video_lesson_menu_lookup;
 pub mod video_review_id_uuid;
 mod video_storage;
 mod video_student_display_name_lookup;
+mod video_submission_gate;
 
 pub use ai_feedback_generator::AiFeedbackGenerator;
 pub use ai_feedback_request::AiFeedbackRequest;
@@ -55,3 +56,4 @@ pub use video_coach_display_name_lookup::VideoCoachDisplayNameLookup;
 pub use video_lesson_menu_lookup::VideoLessonMenuLookup;
 pub use video_storage::VideoStorage;
 pub use video_student_display_name_lookup::VideoStudentDisplayNameLookup;
+pub use video_submission_gate::VideoSubmissionGate;
