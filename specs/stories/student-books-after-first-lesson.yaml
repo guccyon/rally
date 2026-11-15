@@ -29,6 +29,7 @@ must_not:
   - "体験予約を使った生徒のスロットに「体験予約する」だけを出し、2 回目の予約に進めなくする（体験予約か通常の予約かは、サーバーの自分の予約 `listMyBookings` の `trial_available` だけで決める）"
   - "体験予約か通常の予約かをアプリで数え直す（キャンセルされていない予約の有無や完了したレッスンの件数から決めない。判定はサーバーの `trial_available` と `createBooking` の 409 `trial_already_used`）"
   - "受け終えた体験予約をあとでキャンセルした生徒に「体験予約する」を出す、または 2 回目の体験予約（無料の添削の依頼を含む）を通す"
+  - "予約のない生徒でも、体験として 1 本送ったあとの 2 本目の添削の依頼を通す（サーバーが 403 `video_review_not_entitled` で断る）"
   - "自分の予約をまだ読めていないのに、推測で体験予約か通常の予約かを決めて予約を作る"
   - "添削の依頼が 403 `video_review_not_entitled` で断られたあと、断りの文言だけを出して月額契約へ進む入口を出さない"
   - "体験を使ったかをアプリで判定して、依頼の前に「添削を依頼する」を隠す・止める（判定はサーバー。ADR 0014）"
@@ -44,7 +45,7 @@ touches:
     - student-app.createBooking
     - student-app.submitVideo
 origin:
-  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1659"]
+  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1659", "guccyon/rally#1700"]
   note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから"
   retro: false
 known_gaps:
