@@ -212,6 +212,12 @@ describe("入室前チェック", () => {
       expect(screen.getByText("通話中")).toBeInTheDocument();
       expect(screen.getByText("カメラ: 入・マイク: 入（入室前チェックのまま）")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "通話を終了" })).toBeEnabled();
+      // 開発者向けの語（セッション ID の UUID・「モック」）は出さず、映像が出ない旨はコーチに分かる言葉で出す（#1631）
+      const inCall = screen.getByRole("region", { name: "ビデオ通話中" });
+      expect(inCall).toHaveTextContent("映像が表示されなくても、故障ではありません。");
+      expect(inCall).not.toHaveTextContent(SESSION_ID);
+      expect(inCall).not.toHaveTextContent(/セッション ID|モック/);
+      expect(inCall).not.toHaveTextContent(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       expect(heading).toHaveFocus();
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
       expect(scrollIntoView.mock.contexts.at(-1)).toBe(heading);
@@ -223,6 +229,7 @@ describe("入室前チェック", () => {
       expect(screen.queryByRole("heading", { name: "ビデオ通話中" })).not.toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("通話を終了しました。");
       expect(screen.getByText("1500 秒")).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent(SESSION_ID);
       // 押したボタンが消えても焦点は迷子にならず、一覧の先頭に移る
       expect(document.activeElement).not.toBe(document.body);
       expect(document.activeElement).toContainElement(screen.getByRole("status"));

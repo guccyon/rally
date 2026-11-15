@@ -86,8 +86,6 @@ function SessionSummary({
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 text-sm">
       <dt>状態</dt>
       <dd>{SESSION_STATUS_LABELS[session.status]}</dd>
-      <dt>セッション ID</dt>
-      <dd className="font-mono">{session.session_id}</dd>
       <dt>開始</dt>
       <dd>{formatDateTime(session.started_at)}</dd>
       {session.ended_at && (
@@ -270,7 +268,7 @@ export function LiveSessionPanel({
         </div>
         <ResultMessage result={result} />
         <SessionSummary session={session} joinedMedia={joinedMedia} />
-        <p className="text-sm text-text-muted">映像はモックのため表示しません。</p>
+        <p className="text-sm text-text-muted">映像が表示されなくても、故障ではありません。</p>
         <Button variant="danger" disabled={busy} onClick={onEnd}>
           通話を終了
         </Button>
