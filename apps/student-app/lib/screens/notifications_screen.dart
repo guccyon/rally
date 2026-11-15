@@ -8,7 +8,8 @@ import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 
 /// お知らせ（`listMyNotifications`。作った時刻の新しい順）。開いたらすべて既読にし（`markMyNotificationsRead`）、
-/// 開いたときに未読だったものは「新着」と添える。行を押すと、種類に応じて自分の予約・自分の動画・チャットを開く
+/// 開いたときに未読だったものは「新着」と添える。行を押すと、種類に応じて自分の予約・自分の動画・チャットを開き、
+/// レッスンのリマインドは結び付く予約の画面（入室前チェックへ進める入口）を開く
 /// （本部からのお知らせと、このアプリの版が知らない種類の行は押せない）
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
