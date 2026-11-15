@@ -107,6 +107,7 @@ where
                 PgLessonCompletionRepository::new(pool.clone()),
                 videos.clone(),
             ),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock.clone(),
         );

@@ -144,6 +144,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
                 application::in_memory::InMemoryLessonCompletionRepository::default(),
                 application::in_memory::InMemoryVideoRepository::default(),
             ),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             clock,
         ),

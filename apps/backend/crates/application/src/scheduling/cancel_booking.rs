@@ -196,6 +196,7 @@ mod tests {
                 crate::in_memory::InMemoryLessonCompletionRepository::default(),
                 crate::in_memory::InMemoryVideoRepository::default(),
             ),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(CREATED_AT),
         )
@@ -332,6 +333,7 @@ mod tests {
                 crate::in_memory::InMemoryLessonCompletionRepository::default(),
                 crate::in_memory::InMemoryVideoRepository::default(),
             ),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(CREATED_AT),
         );

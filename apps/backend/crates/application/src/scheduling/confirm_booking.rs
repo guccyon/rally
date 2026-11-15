@@ -198,6 +198,7 @@ mod tests {
                 crate::in_memory::InMemoryLessonCompletionRepository::default(),
                 crate::in_memory::InMemoryVideoRepository::default(),
             ),
+            EntitlementQuotaGate::new(entitlements.clone()),
             RecordingAnalyticsSink::default(),
             FixedClock(CREATED_AT),
         )

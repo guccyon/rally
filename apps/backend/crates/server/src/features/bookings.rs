@@ -23,6 +23,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
                 ports.completions(),
                 ports.videos(),
             ),
+            EntitlementQuotaGate::new(ports.entitlements()),
             ports.analytics(),
             ports.clock(),
         ),

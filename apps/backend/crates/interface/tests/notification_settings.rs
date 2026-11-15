@@ -114,6 +114,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
                 application::in_memory::InMemoryLessonCompletionRepository::default(),
                 application::in_memory::InMemoryVideoRepository::default(),
             ),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock,
         ),

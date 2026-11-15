@@ -189,6 +189,9 @@ mod tests {
                 crate::in_memory::InMemoryLessonCompletionRepository::default(),
                 crate::in_memory::InMemoryVideoRepository::default(),
             ),
+            crate::entitlement::EntitlementQuotaGate::new(
+                crate::in_memory::InMemoryEntitlementRepository::default(),
+            ),
             RecordingAnalyticsSink::default(),
             FixedClock(SystemTime::UNIX_EPOCH),
         )

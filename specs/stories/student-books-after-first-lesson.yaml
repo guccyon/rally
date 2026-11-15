@@ -8,6 +8,7 @@ entry: "初回レッスン（通話か動画添削）の完了を記録した生
 exit: "生徒がスロットを探す画面で自分のスポーツの予約できるスロットを見て、そこから 2 回目の予約（体験予約ではない通常の予約）を作り、予約の確定待ちを見ている。月額契約の前に動画の添削を頼もうとしても無料では通らず、月額契約へ進む入口が出ている"
 preconditions:
   - "生徒の完了したレッスン（lesson_completion）が 1 件以上ある"
+  - "生徒が月額契約を始めている（受講権がある）。月額契約の前の生徒は、体験を使った後の通常の予約を `createBooking` の 403 `live_lesson_not_entitled` で断られ、月額契約へ進む（#1656）"
 steps:
   - where: "student-app ホーム"
     do: "ホームを開く（レッスンの評価や月額契約のあとにホームへ戻る、またはアプリバーの「ホーム」）"
@@ -36,10 +37,12 @@ must_not:
   - "予約がまだない（または受けていない体験予約をキャンセルしただけの）生徒から「体験予約する」を外す"
   - "月額契約を始めた生徒や動画を送った生徒（予約も完了したレッスンもなくても）に「体験予約する」を出す、または体験予約を通す（体験の対象ではない。サーバーが `trial_available: false` を返し、`createBooking` の `is_trial: true` を 409 `trial_already_used` で断る。ADR 0014）"
   - "月額契約の生徒の予約を体験予約として作り、無料の体験のつもりで今月のビデオ通話の回数を使わせる（通常の予約として作り、確定で回数を 1 回使ったと分かるようにする）"
+  - "体験を使い終えた月額契約の前の生徒の通常の予約を通す（無料のビデオ通話を何度でも受けられてしまう）、または断ったときに月額契約へ進む入口（スロットを探す画面の「月額契約へ進む」）を出さない（#1656）"
+  - "月額契約の生徒の 2 回目以降の通常の予約を、受講権がないとして断る"
 touches:
   apps: [student-app]
   contexts: [scheduling, live-lesson, async-lesson, messaging, entitlement]
-  terms: [lesson_completion, slot, booking, video_review_request, subscription]
+  terms: [lesson_completion, slot, booking, entitlement, video_review_request, subscription]
   operations:
     - student-app.listMyLessonCompletions
     - student-app.searchSlots
@@ -47,7 +50,7 @@ touches:
     - student-app.createBooking
     - student-app.submitVideo
 origin:
-  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1659", "guccyon/rally#1700", "guccyon/rally#1711"]
+  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1656", "guccyon/rally#1659", "guccyon/rally#1700", "guccyon/rally#1711"]
   note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから。#1711 は出荷の関門の探索で、月額契約を始めた生徒のスロットに「体験予約する」しか出ず、体験予約として今月のビデオ通話の回数が減っていたことから（`trial_available` と 409 `trial_already_used` の判定に月額契約と送った動画を含めた）"
   retro: false
 known_gaps:
