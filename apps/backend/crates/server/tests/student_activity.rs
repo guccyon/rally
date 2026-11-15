@@ -212,7 +212,15 @@ async fn headquarters_sees_upcoming_bookings_cancellations_lessons_and_videos_of
     )
     .await;
 
-    // もう 2 本送り、どちらも返却を待っている
+    // 月額契約を結び（月額契約の前は動画を体験として 1 本だけ送れる。#1653）、もう 2 本送り、どちらも返却を待っている
+    post_ok(
+        &router,
+        "/subscriptions",
+        &student,
+        json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
+        StatusCode::CREATED,
+    )
+    .await;
     for _ in 0..2 {
         post_ok(
             &router,

@@ -97,7 +97,7 @@ pub fn router_with<
     describe_booking: DescribeBooking<B, Bk>,
     get_slot_supply: GetSlotSupply<B, Sc, C>,
     list_my_bookings: ListMyBookings<B, I, G, Tu, C>,
-    list_coach_bookings: ListCoachBookings<B, D, C>,
+    list_coach_bookings: ListCoachBookings<B, L, D, C>,
     list_coach_slots: ListCoachSlots<S, J, B, C>,
     start_subscription: StartSubscription<E, A, P, C>,
     get_entitlement: GetEntitlement<E, C>,

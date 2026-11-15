@@ -870,6 +870,17 @@ async fn headquarters_lists_only_coaches_with_overdue_videos(pool: PgPool) {
     let clock = ManualClock::new(start - hour * 72);
     let router =
         server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+    // 2 人とも動画を何本も送るので月額契約を結ぶ（月額契約の前は体験として 1 本だけ。#1653）
+    for (student, sport) in [(&taro, "tennis"), (&jiro, "soccer")] {
+        post_ok(
+            &router,
+            "/subscriptions",
+            student,
+            json!({ "sport": sport, "payment_method_token": "tok_mock" }),
+            StatusCode::CREATED,
+        )
+        .await;
+    }
 
     // 照会の時刻から見て、うえのには 72 時間前に送られて返した動画と 60 時間前の返却待ち、たなかには 48 時間ちょうど前の
     // 返却待ち、いとうには 47 時間前の返却待ち。えんどうは 72 時間前の動画を返した

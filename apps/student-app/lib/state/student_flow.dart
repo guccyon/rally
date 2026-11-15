@@ -645,7 +645,13 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   }
 
   /// `searchSlots`。スポーツで絞る（コーチで絞っていればそのまま絞る）。
-  Future<void> searchSlots(Sport sport) => run(() => _search(sport));
+  /// 体験予約できるか（[StudentFlowState.canBookTrial]）をまだ読めていなければ、自分の予約も読んで決める
+  Future<void> searchSlots(Sport sport) => run(
+    () => Future.wait([
+      _search(sport),
+      if (state.canBookTrial == null) _refreshMyBookingsQuietly(),
+    ]),
+  );
 
   /// コーチの絞り込みを外して、今のスポーツで探し直す
   Future<void> clearSearchCoach() {
@@ -775,31 +781,30 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// `createBooking`。サーバーの判定で体験予約できれば体験予約（[StudentFlowState.canBookTrial]）、できなければ通常の予約。
   /// 作成直後は pending なので確定待ちへ。409 `trial_already_used`（読んだ予約が古かった）なら、失敗の文言を出したうえで
   /// 自分の予約を読み直し、ボタンを通常の予約に切り替える
-  /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは何もしない
-  Future<void> bookSlot(Slot slot) {
-    final trial = state.canBookTrial;
-    if (trial == null) return Future.value();
-    return run(() async {
-      final Booking booking;
-      try {
-        booking = await _api.createBooking(
-          CreateBookingRequest(slotId: slot.slotId, isTrial: trial),
-        );
-      } on StudentApiException catch (e) {
-        if (e.error?.code == ErrorCode.trialAlreadyUsed) {
-          await _refreshMyBookingsQuietly();
-        }
-        rethrow;
-      }
-      state = state.copyWith(
-        bookedSlot: slot,
-        booking: booking,
-        openBookingId: booking.bookingId,
-        bookingLookup: BookingLookup.ready,
-        step: FlowStep.bookingPending,
+  /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは、先に自分の予約を読んでから決める
+  /// （読めなければ失敗の文言を出して予約を作らない。予約の件数からは数え直さない）
+  Future<void> bookSlot(Slot slot) => run(() async {
+    if (state.canBookTrial == null) await _loadMyBookings();
+    final trial = state.canBookTrial ?? false;
+    final Booking booking;
+    try {
+      booking = await _api.createBooking(
+        CreateBookingRequest(slotId: slot.slotId, isTrial: trial),
       );
-    });
-  }
+    } on StudentApiException catch (e) {
+      if (e.error?.code == ErrorCode.trialAlreadyUsed) {
+        await _refreshMyBookingsQuietly();
+      }
+      rethrow;
+    }
+    state = state.copyWith(
+      bookedSlot: slot,
+      booking: booking,
+      openBookingId: booking.bookingId,
+      bookingLookup: BookingLookup.ready,
+      step: FlowStep.bookingPending,
+    );
+  });
 
   /// 予約の確定待ちの画面を予約の ID で開き、`listMyBookings` からその予約を読み直す（自分の予約の「内容を確かめて確定する」。
   /// ADR 0010 の決定 3）。確定は呼ばない（中身を見せた画面で押す）。読めるまで別の予約の中身は出さない

@@ -17,6 +17,7 @@ import 'video_submit_screen.dart';
 /// 担当コーチとのメッセージ（`listMessages` / `sendMessage`）。開いたら相手のメッセージは既読にする。
 /// 自分が送ったメッセージには、コーチが読んだか（既読・未読）を出す。
 /// 動画の添削の依頼（`submitVideo`）もここからでき、添削の依頼と返却は本文のメッセージと見分けられるカードで時間の順に並べる。
+/// 依頼が 403 `video_review_not_entitled`（体験を使い終えた月額契約の前）で断られたら、依頼のボタンのそばに月額契約へ進む入口を出す。
 /// 入力欄のそばの「スタンプ」から 8 種類のスタンプを選んで送れ、スタンプは本文より大きな絵文字で吹き出しなしに出す。
 /// 知らない種類のメッセージ（と、このアプリの版が知らないスタンプ）は隠さず、`body`（短い説明）を本文のメッセージとして出す。
 /// 送る前の本文はスレッドごとに [ChatState.drafts] に残し、画面を離れて（月額契約の画面など）同じスレッドに戻ったら欄に戻す。
@@ -118,10 +119,16 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     final busy = ref.watch(studentFlowProvider.select((s) => s.busy));
     final notifier = ref.read(chatProvider.notifier);
     final flowNotifier = ref.read(studentFlowProvider.notifier);
-    final notEntitled = ref.watch(
-      studentFlowProvider.select(
-        (s) => s.errorMessage == chatNotEntitledMessage,
-      ),
+    final errorMessage = ref.watch(
+      studentFlowProvider.select((s) => s.errorMessage),
+    );
+    final chatNotEntitled = errorMessage == chatNotEntitledMessage;
+    final reviewNotEntitled = errorMessage == videoReviewNotEntitledMessage;
+    Widget subscriptionEntry() => OutlinedButton(
+      onPressed: busy
+          ? null
+          : () => flowNotifier.goToSubscription(fromChat: true),
+      child: const Text('月額契約へ進む'),
     );
     final messages = state.messages ?? const <Message>[];
     // 添削の依頼が何回目か（スレッドの中で送った順。返却のカードもこの番号でどの依頼への返却かを示す）
@@ -183,14 +190,9 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
           child: const Text('送信する'),
         ),
         // 契約の前に送れなかったら、次にやること（月額契約）への入口を同じ場所に出す
-        if (notEntitled) ...[
+        if (chatNotEntitled) ...[
           const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: busy
-                ? null
-                : () => flowNotifier.goToSubscription(fromChat: true),
-            child: const Text('月額契約へ進む'),
-          ),
+          subscriptionEntry(),
         ],
         const SizedBox(height: 8),
         OutlinedButton.icon(
@@ -204,6 +206,12 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
           icon: const Icon(Icons.videocam_outlined),
           label: const Text('添削を依頼する'),
         ),
+        // 体験を使い終えて添削を断られたら（403 video_review_not_entitled）、月額契約への入口を依頼のボタンのそばに出す
+        // （ホームの「添削を依頼する」もこのスレッドで依頼するので同じ）
+        if (reviewNotEntitled) ...[
+          const SizedBox(height: 8),
+          subscriptionEntry(),
+        ],
       ],
     );
   }
