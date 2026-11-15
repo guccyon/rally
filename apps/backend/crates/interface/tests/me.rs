@@ -167,6 +167,7 @@ fn app(accounts: InMemoryAccountRepository) -> Router {
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::in_memory::InMemoryLiveLessonSessionRepository::default(),
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),

@@ -178,6 +178,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::in_memory::InMemoryLiveLessonSessionRepository::default(),
             application::profile::ProfileStudentDisplayNameLookup::new(BrokenRepository),
             clock,
         ),
