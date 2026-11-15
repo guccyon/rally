@@ -149,7 +149,14 @@ async fn headquarters_reads_bookings_by_date_from_postgres(pool: PgPool) {
     }
     slots.sort_by_key(|(is_trial, _)| !is_trial);
     let mut booked = Vec::new();
+    let mut subscribed = false;
     for (is_trial, slot_id) in slots {
+        // 体験予約の後に月額契約を始める（月額契約の生徒は体験予約できず、月額契約の前の生徒は体験を使った後の
+        // 通常の予約を断られる）
+        if !is_trial && !subscribed {
+            subscribe(&router, &taro_token).await;
+            subscribed = true;
+        }
         let (status, booking) = send(
             &router,
             post_json(
