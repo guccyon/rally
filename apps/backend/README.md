@@ -498,7 +498,7 @@ cargo run -p seed -- --seed 42
 ```
 
 - 本部のアカウント `本部 01`（`headquarters.seed<種>@example.com`）を、コーチと同じ時刻に登録する。触れる環境のログインの手がかり（`ship.yaml` の `touch.accounts`）は、本部・コーチとも DB に登録したアカウントのトークン（`mock.<役割>.<アカウント ID>`）を出す
-- テスト（Postgres。`cargo test -p seed -- --include-ignored`）: `tests/slot_supply.rs`（需給の足りていないスポーツ）、`tests/touch_accounts.rs`（`ship.yaml` の手がかりの SQL を種 42 の DB で実行し、すべて実在のアカウントをその役割で指すこと、本部の手がかりで確定した予約を持つコーチをお休みにでき、予約の詳細にお休みの経緯が出ること。Issue #1480）
+- テスト（Postgres。`cargo test -p seed -- --include-ignored`）: `tests/it/slot_supply.rs`（需給の足りていないスポーツ）、`tests/it/touch_accounts.rs`（`ship.yaml` の手がかりの SQL を種 42 の DB で実行し、すべて実在のアカウントをその役割で指すこと、本部の手がかりで確定した予約を持つコーチをお休みにでき、予約の詳細にお休みの経緯が出ること。Issue #1480）
 
 ## 一周シナリオの E2E（API レベル）
 

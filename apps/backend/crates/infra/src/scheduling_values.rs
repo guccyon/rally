@@ -4,7 +4,7 @@
 //! `scheduling.bookings.cancel_reason`（CHECK なし）・
 //! `scheduling.coach_acceptances.status`（CHECK 制約の値）はこの表だけを通す。キャンセルした人の値は境界間イベント
 //! `BookingCancelled` の `cancelled_by`（[`crate::domain_event_payload`]）も同じ。`sport` は
-//! [`crate::identity_values::sport_value`] と同じ値。CHECK との一致は `tests/schema.rs` が確かめる。
+//! [`crate::identity_values::sport_value`] と同じ値。CHECK との一致は `tests/it/schema.rs` が確かめる。
 
 use domain::scheduling::{
     BookingCancelReason, BookingCanceller, BookingStatus, CoachAcceptanceStatus, SlotStatus,

@@ -1,7 +1,7 @@
 //! notification の値と、DB に保存する文字列の対応表。
 //!
 //! `notification.notification_settings.kind` と `notification.notifications.kind`（CHECK 制約の値）はこの表だけを通す。
-//! CHECK との一致は `tests/schema.rs` が確かめる。
+//! CHECK との一致は `tests/it/schema.rs` が確かめる。
 
 use domain::notification::{NotificationKind, PushNotification};
 
