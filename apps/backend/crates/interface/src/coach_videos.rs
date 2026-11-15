@@ -42,7 +42,8 @@ pub struct CoachVideoListBody {
 }
 
 /// admin-web の `CoachVideo`。生徒の表示名は引けなければ、返却した時刻は添削待ちなら載せない。AI の一次フィードバックは
-/// まだなければ null。送った時点のレッスンメニューはメニューを選ばずに送った動画なら null。
+/// まだなければ null。送った時点のレッスンメニューはメニューを選ばずに送った動画なら null。生徒の相談内容は書かずに
+/// 送った動画（相談内容を保存する前に送った動画を含む）なら null。
 #[derive(Serialize)]
 pub struct CoachVideoBody {
     video_id: String,
@@ -54,6 +55,7 @@ pub struct CoachVideoBody {
     returned_at: Option<String>,
     ai_feedback: Option<AiFeedbackBody>,
     lesson_menu: Option<VideoLessonMenuBody>,
+    note: Option<String>,
 }
 
 /// `GET /coaches/me/videos`。コーチだけが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
@@ -93,6 +95,7 @@ where
                         .transpose()?,
                     ai_feedback: ai_feedback_body(video)?,
                     lesson_menu: video_lesson_menu_body(video),
+                    note: video.note().map(|note| note.as_str().to_string()),
                 })
             })
             .collect::<Result<_, ApiError>>()?,

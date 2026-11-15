@@ -1,6 +1,6 @@
 use domain::{
     DomainError,
-    async_lesson::{AiFeedback, Video, VideoContentType},
+    async_lesson::{AiFeedback, Video, VideoContentType, VideoNote},
     catalog::LessonMenuId,
     catalog::Sport,
     identity::AccountId,
@@ -26,8 +26,9 @@ pub struct SubmitVideoCommand {
     pub coach_id: AccountId,
     pub sport: Sport,
     pub content_type: VideoContentType,
-    /// 送った生徒の一言（コーチへの相談内容）。AI の一次フィードバックの材料に渡すだけで、保存しない
-    pub note: Option<String>,
+    /// 送った生徒の一言（コーチへの相談内容）。動画とともに保存し（送り先のコーチが読む）、AI の一次フィードバックの
+    /// 材料にも渡す。書かなかった（空白だけの）ときは `None`
+    pub note: Option<VideoNote>,
     /// 添削を頼むコーチの非同期レッスンのレッスンメニュー（任意。なければメニューなしの動画）
     pub lesson_menu_id: Option<LessonMenuId>,
 }
@@ -68,6 +69,8 @@ impl From<DomainError> for SubmitVideoError {
 /// 保存した直後に同じ処理の中で AI の一次フィードバックを作らせ（[`AiFeedbackGenerator`]）、動画に付けて保存する
 /// （作った時刻は [`Clock`] の今）。AI や保存先が失敗しても送付は成功させ、一次フィードバックは空のままにする
 /// （失敗の理由は [`SubmittedVideo::ai_feedback_failure`] で返し、書くのは外の層）。添削の着手条件・返却の流れには関わらない。
+///
+/// 生徒の相談内容（[`SubmitVideoCommand::note`]）は動画に添えて（[`Video::with_note`]）一緒に保存する。
 ///
 /// レッスンメニューの指定があれば、catalog に問い合わせて（[`VideoLessonMenuLookup`]）動画で選べるか
 /// （[`Video::submit_with_lesson_menu`]）を確かめ、送った時点の ID・名前を動画に写す。選べなければ何も保存せず、
@@ -145,7 +148,8 @@ where
                     now,
                 )?
             }
-        };
+        }
+        .with_note(command.note.clone());
         let upload_url = self
             .storage
             .issue_upload_url(video.id(), command.content_type)
@@ -179,7 +183,7 @@ where
             video_id: video.id(),
             sport: video.sport(),
             content_type: command.content_type,
-            note: command.note,
+            note: command.note.map(|note| note.as_str().to_string()),
         };
         let (video, ai_feedback_failure) = self.attach_ai_feedback(video, &request).await;
         Ok(SubmittedVideo {
@@ -331,7 +335,7 @@ mod tests {
             coach_id: COACH,
             sport: Sport::Tennis,
             content_type: VideoContentType::Mp4,
-            note: Some("フォアハンドを見てほしい".to_string()),
+            note: VideoNote::new("フォアハンドを見てほしい").unwrap(),
             lesson_menu_id: None,
         }
     }
@@ -498,6 +502,26 @@ mod tests {
         );
         assert_eq!(video.review(), None, "コーチの添削とは別の項目");
         assert_eq!(submitted.ai_feedback_failure, None);
+    }
+
+    #[tokio::test]
+    async fn the_students_note_is_saved_with_the_video() {
+        let use_case = use_case();
+
+        let submitted = use_case.execute(command()).await.unwrap();
+        let note = VideoNote::new("フォアハンドを見てほしい").unwrap();
+        assert_eq!(submitted.video.note(), note.as_ref());
+        assert_eq!(use_case.videos().all()[0].note(), note.as_ref());
+
+        let without_note = use_case
+            .execute(SubmitVideoCommand {
+                note: None,
+                ..command()
+            })
+            .await
+            .unwrap();
+        assert_eq!(without_note.video.note(), None);
+        assert_eq!(use_case.videos().all()[1].note(), None);
     }
 
     #[tokio::test]

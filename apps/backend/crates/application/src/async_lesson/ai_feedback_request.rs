@@ -4,12 +4,13 @@ use domain::{
 };
 
 /// AI の一次フィードバックを作る材料（[`super::AiFeedbackGenerator`] に渡す）。送付した動画の ID・スポーツ・形式と、
-/// 送った生徒の一言（student-app の `SubmitVideoRequest.note`。コーチへの相談内容。Gen1 では保存しない）。
+/// 送った生徒の一言（student-app の `SubmitVideoRequest.note`。コーチへの相談内容。保存するのは動画の側
+/// （`domain::async_lesson::VideoNote`）で、ここは材料として渡すだけ）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiFeedbackRequest {
     pub video_id: VideoId,
     pub sport: Sport,
     pub content_type: VideoContentType,
-    /// 送った生徒の一言。書かなければ `None`
+    /// 送った生徒の一言。書かなければ（空白だけなら）`None`
     pub note: Option<String>,
 }
