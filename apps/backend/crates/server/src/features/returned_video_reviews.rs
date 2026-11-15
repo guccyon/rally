@@ -6,7 +6,6 @@ use application::{
     profile::{ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup},
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -18,6 +17,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ProfileStudentDisplayNameLookup::new(ports.accounts()),
             ports.clock(),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

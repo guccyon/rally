@@ -2,8 +2,12 @@
 //! `ANALYTICS_SINK`（既定 `memory`。[`server::AnalyticsDestination`]）、通話基盤は `VIDEO_CALL_PROVIDER`（既定 `twilio`。
 //! [`server::VideoCallBackend`]）。
 //!
-//! `DATABASE_URL` があれば保存先を Postgres にし（[`server::app_with_postgres_and_video_call`]）、待ち受ける前に
-//! [`infra::run_migrations`] でマイグレーションを当てる。なければ保存先はインメモリ（[`server::app_with_video_call`]）。
+//! アクセストークンは `ACCESS_TOKEN_SIGNING_KEY`（[`server::AccessTokenBackend`]）があれば署名付きにし、手で作った
+//! `mock.` のトークンや改ざんしたトークンを 401 にする。なければ署名なしのモック（ローカルの起動とテスト用）で、起動時に
+//! そのことを標準エラー出力に書く。鍵は秘密情報で、値はどこにも書き出さない。
+//!
+//! `DATABASE_URL` があれば保存先を Postgres にし（[`server::app_with_postgres_and_access_tokens`]）、待ち受ける前に
+//! [`infra::run_migrations`] でマイグレーションを当てる。なければ保存先はインメモリ（[`server::app_with_access_tokens`]）。
 //! 待ち受ける前に、レッスンのリマインドの定期の処理（[`server::App::lesson_reminders`]。[`server::LESSON_REMINDER_INTERVAL`]
 //! ごと）を tokio のタスクで回し始める。
 //! `GET /version` は `APP_VERSION` の版を返す（[`server::with_app_version`]）。
@@ -12,13 +16,13 @@
 //! 触れる環境（staging）で QA が「翌日」をまたぐ流れを確かめるために、工場の shipper だけが渡す。本番では渡さない。
 //! 応答の `Date` ヘッダーもこの時計で付ける（[`server::with_server_date`]。画面が `Date` でサーバーの時刻に合わせるため）。
 //!
-//! 起動できないとき（設定の値が知らないもの・時計を進める秒数が 0 以上の整数でない・DB につなげない・マイグレーションを当てられない）は、原因を標準エラー出力に
+//! 起動できないとき（設定の値が知らないもの・署名の鍵が短い・時計を進める秒数が 0 以上の整数でない・DB につなげない・マイグレーションを当てられない）は、原因を標準エラー出力に
 //! 書いて 0 以外で終わる。
 
 use std::{env, process::ExitCode, time::Duration};
 
 use application::offset_clock::OffsetClock;
-use server::{AnalyticsDestination, VideoCallBackend};
+use server::{AccessTokenBackend, AnalyticsDestination, VideoCallBackend};
 use sqlx::PgPool;
 
 #[tokio::main]
@@ -36,6 +40,14 @@ async fn run() -> Result<(), String> {
     let addr = env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
     let analytics = AnalyticsDestination::from_env()?;
     let video = VideoCallBackend::from_env().map_err(|error| error.to_string())?;
+    let tokens = AccessTokenBackend::from_env().map_err(|error| error.to_string())?;
+    if !tokens.is_signed() {
+        // 標準出力の 1 行目は待ち受けのアドレス（起動を待つ側が読む）なので、知らせは標準エラー出力に書く
+        eprintln!(
+            "access tokens are unsigned mock tokens ({} is not set)",
+            AccessTokenBackend::SIGNING_KEY_VAR
+        );
+    }
     let clock = clock_from(env::var("CLOCK_OFFSET_SECONDS").ok().as_deref())?;
     if clock.offset() > Duration::ZERO {
         println!("clock is {} seconds ahead", clock.offset().as_secs());
@@ -49,9 +61,9 @@ async fn run() -> Result<(), String> {
             infra::run_migrations(&pool)
                 .await
                 .map_err(|error| format!("マイグレーションを当てられない: {error}"))?;
-            server::app_with_postgres_and_video_call(pool, clock, analytics, video)
+            server::app_with_postgres_and_access_tokens(pool, clock, analytics, video, tokens)
         }
-        Err(_) => server::app_with_video_call(clock, analytics, video),
+        Err(_) => server::app_with_access_tokens(clock, analytics, video, tokens),
     };
     // レッスンのリマインドは、ルーターと同じ保存先・時計で定期に作る（進めた時計なら進めた時刻の窓で作る）
     tokio::spawn(app.lesson_reminders);

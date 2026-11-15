@@ -6,6 +6,8 @@
 pub use infra::AnalyticsDestination;
 // 通話基盤の選択は配信先の選択と同じく infra に置き、ここでも公開する
 pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
+// アクセストークンの選択も infra に置き（staging でトークンを作る seed の `access-token` と共有）、ここでも公開する
+pub use infra::{AccessTokenBackend, InvalidSigningKey};
 
 mod app;
 mod assembly;
@@ -20,7 +22,7 @@ use application::{
     catalog::LessonMenuRepository,
     clock::{Clock, SystemClock},
     entitlement::{EntitlementRepository, LiveLessonQuotaSubscriber},
-    identity::AccountRepository,
+    identity::{AccountRepository, TokenIssuer, TokenVerifier},
     in_memory::{
         InMemoryAccountRepository, InMemoryAnnouncementDraftRepository,
         InMemoryAnnouncementRepository, InMemoryBookingRepository,
@@ -66,7 +68,8 @@ pub fn router() -> Router {
 }
 
 /// 現在時刻を `clock` から読むルーター。アカウント・スロット・予約・受講権・通話セッションの保存先と
-/// 行動トラッキングは当面インメモリ、アクセストークンは infra のモック（署名なし。本番では差し替える）で組み立てる。
+/// 行動トラッキングは当面インメモリ、アクセストークンは infra のモック（署名なし。署名付きにするのは
+/// [`router_with_access_tokens`]）で組み立てる。
 ///
 /// 境界間イベントは infra のインメモリのイベントバス（モック。標準出力にも書く）で発行し、entitlement の購読
 /// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）、notification の購読（`PushNotificationSubscriber`）につなぐ。予約の確定・キャンセルで
@@ -151,7 +154,7 @@ pub fn router() -> Router {
 /// レッスンのリマインド（確定した同期レッスンの予約の、開始の前日と 1 時間前の生徒とコーチへのお知らせ）は、ルーターと
 /// 同じ保存先・時計・送り先で組み立てた定期の処理（[`App::lesson_reminders`]。`SendLessonReminders`）が作る。対象の予約は
 /// 予約の保存先から読む（`SchedulingLessonReminderTargetLookup`）。ルーターだけを返すこの関数たちは定期の処理を捨てる
-/// （`main` は [`app_with_video_call`]・[`app_with_postgres_and_video_call`] で両方を受け取って回す）。
+/// （`main` は [`app_with_access_tokens`]・[`app_with_postgres_and_access_tokens`] で両方を受け取って回す）。
 ///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
@@ -177,16 +180,29 @@ where
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
 {
-    app_with_video_call(clock, analytics, video).router
+    router_with_access_tokens(clock, analytics, video, AccessTokenBackend::default())
 }
 
-/// [`router_with_video_call`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理（`DATABASE_URL` がないときの
-/// `main` が使う）。
-pub fn app_with_video_call<C, A, V>(clock: C, analytics: A, video: V) -> App
+/// [`router_with_video_call`] のアクセストークンを `tokens` に替えたルーター。本部・コーチ・生徒のどの操作も、トークンの
+/// 発行と検証に `tokens` を使う。
+pub fn router_with_access_tokens<C, A, V, T>(clock: C, analytics: A, video: V, tokens: T) -> Router
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
+{
+    app_with_access_tokens(clock, analytics, video, tokens).router
+}
+
+/// [`router_with_access_tokens`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理（`DATABASE_URL` がないときの
+/// `main` が [`AccessTokenBackend`] で選んだ `tokens` で使う）。
+pub fn app_with_access_tokens<C, A, V, T>(clock: C, analytics: A, video: V, tokens: T) -> App
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
 {
     compose(
         in_memory_repositories(),
@@ -194,6 +210,7 @@ where
         analytics,
         MockPushSender::new(),
         video,
+        tokens,
     )
 }
 
@@ -210,6 +227,7 @@ where
         analytics,
         push,
         VideoCallBackend::default(),
+        AccessTokenBackend::default(),
     )
     .router
 }
@@ -278,21 +296,47 @@ where
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
 {
-    app_with_postgres_and_video_call(pool, clock, analytics, video).router
+    router_with_postgres_and_access_tokens(
+        pool,
+        clock,
+        analytics,
+        video,
+        AccessTokenBackend::default(),
+    )
 }
 
-/// [`router_with_postgres_and_video_call`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理
-/// （`DATABASE_URL` があるときの `main` が使う）。
-pub fn app_with_postgres_and_video_call<C, A, V>(
+/// [`router_with_postgres_and_video_call`] のアクセストークンを `tokens` に替えたルーター（[`AccessTokenBackend`] で選ぶ。
+/// `ACCESS_TOKEN_SIGNING_KEY` があれば署名付き）。
+pub fn router_with_postgres_and_access_tokens<C, A, V, T>(
     pool: PgPool,
     clock: C,
     analytics: A,
     video: V,
+    tokens: T,
+) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
+{
+    app_with_postgres_and_access_tokens(pool, clock, analytics, video, tokens).router
+}
+
+/// [`router_with_postgres_and_access_tokens`] と、同じ保存先を読み書きするレッスンのリマインドの定期の処理
+/// （`DATABASE_URL` があるときの `main` が使う）。
+pub fn app_with_postgres_and_access_tokens<C, A, V, T>(
+    pool: PgPool,
+    clock: C,
+    analytics: A,
+    video: V,
+    tokens: T,
 ) -> App
 where
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
 {
     compose(
         Repositories {
@@ -317,6 +361,7 @@ where
         analytics,
         MockPushSender::new(),
         video,
+        tokens,
     )
 }
 
@@ -360,14 +405,16 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。境界間イベントのバスを作り、機能ごとの組み立て（[`features`]）に
-/// ポートの実装をまとめて渡す。レッスンのリマインドの定期の処理も同じ保存先・時計・送り先で組み立てる。
+/// ポートの実装をまとめて渡す。アクセストークンは本部・コーチ・生徒のどの機能にも同じ `tokens` を渡す。レッスンのリマインドの
+/// 定期の処理も同じ保存先・時計・送り先で組み立てる。
 #[allow(clippy::type_complexity)]
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V>(
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V, T>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
     clock: C,
     analytics: A,
     push: P,
     video: V,
+    tokens: T,
 ) -> App
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
@@ -390,6 +437,7 @@ where
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
 {
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(repositories.entitlements.clone()),
@@ -417,6 +465,7 @@ where
         video_call: video,
         push,
         events,
+        tokens,
     });
     App::new(router, reminders)
 }

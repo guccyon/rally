@@ -6,7 +6,6 @@ use application::{
     review::ReviewLessonCompletionReviewLookup, scheduling::SchedulingBookingLookup,
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -20,6 +19,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ProfileCoachDisplayNameLookup::new(ports.accounts()),
             ReviewLessonCompletionReviewLookup::new(ports.reviews()),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }
