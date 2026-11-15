@@ -25,7 +25,7 @@ use axum::{
 };
 use domain::{
     DomainError,
-    async_lesson::{ReviewComment, Video},
+    async_lesson::{ReviewComment, Video, VideoNote},
     identity::Role,
 };
 use serde::{Deserialize, Serialize};
@@ -39,9 +39,6 @@ use crate::{
     error::ApiError,
     message,
 };
-
-/// student-app の `SubmitVideoRequest.note` の `maxLength`（文字数）。
-const NOTE_MAX_CHARS: usize = 1000;
 
 /// `/videos` のハンドラーが使うユースケース。
 pub struct VideosState<V, M, S, F, G, A, P, C> {
@@ -134,7 +131,8 @@ pub(crate) fn ai_feedback_body(video: &Video) -> Result<Option<AiFeedbackBody>, 
 
 /// `POST /videos`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。送る生徒はトークンのアカウント。
 ///
-/// `note`（コーチへの相談内容）は長さだけを確かめ、Gen1 では保存しない（AI の一次フィードバックの材料に渡すだけ）。
+/// `note`（コーチへの相談内容）は domain の [`VideoNote`] で確かめ（長すぎれば 422。空白だけなら書かなかったのと
+/// 同じ）、動画とともに保存する（送り先のコーチが admin-web の `listMyCoachVideos` で読む）。本文はログに書かない。
 /// `lesson_menu_id`（任意）が UUID でない・メニューがない・動画で選べないメニューなら 422。
 pub async fn submit_video<V, M, S, F, G, A, P, C>(
     State(state): Shared<V, M, S, F, G, A, P, C>,
@@ -153,22 +151,14 @@ where
 {
     let Json(request) =
         request.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
-    if request
-        .note
-        .as_ref()
-        .is_some_and(|note| note.chars().count() > NOTE_MAX_CHARS)
-    {
-        return Err(ApiError::validation_failed(format!(
-            "note は {NOTE_MAX_CHARS} 文字まで"
-        )));
-    }
+    let note = request.note.map(VideoNote::new).transpose()?.flatten();
     let command = SubmitVideoCommand {
         student_id: account.account_id(),
         coach_id: account_id_uuid::parse(&request.coach_id)
             .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))?,
         sport: student_app_sport(&request.sport)?,
         content_type: video_content_type_from_contract(&request.content_type)?,
-        note: request.note,
+        note,
         lesson_menu_id: request
             .lesson_menu_id
             .as_deref()

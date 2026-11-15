@@ -1,7 +1,8 @@
 use std::time::{Duration, SystemTime};
 
 use super::{
-    AiFeedback, ReviewComment, VideoId, VideoLessonMenu, VideoReview, VideoReviewId, VideoStatus,
+    AiFeedback, ReviewComment, VideoId, VideoLessonMenu, VideoNote, VideoReview, VideoReviewId,
+    VideoStatus,
 };
 use crate::{
     DomainError,
@@ -24,6 +25,9 @@ use crate::{
 /// 送った時点で生徒が選んだ非同期レッスンのレッスンメニュー（[`VideoLessonMenu`]）の写しを任意で持つ
 /// （[`Video::submit_with_lesson_menu`]）。送った後にメニューが直されても写しは変わらない。
 ///
+/// 生徒が送るときに書いたコーチへの相談内容（[`VideoNote`]）を任意で持つ（[`Video::with_note`]）。送った時点のまま
+/// 変わらず、添削の返却でも変わらない。
+///
 /// 送付の回数は数えない（月額は送り放題）。添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ。
 /// 不変条件 2）は [`crate::entitlement::ContractType::may_start_review`] が決め、返却はその答えに従う。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +40,7 @@ pub struct Video {
     review: Option<VideoReview>,
     ai_feedback: Option<AiFeedback>,
     lesson_menu: Option<VideoLessonMenu>,
+    note: Option<VideoNote>,
 }
 
 impl Video {
@@ -56,6 +61,7 @@ impl Video {
             review: None,
             ai_feedback: None,
             lesson_menu: None,
+            note: None,
         }
     }
 
@@ -125,7 +131,15 @@ impl Video {
             }),
             ai_feedback: None,
             lesson_menu,
+            note: None,
         })
+    }
+
+    /// 生徒が送るときに書いたコーチへの相談内容 `note`（書かなかったときは `None`）を動画に添える。送付
+    /// （[`Video::submit`]・[`Video::submit_with_lesson_menu`]）の直後と、保存先から読んだ動画を組み立てるときに使う。
+    #[must_use]
+    pub fn with_note(self, note: Option<VideoNote>) -> Self {
+        Self { note, ..self }
     }
 
     /// AI の一次フィードバック `feedback` を動画に付ける（送付の直後に付ける。保存先から読んだ動画を組み立てるときにも
@@ -291,6 +305,11 @@ impl Video {
         self.lesson_menu.as_ref()
     }
 
+    /// 生徒が送るときに書いたコーチへの相談内容。書かずに送った動画は `None`。
+    pub const fn note(&self) -> Option<&VideoNote> {
+        self.note.as_ref()
+    }
+
     /// 本部の一覧の任意のレッスンメニューの絞り込み `lesson_menu_id` にこの動画が入るか。指定があれば送った時点の
     /// メニューの写し（[`Self::lesson_menu`]）の ID がそれと同じときだけ、なければどの動画も入る。メニューを選ばずに
     /// 送った動画・ないメニューの ID は入らない（一覧は空になる。予約の [`crate::scheduling::Booking::matches_lesson_menu`]
@@ -414,6 +433,20 @@ mod tests {
                 Err(expected)
             );
         }
+    }
+
+    #[test]
+    fn a_video_has_no_note_unless_one_is_added_and_keeps_it_through_the_review() {
+        assert_eq!(submitted().note(), None);
+        assert_eq!(submitted().with_note(None).note(), None);
+
+        let note = VideoNote::new("サーブのトスが安定しない").unwrap();
+        let mut video = submitted().with_note(note.clone());
+        assert_eq!(video.note(), note.as_ref());
+        video
+            .return_review(REVIEW, COACH, comment(), true, at(1))
+            .unwrap();
+        assert_eq!(video.note(), note.as_ref(), "返却で変わらない");
     }
 
     #[test]
