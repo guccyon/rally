@@ -2,7 +2,7 @@
 //!
 //! `entitlement.entitlements.contract_type`・`entitlement.subscriptions.status`・`entitlement.subscriptions.plan`
 //! （CHECK 制約の値）はこの表だけを通す。
-//! `sport` は [`crate::identity_values::sport_value`] と同じ値。CHECK との一致は `tests/schema.rs` が確かめる。
+//! `sport` は [`crate::identity_values::sport_value`] と同じ値。CHECK との一致は `tests/it/schema.rs` が確かめる。
 
 use domain::entitlement::{ContractType, SubscriptionPlan, SubscriptionStatus};
 

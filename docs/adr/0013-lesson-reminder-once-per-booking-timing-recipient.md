@@ -22,7 +22,7 @@
 
 ## 結果
 
-- 再実行しても重複しない。重複を防ぐのは DB の一意なので、複数の台で処理が回っても 1 件になる。時刻を進める試験（`crates/application/src/notification/send_lesson_reminders.rs`・`crates/interface/tests/lesson_reminders.rs`）で決定論に確かめられる
+- 再実行しても重複しない。重複を防ぐのは DB の一意なので、複数の台で処理が回っても 1 件になる。時刻を進める試験（`crates/application/src/notification/send_lesson_reminders.rs`・`crates/interface/tests/it/lesson_reminders.rs`）で決定論に確かめられる
 - マイグレーションは expand（`20261114000001_expand_lesson_reminders.sql`）で、旧版と共存できる。旧版は `lesson_reminder` の行を書かない。ただし旧版の `listMyNotifications` は知らない種類の行を読めないので、リマインドができた後に旧版へ戻すと、リマインドを受け取った人の一覧が障害になる（これまで種類を足したときと同じ）
 - プッシュ通知を送れなかったリマインドは、お知らせは残り、送り直さない（at most once）
 - 窓の始まりから最大で処理の間隔（60 秒）だけ遅れて作る

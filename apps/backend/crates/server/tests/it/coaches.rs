@@ -1,0 +1,993 @@
+//! 本部がコーチの一覧（admin-web の `listCoaches`）で直近 30 日に終わったレッスンの数を見ることを、保存先を Postgres にした
+//! 組み立て（`server::router_with_postgres`）で通す。生徒が student-app の操作で動画添削を受けて完了を記録したことが、
+//! 完了記録の保存先から読まれてコーチごとの数に出ること、照会した時刻から 30 日を過ぎると数えないこと、生徒には同じパスで
+//! student-app の形（数を載せない）で返し、コーチは 403 であることを確かめる。期間の境目と契約の形の細かい検査は
+//! interface の `tests/coaches.rs` と domain の `RecentLessonPeriod`。あわせて、`inactive=true` で直近 30 日にレッスンのない
+//! コーチだけに絞れること（照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む）を確かめる。
+//! あわせて、本部が表示名の検索語 `q` で Postgres に保存したコーチを探せること（ほかの絞り込みとの組み合わせと 422 を含む。
+//! 一致の規則の細かい検査は domain の `DisplayNameQuery`）を確かめる。
+//! あわせて、`has_unhandled_low_rated=true` で Postgres に保存した評価のうち未対応の低い評価のあるコーチだけに絞れること
+//! （本部が対応済みの印を付けると外れること・照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む。しきい値と期間の
+//! 細かい検査は domain の `CoachLowRatedReviewCount`・`LowRatedReviewCriteria`）を確かめる。評価は完了したレッスンが要り、
+//! そこまでの HTTP の流れは `lessons.rs` で通しているので、評価は保存先に直に書く（`low_rated_reviews.rs` と同じ）。
+//! あわせて、`has_unanswered=true` で Postgres に保存したスレッドのうち返信のないまま既定の時間の過ぎたものがあるコーチだけに
+//! 絞れること（`getCoachOverview` の `unanswered_message_thread_count` と揃うこと・照会した時刻で変わること・ほかの絞り込みとの
+//! 組み合わせを含む。何を発言と数えるかと境界の細かい検査は domain の `UnansweredThreadCriteria`）を確かめる。スレッドは予約の
+//! 確定で開くが、そこまでの流れは `students.rs` と同じく省いて直に書く。
+//! あわせて、`has_overdue_video=true` で生徒が student-app の操作で送った動画のうち、返却を待ったまま送付から 48 時間以上
+//! たったものがあるコーチだけに絞れること（`getCoachOverview` の `overdue_pending_video_review_count` と揃うこと・添削を返した
+//! 動画は数えないこと・照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む。経過時間の境界の細かい検査は domain の
+//! `PendingVideoReviewFilter`・`CoachPendingVideoReviewCount`）を確かめる。
+//!
+//! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+//! `cargo test -p server --test it coaches:: -- --include-ignored` で走らせる。
+
+use std::time::{Duration, SystemTime};
+
+use application::{
+    identity::{
+        RegisterAccount, RegisterAccountCommand, TokenClaims, TokenIssuer, account_id_uuid,
+    },
+    in_memory::{ManualClock, RecordingAnalyticsSink},
+    messaging::MessageThreadRepository,
+    review::{LessonReviewRepository, lesson_review_id_uuid},
+};
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header},
+};
+use domain::{
+    catalog::Sport,
+    identity::{AccountId, Role},
+    lesson::LessonCompletionId,
+    messaging::{MessageBody, MessageContent, MessageThread},
+    review::{LessonReview, LessonReviewComment, Rating},
+};
+use infra::{
+    MockTokenService, PgAccountRepository, PgLessonReviewRepository, PgMessageThreadRepository,
+};
+use serde_json::{Value, json};
+use sqlx::PgPool;
+use tower::ServiceExt;
+
+const DAY: u64 = 24 * 3600;
+
+/// 2026-10-05T00:00:00Z から `secs` 秒後（Postgres の時刻はマイクロ秒までなので、秒単位にする）。
+fn at(secs: u64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_158_400 + secs)
+}
+
+async fn send(
+    router: &Router,
+    method: &str,
+    path: &str,
+    token: Option<&str>,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let body = body.map_or_else(Body::empty, |b| Body::from(b.to_string()));
+    let response = router
+        .clone()
+        .oneshot(request.body(body).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+/// `token` で `path` に POST し、`expected` の status であることを確かめて本文を返す。
+async fn post_ok(
+    router: &Router,
+    path: &str,
+    token: &str,
+    body: Value,
+    expected: StatusCode,
+) -> Value {
+    let (status, body) = send(router, "POST", path, Some(token), Some(body)).await;
+    assert_eq!(status, expected, "{path}: {body}");
+    body
+}
+
+/// 役割 `role` のアカウントをユースケースを直に呼んで登録し（契約にコーチ・本部の登録の操作がない）、ID とトークンを返す。
+async fn register(
+    pool: &PgPool,
+    email: &str,
+    display_name: &str,
+    role: Role,
+    sports: Vec<Sport>,
+) -> (String, String) {
+    let account = RegisterAccount::new(
+        PgAccountRepository::new(pool.clone()),
+        RecordingAnalyticsSink::default(),
+        ManualClock::new(at(0)),
+    )
+    .execute(RegisterAccountCommand {
+        email: email.to_string(),
+        display_name: display_name.to_string(),
+        role,
+        sports,
+    })
+    .await
+    .unwrap();
+    let token = MockTokenService
+        .issue(TokenClaims {
+            account_id: account.id(),
+            role,
+        })
+        .into_string();
+    (account_id_uuid::format(account.id()), token)
+}
+
+/// 生徒 `student` がコーチ `coach_id` に動画を送り、`coach` が添削を返し、生徒が完了を記録する（今の時刻のまま）。
+async fn complete_async_lesson(router: &Router, student: &str, coach_id: &str, coach: &str) {
+    let video = post_ok(
+        router,
+        "/videos",
+        student,
+        json!({ "coach_id": coach_id, "sport": "tennis", "content_type": "video/mp4" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    let video_id = video["video_id"].as_str().unwrap();
+    post_ok(
+        router,
+        &format!("/videos/{video_id}/review"),
+        coach,
+        json!({ "comment": "フォロースルーを大きく" }),
+        StatusCode::OK,
+    )
+    .await;
+    post_ok(
+        router,
+        "/lessons/completions",
+        student,
+        json!({ "lesson_type": "async_lesson", "video_id": video_id }),
+        StatusCode::CREATED,
+    )
+    .await;
+}
+
+/// 本部の一覧の `(表示名, recent_lesson_count)` を並びのまま。
+fn counts(body: &Value) -> Vec<(String, Value)> {
+    body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["display_name"].as_str().unwrap().to_string(),
+                c["recent_lesson_count"].clone(),
+            )
+        })
+        .collect()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_sees_lessons_completed_in_the_last_30_days_of_each_coach(pool: PgPool) {
+    let (tanaka_id, tanaka) = register(
+        &pool,
+        "tanaka@example.com",
+        "たなか",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ito_id, ito) = register(
+        &pool,
+        "ito@example.com",
+        "いとう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    register(
+        &pool,
+        "ueno@example.com",
+        "うえの",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+    let clock = ManualClock::new(at(60));
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    let (status, account) = send(
+        &router,
+        "POST",
+        "/accounts",
+        None,
+        Some(json!({ "email": "taro@example.com", "display_name": "たろう", "sport": "tennis" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{account}");
+    let student = account["access_token"].as_str().unwrap().to_string();
+    // 動画を何本も送るので月額契約を結ぶ（月額契約の前は体験として 1 本だけ。#1653）
+    let (status, body) = send(
+        &router,
+        "POST",
+        "/subscriptions",
+        Some(&student),
+        Some(json!({ "sport": "tennis", "payment_method_token": "tok_mock" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // 日 0（の 60 秒後）にいとうと 1 回、日 10 にたなかと 2 回・いとうと 1 回、動画添削を終える
+    complete_async_lesson(&router, &student, &ito_id, &ito).await;
+    clock.set(at(10 * DAY));
+    complete_async_lesson(&router, &student, &tanaka_id, &tanaka).await;
+    complete_async_lesson(&router, &student, &tanaka_id, &tanaka).await;
+    complete_async_lesson(&router, &student, &ito_id, &ito).await;
+
+    // 照会した時刻が日 0 のレッスンのちょうど 30 日後なら、日 0 の分も含む
+    clock.set(at(60 + 30 * DAY));
+    let (status, body) = send(&router, "GET", "/coaches", Some(&headquarters), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        counts(&body),
+        [
+            ("いとう".to_string(), json!(2)),
+            ("うえの".to_string(), json!(0)),
+            ("たなか".to_string(), json!(2)),
+        ]
+    );
+    // 照会だけで何も変えない（2 回目も同じ）
+    let (_, again) = send(&router, "GET", "/coaches", Some(&headquarters), None).await;
+    assert_eq!(again, body);
+
+    // 1 秒過ぎると日 0 の分は期間の外
+    clock.set(at(61 + 30 * DAY));
+    let (_, body) = send(&router, "GET", "/coaches", Some(&headquarters), None).await;
+    assert_eq!(
+        counts(&body),
+        [
+            ("いとう".to_string(), json!(1)),
+            ("うえの".to_string(), json!(0)),
+            ("たなか".to_string(), json!(2)),
+        ]
+    );
+    // 絞っても数は同じ
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?sport=tennis&acceptance_status=accepting",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(counts(&body)[2], ("たなか".to_string(), json!(2)));
+
+    // 直近 30 日にレッスンのないコーチだけ（数え方は recent_lesson_count と同じ）。ほかの絞り込みと組み合わせられる
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=true",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(counts(&body), [("うえの".to_string(), json!(0))]);
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=true&sport=soccer",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert!(counts(&body).is_empty(), "{body}");
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=false",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(counts(&body).len(), 3, "false なら絞らない: {body}");
+    // 照会した時刻が進んで、いとうの日 10 の分も期間の外になれば、いとうも載る
+    clock.set(at(10 * DAY + 30 * DAY + 3600));
+    let (_, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=true",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(
+        counts(&body),
+        [
+            ("いとう".to_string(), json!(0)),
+            ("うえの".to_string(), json!(0)),
+            ("たなか".to_string(), json!(0)),
+        ]
+    );
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?inactive=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    clock.set(at(61 + 30 * DAY));
+
+    // 生徒には student-app の形で返し、数は載せない。コーチは 403
+    let (status, body) = send(&router, "GET", "/coaches", Some(&student), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for coach in body["coaches"].as_array().unwrap() {
+        assert!(coach.get("recent_lesson_count").is_none(), "{coach}");
+    }
+    let (status, _) = send(&router, "GET", "/coaches", Some(&tanaka), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// コーチの一覧の表示名を、並びのまま取り出す。
+fn names(body: &Value) -> Vec<String> {
+    body["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["display_name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_searches_coaches_by_display_name(pool: PgPool) {
+    let (yamada_id, _) = register(
+        &pool,
+        "yamada@example.com",
+        "Taro Yamada",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    for (email, name, sport) in [
+        ("hanako@example.com", "山田 花子", Sport::Soccer),
+        ("yamada2@example.com", "山田", Sport::Tennis),
+        ("hira@example.com", "やまだ", Sport::Tennis),
+        ("percent@example.com", "100%コーチ", Sport::Golf),
+    ] {
+        register(&pool, email, name, Role::Coach, vec![sport]).await;
+    }
+    register(
+        &pool,
+        "student@example.com",
+        "山田 生徒",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+    let router = server::router_with_postgres(
+        pool,
+        ManualClock::new(at(60)),
+        RecordingAnalyticsSink::default(),
+    );
+    let (status, body) = send(
+        &router,
+        "POST",
+        &format!("/coaches/{yamada_id}/suspend"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // 山田 = %E5%B1%B1%E7%94%B0、やまだ = %E3%82%84%E3%81%BE%E3%81%A0、全角の空白 = %E3%80%80
+    for (query, expected) in [
+        // 並べ方は表示名のコードポイントの順のまま。生徒は載らない
+        ("?q=%E5%B1%B1%E7%94%B0", vec!["山田", "山田 花子"]),
+        ("?q=%E3%80%80%E5%B1%B1%E7%94%B0+", vec!["山田", "山田 花子"]),
+        // ASCII の英字の大文字・小文字は区別しない。ひらがなと漢字は同じとみなさない
+        ("?q=YAMADA", vec!["Taro Yamada"]),
+        ("?q=%E3%82%84%E3%81%BE%E3%81%A0", vec!["やまだ"]),
+        // % はワイルドカードでなく文字のまま
+        ("?q=%25", vec!["100%コーチ"]),
+        ("?q=_", vec![]),
+        // ほかの絞り込みと組み合わせる
+        ("?q=%E5%B1%B1%E7%94%B0&sport=tennis", vec!["山田"]),
+        ("?q=yamada&acceptance_status=accepting", vec![]),
+        ("?q=yamada&acceptance_status=suspended", vec!["Taro Yamada"]),
+        // 空白だけは絞らない
+        (
+            "?q=+",
+            vec!["100%コーチ", "Taro Yamada", "やまだ", "山田", "山田 花子"],
+        ),
+    ] {
+        let (status, body) = send(
+            &router,
+            "GET",
+            &format!("/coaches{query}"),
+            Some(&headquarters),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{query}: {body}");
+        assert_eq!(names(&body), expected, "{query}");
+    }
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        &format!("/coaches?q={}", "a".repeat(51)),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+/// 生徒 `student_id` がコーチ `coach_id` に `submitted_at` に付けた評価を保存先に直に書き、評価の ID を返す。
+async fn review(
+    reviews: &PgLessonReviewRepository,
+    student_id: &str,
+    coach_id: &str,
+    lesson: u128,
+    rating: i64,
+    submitted_at: SystemTime,
+) -> String {
+    let id = reviews.next_id();
+    reviews
+        .insert(LessonReview::restore(
+            id,
+            LessonCompletionId::from_u128(lesson),
+            account_id_uuid::parse(student_id).unwrap(),
+            account_id_uuid::parse(coach_id).unwrap(),
+            Rating::new(rating).unwrap(),
+            LessonReviewComment::new("説明が少なかった").unwrap(),
+            submitted_at,
+        ))
+        .await
+        .unwrap();
+    lesson_review_id_uuid::format(id)
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_coaches_with_unhandled_low_rated_reviews(pool: PgPool) {
+    let (tanaka_id, _) = register(
+        &pool,
+        "tanaka@example.com",
+        "たなか",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ito_id, _) = register(
+        &pool,
+        "ito@example.com",
+        "いとう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ueno_id, _) = register(
+        &pool,
+        "ueno@example.com",
+        "うえの",
+        Role::Coach,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (student_id, _) = register(
+        &pool,
+        "taro@example.com",
+        "たろう",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+
+    // たなかは日 10 に ★1、いとうは日 10 に ★2、うえのは日 0 に ★2 と日 10 に ★4
+    let reviews = PgLessonReviewRepository::new(pool.clone());
+    review(&reviews, &student_id, &tanaka_id, 1, 1, at(10 * DAY)).await;
+    let ito_review = review(&reviews, &student_id, &ito_id, 2, 2, at(10 * DAY)).await;
+    review(&reviews, &student_id, &ueno_id, 3, 2, at(0)).await;
+    review(&reviews, &student_id, &ueno_id, 4, 4, at(10 * DAY)).await;
+    let clock = ManualClock::new(at(20 * DAY));
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    let list = |query: &'static str| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(
+                &router,
+                "GET",
+                &format!("/coaches{query}"),
+                Some(&headquarters),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            names(&body)
+        }
+    };
+
+    assert_eq!(
+        list("?has_unhandled_low_rated=true").await,
+        ["いとう", "うえの", "たなか"]
+    );
+    // 本部が対応済みの印を付けると外れる（getCoachOverview の unhandled_low_rated_review_count と同じ数え方）
+    let (status, body) = send(
+        &router,
+        "PUT",
+        &format!("/lesson-reviews/{ito_review}/handling"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, overview) = send(
+        &router,
+        "GET",
+        &format!("/coaches/{ito_id}/overview"),
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    assert_eq!(overview["unhandled_low_rated_review_count"], 0);
+    for (query, expected) in [
+        ("?has_unhandled_low_rated=true", vec!["うえの", "たなか"]),
+        // ほかの絞り込みと組み合わせる。たなか = %E3%81%9F%E3%81%AA
+        ("?has_unhandled_low_rated=true&sport=tennis", vec!["たなか"]),
+        (
+            "?has_unhandled_low_rated=true&acceptance_status=accepting",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_unhandled_low_rated=true&inactive=true",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_unhandled_low_rated=true&q=%E3%81%9F%E3%81%AA",
+            vec!["たなか"],
+        ),
+        // false・付けないときは絞らない
+        (
+            "?has_unhandled_low_rated=false",
+            vec!["いとう", "うえの", "たなか"],
+        ),
+        ("", vec!["いとう", "うえの", "たなか"]),
+    ] {
+        assert_eq!(list(query).await, expected, "{query}");
+    }
+
+    // 照会した時刻が進んで、うえのの日 0 の ★2 が 30 日の外になれば外れる
+    clock.set(at(30 * DAY));
+    assert_eq!(
+        list("?has_unhandled_low_rated=true").await,
+        ["うえの", "たなか"],
+        "30 日前ちょうどは含む"
+    );
+    clock.set(at(30 * DAY + 1));
+    assert_eq!(list("?has_unhandled_low_rated=true").await, ["たなか"]);
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?has_unhandled_low_rated=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+/// 生徒 `student` とコーチ `coach` のスレッドを日 0 に開いて保存先に書き、`exchange` の順に（生徒が送ったか, 送信時刻）で
+/// 本文を送る。
+async fn thread(
+    threads: &PgMessageThreadRepository,
+    student: &str,
+    coach: &str,
+    exchange: &[(bool, SystemTime)],
+) {
+    let student: AccountId = account_id_uuid::parse(student).unwrap();
+    let coach: AccountId = account_id_uuid::parse(coach).unwrap();
+    let thread = threads
+        .open(MessageThread::open(threads.next_thread_id(), student, coach, at(0)).unwrap())
+        .await
+        .unwrap();
+    for &(by_student, sent_at) in exchange {
+        let message_id = threads.next_message_id();
+        threads
+            .update(thread.id(), |t| {
+                t.send(
+                    message_id,
+                    if by_student { student } else { coach },
+                    MessageContent::Text(MessageBody::new("本部には見せない本文").unwrap()),
+                    true,
+                    sent_at,
+                )
+                .map(|_| ())
+            })
+            .await
+            .unwrap();
+    }
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_coaches_with_unanswered_message_threads(pool: PgPool) {
+    let (tanaka_id, _) = register(
+        &pool,
+        "tanaka@example.com",
+        "たなか",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ito_id, _) = register(
+        &pool,
+        "ito@example.com",
+        "いとう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ueno_id, _) = register(
+        &pool,
+        "ueno@example.com",
+        "うえの",
+        Role::Coach,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (endo_id, _) = register(
+        &pool,
+        "endo@example.com",
+        "えんどう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (taro_id, _) = register(
+        &pool,
+        "taro@example.com",
+        "たろう",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (jiro_id, _) = register(
+        &pool,
+        "jiro@example.com",
+        "じろう",
+        Role::Student,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+
+    let start = at(20 * DAY);
+    let hour = Duration::from_secs(3600);
+    let threads = PgMessageThreadRepository::new(pool.clone());
+    // たなかには照会の 24 時間ちょうど前の発言（じろうとのスレッドはたなかが返した）、いとうには 23 時間前の発言、
+    // うえのには 72 時間前の発言。えんどうは返した
+    thread(&threads, &taro_id, &tanaka_id, &[(true, start - hour * 24)]).await;
+    thread(
+        &threads,
+        &jiro_id,
+        &tanaka_id,
+        &[(true, start - hour * 50), (false, start - hour)],
+    )
+    .await;
+    thread(&threads, &taro_id, &ito_id, &[(true, start - hour * 23)]).await;
+    thread(&threads, &jiro_id, &ueno_id, &[(true, start - hour * 72)]).await;
+    thread(
+        &threads,
+        &jiro_id,
+        &endo_id,
+        &[(true, start - hour * 50), (false, start - hour)],
+    )
+    .await;
+    let clock = ManualClock::new(start);
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+
+    let get = |path: String| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+            assert_eq!(status, StatusCode::OK, "{path}: {body}");
+            body
+        }
+    };
+
+    // 表示名の順はそのまま。照会した時刻から数え、1 時間後にはいとうも載る
+    for (now, expected) in [
+        (start, vec!["うえの", "たなか"]),
+        (start + hour, vec!["いとう", "うえの", "たなか"]),
+    ] {
+        clock.set(now);
+        let body = get("/coaches?has_unanswered=true".to_string()).await;
+        assert_eq!(names(&body), expected, "{body}");
+        assert!(
+            !body.to_string().contains("本部には見せない本文"),
+            "メッセージの本文は載せない: {body}"
+        );
+        // コーチ 1 人の様子の数が 1 以上のコーチと同じ
+        for (coach_id, name) in [
+            (&tanaka_id, "たなか"),
+            (&ito_id, "いとう"),
+            (&ueno_id, "うえの"),
+            (&endo_id, "えんどう"),
+        ] {
+            let overview = get(format!("/coaches/{coach_id}/overview")).await;
+            assert_eq!(
+                overview["unanswered_message_thread_count"]
+                    .as_u64()
+                    .unwrap()
+                    > 0,
+                expected.contains(&name),
+                "{name}: {overview}"
+            );
+        }
+    }
+    clock.set(start);
+
+    for (query, expected) in [
+        // ほかの絞り込みと組み合わせる。たなか = %E3%81%9F%E3%81%AA
+        ("?has_unanswered=true&sport=tennis", vec!["たなか"]),
+        ("?has_unanswered=true&sport=soccer", vec!["うえの"]),
+        (
+            "?has_unanswered=true&acceptance_status=accepting",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_unanswered=true&inactive=true",
+            vec!["うえの", "たなか"],
+        ),
+        ("?has_unanswered=true&q=%E3%81%9F%E3%81%AA", vec!["たなか"]),
+        ("?has_unanswered=true&has_unhandled_low_rated=true", vec![]),
+        // false・付けないときは絞らない
+        (
+            "?has_unanswered=false",
+            vec!["いとう", "うえの", "えんどう", "たなか"],
+        ),
+        ("", vec!["いとう", "うえの", "えんどう", "たなか"]),
+    ] {
+        let body = get(format!("/coaches{query}")).await;
+        assert_eq!(names(&body), expected, "{query}");
+    }
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?has_unanswered=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}
+
+/// 生徒 `student` が student-app の `POST /videos` でコーチ `coach_id` に `sport` の動画を送り、動画の ID を返す。
+async fn submit_video(router: &Router, student: &str, coach_id: &str, sport: &str) -> String {
+    let body = post_ok(
+        router,
+        "/videos",
+        student,
+        json!({ "coach_id": coach_id, "sport": sport, "content_type": "video/mp4" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    body["video_id"].as_str().unwrap().to_string()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_lists_only_coaches_with_overdue_videos(pool: PgPool) {
+    let (tanaka_id, _) = register(
+        &pool,
+        "tanaka@example.com",
+        "たなか",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ito_id, _) = register(
+        &pool,
+        "ito@example.com",
+        "いとう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (ueno_id, ueno) = register(
+        &pool,
+        "ueno@example.com",
+        "うえの",
+        Role::Coach,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (endo_id, endo) = register(
+        &pool,
+        "endo@example.com",
+        "えんどう",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (taro_id, taro) = register(
+        &pool,
+        "taro@example.com",
+        "たろう",
+        Role::Student,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let (_, jiro) = register(
+        &pool,
+        "jiro@example.com",
+        "じろう",
+        Role::Student,
+        vec![Sport::Soccer],
+    )
+    .await;
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+
+    let start = at(20 * DAY);
+    let hour = Duration::from_secs(3600);
+    // たなかには返事のないメッセージもある
+    thread(
+        &PgMessageThreadRepository::new(pool.clone()),
+        &taro_id,
+        &tanaka_id,
+        &[(true, start - hour * 30)],
+    )
+    .await;
+    let clock = ManualClock::new(start - hour * 72);
+    let router =
+        server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
+    // 2 人とも動画を何本も送るので月額契約を結ぶ（月額契約の前は体験として 1 本だけ。#1653）
+    for (student, sport) in [(&taro, "tennis"), (&jiro, "soccer")] {
+        post_ok(
+            &router,
+            "/subscriptions",
+            student,
+            json!({ "sport": sport, "payment_method_token": "tok_mock" }),
+            StatusCode::CREATED,
+        )
+        .await;
+    }
+
+    // 照会の時刻から見て、うえのには 72 時間前に送られて返した動画と 60 時間前の返却待ち、たなかには 48 時間ちょうど前の
+    // 返却待ち、いとうには 47 時間前の返却待ち。えんどうは 72 時間前の動画を返した
+    let returned = submit_video(&router, &jiro, &ueno_id, "soccer").await;
+    let endo_returned = submit_video(&router, &taro, &endo_id, "tennis").await;
+    for (coach, video_id) in [(&ueno, &returned), (&endo, &endo_returned)] {
+        post_ok(
+            &router,
+            &format!("/videos/{video_id}/review"),
+            coach,
+            json!({ "comment": "フォロースルーを大きく" }),
+            StatusCode::OK,
+        )
+        .await;
+    }
+    clock.set(start - hour * 60);
+    submit_video(&router, &jiro, &ueno_id, "soccer").await;
+    clock.set(start - hour * 48);
+    submit_video(&router, &taro, &tanaka_id, "tennis").await;
+    clock.set(start - hour * 47);
+    submit_video(&router, &taro, &ito_id, "tennis").await;
+
+    let get = |path: String| {
+        let router = router.clone();
+        let headquarters = headquarters.clone();
+        async move {
+            let (status, body) = send(&router, "GET", &path, Some(&headquarters), None).await;
+            assert_eq!(status, StatusCode::OK, "{path}: {body}");
+            body
+        }
+    };
+
+    // 表示名の順はそのまま。照会した時刻から数え、1 時間後にはいとうも載る
+    for (now, expected) in [
+        (start, vec!["うえの", "たなか"]),
+        (start + hour, vec!["いとう", "うえの", "たなか"]),
+    ] {
+        clock.set(now);
+        let body = get("/coaches?has_overdue_video=true".to_string()).await;
+        assert_eq!(names(&body), expected, "{body}");
+        // コーチ 1 人の様子の数が 1 以上のコーチと同じ
+        for (coach_id, name) in [
+            (&tanaka_id, "たなか"),
+            (&ito_id, "いとう"),
+            (&ueno_id, "うえの"),
+            (&endo_id, "えんどう"),
+        ] {
+            let overview = get(format!("/coaches/{coach_id}/overview")).await;
+            assert_eq!(
+                overview["overdue_pending_video_review_count"]
+                    .as_u64()
+                    .unwrap()
+                    > 0,
+                expected.contains(&name),
+                "{name}: {overview}"
+            );
+        }
+    }
+    clock.set(start);
+
+    for (query, expected) in [
+        // ほかの絞り込みと組み合わせる。たなか = %E3%81%9F%E3%81%AA
+        ("?has_overdue_video=true&sport=tennis", vec!["たなか"]),
+        ("?has_overdue_video=true&sport=soccer", vec!["うえの"]),
+        (
+            "?has_overdue_video=true&acceptance_status=accepting",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_overdue_video=true&acceptance_status=suspended",
+            vec![],
+        ),
+        (
+            "?has_overdue_video=true&inactive=true",
+            vec!["うえの", "たなか"],
+        ),
+        (
+            "?has_overdue_video=true&q=%E3%81%9F%E3%81%AA",
+            vec!["たなか"],
+        ),
+        (
+            "?has_overdue_video=true&has_unanswered=true",
+            vec!["たなか"],
+        ),
+        (
+            "?has_overdue_video=true&has_unhandled_low_rated=true",
+            vec![],
+        ),
+        // false・付けないときは絞らない
+        (
+            "?has_overdue_video=false",
+            vec!["いとう", "うえの", "えんどう", "たなか"],
+        ),
+        ("", vec!["いとう", "うえの", "えんどう", "たなか"]),
+    ] {
+        let body = get(format!("/coaches{query}")).await;
+        assert_eq!(names(&body), expected, "{query}");
+    }
+
+    let (status, body) = send(
+        &router,
+        "GET",
+        "/coaches?has_overdue_video=yes",
+        Some(&headquarters),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+}

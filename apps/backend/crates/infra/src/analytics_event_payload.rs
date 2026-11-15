@@ -3,7 +3,7 @@
 //! [`attributes`] は events.yaml の `required` だけ。共通の任意属性（`common_optional`）は [`line`] で値が分かる
 //! ときだけ足す。ID は UUID のハイフン区切り、時刻（`occurred_at`・`starts_at`・
 //! `submitted_at`）は RFC 3339。`sport` は DB と同じ値（[`crate::identity_values::sport_value`]）、`sender_role` も DB と同じ値（[`crate::messaging_values::message_sender_value`]）。
-//! events.yaml との一致は `tests/analytics_event_payload.rs` が確かめる。
+//! events.yaml との一致は `tests/it/analytics_event_payload.rs` が確かめる。
 
 use application::{
     analytics::AnalyticsEvent,

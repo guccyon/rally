@@ -45,7 +45,7 @@ touch:
   # backend のコンテナの中で access-token が DB から本部 1 人とコーチ 3 人を読み、サーバーと同じ実装でトークンを発行する
   # （ACCESS_TOKEN_SIGNING_KEY があれば署名付き、なければ署名なしのモック。Issue #1593。鍵は backend のコンテナから出さない）。
   # 本部も合成シードが登録したアカウントを指す（お休みなど本部の操作の記録は実在の本部のアカウントへの外部キーを持ち、
-  # 登録のない ID では 500 になる。Issue #1480。検査は apps/backend/crates/seed/tests/touch_accounts.rs）
+  # 登録のない ID では 500 になる。Issue #1480。検査は apps/backend/crates/seed/tests/it/touch_accounts.rs）
   accounts:
     service: backend
     command: ["access-token", "--hints"]

@@ -2,7 +2,7 @@
 //!
 //! `notification.notification_settings.kind` と `notification.notifications.kind`・`lesson_reminder_timing`（CHECK 制約の値）は
 //! この表だけを通す。
-//! CHECK との一致は `tests/schema.rs` が確かめる。
+//! CHECK との一致は `tests/it/schema.rs` が確かめる。
 
 use domain::notification::{LessonReminderTiming, NotificationKind, PushNotification};
 

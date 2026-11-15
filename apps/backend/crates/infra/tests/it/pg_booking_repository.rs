@@ -1,0 +1,1188 @@
+//! `PgBookingRepository`（`scheduling.bookings` と予約したスロット）の検証。予約の作成・確定・キャンセルの
+//! 往復、二重予約と体験予約の 1 回限りの拒否（並行な予約を含む）、期間に開始する枠とその予約の読み取り（予約枠の需給）、
+//! 期間にキャンセルした予約の読み取り（本部が見るキャンセルされた予約の一覧）、生徒の予約とそのスロットの読み取り（本人の予約の一覧）、コーチの枠への予約とそのスロットの読み取り（コーチの自分の予約の一覧。枠の開始の期間で絞るものを含む）。
+//! 予約した時点のレッスンメニューの写し（`lesson_menu_*`）の読み書きと、予約の作成で写すスロットの読み取り（`find_slot`）。
+//! メニューごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部のメニューの横断の一覧（直近 30 日の予約の数と、
+//! 予約のないメニューへの絞り込み `unbooked`）。
+//! 生徒ごとの、ある時刻以後に作られた予約の読み取りと、それを数える本部の生徒の一覧の直近 30 日の予約の数。
+//! ID を並べた予約の読み取り（`find_many`。本部が見る通話セッションの記録をレッスンメニューで絞るときに読む）。
+//!
+//! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+//! `cargo test -p infra -- --include-ignored` で走らせる。
+
+use crate::support;
+
+use application::{
+    catalog::{
+        CatalogLessonMenuLookup, LessonMenuRepository, ListLessonMenus, ListLessonMenusQuery,
+    },
+    entitlement::EntitlementQuotaGate,
+    in_memory::{FixedClock, RecordingAnalyticsSink},
+    profile::ProfileCoachDisplayNameLookup,
+    scheduling::{
+        BookingRepository, CreateBooking, CreateBookingCommand, ListCoachBookings, ListMyBookings,
+        ReserveSlotError, SchedulingLessonMenuRecentBookingCountLookup,
+        SchedulingStudentRecentBookingCountLookup, SlotRepository,
+    },
+};
+use domain::{
+    catalog::Sport,
+    catalog::{
+        LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
+        LessonMenuId, LessonMenuName,
+    },
+    identity::{AccountId, Coach},
+    scheduling::{
+        Booking, BookingCanceller, BookingLessonMenu, BookingStatus, CancellationDecision,
+        SchedulingError, Slot, SlotCapacity, SlotStatus,
+    },
+};
+use infra::{
+    PgAccountRepository, PgBookingRepository, PgEntitlementRepository, PgLessonMenuRepository,
+    PgSlotRepository,
+};
+use sqlx::PgPool;
+use support::at;
+
+async fn reserve(
+    bookings: &PgBookingRepository,
+    student: AccountId,
+    slot: &Slot,
+    is_trial: bool,
+) -> Result<Booking, ReserveSlotError> {
+    let id = bookings.next_id();
+    bookings
+        .reserve(slot.id(), student, |slot, existing| {
+            Booking::reserve(id, student, is_trial, slot, existing, at(1))
+        })
+        .await
+}
+
+async fn slot_status(pool: &PgPool, slot: &Slot) -> String {
+    sqlx::query_scalar("SELECT status FROM scheduling.slots WHERE slot_id = $1")
+        .bind(application::scheduling::slot_id_uuid::to_uuid(slot.id()))
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn booking_round_trips_through_confirm_and_cancel(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let student = support::student(&pool).await;
+    let slot = support::open_slot(&pool, support::coach(&pool).await, 30, 31).await;
+
+    let booking = reserve(&bookings, student, &slot, true).await.unwrap();
+    assert_eq!(
+        bookings.find(booking.id()).await.unwrap(),
+        Some(booking.clone())
+    );
+    assert_eq!(booking.starts_at(), at(30));
+    assert_eq!(booking.coach_id(), slot.coach_id());
+
+    let confirmed = bookings
+        .update(booking.id(), |booking, slot| {
+            booking.confirm(student, slot, at(2))
+        })
+        .await
+        .unwrap();
+    assert_eq!(confirmed.status(), BookingStatus::Confirmed);
+    assert_eq!(confirmed.confirmed_at(), Some(at(2)));
+    assert_eq!(bookings.find(booking.id()).await.unwrap(), Some(confirmed));
+    assert_eq!(slot_status(&pool, &slot).await, "booked");
+
+    let cancelled = bookings
+        .update(booking.id(), |booking, slot| {
+            booking.cancel(student, slot, at(3)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    assert_eq!(cancelled.cancelled_at(), Some(at(3)));
+    assert_eq!(
+        cancelled.cancel_reason(),
+        None,
+        "生徒のキャンセルは理由を残さない"
+    );
+    assert!(cancelled.cancellation_decision().is_some());
+    assert_eq!(bookings.find(booking.id()).await.unwrap(), Some(cancelled));
+    assert_eq!(slot_status(&pool, &slot).await, "open");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn cancellation_decision_is_saved_and_missing_records_are_read_as_none(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let student = support::student(&pool).await;
+    let slot = support::open_slot(&pool, support::coach(&pool).await, 30, 31).await;
+    let booking = reserve(&bookings, student, &slot, false).await.unwrap();
+    bookings
+        .update(booking.id(), |booking, slot| {
+            booking.confirm(student, slot, at(2))?;
+            // 開始（30 時）の 1 時間前。回数を消費する
+            booking.cancel(student, slot, at(29)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let id = application::scheduling::booking_id_uuid::to_uuid(booking.id());
+    let columns: (Option<String>, Option<String>, Option<bool>) = sqlx::query_as(
+        "SELECT cancelled_by, cancel_reason, consumes_quota FROM scheduling.bookings
+         WHERE booking_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(columns, (Some("student".to_string()), None, Some(true)));
+    assert_eq!(
+        bookings
+            .find(booking.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .cancellation_decision(),
+        Some(CancellationDecision {
+            consumes_quota: true
+        })
+    );
+
+    // 判定を残し始める前のキャンセル（NULL）は記録なし
+    sqlx::query("UPDATE scheduling.bookings SET consumes_quota = NULL WHERE booking_id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let read = bookings.find(booking.id()).await.unwrap().unwrap();
+    assert_eq!(read.cancellation_decision(), None);
+    assert_eq!(read.cancel_reason(), None);
+    assert_eq!(read.cancelled_by(), Some(BookingCanceller::Student));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn rejected_update_saves_nothing(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let student = support::student(&pool).await;
+    let slot = support::open_slot(&pool, support::coach(&pool).await, 30, 31).await;
+    let booking = reserve(&bookings, student, &slot, false).await.unwrap();
+
+    let other = support::student(&pool).await;
+    let result = bookings
+        .update(booking.id(), |booking, slot| {
+            booking.confirm(other, slot, at(2))
+        })
+        .await;
+    assert!(result.is_err(), "{result:?}");
+    assert_eq!(bookings.find(booking.id()).await.unwrap(), Some(booking));
+    assert_eq!(slot_status(&pool, &slot).await, "open");
+    assert_eq!(slot.status(), SlotStatus::Open);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn double_booking_and_second_trial_are_rejected(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+    let slot = support::open_slot(&pool, coach, 30, 31).await;
+    reserve(&bookings, first, &slot, true).await.unwrap();
+
+    let result = reserve(&bookings, second, &slot, false).await;
+    assert!(
+        matches!(
+            result,
+            Err(ReserveSlotError::Rejected(
+                SchedulingError::SlotAlreadyBooked
+            ))
+        ),
+        "{result:?}"
+    );
+    let other_slot = support::open_slot(&pool, coach, 40, 41).await;
+    let result = reserve(&bookings, first, &other_slot, true).await;
+    assert!(
+        matches!(
+            result,
+            Err(ReserveSlotError::Rejected(
+                SchedulingError::TrialAlreadyUsed
+            ))
+        ),
+        "{result:?}"
+    );
+    let missing = support::open_slot(&pool, coach, 50, 51).await;
+    sqlx::query("DELETE FROM scheduling.slots WHERE slot_id = $1")
+        .bind(application::scheduling::slot_id_uuid::to_uuid(missing.id()))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let result = reserve(&bookings, first, &missing, false).await;
+    assert!(
+        matches!(result, Err(ReserveSlotError::SlotNotFound)),
+        "{result:?}"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn concurrent_reservations_of_a_slot_save_only_one(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let slot = support::open_slot(&pool, support::coach(&pool).await, 30, 31).await;
+    let mut students = Vec::new();
+    for _ in 0..8 {
+        students.push(support::student(&pool).await);
+    }
+
+    let results = join_all(
+        students
+            .into_iter()
+            .map(|student| {
+                let (bookings, slot) = (bookings.clone(), slot.clone());
+                tokio::spawn(async move { reserve(&bookings, student, &slot, false).await })
+            })
+            .collect(),
+    )
+    .await;
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduling.bookings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn concurrent_reservations_of_a_group_slot_save_up_to_the_capacity(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let slot =
+        support::open_slot_with_capacity(&pool, support::coach(&pool).await, 30, 31, 3).await;
+    let mut students = Vec::new();
+    for _ in 0..8 {
+        students.push(support::student(&pool).await);
+    }
+
+    let results = join_all(
+        students
+            .into_iter()
+            .map(|student| {
+                let (bookings, slot) = (bookings.clone(), slot.clone());
+                tokio::spawn(async move { reserve(&bookings, student, &slot, false).await })
+            })
+            .collect(),
+    )
+    .await;
+    assert_eq!(
+        results.iter().filter(|r| r.is_ok()).count(),
+        3,
+        "{results:?}"
+    );
+    assert!(
+        results.iter().filter(|r| r.is_err()).all(|r| matches!(
+            r,
+            Err(ReserveSlotError::Rejected(
+                SchedulingError::SlotAlreadyBooked
+            ))
+        )),
+        "{results:?}"
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM scheduling.bookings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 3);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn group_slot_is_booked_when_all_seats_are_confirmed_and_reopens_on_cancel(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let slot =
+        support::open_slot_with_capacity(&pool, support::coach(&pool).await, 30, 31, 2).await;
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+
+    let mut confirmed = Vec::new();
+    for student in [first, second] {
+        let booking = reserve(&bookings, student, &slot, false).await.unwrap();
+        assert_eq!(slot_status(&pool, &slot).await, "open");
+        confirmed.push(
+            bookings
+                .update(booking.id(), |booking, slot| {
+                    booking.confirm(student, slot, at(2))
+                })
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(slot_status(&pool, &slot).await, "booked", "確定 2 / 定員 2");
+
+    // 同じ生徒の 2 回目は拒む（満席でなくても）
+    bookings
+        .update(confirmed[1].id(), |booking, slot| {
+            booking.cancel(second, slot, at(3)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        slot_status(&pool, &slot).await,
+        "open",
+        "空きができたら公開中に戻る"
+    );
+    let result = reserve(&bookings, first, &slot, false).await;
+    assert!(
+        matches!(
+            result,
+            Err(ReserveSlotError::Rejected(
+                SchedulingError::SlotAlreadyBookedByStudent
+            ))
+        ),
+        "{result:?}"
+    );
+    // キャンセルした生徒はもう一度予約できる
+    reserve(&bookings, second, &slot, false).await.unwrap();
+}
+
+async fn join_all<T: std::fmt::Debug>(handles: Vec<tokio::task::JoinHandle<T>>) -> Vec<T> {
+    let mut results = Vec::new();
+    for handle in handles {
+        results.push(handle.await.unwrap());
+    }
+    results
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn slots_starting_between_reads_slots_of_any_status_and_their_bookings(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+    let before = support::open_slot(&pool, coach, 9, 10).await;
+    let start = support::open_slot(&pool, coach, 10, 11).await;
+    let closed = support::open_slot(&pool, coach, 20, 21).await;
+    let end = support::open_slot(&pool, coach, 30, 31).await;
+    let cancelled = reserve(&bookings, first, &start, false).await.unwrap();
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(first, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, second, &start).await;
+    reserve(&bookings, first, &before, false).await.unwrap();
+    reserve(&bookings, second, &end, false).await.unwrap();
+    sqlx::query("UPDATE scheduling.slots SET status = 'closed' WHERE slot_id = $1")
+        .bind(application::scheduling::slot_id_uuid::to_uuid(closed.id()))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // 始まりは含み、終わりは含まない
+    let (mut slots, mut found) = bookings
+        .slots_starting_between(at(10), at(30))
+        .await
+        .unwrap();
+    slots.sort_by_key(Slot::starts_at);
+    found.sort_by_key(|b| b.cancelled_at().is_none());
+    let slot_ids: Vec<_> = slots.iter().map(|s| (s.id(), s.status())).collect();
+    assert_eq!(
+        slot_ids,
+        [
+            (start.id(), SlotStatus::Booked),
+            (closed.id(), SlotStatus::Closed)
+        ]
+    );
+    let booking_ids: Vec<_> = found.iter().map(|b| (b.id(), b.status())).collect();
+    assert_eq!(
+        booking_ids,
+        [
+            (cancelled.id(), BookingStatus::Cancelled),
+            (confirmed.id(), BookingStatus::Confirmed)
+        ]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_cancelled_between_reads_only_bookings_cancelled_in_the_period(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let (first, second) = (support::student(&pool).await, support::student(&pool).await);
+    let mut cancelled = Vec::new();
+    // 枠の開始（20 時〜）はキャンセルした時刻の期間（10 時〜30 時）と関係しない
+    for (from, student, cancelled_at) in [
+        (40, first, at(10) - std::time::Duration::from_secs(1)),
+        (41, first, at(10)),
+        (42, second, at(29)),
+        (43, second, at(30)),
+    ] {
+        let slot = support::open_slot(&pool, coach, from, from + 1).await;
+        let booking = reserve(&bookings, student, &slot, false).await.unwrap();
+        let booking = bookings
+            .update(booking.id(), |booking, slot| {
+                booking.cancel(student, slot, cancelled_at).map(|_| ())
+            })
+            .await
+            .unwrap();
+        cancelled.push(booking);
+    }
+    // キャンセルしていない予約（確定待ち・確定済み）は出ない
+    let pending = support::open_slot(&pool, coach, 50, 51).await;
+    reserve(&bookings, first, &pending, false).await.unwrap();
+    let confirmed = support::open_slot(&pool, coach, 52, 53).await;
+    support::confirmed_booking(&pool, second, &confirmed).await;
+
+    // 始まりは含み、終わりは含まない
+    let mut found = bookings
+        .bookings_cancelled_between(at(10), at(30))
+        .await
+        .unwrap();
+    found.sort_by_key(|b| b.cancelled_at());
+    assert_eq!(found, [cancelled[1].clone(), cancelled[2].clone()]);
+    assert!(found.iter().all(|b| b.status() == BookingStatus::Cancelled));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let early = support::open_slot(&pool, coach, 10, 11).await;
+    let late = support::open_slot(&pool, coach, 30, 31).await;
+    let others = support::open_slot(&pool, coach, 40, 41).await;
+    let cancelled = reserve(&bookings, student, &early, false).await.unwrap();
+    let cancelled = bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(student, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, student, &late).await;
+    reserve(&bookings, other, &others, false).await.unwrap();
+
+    let mut found = bookings.bookings_of_student(student).await.unwrap();
+    found.sort_by_key(|(_, slot)| slot.starts_at());
+    let early = Slot::restore(
+        early.id(),
+        coach,
+        early.sport(),
+        early.starts_at(),
+        early.ends_at(),
+        SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
+    )
+    .unwrap();
+    let late = Slot::restore(
+        late.id(),
+        coach,
+        late.sport(),
+        late.starts_at(),
+        late.ends_at(),
+        SlotStatus::Booked,
+        // 確定した予約 1 件で埋まっている（席の数は予約の行から数える）
+        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1)
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(found, [(cancelled, early), (confirmed.clone(), late)]);
+
+    // ユースケースを通すと、スロットの開始時刻の新しい順
+    let list = application::scheduling::ListMyBookings::new(
+        bookings.clone(),
+        application::profile::ProfileCoachIntroductionLookup::new(infra::PgAccountRepository::new(
+            pool.clone(),
+        )),
+        EntitlementQuotaGate::new(PgEntitlementRepository::new(pool.clone())),
+        application::entitlement::EntitlementTrialUsageLookup::new(
+            infra::PgEntitlementRepository::new(pool.clone()),
+            infra::PgLessonCompletionRepository::new(pool.clone()),
+            infra::PgVideoRepository::new(pool.clone()),
+        ),
+        FixedClock(at(0)),
+    )
+    .execute(student)
+    .await
+    .unwrap();
+    let ids: Vec<_> = list.items.iter().map(|(b, _)| b.status()).collect();
+    assert_eq!(ids, [BookingStatus::Confirmed, BookingStatus::Cancelled]);
+    assert_eq!(list.items[0].0, confirmed);
+    assert_eq!(
+        list.coaches.get(&coach).map(|c| c.display_name.as_str()),
+        Some("テスト")
+    );
+
+    let nobody = support::student(&pool).await;
+    assert!(
+        bookings
+            .bookings_of_student(nobody)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn last_booked_at_of_students_reads_the_latest_creation_of_any_status(pool: PgPool) {
+    let (student, other, no_booking, not_asked) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+    );
+    let coach = support::coach(&pool).await;
+    let bookings = PgBookingRepository::new(pool.clone());
+    let book = |student: AccountId, slot: Slot, created_hour: u64| {
+        let bookings = bookings.clone();
+        async move {
+            let id = bookings.next_id();
+            bookings
+                .reserve(slot.id(), student, |slot, existing| {
+                    Booking::reserve(id, student, false, slot, existing, at(created_hour))
+                })
+                .await
+                .unwrap()
+        }
+    };
+    book(student, support::open_slot(&pool, coach, 30, 31).await, 1).await;
+    // 後で作った予約は、開始が早い枠でも新しい。キャンセルしても数える
+    let latest = book(student, support::open_slot(&pool, coach, 20, 21).await, 5).await;
+    bookings
+        .update(latest.id(), |booking, slot| {
+            booking.cancel(student, slot, at(6)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    book(other, support::open_slot(&pool, coach, 40, 41).await, 3).await;
+    book(not_asked, support::open_slot(&pool, coach, 50, 51).await, 9).await;
+
+    let found = bookings
+        .last_booked_at_of_students(&[student, other, no_booking].into())
+        .await
+        .unwrap();
+    assert_eq!(
+        found,
+        std::collections::BTreeMap::from([(student, at(5)), (other, at(3))])
+    );
+    assert!(
+        bookings
+            .last_booked_at_of_students(&Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let late = support::open_slot(&pool, coach, 30, 31).await;
+    let early = support::open_slot(&pool, coach, 10, 11).await;
+    let others = support::open_slot(&pool, other_coach, 20, 21).await;
+    let cancelled = reserve(&bookings, other, &early, false).await.unwrap();
+    let cancelled = bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(other, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, student, &late).await;
+    reserve(&bookings, student, &others, false).await.unwrap();
+
+    let mut found = bookings.bookings_of_coach(coach).await.unwrap();
+    found.sort_by_key(|(_, slot)| slot.starts_at());
+    let early = Slot::restore(
+        early.id(),
+        coach,
+        early.sport(),
+        early.starts_at(),
+        early.ends_at(),
+        SlotStatus::Open,
+        domain::scheduling::SlotSeats::default(),
+    )
+    .unwrap();
+    let late = Slot::restore(
+        late.id(),
+        coach,
+        late.sport(),
+        late.starts_at(),
+        late.ends_at(),
+        SlotStatus::Booked,
+        // 確定した予約 1 件で埋まっている（席の数は予約の行から数える）
+        domain::scheduling::SlotSeats::restore(domain::scheduling::SlotCapacity::ONE, 0, 1)
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        found,
+        [(cancelled, early), (confirmed.clone(), late)],
+        "別のコーチの枠への予約は読まない"
+    );
+
+    // ユースケースを通すと、スロットの開始時刻の古い順で、生徒の表示名が添わる
+    let list = application::scheduling::ListCoachBookings::new(
+        bookings.clone(),
+        infra::PgLiveLessonSessionRepository::new(pool.clone()),
+        application::profile::ProfileStudentDisplayNameLookup::new(
+            infra::PgAccountRepository::new(pool.clone()),
+        ),
+        FixedClock(at(0)),
+    )
+    .execute(coach, Default::default())
+    .await
+    .unwrap();
+    let statuses: Vec<_> = list.items.iter().map(|(b, _)| b.status()).collect();
+    assert_eq!(
+        statuses,
+        [BookingStatus::Cancelled, BookingStatus::Confirmed]
+    );
+    assert_eq!(list.items[1].0, confirmed);
+    assert_eq!(
+        list.students.get(&student).map(|name| name.as_str()),
+        Some("テスト")
+    );
+    assert_eq!(list.students.len(), 2);
+
+    let nobody = support::coach(&pool).await;
+    assert!(bookings.bookings_of_coach(nobody).await.unwrap().is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn bookings_of_coach_starting_between_reads_only_own_bookings_starting_in_the_period(
+    pool: PgPool,
+) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let before = support::open_slot(&pool, coach, 9, 10).await;
+    let start = support::open_slot(&pool, coach, 10, 11).await;
+    let inside = support::open_slot(&pool, coach, 20, 21).await;
+    let end = support::open_slot(&pool, coach, 30, 31).await;
+    let others = support::open_slot(&pool, other_coach, 15, 16).await;
+    reserve(&bookings, student, &before, false).await.unwrap();
+    let cancelled = reserve(&bookings, other, &start, false).await.unwrap();
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(other, slot, at(2)).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let confirmed = support::confirmed_booking(&pool, student, &inside).await;
+    reserve(&bookings, student, &end, false).await.unwrap();
+    reserve(&bookings, other, &others, false).await.unwrap();
+
+    // 始まりは含み、終わりは含まない。状態を問わず、別のコーチの枠への予約は読まない
+    let mut found = bookings
+        .bookings_of_coach_starting_between(coach, at(10), at(30))
+        .await
+        .unwrap();
+    found.sort_by_key(|(_, slot)| slot.starts_at());
+    let found: Vec<_> = found
+        .iter()
+        .map(|(booking, slot)| (booking.id(), booking.status(), slot.id()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (cancelled.id(), BookingStatus::Cancelled, start.id()),
+            (confirmed.id(), BookingStatus::Confirmed, inside.id()),
+        ]
+    );
+    assert!(
+        bookings
+            .bookings_of_coach_starting_between(other_coach, at(20), at(30))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// コーチ `coach` のテニスの 1 回 60 分のメニューを保存する。
+async fn lesson_menu(pool: &PgPool, id: u128, coach: AccountId, is_published: bool) -> LessonMenu {
+    let menu = LessonMenu::restore(
+        LessonMenuId::from_u128(id),
+        coach,
+        LessonMenuContent {
+            sport: Sport::Tennis,
+            format: LessonFormat::Live(LessonDuration::from_minutes(60).unwrap()),
+            name: LessonMenuName::new("フォア改善").unwrap(),
+            description: LessonMenuDescription::new("").unwrap(),
+        },
+        is_published,
+        at(0),
+    );
+    PgLessonMenuRepository::new(pool.clone())
+        .insert(menu.clone())
+        .await
+        .unwrap();
+    menu
+}
+
+/// `coach` の公開中の枠（`from` 時から 1 時間）を、公開中のメニュー `menu` に結びつけて保存する。
+async fn slot_with_menu(pool: &PgPool, coach: AccountId, from: u64, menu: &LessonMenu) -> Slot {
+    let slots = PgSlotRepository::new(pool.clone());
+    let slot = Slot::publish(
+        slots.next_id(),
+        coach,
+        Sport::Tennis,
+        at(from),
+        at(from + 1),
+        SlotCapacity::ONE,
+    )
+    .unwrap()
+    .with_lesson_menu(menu)
+    .unwrap();
+    slots
+        .add_to_calendar(slot.clone(), |calendar, slot| calendar.publish(slot))
+        .await
+        .unwrap();
+    slot
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn find_slot_reads_the_slot_with_its_lesson_menu(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let menu = lesson_menu(&pool, 1, coach, true).await;
+    let bound = slot_with_menu(&pool, coach, 30, &menu).await;
+    let plain = support::open_slot(&pool, coach, 32, 33).await;
+
+    assert_eq!(bookings.find_slot(bound.id()).await.unwrap(), Some(bound));
+    assert_eq!(bookings.find_slot(plain.id()).await.unwrap(), Some(plain));
+    assert_eq!(
+        bookings
+            .find_slot(SlotRepository::next_id(&PgSlotRepository::new(
+                pool.clone()
+            )))
+            .await
+            .unwrap(),
+        None
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let menus = PgLessonMenuRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    // 1 人で通常の予約を 3 件作るので、月額契約（standard）の生徒にする（月額契約の前の生徒は 2 件目から断られる）
+    let monthly = domain::entitlement::Entitlement::monthly(
+        domain::entitlement::EntitlementId::from_u128(1),
+        student,
+        Sport::Tennis,
+        domain::entitlement::SubscriptionId::from_u128(2),
+        domain::entitlement::LiveLessonQuota::fresh(
+            domain::entitlement::SubscriptionPlan::Standard,
+            domain::entitlement::YearMonth::new(2026, 10).unwrap(),
+        ),
+    )
+    .unwrap();
+    let create = CreateBooking::new(
+        bookings.clone(),
+        CatalogLessonMenuLookup::new(menus.clone()),
+        application::entitlement::EntitlementTrialUsageLookup::new(
+            infra::PgEntitlementRepository::new(pool.clone()),
+            infra::PgLessonCompletionRepository::new(pool.clone()),
+            infra::PgVideoRepository::new(pool.clone()),
+        ),
+        application::entitlement::EntitlementQuotaGate::new(
+            application::in_memory::InMemoryEntitlementRepository::with_entitlements([monthly]),
+        ),
+        RecordingAnalyticsSink::default(),
+        FixedClock(at(1)),
+    );
+    let published = lesson_menu(&pool, 1, coach, true).await;
+    let to_unpublish = lesson_menu(&pool, 2, coach, true).await;
+    let bound = slot_with_menu(&pool, coach, 30, &published).await;
+    let unpublished_slot = slot_with_menu(&pool, coach, 32, &to_unpublish).await;
+    let plain = support::open_slot(&pool, coach, 34, 35).await;
+    let mut unpublished = to_unpublish.clone();
+    unpublished
+        .revise(
+            coach,
+            &Coach::new([Sport::Tennis]).unwrap(),
+            to_unpublish.content().clone(),
+            false,
+        )
+        .unwrap();
+    menus.update(unpublished).await.unwrap();
+
+    let book = |slot: &Slot| CreateBookingCommand {
+        student_id: student,
+        slot_id: slot.id(),
+        is_trial: false,
+    };
+    let with_menu = create.execute(book(&bound)).await.unwrap();
+    let copy = BookingLessonMenu::copy_of(&published);
+    assert_eq!(with_menu.lesson_menu(), Some(&copy));
+    // 予約の時点で公開中でないメニューと、メニューのない枠は、メニューなしの予約（予約は断らない）
+    let without_menu = create.execute(book(&unpublished_slot)).await.unwrap();
+    assert_eq!(without_menu.lesson_menu(), None);
+    let plain_booking = create.execute(book(&plain)).await.unwrap();
+    assert_eq!(plain_booking.lesson_menu(), None);
+
+    // 予約した後にメニューを直しても、読み戻した予約の写しは予約した時点のまま
+    let mut revised = published.clone();
+    revised
+        .revise(
+            coach,
+            &Coach::new([Sport::Tennis]).unwrap(),
+            LessonMenuContent {
+                name: LessonMenuName::new("直した名前").unwrap(),
+                format: LessonFormat::Live(LessonDuration::from_minutes(90).unwrap()),
+                ..published.content().clone()
+            },
+            true,
+        )
+        .unwrap();
+    menus.update(revised).await.unwrap();
+    assert_eq!(
+        bookings.find(with_menu.id()).await.unwrap(),
+        Some(with_menu.clone())
+    );
+
+    // 確定しても写しは残る
+    let confirmed = bookings
+        .update(with_menu.id(), |booking, slot| {
+            booking.confirm(student, slot, at(2))
+        })
+        .await
+        .unwrap();
+    assert_eq!(confirmed.lesson_menu(), Some(&copy));
+
+    // 本人の予約の一覧とコーチの自分の予約の一覧にも、予約した時点の写しが載る
+    let mine = ListMyBookings::new(
+        bookings.clone(),
+        application::profile::ProfileCoachIntroductionLookup::new(PgAccountRepository::new(
+            pool.clone(),
+        )),
+        EntitlementQuotaGate::new(PgEntitlementRepository::new(pool.clone())),
+        application::entitlement::EntitlementTrialUsageLookup::new(
+            infra::PgEntitlementRepository::new(pool.clone()),
+            infra::PgLessonCompletionRepository::new(pool.clone()),
+            infra::PgVideoRepository::new(pool.clone()),
+        ),
+        FixedClock(at(0)),
+    )
+    .execute(student)
+    .await
+    .unwrap();
+    let of_coach = ListCoachBookings::new(
+        bookings.clone(),
+        infra::PgLiveLessonSessionRepository::new(pool.clone()),
+        application::profile::ProfileStudentDisplayNameLookup::new(PgAccountRepository::new(
+            pool.clone(),
+        )),
+        FixedClock(at(0)),
+    )
+    .execute(coach, Default::default())
+    .await
+    .unwrap();
+    for items in [&mine.items, &of_coach.items] {
+        let menus: Vec<_> = items
+            .iter()
+            .map(|(booking, _)| (booking.id(), booking.lesson_menu().cloned()))
+            .collect();
+        assert_eq!(menus.len(), 3);
+        assert!(menus.contains(&(with_menu.id(), Some(copy.clone()))));
+        assert!(menus.contains(&(without_menu.id(), None)));
+        assert!(menus.contains(&(plain_booking.id(), None)));
+    }
+}
+
+/// 生徒 `student` が `slot` を `created_hour` 時に予約する（予約した時点の枠のメニュー `menu` を写す）。
+async fn book_menu(
+    bookings: &PgBookingRepository,
+    student: AccountId,
+    slot: &Slot,
+    menu: Option<&LessonMenu>,
+    created_hour: u64,
+) -> Booking {
+    let id = bookings.next_id();
+    bookings
+        .reserve(slot.id(), student, |reserved, existing| {
+            Booking::reserve(id, student, false, reserved, existing, at(created_hour))
+                .map(|booking| booking.with_lesson_menu(reserved, menu))
+        })
+        .await
+        .unwrap()
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let (popular, quiet, other, idle) = (
+        lesson_menu(&pool, 1, coach, true).await,
+        lesson_menu(&pool, 2, coach, true).await,
+        lesson_menu(&pool, 3, coach, true).await,
+        lesson_menu(&pool, 4, coach, true).await,
+    );
+    // 照会する時刻は 1000 時。直近 30 日（720 時間）の始まりは 280 時
+    let now = 1000;
+    let mut hour = 2000;
+    let mut slot_of = |menu: Option<&LessonMenu>| {
+        hour += 2;
+        let (pool, from) = (pool.clone(), hour);
+        let menu = menu.cloned();
+        async move {
+            match menu {
+                Some(menu) => slot_with_menu(&pool, coach, from, &menu).await,
+                None => support::open_slot(&pool, coach, from, from + 1).await,
+            }
+        }
+    };
+    let mut booked = Vec::new();
+    for (menu, created_hour) in [
+        // 期間の始まりちょうどと、照会した時刻ちょうどは数える
+        (Some(&popular), 280),
+        (Some(&popular), now),
+        // 期間の始まりより前は数えない
+        (Some(&popular), 279),
+        (Some(&quiet), 900),
+        // 期間の外の予約しかないメニュー
+        (Some(&idle), 279),
+        // 聞いていないメニューとメニューのない枠への予約
+        (Some(&other), 900),
+        (None, 900),
+    ] {
+        let slot = slot_of(menu).await;
+        let student = support::student(&pool).await;
+        booked.push(book_menu(&bookings, student, &slot, menu, created_hour).await);
+    }
+    // キャンセルした予約は読み取りには入り、数えない
+    let slot = slot_of(Some(&popular)).await;
+    let student = support::student(&pool).await;
+    let cancelled = book_menu(&bookings, student, &slot, Some(&popular), 500).await;
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(student, slot, at(501)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let asked: std::collections::BTreeSet<LessonMenuId> =
+        [popular.id(), quiet.id()].into_iter().collect();
+    let mut found: Vec<_> = bookings
+        .bookings_of_lesson_menus_created_since(&asked, at(280))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|booking| booking.id())
+        .collect();
+    found.sort();
+    let mut expected = vec![
+        booked[0].id(),
+        booked[1].id(),
+        booked[3].id(),
+        cancelled.id(),
+    ];
+    expected.sort();
+    assert_eq!(
+        found, expected,
+        "期間の始まり（含む）以後の、聞いたメニューの予約を状態を問わず"
+    );
+    assert!(
+        bookings
+            .bookings_of_lesson_menus_created_since(&Default::default(), at(0))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let list_lesson_menus = ListLessonMenus::new(
+        PgLessonMenuRepository::new(pool.clone()),
+        ProfileCoachDisplayNameLookup::new(PgAccountRepository::new(pool.clone())),
+        SchedulingLessonMenuRecentBookingCountLookup::new(bookings.clone()),
+        FixedClock(at(now)),
+    );
+    let list = list_lesson_menus
+        .execute(&ListLessonMenusQuery {
+            coach_id: Some(coach),
+            ..ListLessonMenusQuery::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.lesson_menus.len(), 4);
+    assert_eq!(
+        list.recent_booking_counts,
+        std::collections::BTreeMap::from([(popular.id(), 2), (quiet.id(), 1), (other.id(), 1)]),
+        "キャンセル・期間の外・メニューのない予約は数えない"
+    );
+
+    // unbooked なら直近の予約の数が 0 のメニュー（期間の外の予約しかないもの）だけ
+    let list = list_lesson_menus
+        .execute(&ListLessonMenusQuery {
+            coach_id: Some(coach),
+            unbooked: true,
+            ..ListLessonMenusQuery::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        list.lesson_menus
+            .iter()
+            .map(LessonMenu::id)
+            .collect::<Vec<_>>(),
+        [idle.id()]
+    );
+    assert!(list.recent_booking_counts.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn recent_bookings_of_students_are_counted_per_student(pool: PgPool) {
+    use application::identity::StudentRecentBookingCountLookup;
+
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let menu = lesson_menu(&pool, 1, coach, true).await;
+    let (busy, quiet, cancelled_only, no_booking, not_asked) = (
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+        support::student(&pool).await,
+    );
+    // 照会する時刻は 1000 時。直近 30 日（720 時間）の始まりは 280 時
+    let now = 1000;
+    let mut hour = 2000;
+    let mut booked = Vec::new();
+    for (student, with_menu, created_hour) in [
+        // 期間の始まりちょうどと、照会した時刻ちょうどは数える。メニューのない枠への予約も数える
+        (busy, true, 280),
+        (busy, false, now),
+        // 期間の始まりより前は数えない
+        (busy, true, 279),
+        (quiet, true, 900),
+        // 聞いていない生徒の予約
+        (not_asked, true, 900),
+    ] {
+        hour += 2;
+        let slot = if with_menu {
+            slot_with_menu(&pool, coach, hour, &menu).await
+        } else {
+            support::open_slot(&pool, coach, hour, hour + 1).await
+        };
+        let menu = with_menu.then_some(&menu);
+        booked.push(book_menu(&bookings, student, &slot, menu, created_hour).await);
+    }
+    // キャンセルした予約は読み取りには入り、数えない
+    hour += 2;
+    let slot = support::open_slot(&pool, coach, hour, hour + 1).await;
+    let cancelled = book_menu(&bookings, cancelled_only, &slot, None, 500).await;
+    bookings
+        .update(cancelled.id(), |booking, slot| {
+            booking.cancel(cancelled_only, slot, at(501)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let asked: std::collections::BTreeSet<AccountId> = [busy, quiet, cancelled_only, no_booking]
+        .into_iter()
+        .collect();
+    let mut found: Vec<_> = bookings
+        .bookings_of_students_created_since(&asked, at(280))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|booking| booking.id())
+        .collect();
+    found.sort();
+    let mut expected = vec![
+        booked[0].id(),
+        booked[1].id(),
+        booked[3].id(),
+        cancelled.id(),
+    ];
+    expected.sort();
+    assert_eq!(
+        found, expected,
+        "期間の始まり（含む）以後の、聞いた生徒の予約を状態を問わず"
+    );
+    assert!(
+        bookings
+            .bookings_of_students_created_since(&Default::default(), at(0))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let counts = SchedulingStudentRecentBookingCountLookup::new(bookings.clone())
+        .count_recent_bookings(&asked, at(now))
+        .await
+        .unwrap();
+    assert_eq!(
+        counts,
+        std::collections::BTreeMap::from([(busy, 2), (quiet, 1)]),
+        "キャンセル・期間の外の予約は数えず、数える予約のない生徒は含めない"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn find_many_reads_the_asked_bookings_of_any_status(pool: PgPool) {
+    let bookings = PgBookingRepository::new(pool.clone());
+    let coach = support::coach(&pool).await;
+    let student = support::student(&pool).await;
+    let first = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 30, 31).await,
+        true,
+    )
+    .await
+    .unwrap();
+    let second = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 32, 33).await,
+        false,
+    )
+    .await
+    .unwrap();
+    let not_asked = reserve(
+        &bookings,
+        student,
+        &support::open_slot(&pool, coach, 34, 35).await,
+        false,
+    )
+    .await
+    .unwrap();
+    let cancelled = bookings
+        .update(second.id(), |booking, slot| {
+            booking.cancel(student, slot, at(3)).map(|_| ())
+        })
+        .await
+        .unwrap();
+
+    let missing = bookings.next_id();
+    let mut found = bookings
+        .find_many(&[first.id(), cancelled.id(), missing].into_iter().collect())
+        .await
+        .unwrap();
+    found.sort_by_key(Booking::id);
+    let mut expected = vec![first, cancelled];
+    expected.sort_by_key(Booking::id);
+    assert_eq!(
+        found, expected,
+        "聞いた予約を状態を問わず。ない ID・聞いていない予約は含めない"
+    );
+    assert!(found.iter().all(|booking| booking.id() != not_asked.id()));
+    assert!(
+        bookings
+            .find_many(&Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}

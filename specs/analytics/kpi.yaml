@@ -18,7 +18,7 @@
 #   hours_between(<始>, <終>) / days_between(<始>, <終>)   時刻の差（時間 / 日。小数）。days(<n>) は n 日の長さ
 #   now は集計した時刻。比較・算術は = <> < <= > >= + - * /、論理は and / or / not
 # 語彙（vocabulary）にない名前は、イベント名・<イベント>.<属性>・<別名>.<属性>・別名・他の KPI の id のどれかでなければならない
-# （crates/application/tests/kpi_semantic_layer.rs が検査する）。
+# （crates/application/tests/it/kpi_semantic_layer.rs が検査する）。
 schema_version: "0.1"
 status: draft
 vocabulary: [from, as, where, and, or, not, exists, first, for, ratio, avg, median, variance, by, having, count,

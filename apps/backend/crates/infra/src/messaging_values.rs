@@ -1,7 +1,7 @@
 //! messaging の値と、DB に保存する文字列の対応表。
 //!
 //! `messaging.messages.sender_role` と `kind` と `stamp`（CHECK 制約の値）と、行動イベント `message.sent`・境界間イベント `MessageSent`
-//! の `sender_role` はこの表だけを通す。CHECK との一致は `tests/schema.rs` が確かめる。
+//! の `sender_role` はこの表だけを通す。CHECK との一致は `tests/it/schema.rs` が確かめる。
 
 use domain::messaging::{MessageAuthor, MessageKind, MessageSender, Stamp};
 
