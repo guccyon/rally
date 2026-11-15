@@ -558,7 +558,8 @@ paths:
         レスポンスの `upload_url` に PUT する。月額契約では送り放題（送付の回数は数えない）。
         生徒の役割のトークンだけが呼べる（それ以外は 403）。送る生徒はトークンのアカウント。
         `sport` がゴルフ（golf-app の範囲）・`coach_id` が UUID でない・`content_type` が enum にない・`note` が長すぎる場合は 422。
-        Gen1 は動画本体のアップロードの完了を受け取らないので、レスポンスの `status` は `awaiting_upload`。`note` は Gen1 では保存しない。
+        Gen1 は動画本体のアップロードの完了を受け取らないので、レスポンスの `status` は `awaiting_upload`。`note`（コーチへの相談内容）は動画とともに保存し、
+        送り先のコーチが admin-web の `listMyCoachVideos` の各項目の `note` で見る（送った時点のまま）。
         任意の `lesson_menu_id` で、添削を頼むコーチの非同期レッスンのレッスンメニュー（`listCoachLessonMenus` の `lesson_type` が
         `async_lesson` のもの）を選べる（省けばメニューなしの動画で、今までと同じ）。選べるのは送り先のコーチ（`coach_id`）の・
         公開中の・非同期の・`sport` と同じスポーツのメニューだけで、満たさない・メニューがない・`lesson_menu_id` が UUID でない
@@ -2110,7 +2111,7 @@ components:
         note:
           type: string
           maxLength: 1000
-          description: コーチへの相談内容
+          description: コーチへの相談内容（任意）。動画とともに保存し、送り先のコーチに見せる（admin-web の `listMyCoachVideos` の `note`）
         lesson_menu_id:
           type: string
           format: uuid

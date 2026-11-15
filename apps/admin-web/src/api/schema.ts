@@ -1089,6 +1089,8 @@ export interface paths {
          *       コーチの添削とは別の項目で、返却で上書きされない。AI が作れなかったときは null
          *     - 各項目の `lesson_menu` は、生徒が動画を送った時点で選んだ自分の非同期レッスンのレッスンメニュー（ID・名前の写し。
          *       `VideoLessonMenu`）。メニューの今の中身ではない。メニューを選ばずに送られた動画は null
+         *     - 各項目の `note` は、生徒が動画を送ったときに書いたコーチへの相談内容（student-app の `submitVideo` の `note`。
+         *       送った時点のまま）。書かずに送られた動画と、相談内容を保存するようになる前に送られた動画は null
          *     - 絞り込み（任意）: `pending_only` が `true` なら、添削をまだ返していない（`returnVideoReview` していない。
          *       `review_status` が `in_progress`）動画だけを返す。「返却待ち」の判定は `listPendingVideoReviews` と同じ（実装は
          *       backend の domain `Video::is_awaiting_review` の 1 か所）。並べ方は変わらない（送られた時刻の古い順）。
@@ -3596,6 +3598,11 @@ export interface components {
              *     直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
              */
             lesson_menu?: components["schemas"]["VideoLessonMenu"] | null;
+            /**
+             * @description 生徒が動画を送ったときに書いたコーチへの相談内容（student-app の `submitVideo` の `note`）。送った時点のまま。
+             *     書かずに送った動画と、相談内容を保存するようになる前に送った動画は null
+             */
+            note?: string | null;
         };
         /** @description コーチに届いた動画の一覧（並べ方は `listMyCoachVideos` の説明） */
         CoachVideoList: {
