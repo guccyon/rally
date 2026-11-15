@@ -41,4 +41,8 @@ class FileSessionStore implements SessionStore {
       // 消せなくても次に読んだときのトークンがまた 401 になり、そこで登録の画面になる
     }
   }
+
+  /// アプリのファイルはほかのアプリと分け合わないので、ほかの所で変わることはない
+  @override
+  Stream<void> get changesElsewhere => const Stream.empty();
 }

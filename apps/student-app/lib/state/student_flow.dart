@@ -447,7 +447,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   final StudentFlowState _initial;
 
   @override
-  StudentFlowState build() => _initial;
+  StudentFlowState build() {
+    // 同じブラウザーのほかのタブでログアウトした・別の生徒が登録したら、このタブも前の生徒の状態を捨てる（#1669）
+    final changes = ref
+        .read(sessionStoreProvider)
+        .changesElsewhere
+        .listen((_) => _followSessionElsewhere());
+    ref.onDispose(changes.cancel);
+    return _initial;
+  }
 
   StudentApi get _api => ref.read(studentApiProvider);
 
@@ -1081,6 +1089,24 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// サーバーには何も送らない（トークンを失効させる API はない）。次の生徒のホームはサーバーから読み直す（ADR 0010）
   void logout() {
     ref.read(sessionStoreProvider).clear();
+    _discardSession();
+  }
+
+  /// ほかのタブ（[SessionStore.changesElsewhere]）が残した登録の結果を変えた・消したとき。このタブの生徒のトークンが
+  /// 残っていなければ（ログアウトした・次の人が登録した）、残したものには触らずに（次の人のものなので消さない）前の生徒の状態を捨てて
+  /// 登録の画面にする。トークンも捨てるので、このタブから前の生徒として送れない。同じトークンのまま（表示名を変えたなど）なら何もしない。
+  /// 登録の画面のタブはそのまま（次の人のホームに切り替えない）
+  void _followSessionElsewhere() {
+    final accessToken = state.accessToken;
+    if (accessToken == null) return;
+    if (ref.read(sessionStoreProvider).read()?.accessToken == accessToken) {
+      return;
+    }
+    _discardSession();
+  }
+
+  /// 前の生徒の状態（トークン・生徒・予約・チャット・契約・お知らせなど）を捨てて登録の画面にする
+  void _discardSession() {
     ref
       ..invalidate(chatProvider)
       ..invalidate(subscriptionProvider)
