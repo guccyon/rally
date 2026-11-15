@@ -184,7 +184,11 @@ mod tests {
         CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
-            crate::in_memory::InMemoryLessonCompletionRepository::default(),
+            crate::entitlement::EntitlementTrialUsageLookup::new(
+                crate::in_memory::InMemoryEntitlementRepository::default(),
+                crate::in_memory::InMemoryLessonCompletionRepository::default(),
+                crate::in_memory::InMemoryVideoRepository::default(),
+            ),
             RecordingAnalyticsSink::default(),
             FixedClock(SystemTime::UNIX_EPOCH),
         )

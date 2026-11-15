@@ -34,6 +34,8 @@ must_not:
   - "添削の依頼が 403 `video_review_not_entitled` で断られたあと、断りの文言だけを出して月額契約へ進む入口を出さない"
   - "体験を使ったかをアプリで判定して、依頼の前に「添削を依頼する」を隠す・止める（判定はサーバー。ADR 0014）"
   - "予約がまだない（または受けていない体験予約をキャンセルしただけの）生徒から「体験予約する」を外す"
+  - "月額契約を始めた生徒や動画を送った生徒（予約も完了したレッスンもなくても）に「体験予約する」を出す、または体験予約を通す（体験の対象ではない。サーバーが `trial_available: false` を返し、`createBooking` の `is_trial: true` を 409 `trial_already_used` で断る。ADR 0014）"
+  - "月額契約の生徒の予約を体験予約として作り、無料の体験のつもりで今月のビデオ通話の回数を使わせる（通常の予約として作り、確定で回数を 1 回使ったと分かるようにする）"
 touches:
   apps: [student-app]
   contexts: [scheduling, live-lesson, async-lesson, messaging, entitlement]
@@ -45,8 +47,8 @@ touches:
     - student-app.createBooking
     - student-app.submitVideo
 origin:
-  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1659", "guccyon/rally#1700"]
-  note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから"
+  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1659", "guccyon/rally#1700", "guccyon/rally#1711"]
+  note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから。#1711 は出荷の関門の探索で、月額契約を始めた生徒のスロットに「体験予約する」しか出ず、体験予約として今月のビデオ通話の回数が減っていたことから（`trial_available` と 409 `trial_already_used` の判定に月額契約と送った動画を含めた）"
   retro: false
 known_gaps:
   - step: 1

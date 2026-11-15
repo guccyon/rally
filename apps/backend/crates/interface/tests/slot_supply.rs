@@ -197,7 +197,11 @@ fn app_with_accounts(
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::entitlement::EntitlementTrialUsageLookup::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
             analytics.clone(),
             clock,
         ),
@@ -231,7 +235,11 @@ fn app_with_accounts(
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::entitlement::EntitlementTrialUsageLookup::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(

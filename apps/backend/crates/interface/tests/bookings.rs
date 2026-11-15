@@ -22,7 +22,10 @@ use application::{
     analytics::AnalyticsEvent,
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     domain_event::DomainEvent,
-    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
+    entitlement::{
+        EntitlementQuotaGate, EntitlementReviewGate, EntitlementTrialUsageLookup, GetEntitlement,
+        StartSubscription,
+    },
     identity::{
         AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
@@ -136,6 +139,8 @@ struct App {
     accounts: InMemoryAccountRepository,
     /// 完了記録の保存先（体験予約の判定と予約の一覧の `trial_available` が読む）
     completions: InMemoryLessonCompletionRepository,
+    /// 送った動画の保存先（`POST /videos` が書き、体験予約の判定と予約の一覧の `trial_available` が読む）
+    videos: InMemoryVideoRepository,
     analytics: RecordingAnalyticsSink,
     events: RecordingDomainEventPublisher,
 }
@@ -172,6 +177,7 @@ fn app_with_entitlements(
     let accounts = InMemoryAccountRepository::default();
     let lesson_menus = application::in_memory::InMemoryLessonMenuRepository::default();
     let completions = InMemoryLessonCompletionRepository::default();
+    let videos = InMemoryVideoRepository::default();
     let sessions = InMemoryLiveLessonSessionRepository::default();
     let router = interface::router_with(
         RegisterAccount::new(
@@ -199,7 +205,11 @@ fn app_with_entitlements(
         CreateBooking::new(
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            completions.clone(),
+            EntitlementTrialUsageLookup::new(
+                entitlements.clone(),
+                completions.clone(),
+                videos.clone(),
+            ),
             analytics.clone(),
             clock,
         ),
@@ -226,7 +236,11 @@ fn app_with_entitlements(
             bookings.clone(),
             application::profile::ProfileCoachIntroductionLookup::new(accounts.clone()),
             EntitlementQuotaGate::new(entitlements.clone()),
-            completions.clone(),
+            EntitlementTrialUsageLookup::new(
+                entitlements.clone(),
+                completions.clone(),
+                videos.clone(),
+            ),
             clock,
         ),
         ListCoachBookings::new(
@@ -265,7 +279,7 @@ fn app_with_entitlements(
         ),
         SubmitVideo::new(
             application::in_memory::OpenVideoSubmissionGate,
-            InMemoryVideoRepository::default(),
+            videos.clone(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
@@ -356,6 +370,7 @@ fn app_with_entitlements(
         lesson_menus,
         accounts,
         completions,
+        videos,
         analytics,
         events,
     }
@@ -615,6 +630,69 @@ async fn student_with_a_completed_lesson_and_no_booking_is_not_offered_a_trial()
     let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, false)).await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_create_contract(status, &body);
+    assert_eq!(body["is_trial"], false);
+}
+
+/// 月額契約を始めただけの生徒（予約も完了したレッスンも送った動画もない。#1711）。体験の対象ではないので
+/// `trial_available` は false、体験予約は 409 `trial_already_used` で、通常の予約は通る
+#[tokio::test]
+async fn monthly_student_without_bookings_is_not_offered_a_trial() {
+    let monthly = Entitlement::monthly(
+        EntitlementId::from_u128(30),
+        account_id(STUDENT),
+        Sport::Tennis,
+        SubscriptionId::from_u128(40),
+        LiveLessonQuota::fresh(
+            SubscriptionPlan::Standard,
+            YearMonth::new(2026, 10).unwrap(),
+        ),
+    )
+    .unwrap();
+    let app = app_with_entitlements(
+        [],
+        InMemoryEntitlementRepository::with_entitlements([monthly]),
+    );
+    assert!(!trial_available(&app).await, "月額契約がある");
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, true)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_create_contract(status, &body);
+    assert_eq!(body["code"], "trial_already_used");
+    assert!(app.analytics.events().is_empty(), "断った予約は発火しない");
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, false)).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["is_trial"], false);
+    // 契約のない別の生徒は体験予約できる
+    create(&app.router, OTHER_STUDENT, 11, true).await;
+}
+
+/// 予約をせずに動画を送った生徒（添削待ち）。体験は通話か動画添削のどちらか 1 回なので、`trial_available` は false で、
+/// 体験予約は 409 `trial_already_used`、通常の予約は通る
+#[tokio::test]
+async fn student_who_sent_a_video_is_not_offered_a_trial() {
+    use application::async_lesson::VideoRepository;
+    use domain::async_lesson::Video;
+
+    let app = app();
+    assert!(trial_available(&app).await, "まだ何もしていない");
+    app.videos
+        .insert(Video::submit(
+            app.videos.next_video_id(),
+            account_id(STUDENT),
+            COACH,
+            Sport::Tennis,
+            nov1(0),
+        ))
+        .await
+        .unwrap();
+    assert!(!trial_available(&app).await, "添削待ちの動画がある");
+
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, true)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "trial_already_used");
+    let (status, body) = post_bookings(&app.router, Some(STUDENT), booking(10, false)).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     assert_eq!(body["is_trial"], false);
 }
 

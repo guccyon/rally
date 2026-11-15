@@ -10,12 +10,11 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     identity::{TokenVerifier, account_id_uuid},
-    lesson::LessonCompletionRepository,
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CancelBookingCommand,
         ConfirmBooking, ConfirmBookingCommand, CreateBooking, CreateBookingCommand,
-        DescribeBooking, DescribedBooking, LessonMenuLookup, QuotaGate, booking_id_uuid,
-        slot_id_uuid,
+        DescribeBooking, DescribedBooking, LessonMenuLookup, QuotaGate, TrialUsageLookup,
+        booking_id_uuid, slot_id_uuid,
     },
 };
 use axum::{
@@ -99,7 +98,7 @@ pub async fn create_booking<B, J, M, G, A, P, C, K>(
 where
     B: BookingRepository,
     J: LessonMenuLookup,
-    M: LessonCompletionRepository,
+    M: TrialUsageLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -135,7 +134,7 @@ pub async fn confirm_booking<B, J, M, G, A, P, C, K>(
 where
     B: BookingRepository,
     J: LessonMenuLookup,
-    M: LessonCompletionRepository,
+    M: TrialUsageLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -168,7 +167,7 @@ pub async fn cancel_booking<B, J, M, G, A, P, C, K>(
 where
     B: BookingRepository,
     J: LessonMenuLookup,
-    M: LessonCompletionRepository,
+    M: TrialUsageLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -274,7 +273,7 @@ pub fn bookings_router<B, J, M, G, A, P, C, K, T>(
 where
     B: BookingRepository + 'static,
     J: LessonMenuLookup + 'static,
-    M: LessonCompletionRepository + 'static,
+    M: TrialUsageLookup + 'static,
     G: QuotaGate + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,

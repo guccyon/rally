@@ -49,8 +49,8 @@ impl Booking {
     /// - 有効な予約（未確定か確定）はスロットの定員まで（[`SchedulingError::SlotAlreadyBooked`]）
     /// - 同じ生徒が同じスロットに有効な予約を 2 つは持てない（[`SchedulingError::SlotAlreadyBookedByStudent`]）
     /// - 体験予約はその生徒の初回の予約だけ。キャンセルされていない予約が 1 件でもあれば
-    ///   [`SchedulingError::TrialAlreadyUsed`]（完了したレッスンの有無は見ない。それも合わせた判定は
-    ///   [`Booking::is_trial_available`]）
+    ///   [`SchedulingError::TrialAlreadyUsed`]（予約の外の事実（月額契約・完了したレッスン・送った動画）は見ない。
+    ///   それも合わせた判定は [`Booking::is_trial_available`]）
     pub fn reserve(
         id: BookingId,
         student_id: AccountId,
@@ -87,17 +87,17 @@ impl Booking {
     }
 
     /// 生徒 `student_id` が今体験予約できるか（体験をまだ使っていないか）。`bookings` にその生徒のキャンセルされていない
-    /// 予約が 1 件もなく、完了したレッスン（lesson_completion。同期・非同期のどちらでも）もない
-    /// （`has_completed_lesson` が false）ときだけ true。
+    /// 予約が 1 件もなく、予約の外でも体験を使っていない（`used_outside_bookings` が false。月額契約・完了したレッスン
+    /// （lesson_completion。同期・非同期のどちらでも）・送った動画のどれもない。ADR 0014）ときだけ true。
     ///
     /// 受け終えた体験予約をあとでキャンセルしても、完了したレッスンが残るので false のまま。受けていない体験予約を
     /// キャンセルしただけなら true。`bookings` の別の生徒の予約は判定に影響しない。
     pub fn is_trial_available<'a>(
         student_id: AccountId,
         bookings: impl IntoIterator<Item = &'a Booking>,
-        has_completed_lesson: bool,
+        used_outside_bookings: bool,
     ) -> bool {
-        !has_completed_lesson
+        !used_outside_bookings
             && !bookings
                 .into_iter()
                 .any(|b| b.status.is_active() && b.student_id == student_id)

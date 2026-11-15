@@ -5,8 +5,9 @@ use std::sync::Arc;
 use application::{
     clock::Clock,
     identity::TokenVerifier,
-    lesson::LessonCompletionRepository,
-    scheduling::{BookingRepository, CoachIntroductionLookup, ListMyBookings, QuotaGate},
+    scheduling::{
+        BookingRepository, CoachIntroductionLookup, ListMyBookings, QuotaGate, TrialUsageLookup,
+    },
 };
 use axum::{Json, Router, extract::State, routing::get};
 use domain::identity::Role;
@@ -56,7 +57,7 @@ where
     B: BookingRepository,
     I: CoachIntroductionLookup,
     G: QuotaGate,
-    R: LessonCompletionRepository,
+    R: TrialUsageLookup,
     C: Clock,
 {
     let list = state
@@ -102,7 +103,7 @@ where
     B: BookingRepository + 'static,
     I: CoachIntroductionLookup + 'static,
     G: QuotaGate + 'static,
-    R: LessonCompletionRepository + 'static,
+    R: TrialUsageLookup + 'static,
     C: Clock + 'static,
     T: TokenVerifier + 'static,
 {

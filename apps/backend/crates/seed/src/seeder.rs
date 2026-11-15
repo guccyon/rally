@@ -5,8 +5,8 @@ use application::{
     async_lesson::{ReturnVideoReview, ReturnVideoReviewCommand, SubmitVideo, SubmitVideoCommand},
     catalog::CatalogLessonMenuLookup,
     entitlement::{
-        EntitlementQuotaGate, EntitlementReviewGate, LiveLessonQuotaSubscriber, StartSubscription,
-        StartSubscriptionCommand,
+        EntitlementQuotaGate, EntitlementReviewGate, EntitlementTrialUsageLookup,
+        LiveLessonQuotaSubscriber, StartSubscription, StartSubscriptionCommand,
     },
     identity::{RegisterAccount, RegisterAccountCommand},
     in_memory::ManualClock,
@@ -102,7 +102,11 @@ where
         let create = CreateBooking::new(
             bookings.clone(),
             CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
-            PgLessonCompletionRepository::new(pool.clone()),
+            EntitlementTrialUsageLookup::new(
+                entitlements.clone(),
+                PgLessonCompletionRepository::new(pool.clone()),
+                videos.clone(),
+            ),
             analytics.clone(),
             clock.clone(),
         );

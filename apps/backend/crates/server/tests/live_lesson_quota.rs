@@ -6,6 +6,8 @@
 //!   再び確定できる
 //! - plus の契約は 4 回目まで確定でき、5 回目が 409 `live_lesson_quota_exceeded`（変更シナリオ cs-003）
 //! - 開始の 23 時間前のキャンセルで枠が減り、25 時間前のキャンセルでは確定で使った枠が戻る
+//! - 月額契約を始めた生徒は体験の対象ではない（`trial_available` false・体験予約は 409 `trial_already_used`）。通常の
+//!   予約を確定すると枠を 1 回使う（#1711）
 
 use std::time::{Duration, SystemTime};
 
@@ -160,6 +162,73 @@ impl Scenario {
         assert_eq!(status, StatusCode::OK, "{body}");
         body["live_lesson_quota"].clone()
     }
+}
+
+/// 月額契約を始めたばかりの生徒（予約も完了したレッスンも送った動画もない）には体験予約を出さず、体験予約は断る。
+/// 通常の予約は作れて、確定で今月のビデオ通話の枠を 1 回使う（#1711）。
+#[tokio::test]
+async fn subscribed_student_is_not_offered_a_trial_and_a_regular_booking_uses_the_quota() {
+    let scenario = subscribed_student().await;
+    let (status, list) = send(
+        &scenario.router,
+        Request::get("/bookings/me")
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", scenario.student),
+            )
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["bookings"], json!([]), "{list}");
+    assert_eq!(list["trial_available"], false, "{list}");
+    assert_eq!(scenario.quota().await, quota("2026-10", 0));
+
+    let (status, slot) = send(
+        &scenario.router,
+        post_json(
+            "/slots",
+            &scenario.coach,
+            json!({
+                "sport": "tennis",
+                "starts_at": "2026-10-10T10:00:00Z",
+                "ends_at": "2026-10-10T11:00:00Z",
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{slot}");
+    let (status, body) = send(
+        &scenario.router,
+        post_json(
+            "/bookings",
+            &scenario.student,
+            json!({ "slot_id": slot["slot_id"], "is_trial": true }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "trial_already_used");
+    assert_eq!(scenario.quota().await, quota("2026-10", 0));
+
+    let (status, booking) = send(
+        &scenario.router,
+        post_json(
+            "/bookings",
+            &scenario.student,
+            json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{booking}");
+    assert_eq!(booking["is_trial"], false);
+    let (status, body) = scenario
+        .confirm(booking["booking_id"].as_str().unwrap())
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["is_trial"], false);
+    assert_eq!(scenario.quota().await, quota("2026-10", 1));
 }
 
 /// standard の契約の `live_lesson_quota`。

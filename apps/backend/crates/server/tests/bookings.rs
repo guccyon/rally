@@ -5,7 +5,8 @@
 //! コーチの自分の予約の一覧（`GET /coaches/me/bookings`）は本人の枠への予約だけを生徒の表示名と一緒に返し、コーチ以外は 403。
 //! 本部が見る予約の一覧（`GET /bookings`）は同じパスの `POST /bookings`（生徒）と並んで、すべてのコーチの枠への予約を
 //! 日付（日本時間）で絞って返し、本部以外は 403。
-//! 予約をせずに動画の添削を受け終えた（完了を記録した）生徒は、体験を使用済み（`trial_available` false・体験予約は 409）とする。
+//! 予約をせずに動画を送った・動画の添削を受け終えた（完了を記録した）生徒は、体験を使用済み（`trial_available` false・
+//! 体験予約は 409）とする。
 
 use application::identity::{TokenClaims, TokenIssuer};
 use axum::{
@@ -477,6 +478,10 @@ async fn student_who_received_a_video_review_cannot_book_a_trial() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{video}");
+    // 体験は通話か動画添削のどちらか 1 回なので、動画を送れば添削待ちでも使用済み（ADR 0014）
+    let (status, list) = send(&router, my_bookings()).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["trial_available"], false, "{list}");
     let video_id = video["video_id"].as_str().unwrap();
     let review_path = format!("/videos/{video_id}/review");
     let (status, body) = send(
@@ -489,10 +494,6 @@ async fn student_who_received_a_video_review_cannot_book_a_trial() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    // 返却されただけでは、まだ受け終えていない
-    let (status, list) = send(&router, my_bookings()).await;
-    assert_eq!(status, StatusCode::OK, "{list}");
-    assert_eq!(list["trial_available"], true, "{list}");
     let (status, completion) = send(
         &router,
         post_json(

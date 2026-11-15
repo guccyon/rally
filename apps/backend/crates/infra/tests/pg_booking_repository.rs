@@ -16,7 +16,7 @@ use application::{
     catalog::{
         CatalogLessonMenuLookup, LessonMenuRepository, ListLessonMenus, ListLessonMenusQuery,
     },
-    entitlement::EntitlementQuotaGate,
+    entitlement::{EntitlementQuotaGate, EntitlementTrialUsageLookup},
     in_memory::{FixedClock, RecordingAnalyticsSink},
     profile::ProfileCoachDisplayNameLookup,
     scheduling::{
@@ -38,11 +38,26 @@ use domain::{
     },
 };
 use infra::{
-    PgAccountRepository, PgBookingRepository, PgEntitlementRepository, PgLessonMenuRepository,
-    PgSlotRepository,
+    PgAccountRepository, PgBookingRepository, PgEntitlementRepository,
+    PgLessonCompletionRepository, PgLessonMenuRepository, PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 use support::at;
+
+/// 体験予約の判定（月額契約・完了したレッスン・送った動画を Postgres から読む）。
+fn trials(
+    pool: &PgPool,
+) -> EntitlementTrialUsageLookup<
+    PgEntitlementRepository,
+    PgLessonCompletionRepository,
+    PgVideoRepository,
+> {
+    EntitlementTrialUsageLookup::new(
+        PgEntitlementRepository::new(pool.clone()),
+        PgLessonCompletionRepository::new(pool.clone()),
+        PgVideoRepository::new(pool.clone()),
+    )
+}
 
 async fn reserve(
     bookings: &PgBookingRepository,
@@ -495,7 +510,7 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
             pool.clone(),
         )),
         EntitlementQuotaGate::new(PgEntitlementRepository::new(pool.clone())),
-        infra::PgLessonCompletionRepository::new(pool.clone()),
+        trials(&pool),
         FixedClock(at(0)),
     )
     .execute(student)
@@ -771,7 +786,7 @@ async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
     let create = CreateBooking::new(
         bookings.clone(),
         CatalogLessonMenuLookup::new(menus.clone()),
-        infra::PgLessonCompletionRepository::new(pool.clone()),
+        trials(&pool),
         RecordingAnalyticsSink::default(),
         FixedClock(at(1)),
     );
@@ -842,7 +857,7 @@ async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
             pool.clone(),
         )),
         EntitlementQuotaGate::new(PgEntitlementRepository::new(pool.clone())),
-        infra::PgLessonCompletionRepository::new(pool.clone()),
+        trials(&pool),
         FixedClock(at(0)),
     )
     .execute(student)

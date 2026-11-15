@@ -6,12 +6,11 @@ use domain::{
     scheduling::{Booking, SchedulingError, Slot, SlotId},
 };
 
-use super::{BookingRepository, LessonMenuLookup, ReserveSlotError};
+use super::{BookingRepository, LessonMenuLookup, ReserveSlotError, TrialUsageLookup};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
     clock::Clock,
-    lesson::LessonCompletionRepository,
 };
 
 /// 予約の作成の入力。`student_id` は認証した生徒のアカウント（役割の確認は境界が行う）。
@@ -27,8 +26,8 @@ pub struct CreateBookingCommand {
 pub enum CreateBookingError {
     /// スロットがない
     SlotNotFound,
-    /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約（完了したレッスンが
-    /// あるときを含む）、コーチが受付を止めている）
+    /// 予約がドメインの不変条件を満たさない（公開中でない、満席、同じ生徒の 2 回目、2 回目の体験予約（月額契約・完了した
+    /// レッスン・送った動画があるときを含む）、コーチが受付を止めている）
     Invalid(SchedulingError),
     /// 保存先の障害
     Unavailable(Unavailable),
@@ -45,32 +44,33 @@ pub enum CreateBookingError {
 /// 予約は断らない）。枠のコーチが受付を止めていれば（domain の [`domain::scheduling::CoachAcceptance`]）、枠の状態の
 /// 判定の後で断る（[`SchedulingError::CoachNotAcceptingBookings`]。入っている予約の確定・キャンセルは止めない）。受付の
 /// 状態は予約を保存するトランザクションの前に読むので、止めた直後の並行な予約が 1 件通ることはある。
-/// 体験予約は、その生徒の完了したレッスン（lesson_completion。同期・非同期のどちらでも。完了記録の保存先
-/// [`LessonCompletionRepository`] から読む。docs/adr/0006）が 1 件でもあれば、キャンセルされていない予約がなくても
-/// 断る（受け終えた体験予約をあとでキャンセルしても体験は使用済み。判定は domain の [`Booking::is_trial_available`]）。
-/// 完了記録を読むのは体験予約のときだけで、予約を保存するトランザクションの前に読む（受付の状態と同じ）。
+/// 体験予約は、その生徒が予約の外で体験を使い終えていれば（月額契約がある・完了したレッスン（lesson_completion。同期・
+/// 非同期のどちらでも。docs/adr/0006）がある・動画を送った。[`TrialUsageLookup`] に問い合わせる。ADR 0014）、
+/// キャンセルされていない予約がなくても断る（受け終えた体験予約をあとでキャンセルしても体験は使用済み。判定は domain の
+/// [`Booking::is_trial_available`]）。問い合わせるのは体験予約のときだけで、予約を保存するトランザクションの前に読む
+/// （受付の状態と同じ）。通常の予約（`is_trial` が false）はこの判定を受けない。
 /// 保存したら行動イベント `booking.created` を 1 回発火する。拒否・保存の失敗では発火しない。
-pub struct CreateBooking<B, M, R, A, C> {
+pub struct CreateBooking<B, M, T, A, C> {
     bookings: B,
     lesson_menus: M,
-    completions: R,
+    trials: T,
     analytics: A,
     clock: C,
 }
 
-impl<B, M, R, A, C> CreateBooking<B, M, R, A, C>
+impl<B, M, T, A, C> CreateBooking<B, M, T, A, C>
 where
     B: BookingRepository,
     M: LessonMenuLookup,
-    R: LessonCompletionRepository,
+    T: TrialUsageLookup,
     A: AnalyticsSink,
     C: Clock,
 {
-    pub fn new(bookings: B, lesson_menus: M, completions: R, analytics: A, clock: C) -> Self {
+    pub fn new(bookings: B, lesson_menus: M, trials: T, analytics: A, clock: C) -> Self {
         Self {
             bookings,
             lesson_menus,
-            completions,
+            trials,
             analytics,
             clock,
         }
@@ -103,20 +103,23 @@ where
             .find_coach_acceptance(slot.coach_id())
             .await
             .map_err(CreateBookingError::Unavailable)?;
-        let has_completed_lesson = is_trial
-            && !self
-                .completions
-                .completions_of_student(student_id)
+        let used_trial_outside_bookings = is_trial
+            && self
+                .trials
+                .has_used_trial_outside_bookings(student_id)
                 .await
-                .map_err(CreateBookingError::Unavailable)?
-                .is_empty();
+                .map_err(CreateBookingError::Unavailable)?;
         let booking = self
             .bookings
             .reserve(slot_id, student_id, |slot, existing| {
                 let booking = Booking::reserve(id, student_id, is_trial, slot, existing, now)?;
-                // 枠の状態・予約の判定の後で、完了したレッスンがあれば体験は使用済み
+                // 枠の状態・予約の判定の後で、月額契約・完了したレッスン・送った動画があれば体験は使用済み
                 if is_trial
-                    && !Booking::is_trial_available(student_id, existing, has_completed_lesson)
+                    && !Booking::is_trial_available(
+                        student_id,
+                        existing,
+                        used_trial_outside_bookings,
+                    )
                 {
                     return Err(SchedulingError::TrialAlreadyUsed);
                 }
@@ -172,11 +175,15 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use domain::{
-        async_lesson::VideoId,
+        async_lesson::{Video, VideoId},
         catalog::Sport,
         catalog::{
             LessonDuration, LessonFormat, LessonMenuContent, LessonMenuDescription, LessonMenuId,
             LessonMenuName,
+        },
+        entitlement::{
+            Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
+            YearMonth,
         },
         lesson::{LessonCompletion, LessonCompletionId, LessonSource},
         live_lesson::SessionId,
@@ -189,10 +196,13 @@ mod tests {
     use super::*;
     use crate::{
         catalog::{CatalogLessonMenuLookup, LessonMenuRepository},
+        entitlement::EntitlementTrialUsageLookup,
         in_memory::{
-            FixedClock, InMemoryBookingRepository, InMemoryLessonCompletionRepository,
-            InMemoryLessonMenuRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+            FixedClock, InMemoryBookingRepository, InMemoryEntitlementRepository,
+            InMemoryLessonCompletionRepository, InMemoryLessonMenuRepository,
+            InMemorySlotRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
         },
+        lesson::LessonCompletionRepository,
         scheduling::{CoachAcceptanceRepository, UpdateBookingError},
     };
 
@@ -202,10 +212,25 @@ mod tests {
     type UseCase = CreateBooking<
         InMemoryBookingRepository,
         CatalogLessonMenuLookup<InMemoryLessonMenuRepository>,
-        InMemoryLessonCompletionRepository,
+        Trials,
         RecordingAnalyticsSink,
         FixedClock,
     >;
+
+    type Trials = EntitlementTrialUsageLookup<
+        InMemoryEntitlementRepository,
+        InMemoryLessonCompletionRepository,
+        InMemoryVideoRepository,
+    >;
+
+    /// 月額契約も送った動画もなく、完了記録の保存先だけを `completions` にした体験の判定。
+    fn trials(completions: InMemoryLessonCompletionRepository) -> Trials {
+        EntitlementTrialUsageLookup::new(
+            InMemoryEntitlementRepository::default(),
+            completions,
+            InMemoryVideoRepository::default(),
+        )
+    }
 
     const NOW: SystemTime = SystemTime::UNIX_EPOCH;
     const COACH: AccountId = AccountId::from_u128(7);
@@ -306,7 +331,7 @@ mod tests {
         let use_case = CreateBooking::new(
             InMemoryBookingRepository::new(slots),
             CatalogLessonMenuLookup::new(menus.clone()),
-            InMemoryLessonCompletionRepository::default(),
+            trials(InMemoryLessonCompletionRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );
@@ -480,11 +505,16 @@ mod tests {
 
     /// [`use_case`] の予約を使い、完了記録の保存先だけを `completions` にしたユースケース。
     fn use_case_with_completions(completions: InMemoryLessonCompletionRepository) -> UseCase {
+        use_case_with_trials(trials(completions))
+    }
+
+    /// [`use_case`] の予約を使い、体験の判定だけを `trials` にしたユースケース。
+    fn use_case_with_trials(trials: Trials) -> UseCase {
         let base = use_case();
         CreateBooking::new(
             base.bookings,
             base.lesson_menus,
-            completions,
+            trials,
             base.analytics,
             base.clock,
         )
@@ -570,6 +600,66 @@ mod tests {
             "断った予約は発火しない"
         );
         // 通常の予約はできる
+        let regular = use_case.execute(command(STUDENT, 10, false)).await.unwrap();
+        assert!(!regular.is_trial());
+    }
+
+    #[tokio::test]
+    async fn a_monthly_student_may_not_book_a_trial_but_may_book_a_regular_lesson() {
+        // 予約も完了したレッスンも送った動画もなく、月額契約だけがある（#1711）
+        let use_case = use_case_with_trials(EntitlementTrialUsageLookup::new(
+            InMemoryEntitlementRepository::with_entitlements([Entitlement::monthly(
+                EntitlementId::from_u128(1),
+                STUDENT,
+                Sport::Tennis,
+                SubscriptionId::from_u128(1),
+                LiveLessonQuota::fresh(
+                    SubscriptionPlan::Standard,
+                    YearMonth::new(1970, 1).unwrap(),
+                ),
+            )
+            .unwrap()]),
+            InMemoryLessonCompletionRepository::default(),
+            InMemoryVideoRepository::default(),
+        ));
+
+        assert_invalid(
+            use_case.execute(command(STUDENT, 10, true)).await,
+            SchedulingError::TrialAlreadyUsed,
+        );
+        assert!(use_case.bookings().all().is_empty(), "体験予約は保存しない");
+        assert!(
+            use_case.analytics().events().is_empty(),
+            "断った予約は発火しない"
+        );
+        let regular = use_case.execute(command(STUDENT, 10, false)).await.unwrap();
+        assert!(!regular.is_trial(), "通常の予約として作る");
+        // 契約のない別の生徒は体験予約できる
+        use_case
+            .execute(command(OTHER_STUDENT, 11, true))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn trial_is_used_by_a_sent_video_without_any_booking() {
+        // 予約も完了したレッスンもなく、添削待ちの動画だけがある
+        let use_case = use_case_with_trials(EntitlementTrialUsageLookup::new(
+            InMemoryEntitlementRepository::default(),
+            InMemoryLessonCompletionRepository::default(),
+            InMemoryVideoRepository::with_videos([Video::submit(
+                VideoId::from_u128(1),
+                STUDENT,
+                COACH,
+                Sport::Tennis,
+                NOW,
+            )]),
+        ));
+
+        assert_invalid(
+            use_case.execute(command(STUDENT, 10, true)).await,
+            SchedulingError::TrialAlreadyUsed,
+        );
         let regular = use_case.execute(command(STUDENT, 10, false)).await.unwrap();
         assert!(!regular.is_trial());
     }
@@ -786,7 +876,7 @@ mod tests {
         let use_case = CreateBooking::new(
             BrokenRepository,
             CatalogLessonMenuLookup::new(InMemoryLessonMenuRepository::default()),
-            InMemoryLessonCompletionRepository::default(),
+            trials(InMemoryLessonCompletionRepository::default()),
             RecordingAnalyticsSink::default(),
             FixedClock(NOW),
         );

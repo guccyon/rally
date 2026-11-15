@@ -124,7 +124,11 @@ fn app() -> App {
         CreateBooking::new(
             bookings.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::entitlement::EntitlementTrialUsageLookup::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
             analytics.clone(),
             clock,
         ),
@@ -160,7 +164,11 @@ fn app() -> App {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::entitlement::EntitlementTrialUsageLookup::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(

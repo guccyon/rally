@@ -169,7 +169,11 @@ fn router(now: SystemTime) -> Router {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::entitlement::EntitlementTrialUsageLookup::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
             analytics.clone(),
             clock,
         ),
@@ -205,7 +209,11 @@ fn router(now: SystemTime) -> Router {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(entitlements.clone()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::entitlement::EntitlementTrialUsageLookup::new(
+                application::in_memory::InMemoryEntitlementRepository::default(),
+                application::in_memory::InMemoryLessonCompletionRepository::default(),
+                application::in_memory::InMemoryVideoRepository::default(),
+            ),
             clock,
         ),
         application::scheduling::ListCoachBookings::new(

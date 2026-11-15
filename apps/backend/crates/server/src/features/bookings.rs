@@ -1,10 +1,11 @@
 //! 生徒の予約の作成・確定・キャンセル（`POST /bookings`・`/bookings/{booking_id}/confirm`・`/cancel`）。確定は
-//! entitlement に通話の枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。返す予約に添えるコーチの表示名は
+//! entitlement に通話の枠が残っているかを問い合わせる（`EntitlementQuotaGate`）。体験予約は、月額契約・完了したレッスン・
+//! 送った動画で体験を使い終えたかを entitlement に問い合わせる（`EntitlementTrialUsageLookup`。ADR 0014）。返す予約に添えるコーチの表示名は
 //! アカウントの保存先から読む。
 
 use application::{
     catalog::CatalogLessonMenuLookup,
-    entitlement::EntitlementQuotaGate,
+    entitlement::{EntitlementQuotaGate, EntitlementTrialUsageLookup},
     profile::ProfileCoachDisplayNameLookup,
     scheduling::{CancelBooking, ConfirmBooking, CreateBooking, DescribeBooking},
 };
@@ -17,7 +18,11 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         CreateBooking::new(
             ports.bookings(),
             CatalogLessonMenuLookup::new(ports.lesson_menus()),
-            ports.completions(),
+            EntitlementTrialUsageLookup::new(
+                ports.entitlements(),
+                ports.completions(),
+                ports.videos(),
+            ),
             ports.analytics(),
             ports.clock(),
         ),
