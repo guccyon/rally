@@ -35,7 +35,7 @@ use crate::{
     analytics::{AnalyticsEvent, AnalyticsSink},
     async_lesson::{
         AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoStorage,
-        video_id_uuid, video_review_id_uuid,
+        VideoSubmissionGate, video_id_uuid, video_review_id_uuid,
     },
     catalog::{ChangeLessonMenuPublicationError, LessonMenuRepository, lesson_menu_id_uuid},
     clock::Clock,
@@ -1147,6 +1147,20 @@ impl VideoCallProvider for FixedVideoCallProvider {
             .ok_or_else(|| Unavailable::new("ルームが開いていない"))?;
         rooms.remove(index);
         Ok(self.quality)
+    }
+}
+
+/// 誰でも何本でも送れる [`VideoSubmissionGate`]（体験の制限を使わないテスト・ローカル起動用）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OpenVideoSubmissionGate;
+
+impl VideoSubmissionGate for OpenVideoSubmissionGate {
+    async fn may_submit_video(
+        &self,
+        _student_id: AccountId,
+        _sent_videos: usize,
+    ) -> Result<bool, Unavailable> {
+        Ok(true)
     }
 }
 

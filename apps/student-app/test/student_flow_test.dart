@@ -112,6 +112,7 @@ void main() {
       'recordLessonCompletion',
       'submitLessonReview',
       'listSubscriptionPlans',
+      'getMyEntitlement',
       'startSubscription',
     ]);
   });
@@ -164,8 +165,57 @@ void main() {
         'recordLessonCompletion',
         'submitLessonReview',
         'listSubscriptionPlans',
+        'getMyEntitlement',
         'startSubscription',
       ]);
+    },
+  );
+
+  testWidgets(
+    '別のタブで月額契約したあと、このタブが前面に戻るとホームの契約の欄と「次にやること」を読み直し、「月額契約へ進む」を出さない（#1606）',
+    (tester) async {
+      // 契約の前は「次にやること」にも「月額契約へ進む」が出る
+      final api = FakeStudentApi(myBookings: const [])
+        ..nextActions.add(Fixtures.nextStartSubscription);
+      // 「次にやること」のカードの下の今月のビデオ通話の欄まで 1 画面に収める
+      tester.view.physicalSize = const Size(1200, 4000);
+      addTearDown(tester.view.reset);
+      await pumpApp(tester, api);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'メールアドレス'),
+        'yamada@example.com',
+      );
+      await tester.enterText(find.widgetWithText(TextFormField, '表示名'), '山田');
+      await tapText(tester, 'テニス');
+      await tapText(tester, '登録する');
+      expect(
+        find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+        findsOneWidget,
+      );
+      expect(find.text('月額契約で、続けて教わりましょう'), findsOneWidget);
+
+      // 別のタブでスタンダードを始め、このタブは裏に回っていた（サーバーの次の操作からも契約が消える）
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      await tester.pump();
+      api.entitlement = Fixtures.subscriptionStartedWith(
+        SubscriptionPlan.standard,
+      ).entitlement;
+      api.nextActions.clear();
+      api.calls.clear();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(api.calls, ['getMyEntitlement', 'getMyNextActions']);
+      expect(find.text('月額契約で、続けて教わりましょう'), findsNothing);
+      expect(
+        find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+        findsNothing,
+      );
+      expect(find.text('月額契約へ進む'), findsNothing);
+      expect(find.text('月 2 回のうち残り 2 回'), findsOneWidget);
+      expect(find.text('プラン: スタンダード'), findsOneWidget);
     },
   );
 

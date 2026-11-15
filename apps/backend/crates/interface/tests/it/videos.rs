@@ -10,6 +10,8 @@
 //! 送付で選んだ非同期のレッスンメニュー（`lesson_menu_id`）は送った時点の ID・名前の写し（`lesson_menu`）として
 //! `submitVideo`・`getVideoReview`・`returnVideoReview`・`listMyCoachVideos` に載り、後でメニューを直しても変わらないこと、
 //! 選ばなければ null・選べないメニューなら 422 で何も受け付けないことを確かめる。
+//! 生徒の相談内容（`note`）は動画とともに保存されて `listMyCoachVideos` に書いたとおり載り、書かない・空白だけなら null、
+//! 1000 文字を超えれば 422 で何も保存しないことを確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -287,6 +289,7 @@ fn app() -> App {
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::in_memory::InMemoryLiveLessonSessionRepository::default(),
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
@@ -321,6 +324,7 @@ fn app() -> App {
             clock.clone(),
         ),
         SubmitVideo::new(
+            application::in_memory::OpenVideoSubmissionGate,
             videos.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             FixedVideoStorage,
@@ -718,6 +722,8 @@ async fn invalid_submissions_are_unprocessable() {
         with("coach_id", json!("not-a-uuid")),
         with("content_type", json!("video/webm")),
         with("note", json!("あ".repeat(1001))),
+        // 空白だけでも長さは数える
+        with("note", json!(" ".repeat(1001))),
         json!({ "sport": "tennis" }),
     ] {
         let (status, error) = app.submit(Some(STUDENT), body.clone()).await;
@@ -730,6 +736,69 @@ async fn invalid_submissions_are_unprocessable() {
     assert_eq!(app.submit(Some(STUDENT), body).await.0, StatusCode::CREATED);
     let body = with("note", json!("あ".repeat(1000)));
     assert_eq!(app.submit(Some(STUDENT), body).await.0, StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn the_note_is_saved_and_shown_only_to_the_coach_and_a_blank_or_missing_note_is_null() {
+    let app = app();
+    let with_note = |note: Option<&str>| {
+        let mut body = tennis_video();
+        match note {
+            Some(note) => body["note"] = json!(note),
+            None => {
+                body.as_object_mut().unwrap().remove("note");
+            }
+        }
+        body
+    };
+    let hour = |h: u64| submitted_at() + Duration::from_secs(h * 3600);
+    let long = "あ".repeat(1000);
+    let mut sent = Vec::new();
+    for (h, note) in [
+        (1, Some(" サーブのトスが\n安定しない ")),
+        (2, Some(long.as_str())),
+        (3, Some(" \u{3000}\n")),
+        (4, Some("")),
+        (5, None),
+    ] {
+        app.clock.set(hour(h));
+        let (status, body) = app.submit(Some(STUDENT), with_note(note)).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        // student-app の応答（Video）の形は変わらない
+        assert!(body.get("note").is_none(), "{body}");
+        sent.push(body["video_id"].as_str().unwrap().to_string());
+    }
+
+    let (status, body) = app.list_coach_videos(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let notes: Vec<_> = body["videos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|video| sent.iter().any(|id| video["video_id"] == json!(id)))
+        .map(|video| video["note"].clone())
+        .collect();
+    // 書いたとおり（前後の空白も削らない）。空白だけ・空・書かなかったときは null
+    assert_eq!(
+        notes,
+        [
+            json!(" サーブのトスが\n安定しない "),
+            json!(long),
+            Value::Null,
+            Value::Null,
+            Value::Null,
+        ]
+    );
+
+    // 長すぎれば 422 で、何も保存しない
+    let (status, error) = app
+        .submit(Some(STUDENT), with_note(Some(&"あ".repeat(1001))))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{error}");
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["message"], "note は 1000 文字まで");
+    let (_, after) = app.list_coach_videos(Some(COACH)).await;
+    assert_eq!(after, body);
 }
 
 #[tokio::test]
@@ -853,14 +922,18 @@ async fn coaches_list_their_own_videos_awaiting_review_first_then_latest_returne
                     // 一次フィードバックなしで保存された動画（AI が作れなかった）は null
                     "ai_feedback": null,
                     // メニューを選ばずに送られた動画は null
-                    "lesson_menu": null
+                    "lesson_menu": null,
+                    // 相談内容を保存する前に送られた（ここでは直接入れた）動画は null
+                    "note": null
                 },
                 {
                     "video_id": second,
                     "submitted_at": "2026-10-26T12:00:00Z",
                     "review_status": "in_progress",
                     "ai_feedback": fixed_ai_feedback("2026-10-26T12:00:00Z"),
-                    "lesson_menu": null
+                    "lesson_menu": null,
+                    // 生徒が送るときに書いた相談内容
+                    "note": "サーブのトスが安定しない"
                 },
                 {
                     "video_id": first,
@@ -870,7 +943,9 @@ async fn coaches_list_their_own_videos_awaiting_review_first_then_latest_returne
                     "returned_at": "2026-10-26T13:00:00Z",
                     // 返却の後も、送付の直後に作った一次フィードバックのまま
                     "ai_feedback": fixed_ai_feedback("2026-10-26T11:00:00Z"),
-                    "lesson_menu": null
+                    "lesson_menu": null,
+                    // 返却の後も、送った時点の相談内容のまま
+                    "note": "サーブのトスが安定しない"
                 }
             ]
         })

@@ -783,6 +783,35 @@ describe("通話への参加", () => {
     expect(screen.queryByRole("button", { name: "通話を終了" })).not.toBeInTheDocument();
   });
 
+  test("通話中のセッションが載った予約の行には「通話中」と「通話に戻る」を出し、終了時刻を過ぎていてもこれからの予約に残す", async () => {
+    const live = (booking: (typeof BOOKINGS)[number]) => ({
+      ...booking,
+      live_lesson_session: { session_id: SESSION_ID, status: "in_progress" as const, started_at: at(-2) },
+    });
+    // 古田さんの予約は終了時刻を過ぎているが、通話がまだ終わっていない
+    const bookings = [live(BOOKINGS[0]!), BOOKINGS[1]!, live(BOOKINGS[2]!), BOOKINGS[3]!, BOOKINGS[4]!];
+    render(
+      <LiveSessionPanel
+        api={{
+          listMyCoachBookings: listOf(bookings),
+          startLiveLessonSession: vi.fn(),
+          endLiveLessonSession: vi.fn(),
+        }}
+      />,
+    );
+
+    const upcoming = await screen.findByRole("table", { name: "これからの予約" });
+    expect(rowTexts(upcoming)).toEqual(["古田さん", "佐藤さん", "鈴木さん", "（名前を表示できません）"]);
+    for (const name of ["古田さん", "佐藤さん"]) {
+      const row = within(upcoming).getByRole("row", { name: new RegExp(name) });
+      expect(row).toHaveTextContent("通話中");
+      expect(within(row).getByRole("button", { name: "通話に戻る" })).toBeEnabled();
+      expect(within(row).queryByRole("button", { name: "入室前チェック" })).not.toBeInTheDocument();
+    }
+    expect(rowTexts(screen.getByRole("table", { name: "終わった予約" }))).toEqual(["中村さん"]);
+    expect(screen.getAllByRole("button", { name: "通話に戻る" })).toHaveLength(2);
+  });
+
   test("開始できなければ文言を出し、終了ボタンを出さない", async () => {
     const startLiveLessonSession = vi.fn<CoachApi["startLiveLessonSession"]>(async () => ({
       ok: false,

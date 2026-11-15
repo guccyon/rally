@@ -155,7 +155,15 @@ async fn live_and_async_lessons_are_completed_and_only_the_first_is_the_first_le
     assert_eq!(first["is_first_lesson"], true);
     assert_eq!(first["completed_at"], "2026-11-01T10:45:00Z");
 
-    // 同じ生徒が動画を送り、翌日に添削が返される
+    // 体験は通話で使い終えたので、同じ生徒は月額契約を始めてから動画を送り、翌日に添削が返される
+    post_ok(
+        &router,
+        "/subscriptions",
+        &student,
+        json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
+        StatusCode::CREATED,
+    )
+    .await;
     let video = post_ok(
         &router,
         "/videos",

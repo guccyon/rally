@@ -5,7 +5,7 @@ actor: student
 goal: "1 回受けて終わりにせず、次のレッスンを続けて予約できる。次の行動が示されないと 1 回で離れてしまう（KPI first_lesson_retention_1m）"
 reader: [student]
 entry: "初回レッスン（通話か動画添削）の完了を記録した生徒が、生徒アプリのホームを開く"
-exit: "生徒がスロットを探す画面で自分のスポーツの予約できるスロットを見て、そこから 2 回目の予約（体験予約ではない通常の予約）を作り、予約の確定待ちを見ている"
+exit: "生徒がスロットを探す画面で自分のスポーツの予約できるスロットを見て、そこから 2 回目の予約（体験予約ではない通常の予約）を作り、予約の確定待ちを見ている。月額契約の前に動画の添削を頼もうとしても無料では通らず、月額契約へ進む入口が出ている"
 preconditions:
   - "生徒の完了したレッスン（lesson_completion）が 1 件以上ある"
 steps:
@@ -14,10 +14,13 @@ steps:
     sees: "「次のレッスン」の欄に、次のレッスンも予約しておくようすすめる一言と「次のレッスンを予約する」。月額契約の欄（契約したプランと今月のビデオ通話の残りの回数、契約がなければ「まだ月額契約はありません」）は今までどおり"
   - where: "student-app ホーム"
     do: "「次のレッスンを予約する」を押す"
-    sees: "スロットを探す画面が開き、自分のスポーツの予約できるスロットが並ぶ。体験予約を使っている（サーバーが自分の予約 `listMyBookings` の `trial_available: false` で返す。受けたレッスンがあるので、受け終えた体験予約をあとでキャンセルしていても false）ので、スロットのボタンは「体験予約する」ではなく「予約する」"
+    sees: "スロットを探す画面が開き、自分のスポーツの予約できるスロットが並ぶ。体験予約を使っている（サーバーが自分の予約 `listMyBookings` の `trial_available: false` で返す。受けたレッスンがあるので、受け終えた体験予約をあとでキャンセルしていても false）ので、スロットのボタンは「体験予約する」ではなく「予約する」。体験予約か通常の予約かは `trial_available` だけで決まり（載っていなければ「予約する」）、自分の予約を読み終えるまでボタンは押せない（読めていなければ、スポーツで絞り直したときや予約するときに読んでから決める）"
   - where: "student-app スロットを探す"
     do: "スロットの「予約する」を押す"
     sees: "予約の確定待ちが開く（`createBooking` は `is_trial: false`。「体験予約はすでに使っています。」で断られない）"
+  - where: "student-app 担当コーチとのチャット"
+    do: "月額契約を始める前に、ホームの「添削を依頼する」（またはチャットの「添削を依頼する」）から動画を選んで依頼する"
+    sees: "体験を使い終えているので、サーバーが `submitVideo` を 403 `video_review_not_entitled` で断る。「体験はすでに使っています。動画の添削は月額契約を始めると使えます。」の文言と、依頼のボタンのそばに「月額契約へ進む」が出る。押すと月額契約の画面が開き、契約したあとは開いていたスレッドへ戻れる"
 must_not:
   - "完了したレッスンがまだない生徒に「次のレッスンを予約する」を出す"
   - "初回かどうかをアプリで数え直す（初回の判定はサーバーの完了記録の is_first_lesson だけ。ADR 0006）"
@@ -26,18 +29,23 @@ must_not:
   - "体験予約を使った生徒のスロットに「体験予約する」だけを出し、2 回目の予約に進めなくする（体験予約か通常の予約かは、サーバーの自分の予約 `listMyBookings` の `trial_available` だけで決める）"
   - "体験予約か通常の予約かをアプリで数え直す（キャンセルされていない予約の有無や完了したレッスンの件数から決めない。判定はサーバーの `trial_available` と `createBooking` の 409 `trial_already_used`）"
   - "受け終えた体験予約をあとでキャンセルした生徒に「体験予約する」を出す、または 2 回目の体験予約（無料の添削の依頼を含む）を通す"
+  - "予約のない生徒でも、体験として 1 本送ったあとの 2 本目の添削の依頼を通す（サーバーが 403 `video_review_not_entitled` で断る）"
+  - "自分の予約をまだ読めていないのに、推測で体験予約か通常の予約かを決めて予約を作る"
+  - "添削の依頼が 403 `video_review_not_entitled` で断られたあと、断りの文言だけを出して月額契約へ進む入口を出さない"
+  - "体験を使ったかをアプリで判定して、依頼の前に「添削を依頼する」を隠す・止める（判定はサーバー。ADR 0014）"
   - "予約がまだない（または受けていない体験予約をキャンセルしただけの）生徒から「体験予約する」を外す"
 touches:
   apps: [student-app]
-  contexts: [scheduling, live-lesson, async-lesson]
-  terms: [lesson_completion, slot, booking]
+  contexts: [scheduling, live-lesson, async-lesson, messaging, entitlement]
+  terms: [lesson_completion, slot, booking, video_review_request, subscription]
   operations:
     - student-app.listMyLessonCompletions
     - student-app.searchSlots
     - student-app.listMyBookings
     - student-app.createBooking
+    - student-app.submitVideo
 origin:
-  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594"]
+  issues: ["guccyon/rally#1360", "guccyon/rally#1505", "guccyon/rally#1518", "guccyon/rally#1522", "guccyon/rally#1523", "guccyon/rally#1594", "guccyon/rally#1653", "guccyon/rally#1659", "guccyon/rally#1700"]
   note: "週次の KPI の集計で first_lesson_retention_1m が 0.1644 と見込み（0.2 以上）を下回り、初回のあとに次の行動が示されていないという見立てから"
   retro: false
 known_gaps:

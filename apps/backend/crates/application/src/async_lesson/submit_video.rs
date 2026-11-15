@@ -1,6 +1,6 @@
 use domain::{
     DomainError,
-    async_lesson::{AiFeedback, Video, VideoContentType},
+    async_lesson::{AiFeedback, Video, VideoContentType, VideoNote},
     catalog::LessonMenuId,
     catalog::Sport,
     identity::AccountId,
@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::{
     AiFeedbackGenerator, AiFeedbackRequest, VideoLessonMenuLookup, VideoRepository, VideoStorage,
-    video_id_uuid,
+    VideoSubmissionGate, video_id_uuid,
 };
 use crate::{
     Unavailable,
@@ -26,8 +26,9 @@ pub struct SubmitVideoCommand {
     pub coach_id: AccountId,
     pub sport: Sport,
     pub content_type: VideoContentType,
-    /// 送った生徒の一言（コーチへの相談内容）。AI の一次フィードバックの材料に渡すだけで、保存しない
-    pub note: Option<String>,
+    /// 送った生徒の一言（コーチへの相談内容）。動画とともに保存し（送り先のコーチが読む）、AI の一次フィードバックの
+    /// 材料にも渡す。書かなかった（空白だけの）ときは `None`
+    pub note: Option<VideoNote>,
     /// 添削を頼むコーチの非同期レッスンのレッスンメニュー（任意。なければメニューなしの動画）
     pub lesson_menu_id: Option<LessonMenuId>,
 }
@@ -44,6 +45,8 @@ pub struct SubmittedVideo {
 
 #[derive(Debug)]
 pub enum SubmitVideoError {
+    /// 体験を使い終えた（月額契約の前で、完了したレッスンか送った動画がある）生徒は送れない
+    NotEntitled,
     /// 選んだレッスンメニューが動画に合わない（送り先のコーチの・公開中の・非同期の・同じスポーツのメニューでない）
     Invalid(DomainError),
     /// 選んだレッスンメニューがない
@@ -69,13 +72,19 @@ impl From<DomainError> for SubmitVideoError {
 /// （作った時刻は [`Clock`] の今）。AI や保存先が失敗しても送付は成功させ、一次フィードバックは空のままにする
 /// （失敗の理由は [`SubmittedVideo::ai_feedback_failure`] で返し、書くのは外の層）。添削の着手条件・返却の流れには関わらない。
 ///
+/// 生徒の相談内容（[`SubmitVideoCommand::note`]）は動画に添えて（[`Video::with_note`]）一緒に保存する。
+///
 /// レッスンメニューの指定があれば、catalog に問い合わせて（[`VideoLessonMenuLookup`]）動画で選べるか
 /// （[`Video::submit_with_lesson_menu`]）を確かめ、送った時点の ID・名前を動画に写す。選べなければ何も保存せず、
 /// イベントも発火しない。
 ///
+/// 保存の前に、生徒が送ってよいかを問い合わせる（[`VideoSubmissionGate`]。月額は送り放題、契約の前は体験の 1 本だけ）。
+/// 送れなければ何も保存せず、イベントも発火しない（[`SubmitVideoError::NotEntitled`]）。
+///
 /// 添削に着手してよいか（ゴルフはワンショット決済が確定した動画だけ）は返却のときに問い合わせる
 /// （[`super::ReturnVideoReview`]）。
-pub struct SubmitVideo<V, M, S, F, A, P, C> {
+pub struct SubmitVideo<G, V, M, S, F, A, P, C> {
+    gate: G,
     videos: V,
     lesson_menus: M,
     storage: S,
@@ -85,8 +94,9 @@ pub struct SubmitVideo<V, M, S, F, A, P, C> {
     clock: C,
 }
 
-impl<V, M, S, F, A, P, C> SubmitVideo<V, M, S, F, A, P, C>
+impl<G, V, M, S, F, A, P, C> SubmitVideo<G, V, M, S, F, A, P, C>
 where
+    G: VideoSubmissionGate,
     V: VideoRepository,
     M: VideoLessonMenuLookup,
     S: VideoStorage,
@@ -95,7 +105,9 @@ where
     P: DomainEventPublisher,
     C: Clock,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        gate: G,
         videos: V,
         lesson_menus: M,
         storage: S,
@@ -105,6 +117,7 @@ where
         clock: C,
     ) -> Self {
         Self {
+            gate,
             videos,
             lesson_menus,
             storage,
@@ -119,6 +132,20 @@ where
         &self,
         command: SubmitVideoCommand,
     ) -> Result<SubmittedVideo, SubmitVideoError> {
+        let sent_videos = self
+            .videos
+            .videos_of_student(command.student_id)
+            .await
+            .map_err(SubmitVideoError::Unavailable)?
+            .len();
+        if !self
+            .gate
+            .may_submit_video(command.student_id, sent_videos)
+            .await
+            .map_err(SubmitVideoError::Unavailable)?
+        {
+            return Err(SubmitVideoError::NotEntitled);
+        }
         let now = self.clock.now();
         let video_id = self.videos.next_video_id();
         let video = match command.lesson_menu_id {
@@ -145,7 +172,8 @@ where
                     now,
                 )?
             }
-        };
+        }
+        .with_note(command.note.clone());
         let upload_url = self
             .storage
             .issue_upload_url(video.id(), command.content_type)
@@ -179,7 +207,7 @@ where
             video_id: video.id(),
             sport: video.sport(),
             content_type: command.content_type,
-            note: command.note,
+            note: command.note.map(|note| note.as_str().to_string()),
         };
         let (video, ai_feedback_failure) = self.attach_ai_feedback(video, &request).await;
         Ok(SubmittedVideo {
@@ -242,6 +270,8 @@ mod tests {
 
     use std::sync::{Arc, Mutex};
 
+    use crate::in_memory::OpenVideoSubmissionGate;
+
     use domain::{
         async_lesson::{VideoLessonMenu, VideoStatus},
         catalog::{
@@ -269,6 +299,7 @@ mod tests {
     }
 
     fn use_case() -> SubmitVideo<
+        OpenVideoSubmissionGate,
         InMemoryVideoRepository,
         Menus,
         FixedVideoStorage,
@@ -283,6 +314,7 @@ mod tests {
     fn use_case_with<F: AiFeedbackGenerator>(
         ai_feedback: F,
     ) -> SubmitVideo<
+        OpenVideoSubmissionGate,
         InMemoryVideoRepository,
         Menus,
         FixedVideoStorage,
@@ -292,6 +324,7 @@ mod tests {
         FixedClock,
     > {
         SubmitVideo::new(
+            OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             menus(),
             FixedVideoStorage,
@@ -331,7 +364,7 @@ mod tests {
             coach_id: COACH,
             sport: Sport::Tennis,
             content_type: VideoContentType::Mp4,
-            note: Some("フォアハンドを見てほしい".to_string()),
+            note: VideoNote::new("フォアハンドを見てほしい").unwrap(),
             lesson_menu_id: None,
         }
     }
@@ -461,6 +494,36 @@ mod tests {
         assert_eq!(published[0].name(), "VideoReviewRequested");
     }
 
+    /// 常に断る [`VideoSubmissionGate`]。
+    struct ClosedGate;
+
+    impl VideoSubmissionGate for ClosedGate {
+        async fn may_submit_video(&self, _: AccountId, _: usize) -> Result<bool, Unavailable> {
+            Ok(false)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_student_the_gate_refuses_saves_nothing_and_emits_nothing() {
+        let use_case = SubmitVideo::new(
+            ClosedGate,
+            InMemoryVideoRepository::default(),
+            menus(),
+            FixedVideoStorage,
+            FixedAiFeedbackGenerator,
+            RecordingAnalyticsSink::default(),
+            RecordingDomainEventPublisher::default(),
+            FixedClock(now()),
+        );
+        assert!(matches!(
+            use_case.execute(command()).await,
+            Err(SubmitVideoError::NotEntitled)
+        ));
+        assert!(use_case.videos().all().is_empty());
+        assert!(use_case.analytics().events().is_empty());
+        assert!(use_case.events().events().is_empty());
+    }
+
     #[tokio::test]
     async fn monthly_students_can_submit_as_many_videos_as_they_like() {
         let use_case = use_case();
@@ -498,6 +561,26 @@ mod tests {
         );
         assert_eq!(video.review(), None, "コーチの添削とは別の項目");
         assert_eq!(submitted.ai_feedback_failure, None);
+    }
+
+    #[tokio::test]
+    async fn the_students_note_is_saved_with_the_video() {
+        let use_case = use_case();
+
+        let submitted = use_case.execute(command()).await.unwrap();
+        let note = VideoNote::new("フォアハンドを見てほしい").unwrap();
+        assert_eq!(submitted.video.note(), note.as_ref());
+        assert_eq!(use_case.videos().all()[0].note(), note.as_ref());
+
+        let without_note = use_case
+            .execute(SubmitVideoCommand {
+                note: None,
+                ..command()
+            })
+            .await
+            .unwrap();
+        assert_eq!(without_note.video.note(), None);
+        assert_eq!(use_case.videos().all()[1].note(), None);
     }
 
     #[tokio::test]

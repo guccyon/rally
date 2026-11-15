@@ -1,7 +1,7 @@
 //! `PgVideoRepository`（`async_lesson.videos`・`video_reviews`）の検証。送付・返却の往復と、2 回目の返却の拒否と、
 //! コーチに送られた動画の列挙と、生徒が送った動画の列挙と、返却待ちの動画の列挙（と本部の返却待ちの一覧のユースケース）と、
 //! 期間に返却した動画の列挙（と本部の返した動画添削の記録のユースケース）と、AI の一次フィードバックの往復（添削の返却で変わらないこと）と、送った時点の
-//! レッスンメニューの写しの往復（と本部の返却待ちの一覧のレッスンメニューの絞り込み）。
+//! レッスンメニューの写しの往復（と本部の返却待ちの一覧のレッスンメニューの絞り込み）と、生徒の相談内容の往復。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -13,7 +13,7 @@ use domain::{
     DomainError,
     async_lesson::{
         AiFeedback, PendingVideoReviewFilter, ReturnedVideoReviewFilter, ReviewComment, Video,
-        VideoLessonMenu, VideoStatus,
+        VideoLessonMenu, VideoNote, VideoStatus,
     },
     catalog::Sport,
     catalog::{
@@ -345,6 +345,58 @@ async fn lesson_menu_copy_round_trips_and_survives_the_coachs_review(pool: PgPoo
     assert_eq!(
         of_coach.iter().map(Video::lesson_menu).collect::<Vec<_>>(),
         [Some(&copy), None]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn note_round_trips_and_survives_the_coachs_review(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    let note = VideoNote::new("あ".repeat(VideoNote::MAX_CHARS)).unwrap();
+    let with_note = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(1))
+        .with_note(note.clone());
+    let without_note = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(2));
+    videos.insert(with_note.clone()).await.unwrap();
+    videos.insert(without_note.clone()).await.unwrap();
+
+    let found = videos.find(with_note.id()).await.unwrap().unwrap();
+    assert_eq!(found.note(), note.as_ref());
+    assert_eq!(found, with_note);
+    assert_eq!(
+        videos
+            .find(without_note.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .note(),
+        None
+    );
+
+    // 添削の返却と AI の一次フィードバックでは相談内容は変わらない
+    let reviewed = videos
+        .update(with_note.id(), |v| {
+            v.record_ai_feedback(
+                AiFeedback::new("ラケットの面が上を向いています", at(1)).unwrap(),
+            )?;
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(5),
+            )
+        })
+        .await
+        .unwrap();
+    assert_eq!(reviewed.note(), note.as_ref());
+    assert_eq!(videos.find(with_note.id()).await.unwrap(), Some(reviewed));
+
+    let mut of_coach = videos.videos_of_coach(coach).await.unwrap();
+    of_coach.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        of_coach.iter().map(Video::note).collect::<Vec<_>>(),
+        [note.as_ref(), None]
     );
 }
 

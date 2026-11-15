@@ -1300,6 +1300,36 @@ async fn video_lesson_menu_is_null_unless_copied_and_has_the_shape_of_a_copy(poo
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn video_note_is_null_unless_written_and_at_most_1000_chars(pool: PgPool) {
+    // 列を知らない（古い版の）INSERT の動画と、既存の動画は NULL（相談内容なし）
+    let video_id = submit_video(&pool, &student(&pool).await, &coach(&pool).await, "tennis")
+        .await
+        .unwrap();
+    let note: Option<String> =
+        sqlx::query_scalar("SELECT note FROM async_lesson.videos WHERE video_id = $1::uuid")
+            .bind(&video_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(note, None);
+
+    let set_note = |note: String| {
+        sqlx::query("UPDATE async_lesson.videos SET note = $2 WHERE video_id = $1::uuid")
+            .bind(&video_id)
+            .bind(note)
+            .execute(&pool)
+    };
+    // 1000 文字（コードポイント）まで
+    set_note("あ".repeat(1000)).await.unwrap();
+    let (code, constraint) = violation(set_note("あ".repeat(1001)).await);
+    assert_eq!(
+        (code.as_str(), constraint.as_str()),
+        (CHECK_VIOLATION, "videos_note_check")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn video_sports_match_the_identity_values(pool: PgPool) {
     use domain::catalog::Sport;
     use infra::identity_values::sport_value;

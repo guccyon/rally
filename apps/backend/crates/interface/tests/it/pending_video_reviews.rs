@@ -23,7 +23,7 @@ use axum::{
 };
 use domain::{
     DomainError,
-    async_lesson::{ReviewComment, Video, VideoId, VideoLessonMenu, VideoReviewId},
+    async_lesson::{ReviewComment, Video, VideoId, VideoLessonMenu, VideoNote, VideoReviewId},
     catalog::{LessonMenuId, LessonMenuName, Sport},
     identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
@@ -140,6 +140,7 @@ fn account(id: AccountId, name: &str, role: Role) -> Account {
 }
 
 /// `id` の動画を `student` が `coach` に `sport` で `submitted_at` に送る。`returned` なら照会の時刻に返却済み。
+/// どの動画にも生徒の相談内容が付いている（本部の一覧には載らない）。
 fn video(
     id: u128,
     student: AccountId,
@@ -164,6 +165,7 @@ fn video(
         None,
     )
     .unwrap()
+    .with_note(VideoNote::new("サーブのトスが安定しない").unwrap())
 }
 
 fn router<V>(accounts: InMemoryAccountRepository, videos: V) -> Router

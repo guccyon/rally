@@ -401,6 +401,12 @@ screens:
       text_muted）。確定待ちの行は「—」
     required: true
     component: data_table の cell と button（secondary）
+  - name: これからの予約の表の通話中の行（#1609・#1627）
+    note: 入室したあと画面を読み込み直しても通話に戻って終了できるようにする。終了時刻を過ぎても通話中なら終わった予約に回さずこれからの予約に残す。通話中に一覧へ一時的に戻る操作は置かない
+    source: CoachBooking.live_lesson_session（通話中のときだけ載る）
+    content: 操作の列に「通話中」（太字）と「通話に戻る」。「入室前チェック」は出さない
+    required: true
+    component: data_table の cell と button（secondary）
   - name: 通話中の表示の「カメラ・マイク」（新）
     note: 状態・セッション ID・開始の行は今のまま
     source: 入室前チェックの状態
@@ -412,6 +418,10 @@ screens:
     result: 同じタブの中で入室前チェック（coachPrejoinCheck）を開く。API は呼ばない
     target: 入室前チェック
     condition: 確定済み・開始 5 分前を過ぎた・その予約のセッションがない
+  - action: 通話中の行の「通話に戻る」を押す
+    result: 入室前チェックを通さずに startLiveLessonSession（通話中なら同じセッションが 201）。201 なら一覧と入れ替わって通話中の表示（「通話に戻りました。」。カメラ・マイクの行は出さない）にし、「通話を終了」で終えられる。失敗したら一覧のままサーバーの文言を出す
+    target: 通話中の表示
+    condition: 一覧の項目に live_lesson_session（in_progress）が載っている
   - action: タブを開いたまま待つ
     result: その行の文がボタン「入室前チェック」に変わる（読み直さない。時刻で切り替える）
     target: 表
@@ -434,6 +444,9 @@ screens:
     - data: session（入室したとき）・カメラ・マイクの入・切
       from: coachPrejoinCheck
       condition: 入室した（通話中）・チェックをやめた
+    - data: なし（listMyCoachBookings の live_lesson_session）
+      from: ブラウザーの再読み込み・タブの開き直し
+      condition: 通話中のまま画面を読み込み直した（通話中の行から「通話に戻る」）
 - id: coachPrejoinCheck
   new: true
   more:

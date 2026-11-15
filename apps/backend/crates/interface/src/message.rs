@@ -136,6 +136,8 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             sport_to_contract(*menu),
             sport_to_contract(*video)
         ),
+        // 契約の項目名のまま（相談内容の文字数を超えた送付の 422。これまでと同じ文言）
+        DomainError::VideoNoteTooLong { max } => format!("note は {max} 文字まで"),
     }
 }
 
@@ -292,6 +294,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::ReviewCommentTooLong { max: 4000 }),
             "添削コメントは 4000 文字まで"
+        );
+        assert_eq!(
+            domain_error(&DomainError::VideoNoteTooLong { max: 1000 }),
+            "note は 1000 文字まで"
         );
         assert_eq!(
             domain_error(&DomainError::LiveLessonSessionNotEnded),

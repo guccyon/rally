@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
+import 'package:rally_student_app/state/next_actions.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/state/subscription.dart';
 
@@ -240,5 +241,90 @@ void main() {
     expect(api.calls, contains('getMyEntitlement'));
     expect(container.read(subscriptionProvider).noEntitlement, isTrue);
     expect(container.read(studentFlowProvider).homeFailures, isEmpty);
+  });
+
+  test(
+    '前面に戻ったとき、ホームでは受講権と次にやることを読み直し、読めなければ今月のビデオ通話の欄にだけ旨を出し、読めたら下ろす（#1606）',
+    () async {
+      final api = FakeStudentApi(
+        failures: {'getMyEntitlement': Fixtures.unreachable},
+      );
+      final container = containerOf(
+        api,
+        flow: onSubscription.copyWith(
+          step: FlowStep.home,
+          homeFailures: {HomeSection.threads},
+        ),
+        subscription: SubscriptionState(noEntitlement: true),
+      );
+      final flow = container.read(studentFlowProvider.notifier);
+
+      await flow.refreshOnResume();
+
+      expect(api.calls, ['getMyEntitlement', 'getMyNextActions']);
+      expect(container.read(studentFlowProvider).homeFailures, {
+        HomeSection.threads,
+        HomeSection.entitlement,
+      });
+      expect(container.read(studentFlowProvider).busy, isFalse);
+      expect(container.read(studentFlowProvider).errorMessage, isNull);
+
+      api.failures.remove('getMyEntitlement');
+      api.entitlement = Fixtures.subscriptionStarted.entitlement;
+      await flow.refreshOnResume();
+
+      expect(container.read(studentFlowProvider).homeFailures, {
+        HomeSection.threads,
+      });
+      final state = container.read(subscriptionProvider);
+      expect(state.entitlement, Fixtures.subscriptionStarted.entitlement);
+      expect(state.hasActiveSubscription, isTrue);
+      expect(container.read(nextActionsProvider).actions, isEmpty);
+    },
+  );
+
+  test('前面に戻ったとき、登録の前は何も読まない', () async {
+    final api = FakeStudentApi();
+    final container = containerOf(
+      api,
+      flow: StudentFlowState(step: FlowStep.register),
+    );
+
+    await container.read(studentFlowProvider.notifier).refreshOnResume();
+
+    expect(api.calls, isEmpty);
+  });
+
+  test('始めるときに「すでに始まっています」を受けたら受講権を読み直し、失敗の文言はそのまま出す（#1603）', () async {
+    final api = FakeStudentApi(
+      failures: const {
+        'startSubscription': StudentApiException(
+          statusCode: 409,
+          error: ApiError(
+            code: ErrorCode.subscriptionAlreadyActive,
+            message: 'already',
+          ),
+        ),
+      },
+      entitlement: Fixtures.subscriptionStarted.entitlement,
+    );
+    final container = containerOf(
+      api,
+      subscription: SubscriptionState(noEntitlement: true),
+    );
+
+    await container
+        .read(subscriptionProvider.notifier)
+        .startSubscription(plan: SubscriptionPlan.plus);
+
+    expect(api.calls, ['startSubscription', 'getMyEntitlement']);
+    final state = container.read(subscriptionProvider);
+    expect(state.subscription, isNull);
+    expect(state.entitlement?.plan, SubscriptionPlan.standard);
+    expect(state.hasActiveSubscription, isTrue);
+    expect(
+      container.read(studentFlowProvider).errorMessage,
+      '月額契約はすでに始まっています。',
+    );
   });
 }
