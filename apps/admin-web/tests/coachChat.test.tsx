@@ -203,6 +203,18 @@ describe("コーチのチャット", () => {
     expect(screen.queryByRole("list", { name: "メッセージ" })).not.toBeInTheDocument();
   });
 
+  test("スレッドを選ぶと、会話と返事の欄が見える位置まで画面を送る", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const { user } = setup();
+
+    await openThread(user, /佐藤さん/);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" }));
+    expect(scrollIntoView.mock.contexts[0]).toBe(
+      screen.getByRole("list", { name: "メッセージ" }).closest("div.scroll-mt-2"),
+    );
+  });
+
   test("スレッドを開くとメッセージを送った順に出し、既読にして未読の数を消す", async () => {
     const { api, user } = setup();
 
