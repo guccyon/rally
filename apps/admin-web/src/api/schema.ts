@@ -1922,7 +1922,7 @@ export interface paths {
          *     messaging が購読する。Gen1 は matching がないので、確定した予約のコーチを担当コーチとみなす）。
          *     `unread_count` は呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数。
          *     student-app の `listMessageThreads`（生徒）と同じ操作で、admin-web ではコーチが呼ぶ。形は student-app と同じに、
-         *     コーチがまだ返事をしていないか（`unanswered`）を足したもの。
+         *     コーチがまだ返事をしていないか（`unanswered`）と生徒の表示名（`student_display_name`。任意）を足したもの。
          *
          *     - 未返信 `unanswered`: 最後の発言が生徒のもの。発言は当事者がチャットとして送ったメッセージ（`kind` が `text` か
          *       `stamp`）だけで、添削依頼・添削の返却（`video_review_request` / `video_review_returned`）と送り手がシステムの
@@ -1934,6 +1934,8 @@ export interface paths {
          *       3. 同じ時刻はスレッド ID の順
          *       未返信のスレッドがなければ、最後の出来事の新しい順だけになる
          *     - 呼んだコーチが担当するスレッドだけを返す（他のコーチのスレッドは返らない）
+         *     - 各スレッドには相手の生徒の表示名 `student_display_name`（今のアカウントの表示名）を載せる。
+         *       生徒のアカウントが引けないときは `student_display_name` を載せない
          *     - 照会だけで、何も保存しない（既読にしない・通知を送らない）
          */
         get: operations["listMessageThreads"];
@@ -3732,12 +3734,14 @@ export interface components {
              */
             read_at?: string | null;
         };
-        /** @description glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）。student-app の同名のスキーマに、未返信（`unanswered`）を足した形 */
+        /** @description glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）。student-app の同名のスキーマに、未返信（`unanswered`）と生徒の表示名（`student_display_name`。任意）を足した形 */
         MessageThread: {
             /** Format: uuid */
             thread_id: string;
             /** Format: uuid */
             student_id: string;
+            /** @description スレッドの生徒のアカウントの表示名（今の表示名）。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
             /** Format: uuid */
             coach_id: string;
             /**
