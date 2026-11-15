@@ -6,7 +6,6 @@ use application::{
     profile::ProfileAnnouncementRecipientLookup,
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -22,6 +21,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         ),
         ListAnnouncements::new(ports.announcements(), ports.notifications()),
         WithdrawAnnouncement::new(ports.announcements(), ports.notifications(), ports.clock()),
-        MockTokenService,
+        ports.tokens(),
     )
 }

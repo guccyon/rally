@@ -8,7 +8,6 @@ use application::{
     scheduling::SchedulingCoachLeaveNoticeLookup,
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -21,7 +20,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             notices(ports),
             ports.clock(),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }
 

@@ -6,6 +6,8 @@
 pub use infra::AnalyticsDestination;
 // 通話基盤の選択は配信先の選択と同じく infra に置き、ここでも公開する
 pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
+// アクセストークンの選択も infra に置き（staging でトークンを作る seed の `access-token` と共有）、ここでも公開する
+pub use infra::{AccessTokenBackend, InvalidSigningKey};
 
 mod assembly;
 mod features;
@@ -17,7 +19,7 @@ use application::{
     catalog::LessonMenuRepository,
     clock::{Clock, SystemClock},
     entitlement::{EntitlementRepository, LiveLessonQuotaSubscriber},
-    identity::AccountRepository,
+    identity::{AccountRepository, TokenIssuer, TokenVerifier},
     in_memory::{
         InMemoryAccountRepository, InMemoryAnnouncementDraftRepository,
         InMemoryAnnouncementRepository, InMemoryBookingRepository,
@@ -61,7 +63,8 @@ pub fn router() -> Router {
 }
 
 /// 現在時刻を `clock` から読むルーター。アカウント・スロット・予約・受講権・通話セッションの保存先と
-/// 行動トラッキングは当面インメモリ、アクセストークンは infra のモック（署名なし。本番では差し替える）で組み立てる。
+/// 行動トラッキングは当面インメモリ、アクセストークンは infra のモック（署名なし。署名付きにするのは
+/// [`router_with_access_tokens`]）で組み立てる。
 ///
 /// 境界間イベントは infra のインメモリのイベントバス（モック。標準出力にも書く）で発行し、entitlement の購読
 /// （`LiveLessonQuotaSubscriber`）と messaging の購読（`MessageThreadSubscriber`）、notification の購読（`PushNotificationSubscriber`）につなぐ。予約の確定・キャンセルで
@@ -167,12 +170,25 @@ where
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
 {
+    router_with_access_tokens(clock, analytics, video, AccessTokenBackend::default())
+}
+
+/// [`router_with_video_call`] のアクセストークンを `tokens` に替えたルーター（`DATABASE_URL` がないときの `main` が
+/// [`AccessTokenBackend`] で選んで使う）。本部・コーチ・生徒のどの操作も、トークンの発行と検証に `tokens` を使う。
+pub fn router_with_access_tokens<C, A, V, T>(clock: C, analytics: A, video: V, tokens: T) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
+{
     compose(
         in_memory_repositories(),
         clock,
         analytics,
         MockPushSender::new(),
         video,
+        tokens,
     )
 }
 
@@ -189,6 +205,7 @@ where
         analytics,
         push,
         VideoCallBackend::default(),
+        AccessTokenBackend::default(),
     )
 }
 
@@ -257,6 +274,30 @@ where
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
 {
+    router_with_postgres_and_access_tokens(
+        pool,
+        clock,
+        analytics,
+        video,
+        AccessTokenBackend::default(),
+    )
+}
+
+/// [`router_with_postgres_and_video_call`] のアクセストークンを `tokens` に替えたルーター（`DATABASE_URL` があるときの
+/// `main` が [`AccessTokenBackend`] で選んで使う。`ACCESS_TOKEN_SIGNING_KEY` があれば署名付き）。
+pub fn router_with_postgres_and_access_tokens<C, A, V, T>(
+    pool: PgPool,
+    clock: C,
+    analytics: A,
+    video: V,
+    tokens: T,
+) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
+{
     compose(
         Repositories {
             accounts: PgAccountRepository::new(pool.clone()),
@@ -280,6 +321,7 @@ where
         analytics,
         MockPushSender::new(),
         video,
+        tokens,
     )
 }
 
@@ -323,14 +365,15 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。境界間イベントのバスを作り、機能ごとの組み立て（[`features`]）に
-/// ポートの実装をまとめて渡す。
+/// ポートの実装をまとめて渡す。アクセストークンは本部・コーチ・生徒のどの機能にも同じ `tokens` を渡す。
 #[allow(clippy::type_complexity)]
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V>(
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V, T>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
     clock: C,
     analytics: A,
     push: P,
     video: V,
+    tokens: T,
 ) -> Router
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
@@ -353,6 +396,7 @@ where
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
 {
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(repositories.entitlements.clone()),
@@ -373,5 +417,6 @@ where
         video_call: video,
         push,
         events,
+        tokens,
     })
 }

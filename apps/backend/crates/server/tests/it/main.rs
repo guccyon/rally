@@ -39,6 +39,7 @@ mod overdue_live_lesson_sessions;
 mod pending_video_reviews;
 mod returned_video_reviews;
 mod server_date;
+mod signed_access_tokens;
 mod slot_coach_introduction;
 mod slot_lesson_menus;
 mod slot_supply;

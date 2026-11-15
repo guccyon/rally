@@ -2,7 +2,6 @@
 
 use application::{catalog::CatalogLessonMenuLookup, scheduling::ListCoachSlots};
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -14,6 +13,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.bookings(),
             ports.clock(),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

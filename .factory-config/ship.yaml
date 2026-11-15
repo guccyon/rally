@@ -41,27 +41,14 @@ touch:
   entries:
     - { label: "生徒アプリ（スマートフォンのブラウザで開く。最初にアカウントを登録する）", port_env: STUDENT_WEB_PORT, path: /, qr: true }
     - { label: "本部・コーチの管理画面（ロールを選び、下のトークンでログイン）", port_env: ADMIN_WEB_PORT, path: /, qr: true }
-  # ログインの手がかり。出力は JSON の配列 [{"label": ..., "value": ...}]（モックのトークン。apps/backend の README の「認証」）
-  # 本部も合成シードが登録したアカウントを指す（モックのトークンはどの ID でも本部として通るが、お休みなど本部の操作の記録は
-  # 実在の本部のアカウントへの外部キーを持ち、登録のない ID では 500 になる。Issue #1480。検査は apps/backend/crates/seed/tests/it/touch_accounts.rs）
+  # ログインの手がかり。出力は JSON の配列 [{"label": ..., "value": ...}]（value はアクセストークン。apps/backend の README の「認証」）
+  # backend のコンテナの中で access-token が DB から本部 1 人とコーチ 3 人を読み、サーバーと同じ実装でトークンを発行する
+  # （ACCESS_TOKEN_SIGNING_KEY があれば署名付き、なければ署名なしのモック。Issue #1593。鍵は backend のコンテナから出さない）。
+  # 本部も合成シードが登録したアカウントを指す（お休みなど本部の操作の記録は実在の本部のアカウントへの外部キーを持ち、
+  # 登録のない ID では 500 になる。Issue #1480。検査は apps/backend/crates/seed/tests/it/touch_accounts.rs）
   accounts:
-    service: postgres
-    command:
-      - psql
-      - -U
-      - rally
-      - -d
-      - rally
-      - -At
-      - -c
-      - >-
-        select coalesce(json_agg(a), '[]') from (
-          select * from (select '本部: ' || display_name as label, 'mock.headquarters.' || account_id as value
-                         from identity.accounts where role = 'headquarters' order by created_at, account_id limit 1) h
-          union all
-          select * from (select 'コーチ: ' || display_name, 'mock.coach.' || account_id
-                         from identity.accounts where role = 'coach' order by created_at, account_id limit 3) c
-        ) a
+    service: backend
+    command: ["access-token", "--hints"]
   # 時間をまたぐシナリオ（factory-engine の ADR 0028 の scenario_time）。QA が環境の再起動と時計の進めを起こせる。
   # restart は再起動する部品（DB は残す）。clock_env はサーバーの時計を進める秒数を渡す compose の変数（backend の CLOCK_OFFSET_SECONDS）。
   # 進めた時計は、次に版を出す・戻す・入れ直すときに 0 に戻る

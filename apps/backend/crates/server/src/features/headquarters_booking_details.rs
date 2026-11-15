@@ -5,7 +5,6 @@ use application::{
     scheduling::GetBooking,
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -16,6 +15,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ProfileCoachDisplayNameLookup::new(ports.accounts()),
             ProfileStudentDisplayNameLookup::new(ports.accounts()),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

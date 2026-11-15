@@ -1,12 +1,14 @@
 //! 合成シード（種 42）を書いた DB で、触れる環境のログインの手がかり（`.factory-config/ship.yaml` の `touch.accounts`。
-//! shipper が staging で実行する SQL）がすべて実在のアカウントをその役割で指すこと。本部の手がかりのトークンで、確定した
-//! 予約を持つ合成のコーチをお休みにでき（admin-web の `getCoachLeavePreview` → `startCoachLeave` と同じユースケース）、
-//! 予約がお休みの理由でキャンセルされ、本部の予約の詳細（`getBooking`）にお休みの記録が出ること。
+//! shipper が staging の backend のコンテナで実行する `access-token --hints`。`LoginHint::load`）がすべて実在のアカウントを
+//! その役割で指し、サーバーと同じトークンの実装（署名なしのモックと、署名付き。Issue #1593）の検証に通ること。本部の
+//! 手がかりのトークンで、確定した予約を持つ合成のコーチをお休みにでき（admin-web の `getCoachLeavePreview` →
+//! `startCoachLeave` と同じユースケース）、予約がお休みの理由でキャンセルされ、本部の予約の詳細（`getBooking`）にお休みの
+//! 記録が出ること。
 //!
 //! Issue #1480: 手がかりの本部が登録のない ID（モックのトークンはどの ID でも本部として通る）を指していたため、お休みの記録の
 //! `created_by`（実在の本部のアカウントへの外部キー）を書けず、staging の `startCoachLeave` が毎回 500 になった。
 //!
-//! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+//! Postgres が要るものは既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p seed -- --include-ignored` で走らせる（テストごとに新しい DB を作ってマイグレーションを当てる）。
 
 use std::{
@@ -16,7 +18,7 @@ use std::{
 
 use application::{
     catalog::CatalogLessonMenuLookup,
-    identity::{TokenVerifier, account_id_uuid},
+    identity::{TokenIssuer, TokenVerifier, account_id_uuid},
     in_memory::{FixedClock, RecordingAnalyticsSink, RecordingDomainEventPublisher},
     profile::{
         ProfileCoachAccountLookup, ProfileCoachDisplayNameLookup, ProfileStudentDisplayNameLookup,
@@ -30,12 +32,12 @@ use domain::{
     scheduling::{BookingCancelReason, BookingCanceller, BookingStatus, CoachLeaveNote},
 };
 use infra::{
-    MockTokenService, PgAccountRepository, PgBookingRepository, PgLessonMenuRepository,
-    identity_values::role_value,
+    AccessTokenBackend, MockTokenService, PgAccountRepository, PgBookingRepository,
+    PgLessonMenuRepository, SignedTokenService, identity_values::role_value,
 };
-use seed::{SeedPlan, Seeder};
+use seed::{LoginHint, SeedPlan, Seeder};
 use sqlx::{
-    AssertSqlSafe, PgPool,
+    PgPool,
     types::{
         Uuid,
         time::{Date, OffsetDateTime},
@@ -45,16 +47,74 @@ use sqlx::{
 /// 2026-10-26T12:00:00+09:00（シードの計画のテストと同じ時刻）
 const NOW: Duration = Duration::from_secs(1_792_983_600);
 
-/// `.factory-config/ship.yaml` の `touch.accounts.command` の最後の引数（`psql -c` に渡す SQL）。
-fn touch_accounts_sql() -> String {
+/// テストだけの署名の鍵（秘密ではない）。
+const TEST_KEY: &[u8] = b"touch-accounts-test-key-0123456789abcdef";
+
+/// `.factory-config/ship.yaml` の `touch.accounts`。
+fn touch_accounts() -> serde_yaml::Value {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../../.factory-config/ship.yaml"
     );
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
     let ship: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
-    let command = ship["touch"]["accounts"]["command"].as_sequence().unwrap();
-    command.last().unwrap().as_str().unwrap().to_string()
+    ship["touch"]["accounts"].clone()
+}
+
+#[test]
+fn the_shipper_runs_access_token_in_the_backend_container() {
+    // 手がかりのトークンはサーバーと同じ鍵で発行する（鍵は backend のコンテナにだけ渡す）
+    let accounts = touch_accounts();
+    assert_eq!(accounts["service"].as_str(), Some("backend"));
+    let command: Vec<&str> = accounts["command"]
+        .as_sequence()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap())
+        .collect();
+    assert_eq!(command, ["access-token", "--hints"]);
+    // Dockerfile がそのバイナリをイメージに入れる
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Dockerfile");
+    let dockerfile = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    assert!(
+        dockerfile.contains("target/release/access-token"),
+        "{dockerfile}"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn the_signed_login_hints_pass_only_the_signed_verifier(pool: PgPool) {
+    let now = SystemTime::UNIX_EPOCH + NOW;
+    Seeder::new(pool.clone(), RecordingAnalyticsSink::default())
+        .run(&SeedPlan::generate(42, now))
+        .await
+        .unwrap();
+    let signed = AccessTokenBackend::Signed(SignedTokenService::new(TEST_KEY).unwrap());
+    let hints = LoginHint::load(&pool, &signed).await.unwrap();
+    assert_eq!(hints.len(), 4, "{hints:?}");
+    for hint in &hints {
+        let claims = signed
+            .verify(&hint.value)
+            .unwrap_or_else(|e| panic!("署名付きの手がかりが通る: {hint:?}: {e:?}"));
+        // 手で作ったモックのトークン（同じアカウント・役割）は署名付きの実装では通らない
+        let forged = MockTokenService.issue(claims);
+        assert!(signed.verify(forged.as_str()).is_err(), "{forged:?}");
+    }
+
+    // 1 つのアカウントのトークン（staging の runbook の `access-token --account <ID>`）も DB の役割で発行する
+    let first = signed.verify(&hints[0].value).unwrap();
+    let token = LoginHint::for_account(&pool, &signed, account_id_uuid::to_uuid(first.account_id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(signed.verify(&token), Ok(first));
+    assert_eq!(
+        LoginHint::for_account(&pool, &signed, Uuid::from_u128(1))
+            .await
+            .unwrap(),
+        None
+    );
 }
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
@@ -68,14 +128,13 @@ async fn the_login_hints_point_at_seeded_accounts_and_the_headquarters_can_put_a
         .await
         .unwrap();
 
-    // 手がかりは JSON の配列 [{"label": ..., "value": "mock.<役割>.<アカウント ID>"}]
-    // 出荷の設定に書いた固定の SQL（入力を混ぜない）を shipper と同じく実行する
-    let sql = format!("SELECT ({})::text", touch_accounts_sql());
-    let hints: String = sqlx::query_scalar(AssertSqlSafe(sql))
-        .fetch_one(&pool)
+    // 手がかりは JSON の配列 [{"label": ..., "value": <アクセストークン>}]。鍵のない環境（モック）で shipper と同じく作る
+    let hints: Vec<serde_json::Value> = LoginHint::load(&pool, &AccessTokenBackend::default())
         .await
-        .unwrap();
-    let hints: Vec<serde_json::Value> = serde_json::from_str(&hints).unwrap();
+        .unwrap()
+        .iter()
+        .map(LoginHint::to_json)
+        .collect();
     let mut headquarters: Option<AccountId> = None;
     let mut roles = Vec::new();
     for hint in &hints {
