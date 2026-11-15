@@ -969,6 +969,10 @@ export interface paths {
          *       予約した生徒の表示名 `student_display_name` を載せる。生徒のアカウントが引けないときは `student_display_name` を載せない
          *     - 各項目の予約には、予約した時点のレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`BookingLessonMenu`。なければ null）を
          *       載せる。生徒が予約したときに枠に結びついていた公開中のメニューの写しで、その後にメニューを直しても変わらない
+         *     - 予約に結び付いた通話中のセッション（glossary の live_lesson_session。`status` が `in_progress`）があれば、その項目に
+         *       `live_lesson_session`（`session_id`・`status`・`started_at`）を載せる。終了したセッションしかない・セッションがないときは載せない。
+         *       再読み込みのあとでも、通話中の予約を一覧から見つけて通話に戻れるようにするため。グループレッスンの枠では、セッションに
+         *       結び付いた予約（`LiveLessonSession` の `bookings`）のどの項目にも同じセッションを載せる
          *     - 期間: 任意の `from`・`to`（予約されたスロットが開始する日付。日本時間。両端を含む）で絞れる（「来週の予約」だけを見る）。
          *       どちらも省けば今までどおり期間で絞らず、応答に `from` / `to` を載せない。どちらかを付けたときの日付の扱いと 422 の条件は
          *       `listBookings` と同じ: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに開始する予約。
@@ -2476,6 +2480,25 @@ export interface components {
             slot: components["schemas"]["Slot"];
             /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
             student_display_name?: string;
+            live_lesson_session?: components["schemas"]["CoachBookingLiveLessonSession"];
+        };
+        /**
+         * @description コーチの自分の予約の一覧の 1 件に載る、その予約の通話中のセッション（glossary の live_lesson_session）の要約。
+         *     通話中のセッションがあるときだけ載る（載せる条件は `listMyCoachBookings` の説明）。セッションの全体は
+         *     `startLiveLessonSession` / `endLiveLessonSession` が返す `LiveLessonSession`
+         */
+        CoachBookingLiveLessonSession: {
+            /**
+             * Format: uuid
+             * @description 通話セッションの ID（`LiveLessonSession` の `session_id` と同じ）
+             */
+            session_id: string;
+            status: components["schemas"]["LiveLessonSessionStatus"];
+            /**
+             * Format: date-time
+             * @description 通話を始めた時刻
+             */
+            started_at: string;
         };
         /** @description コーチの自分の予約の一覧（期間と並べ方は `listMyCoachBookings` の説明） */
         CoachBookingList: {
