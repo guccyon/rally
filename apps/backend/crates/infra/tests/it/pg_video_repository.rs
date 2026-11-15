@@ -1,0 +1,1057 @@
+//! `PgVideoRepository`（`async_lesson.videos`・`video_reviews`）の検証。送付・返却の往復と、2 回目の返却の拒否と、
+//! コーチに送られた動画の列挙と、生徒が送った動画の列挙と、返却待ちの動画の列挙（と本部の返却待ちの一覧のユースケース）と、
+//! 期間に返却した動画の列挙（と本部の返した動画添削の記録のユースケース）と、AI の一次フィードバックの往復（添削の返却で変わらないこと）と、送った時点の
+//! レッスンメニューの写しの往復（と本部の返却待ちの一覧のレッスンメニューの絞り込み）。
+//!
+//! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
+//! `cargo test -p infra -- --include-ignored` で走らせる。
+
+use crate::support;
+
+use application::async_lesson::{ListReturnedVideoReviewsQuery, UpdateVideoError, VideoRepository};
+use domain::{
+    DomainError,
+    async_lesson::{
+        AiFeedback, PendingVideoReviewFilter, ReturnedVideoReviewFilter, ReviewComment, Video,
+        VideoLessonMenu, VideoStatus,
+    },
+    catalog::Sport,
+    catalog::{
+        LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription, LessonMenuId,
+        LessonMenuName,
+    },
+    identity::Role,
+};
+use infra::PgVideoRepository;
+use sqlx::PgPool;
+use support::at;
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn video_round_trips_through_submit_and_review(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    let video = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(1));
+    videos.insert(video.clone()).await.unwrap();
+    assert_eq!(videos.find(video.id()).await.unwrap(), Some(video.clone()));
+
+    let comment = ReviewComment::new("テイクバックが早い").unwrap();
+    let review_id = videos.next_review_id();
+    let reviewed = videos
+        .update(video.id(), |v| {
+            v.return_review(review_id, coach, comment.clone(), true, at(5))
+        })
+        .await
+        .unwrap();
+    assert_eq!(reviewed.status(), VideoStatus::Reviewed);
+    assert_eq!(videos.find(video.id()).await.unwrap(), Some(reviewed));
+
+    let result = videos
+        .update(video.id(), |v| {
+            v.return_review(videos.next_review_id(), coach, comment.clone(), true, at(6))
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(UpdateVideoError::Rejected(
+                DomainError::VideoReviewAlreadyReturned
+            ))
+        ),
+        "{result:?}"
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM async_lesson.video_reviews")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    assert!(matches!(
+        videos.update(videos.next_video_id(), |_| Ok(())).await,
+        Err(UpdateVideoError::NotFound)
+    ));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn videos_of_coach_reads_videos_sent_to_the_coach_with_their_reviews(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let student = support::student(&pool).await;
+    let submit = |coach, hour| {
+        Video::submit(
+            videos.next_video_id(),
+            student,
+            coach,
+            Sport::Tennis,
+            at(hour),
+        )
+    };
+    let (older, newer, returned, others) = (
+        submit(coach, 2),
+        submit(coach, 3),
+        submit(coach, 1),
+        submit(other_coach, 1),
+    );
+    for video in [&older, &newer, &returned, &others] {
+        videos.insert(video.clone()).await.unwrap();
+    }
+    let returned = videos
+        .update(returned.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(4),
+            )
+        })
+        .await
+        .unwrap();
+
+    let mut found = videos.videos_of_coach(coach).await.unwrap();
+    found.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        found,
+        [returned.clone(), older.clone(), newer.clone()],
+        "返却した添削も読み、別のコーチに送られた動画は読まない"
+    );
+
+    // ユースケースを通すと、添削待ちが送られた時刻の古い順で先、返却済みが後で、生徒の表示名が添わる
+    let list_coach_videos = application::async_lesson::ListCoachVideos::new(
+        videos.clone(),
+        application::profile::ProfileStudentDisplayNameLookup::new(
+            infra::PgAccountRepository::new(pool.clone()),
+        ),
+    );
+    let list = list_coach_videos.execute(coach, false).await.unwrap();
+    assert_eq!(list.videos, [older.clone(), newer.clone(), returned]);
+    assert_eq!(
+        list.students.get(&student).map(|name| name.as_str()),
+        Some("テスト")
+    );
+
+    // 返却待ちだけに絞ると、返却済みは出ず並べ方は変わらない
+    let list = list_coach_videos.execute(coach, true).await.unwrap();
+    assert_eq!(list.videos, [older, newer]);
+
+    let nobody = support::coach(&pool).await;
+    assert!(videos.videos_of_coach(nobody).await.unwrap().is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn videos_of_student_reads_videos_the_student_sent_with_their_reviews(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, other_student) = (support::student(&pool).await, support::student(&pool).await);
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let submit = |student, coach, hour| {
+        Video::submit(
+            videos.next_video_id(),
+            student,
+            coach,
+            Sport::Tennis,
+            at(hour),
+        )
+    };
+    let (older, newer, returned, others) = (
+        submit(student, coach, 2),
+        submit(student, other_coach, 3),
+        submit(student, coach, 1),
+        submit(other_student, coach, 4),
+    );
+    for video in [&older, &newer, &returned, &others] {
+        videos.insert(video.clone()).await.unwrap();
+    }
+    let returned = videos
+        .update(returned.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(5),
+            )
+        })
+        .await
+        .unwrap();
+
+    let mut found = videos.videos_of_student(student).await.unwrap();
+    found.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        found,
+        [returned.clone(), older.clone(), newer.clone()],
+        "返却された添削も読み、別の生徒が送った動画は読まない"
+    );
+
+    // ユースケースを通すと、返却済みも含めて送った時刻の新しい順で、送り先のコーチの表示名が添わる
+    let list = application::async_lesson::ListMyVideos::new(
+        videos.clone(),
+        application::profile::ProfileCoachDisplayNameLookup::new(infra::PgAccountRepository::new(
+            pool.clone(),
+        )),
+    )
+    .execute(student)
+    .await
+    .unwrap();
+    assert_eq!(list.videos, [newer, older, returned]);
+    for coach in [coach, other_coach] {
+        assert_eq!(
+            list.coaches.get(&coach).map(|name| name.as_str()),
+            Some("テスト")
+        );
+    }
+
+    let nobody = support::student(&pool).await;
+    assert!(videos.videos_of_student(nobody).await.unwrap().is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn ai_feedback_round_trips_and_survives_the_coachs_review(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    let video = Video::submit(
+        videos.next_video_id(),
+        student,
+        coach,
+        Sport::Swimming,
+        at(1),
+    );
+    videos.insert(video.clone()).await.unwrap();
+    assert_eq!(
+        videos
+            .find(video.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .ai_feedback(),
+        None,
+        "付けるまでは空"
+    );
+
+    let feedback = AiFeedback::new("呼吸のタイミングを見直しましょう", at(1)).unwrap();
+    let with_feedback = videos
+        .update(video.id(), |v| v.record_ai_feedback(feedback.clone()))
+        .await
+        .unwrap();
+    assert_eq!(with_feedback.ai_feedback(), Some(&feedback));
+    assert_eq!(
+        videos.find(video.id()).await.unwrap(),
+        Some(with_feedback.clone())
+    );
+
+    // 2 回目は付けられず、保存した一次フィードバックは変わらない
+    let result = videos
+        .update(video.id(), |v| {
+            v.record_ai_feedback(AiFeedback::new("別の文", at(2)).unwrap())
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(UpdateVideoError::Rejected(
+                DomainError::AiFeedbackAlreadyRecorded
+            ))
+        ),
+        "{result:?}"
+    );
+
+    // コーチの添削の返却は一次フィードバックを上書きしない（別の項目）
+    let comment = ReviewComment::new("キックが膝から曲がっている").unwrap();
+    let review_id = videos.next_review_id();
+    let reviewed = videos
+        .update(video.id(), |v| {
+            v.return_review(review_id, coach, comment.clone(), true, at(5))
+        })
+        .await
+        .unwrap();
+    assert_eq!(reviewed.ai_feedback(), Some(&feedback));
+    assert_eq!(reviewed.review().unwrap().comment(), &comment);
+    let found = videos.find(video.id()).await.unwrap().unwrap();
+    assert_eq!(found, reviewed);
+    assert_eq!(
+        videos.videos_of_coach(coach).await.unwrap(),
+        [reviewed],
+        "コーチの一覧でも読める"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn lesson_menu_copy_round_trips_and_survives_the_coachs_review(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    // メニューは catalog の持ち物なので、catalog.lesson_menus に行がなくても写しは保存できる（外部キーは張らない）
+    let menu = LessonMenu::restore(
+        LessonMenuId::from_u128(0x50),
+        coach,
+        LessonMenuContent {
+            sport: Sport::Tennis,
+            format: LessonFormat::Async,
+            name: LessonMenuName::new("フォーム添削").unwrap(),
+            description: LessonMenuDescription::default(),
+        },
+        true,
+        at(0),
+    );
+    let with_menu = Video::submit_with_lesson_menu(
+        videos.next_video_id(),
+        student,
+        coach,
+        Sport::Tennis,
+        &menu,
+        at(1),
+    )
+    .unwrap();
+    let without_menu = Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(2));
+    videos.insert(with_menu.clone()).await.unwrap();
+    videos.insert(without_menu.clone()).await.unwrap();
+
+    let copy = VideoLessonMenu::copy_of(&menu);
+    let found = videos.find(with_menu.id()).await.unwrap().unwrap();
+    assert_eq!(found.lesson_menu(), Some(&copy));
+    assert_eq!(found, with_menu);
+    assert_eq!(
+        videos
+            .find(without_menu.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .lesson_menu(),
+        None
+    );
+
+    // 添削の返却と AI の一次フィードバックでは写しは変わらない
+    let reviewed = videos
+        .update(with_menu.id(), |v| {
+            v.record_ai_feedback(
+                AiFeedback::new("ラケットの面が上を向いています", at(1)).unwrap(),
+            )?;
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(5),
+            )
+        })
+        .await
+        .unwrap();
+    assert_eq!(reviewed.lesson_menu(), Some(&copy));
+    assert_eq!(videos.find(with_menu.id()).await.unwrap(), Some(reviewed));
+
+    let mut of_coach = videos.videos_of_coach(coach).await.unwrap();
+    of_coach.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        of_coach.iter().map(Video::lesson_menu).collect::<Vec<_>>(),
+        [Some(&copy), None]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn videos_awaiting_review_reads_unreturned_videos_of_all_coaches(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let accounts = infra::PgAccountRepository::new(pool.clone());
+    let (coach, other_coach) = (
+        support::register_named(&pool, Role::Coach, vec![Sport::Tennis], "たなかコーチ").await,
+        support::register_named(&pool, Role::Coach, vec![Sport::Golf], "いとうコーチ").await,
+    );
+    let student = support::student(&pool).await;
+    let submit =
+        |coach, sport, hour| Video::submit(videos.next_video_id(), student, coach, sport, at(hour));
+    let (tennis, golf, returned) = (
+        submit(coach, Sport::Tennis, 10),
+        submit(other_coach, Sport::Golf, 0),
+        submit(coach, Sport::Tennis, 1),
+    );
+    for video in [&tennis, &golf, &returned] {
+        videos.insert(video.clone()).await.unwrap();
+    }
+    videos
+        .update(returned.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(2),
+            )
+        })
+        .await
+        .unwrap();
+
+    let mut found = videos.videos_awaiting_review().await.unwrap();
+    found.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        found,
+        [golf.clone(), tennis.clone()],
+        "コーチを問わず読み、返却した動画は読まない"
+    );
+
+    // ユースケースを通すと、経過時間の下限とスポーツで絞って送付の古い順に並び、コーチと生徒の表示名が添わる
+    let list_pending = application::async_lesson::ListPendingVideoReviews::new(
+        videos.clone(),
+        application::profile::ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        application::profile::ProfileStudentDisplayNameLookup::new(accounts),
+        application::in_memory::FixedClock(at(58)),
+    );
+    let list = list_pending
+        .execute(PendingVideoReviewFilter::default())
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [golf.clone(), tennis.clone()]);
+    assert_eq!(
+        list.coaches.get(&other_coach).map(|name| name.as_str()),
+        Some("いとうコーチ")
+    );
+    assert_eq!(
+        list.students.get(&student).map(|name| name.as_str()),
+        Some("テスト")
+    );
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: None,
+            min_elapsed_hours: 48,
+            coach_id: None,
+            student_id: None,
+            lesson_menu_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [golf.clone(), tennis.clone()],
+        "48 時間ちょうど（tennis）は含む"
+    );
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: Some(Sport::Golf),
+            min_elapsed_hours: 49,
+            coach_id: None,
+            student_id: None,
+            lesson_menu_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&golf));
+    // コーチで絞ると、そのコーチ宛ての返却待ちだけ（返却した動画は出ない）。スポーツ・経過時間の下限と組み合わせられる
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            coach_id: Some(coach),
+            ..PendingVideoReviewFilter::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&tennis));
+    assert_eq!(
+        list.coaches.keys().copied().collect::<Vec<_>>(),
+        [coach],
+        "表示名は絞った後の動画のコーチだけ引く"
+    );
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: Some(Sport::Golf),
+            min_elapsed_hours: 0,
+            coach_id: Some(coach),
+            student_id: None,
+            lesson_menu_id: None,
+        })
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            sport: Some(Sport::Golf),
+            min_elapsed_hours: 49,
+            coach_id: Some(other_coach),
+            student_id: None,
+            lesson_menu_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&golf));
+    // 生徒で絞ると、その生徒が送った返却待ちだけ。コーチ・経過時間の下限と組み合わせられる
+    let other_student =
+        support::register_named(&pool, Role::Student, vec![Sport::Tennis], "はなこ").await;
+    let from_other = Video::submit(
+        videos.next_video_id(),
+        other_student,
+        coach,
+        Sport::Tennis,
+        at(20),
+    );
+    videos.insert(from_other.clone()).await.unwrap();
+    let by_student = |student_id, coach_id, min_elapsed_hours| PendingVideoReviewFilter {
+        min_elapsed_hours,
+        coach_id,
+        student_id: Some(student_id),
+        ..PendingVideoReviewFilter::default()
+    };
+    let list = list_pending
+        .execute(by_student(other_student, None, 0))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&from_other));
+    assert_eq!(
+        list.students.keys().copied().collect::<Vec<_>>(),
+        [other_student],
+        "表示名は絞った後の動画の生徒だけ引く"
+    );
+    let list = list_pending
+        .execute(by_student(student, None, 0))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [golf.clone(), tennis.clone()]);
+    let list = list_pending
+        .execute(by_student(student, Some(coach), 0))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [tennis]);
+    let list = list_pending
+        .execute(by_student(other_student, None, 48))
+        .await
+        .unwrap();
+    assert!(
+        list.videos.is_empty(),
+        "38 時間前の動画は 48 時間に届かない"
+    );
+    let list = list_pending
+        .execute(by_student(coach, None, 0))
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty(), "コーチの ID は空");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn pending_video_reviews_narrow_to_the_lesson_menu_copied_when_sent(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let accounts = infra::PgAccountRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let student = support::student(&pool).await;
+    let menu = |id: u128, coach, name: &str| {
+        LessonMenu::restore(
+            LessonMenuId::from_u128(id),
+            coach,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::Async,
+                name: LessonMenuName::new(name).unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            true,
+            at(0),
+        )
+    };
+    let (form, serve) = (
+        menu(0x50, coach, "フォーム添削"),
+        menu(0x51, other_coach, "サーブ動画チェック"),
+    );
+    let with_menu = |coach, menu: &LessonMenu, hour| {
+        Video::submit_with_lesson_menu(
+            videos.next_video_id(),
+            student,
+            coach,
+            Sport::Tennis,
+            menu,
+            at(hour),
+        )
+        .unwrap()
+    };
+    let (form_old, form_new, serve_video, without_menu, form_returned) = (
+        with_menu(coach, &form, 1),
+        with_menu(coach, &form, 40),
+        with_menu(other_coach, &serve, 2),
+        Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(3)),
+        with_menu(coach, &form, 4),
+    );
+    for video in [
+        &form_old,
+        &form_new,
+        &serve_video,
+        &without_menu,
+        &form_returned,
+    ] {
+        videos.insert(video.clone()).await.unwrap();
+    }
+    videos
+        .update(form_returned.id(), |v| {
+            v.return_review(
+                videos.next_review_id(),
+                coach,
+                ReviewComment::new("テイクバックが早い").unwrap(),
+                true,
+                at(5),
+            )
+        })
+        .await
+        .unwrap();
+
+    let list_pending = application::async_lesson::ListPendingVideoReviews::new(
+        videos.clone(),
+        application::profile::ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        application::profile::ProfileStudentDisplayNameLookup::new(accounts),
+        application::in_memory::FixedClock(at(58)),
+    );
+    let by_menu = |lesson_menu_id: u128| PendingVideoReviewFilter {
+        lesson_menu_id: Some(LessonMenuId::from_u128(lesson_menu_id)),
+        ..PendingVideoReviewFilter::default()
+    };
+    // 保存した写しの ID で絞る（メニューのない動画・返却した動画は出ない）。catalog.lesson_menus に行がなくてもよい
+    let list = list_pending.execute(by_menu(0x50)).await.unwrap();
+    assert_eq!(list.videos, [form_old.clone(), form_new.clone()]);
+    let list = list_pending.execute(by_menu(0x51)).await.unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&serve_video));
+    // 他の絞り込みと組み合わせられる
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            min_elapsed_hours: 48,
+            coach_id: Some(coach),
+            ..by_menu(0x50)
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, std::slice::from_ref(&form_old));
+    let list = list_pending
+        .execute(PendingVideoReviewFilter {
+            coach_id: Some(coach),
+            ..by_menu(0x51)
+        })
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+    // ないメニューの ID は空
+    let list = list_pending.execute(by_menu(0x99)).await.unwrap();
+    assert!(list.videos.is_empty());
+    // 付けなければメニューを問わない
+    let list = list_pending
+        .execute(PendingVideoReviewFilter::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [form_old, serve_video, without_menu, form_new],
+        "送付の古い順"
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn videos_returned_between_reads_videos_returned_in_the_period_of_all_coaches(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let accounts = infra::PgAccountRepository::new(pool.clone());
+    let (coach, other_coach) = (
+        support::register_named(&pool, Role::Coach, vec![Sport::Tennis], "たなかコーチ").await,
+        support::register_named(&pool, Role::Coach, vec![Sport::Golf], "いとうコーチ").await,
+    );
+    let student = support::student(&pool).await;
+    let submit =
+        |coach, sport, hour| Video::submit(videos.next_video_id(), student, coach, sport, at(hour));
+    let (early, late, other, outside, pending) = (
+        submit(coach, Sport::Tennis, 0),
+        submit(coach, Sport::Tennis, 1),
+        submit(other_coach, Sport::Golf, 2),
+        submit(coach, Sport::Tennis, 3),
+        submit(coach, Sport::Tennis, 4),
+    );
+    for video in [&early, &late, &other, &outside, &pending] {
+        videos.insert(video.clone()).await.unwrap();
+    }
+    let mut returned = Vec::new();
+    // 期間は at(10)（含む）から at(20)（含まない）
+    for (video, returned_hour) in [(&early, 10), (&late, 19), (&other, 15), (&outside, 20)] {
+        let reviewer = video.coach_id();
+        returned.push(
+            videos
+                .update(video.id(), |v| {
+                    v.return_review(
+                        videos.next_review_id(),
+                        reviewer,
+                        ReviewComment::new("テイクバックが早い").unwrap(),
+                        true,
+                        at(returned_hour),
+                    )
+                })
+                .await
+                .unwrap(),
+        );
+    }
+
+    let mut found = videos
+        .videos_returned_between(at(10), at(20))
+        .await
+        .unwrap();
+    found.sort_by_key(Video::submitted_at);
+    assert_eq!(
+        found,
+        returned[..3],
+        "コーチを問わず、返却が期間の始まりちょうど（含む）から終わりちょうど（含まない）までの動画を、添削とともに読む"
+    );
+
+    // ユースケースを通すと、返却の日付（日本時間）とコーチで絞って返却の新しい順に並び、かかった時間と表示名が添わる。
+    // at(0) は 2026-11-01 の日本時間 9 時なので、返却はどれも 11-01（at(15) まで）か 11-02（at(15) 以降）
+    let list_returned = application::async_lesson::ListReturnedVideoReviews::new(
+        videos.clone(),
+        application::profile::ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        application::profile::ProfileStudentDisplayNameLookup::new(accounts),
+        application::in_memory::FixedClock(at(30)),
+    );
+    let nov = |day| time::Date::from_calendar_date(2026, time::Month::November, day).unwrap();
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            from: Some(nov(1)),
+            to: Some(nov(2)),
+            coach_id: None,
+            sport: None,
+            student_id: None,
+            lesson_menu_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [
+            returned[3].clone(),
+            returned[1].clone(),
+            returned[2].clone(),
+            returned[0].clone()
+        ]
+    );
+    assert_eq!(
+        list.videos
+            .iter()
+            .map(ReturnedVideoReviewFilter::lead_hours)
+            .collect::<Vec<_>>(),
+        [Some(17), Some(18), Some(13), Some(10)]
+    );
+    assert_eq!(
+        list.coaches.get(&other_coach).map(|name| name.as_str()),
+        Some("いとうコーチ")
+    );
+    assert_eq!(
+        list.students.get(&student).map(|name| name.as_str()),
+        Some("テスト")
+    );
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            from: Some(nov(1)),
+            to: Some(nov(1)),
+            coach_id: Some(coach),
+            sport: None,
+            student_id: None,
+            lesson_menu_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [returned[0].clone()],
+        "11-01 の日本時間のうちに返したコーチの動画だけ"
+    );
+    // スポーツは保存した動画のスポーツで絞り、期間・コーチと組み合わせられる
+    let by_sport = |sport, coach_id| ListReturnedVideoReviewsQuery {
+        from: Some(nov(1)),
+        to: Some(nov(2)),
+        coach_id,
+        sport: Some(sport),
+        student_id: None,
+        lesson_menu_id: None,
+    };
+    let list = list_returned
+        .execute(by_sport(Sport::Golf, None))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[2].clone()]);
+    let list = list_returned
+        .execute(by_sport(Sport::Tennis, Some(coach)))
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [
+            returned[3].clone(),
+            returned[1].clone(),
+            returned[0].clone()
+        ]
+    );
+    let list = list_returned
+        .execute(by_sport(Sport::Golf, Some(coach)))
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn returned_video_reviews_narrow_to_the_student_who_sent_them(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let accounts = infra::PgAccountRepository::new(pool.clone());
+    let (coach, other_coach) = (
+        support::coach(&pool).await,
+        support::register(&pool, Role::Coach, vec![Sport::Golf]).await,
+    );
+    let (student, other_student) = (
+        support::register_named(&pool, Role::Student, vec![Sport::Tennis], "あおき").await,
+        support::student(&pool).await,
+    );
+    let mut returned = Vec::new();
+    // (送った生徒, 送り先のコーチ, スポーツ, 送った時, 返した時)。期間は 2026-11-01〜11-02 の日本時間（at(39) は 11-03 の日本時間 0 時）
+    for (sender, to, sport, submitted_hour, returned_hour) in [
+        (student, coach, Sport::Tennis, 0, 10),
+        (other_student, coach, Sport::Tennis, 1, 12),
+        (student, other_coach, Sport::Golf, 2, 15),
+        (other_student, other_coach, Sport::Golf, 3, 16),
+        // 期間の外（11-03 の日本時間 0 時ちょうど）
+        (student, coach, Sport::Tennis, 4, 39),
+    ] {
+        let video = Video::submit(
+            videos.next_video_id(),
+            sender,
+            to,
+            sport,
+            at(submitted_hour),
+        );
+        videos.insert(video.clone()).await.unwrap();
+        returned.push(
+            videos
+                .update(video.id(), |v| {
+                    v.return_review(
+                        videos.next_review_id(),
+                        to,
+                        ReviewComment::new("テイクバックが早い").unwrap(),
+                        true,
+                        at(returned_hour),
+                    )
+                })
+                .await
+                .unwrap(),
+        );
+    }
+    // 返していない動画は生徒で絞っても載らない
+    videos
+        .insert(Video::submit(
+            videos.next_video_id(),
+            student,
+            coach,
+            Sport::Tennis,
+            at(5),
+        ))
+        .await
+        .unwrap();
+
+    let list_returned = application::async_lesson::ListReturnedVideoReviews::new(
+        videos.clone(),
+        application::profile::ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        application::profile::ProfileStudentDisplayNameLookup::new(accounts),
+        application::in_memory::FixedClock(at(30)),
+    );
+    let nov = |day| time::Date::from_calendar_date(2026, time::Month::November, day).unwrap();
+    let query = |coach_id, sport, student_id| ListReturnedVideoReviewsQuery {
+        from: Some(nov(1)),
+        to: Some(nov(2)),
+        coach_id,
+        sport,
+        student_id,
+        lesson_menu_id: None,
+    };
+    let list = list_returned
+        .execute(query(None, None, Some(student)))
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [returned[2].clone(), returned[0].clone()],
+        "その生徒が送った動画だけを返却の新しい順に"
+    );
+    assert_eq!(
+        list.students
+            .iter()
+            .map(|(id, name)| (*id, name.as_str()))
+            .collect::<Vec<_>>(),
+        [(student, "あおき")],
+        "表示名は絞った後の動画の生徒だけ引く"
+    );
+    let list = list_returned
+        .execute(query(None, None, Some(other_student)))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[3].clone(), returned[1].clone()]);
+
+    // コーチ・スポーツ・期間と組み合わせられる
+    let list = list_returned
+        .execute(query(Some(coach), None, Some(student)))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[0].clone()]);
+    let list = list_returned
+        .execute(query(None, Some(Sport::Golf), Some(other_student)))
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[3].clone()]);
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            from: Some(nov(3)),
+            to: Some(nov(3)),
+            coach_id: None,
+            sport: None,
+            student_id: Some(student),
+            lesson_menu_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[4].clone()]);
+
+    // 生徒でない ID は空の一覧
+    let list = list_returned
+        .execute(query(None, None, Some(coach)))
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn returned_video_reviews_narrow_to_the_lesson_menu_copied_when_sent(pool: PgPool) {
+    let videos = PgVideoRepository::new(pool.clone());
+    let accounts = infra::PgAccountRepository::new(pool.clone());
+    let (coach, other_coach) = (support::coach(&pool).await, support::coach(&pool).await);
+    let student = support::student(&pool).await;
+    let menu = |id: u128, coach, name: &str| {
+        LessonMenu::restore(
+            LessonMenuId::from_u128(id),
+            coach,
+            LessonMenuContent {
+                sport: Sport::Tennis,
+                format: LessonFormat::Async,
+                name: LessonMenuName::new(name).unwrap(),
+                description: LessonMenuDescription::default(),
+            },
+            true,
+            at(0),
+        )
+    };
+    let (form, serve) = (
+        menu(0x50, coach, "フォーム添削"),
+        menu(0x51, other_coach, "サーブ動画チェック"),
+    );
+    let with_menu = |coach, menu: &LessonMenu, hour| {
+        Video::submit_with_lesson_menu(
+            videos.next_video_id(),
+            student,
+            coach,
+            Sport::Tennis,
+            menu,
+            at(hour),
+        )
+        .unwrap()
+    };
+    // at(0) は 2026-11-01 の日本時間 9 時。返却は at(15) までが 11-01、それ以降が 11-02
+    let sent = [
+        (with_menu(coach, &form, 1), Some((coach, 3))),
+        (with_menu(coach, &form, 2), Some((coach, 20))),
+        (with_menu(other_coach, &serve, 2), Some((other_coach, 10))),
+        (
+            Video::submit(videos.next_video_id(), student, coach, Sport::Tennis, at(3)),
+            Some((coach, 12)),
+        ),
+        // 返していない動画は、メニューが合っても載らない
+        (with_menu(coach, &form, 4), None),
+    ];
+    let mut returned = Vec::new();
+    for (video, review) in sent {
+        videos.insert(video.clone()).await.unwrap();
+        let Some((by, hour)) = review else {
+            continue;
+        };
+        returned.push(
+            videos
+                .update(video.id(), |v| {
+                    v.return_review(
+                        videos.next_review_id(),
+                        by,
+                        ReviewComment::new("テイクバックが早い").unwrap(),
+                        true,
+                        at(hour),
+                    )
+                })
+                .await
+                .unwrap(),
+        );
+    }
+
+    let list_returned = application::async_lesson::ListReturnedVideoReviews::new(
+        videos.clone(),
+        application::profile::ProfileCoachDisplayNameLookup::new(accounts.clone()),
+        application::profile::ProfileStudentDisplayNameLookup::new(accounts),
+        application::in_memory::FixedClock(at(30)),
+    );
+    let nov = |day| time::Date::from_calendar_date(2026, time::Month::November, day).unwrap();
+    let by_menu = |lesson_menu_id: u128| ListReturnedVideoReviewsQuery {
+        from: Some(nov(1)),
+        to: Some(nov(2)),
+        lesson_menu_id: Some(LessonMenuId::from_u128(lesson_menu_id)),
+        ..Default::default()
+    };
+    // 保存した写しの ID で絞り、返却の新しい順のまま（メニューのない動画・返していない動画は出ない）。
+    // catalog.lesson_menus に行がなくてもよい
+    let list = list_returned.execute(by_menu(0x50)).await.unwrap();
+    assert_eq!(list.videos, [returned[1].clone(), returned[0].clone()]);
+    let list = list_returned.execute(by_menu(0x51)).await.unwrap();
+    assert_eq!(list.videos, [returned[2].clone()]);
+    // 期間・コーチ・スポーツ・生徒と組み合わせられる
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            to: Some(nov(1)),
+            ..by_menu(0x50)
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[0].clone()], "11-01 に返したものだけ");
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            coach_id: Some(coach),
+            ..by_menu(0x51)
+        })
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            coach_id: Some(coach),
+            sport: Some(Sport::Tennis),
+            student_id: Some(student),
+            ..by_menu(0x50)
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.videos, [returned[1].clone(), returned[0].clone()]);
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            sport: Some(Sport::Golf),
+            ..by_menu(0x50)
+        })
+        .await
+        .unwrap();
+    assert!(list.videos.is_empty());
+    // ないメニューの ID は空
+    let list = list_returned.execute(by_menu(0x99)).await.unwrap();
+    assert!(list.videos.is_empty());
+    // 付けなければメニューを問わない
+    let list = list_returned
+        .execute(ListReturnedVideoReviewsQuery {
+            lesson_menu_id: None,
+            ..by_menu(0x50)
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        list.videos,
+        [
+            returned[1].clone(),
+            returned[3].clone(),
+            returned[2].clone(),
+            returned[0].clone()
+        ]
+    );
+}

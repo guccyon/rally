@@ -1,0 +1,54 @@
+//! interface の結合テストを 1 つのテストバイナリにまとめる入口（Issue #1634）。
+//! tests/ のファイルごとにバイナリを作るとリンクの時間と target の容量がかさむので、各ファイルをここで `mod` として読む。
+//! テストのファイルを足したら、ここにも `mod` を足す（名前の順）。
+
+mod accounts;
+mod announcement_drafts;
+mod announcements;
+mod auth;
+mod bookings;
+mod coach_acceptances;
+mod coach_leaves;
+mod coach_overviews;
+mod coach_profiles;
+mod coaches;
+mod entitlements;
+mod favorite_coaches;
+mod headquarters_booking_details;
+mod headquarters_bookings;
+mod headquarters_cancelled_bookings;
+mod headquarters_live_lesson_session_ends;
+mod headquarters_live_lesson_sessions;
+mod incomplete_coach_profiles;
+mod internal_error;
+mod lesson_menu_publications;
+mod lesson_menus;
+mod lesson_stats;
+mod lessons;
+mod live_lesson_sessions;
+mod low_rated_review_handlings;
+mod low_rated_reviews;
+mod me;
+mod messaging;
+mod my_lesson_completions;
+mod my_profile;
+mod my_videos;
+mod notification_settings;
+mod notifications;
+mod overdue_live_lesson_sessions;
+mod pending_video_reviews;
+mod returned_video_reviews;
+mod review_replies;
+mod reviews;
+mod slot_supply;
+mod slot_withdrawals;
+mod slots;
+mod student_activity;
+mod student_announcements;
+mod student_next_actions;
+mod students;
+mod subscription_plans;
+mod subscriptions;
+mod support;
+mod unanswered_message_threads;
+mod videos;

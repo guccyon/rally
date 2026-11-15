@@ -43,7 +43,7 @@ touch:
     - { label: "本部・コーチの管理画面（ロールを選び、下のトークンでログイン）", port_env: ADMIN_WEB_PORT, path: /, qr: true }
   # ログインの手がかり。出力は JSON の配列 [{"label": ..., "value": ...}]（モックのトークン。apps/backend の README の「認証」）
   # 本部も合成シードが登録したアカウントを指す（モックのトークンはどの ID でも本部として通るが、お休みなど本部の操作の記録は
-  # 実在の本部のアカウントへの外部キーを持ち、登録のない ID では 500 になる。Issue #1480。検査は apps/backend/crates/seed/tests/touch_accounts.rs）
+  # 実在の本部のアカウントへの外部キーを持ち、登録のない ID では 500 になる。Issue #1480。検査は apps/backend/crates/seed/tests/it/touch_accounts.rs）
   accounts:
     service: postgres
     command:

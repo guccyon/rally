@@ -8,7 +8,7 @@
 - ストーリーは「あるべき流れ」で書く。既存の機能に遡って書いて、今の実装が満たしていないところは `known_gaps` に書く（直したら消す）
 - `touches` には正本にある id だけを書く（`context-map.yaml` の id、`glossary.yaml` の id、`<app>.<operationId>`、`analytics/events.yaml` の name）
 
-検査は `apps/backend/crates/application/tests/user_stories.rs`（必須の欄があること、id とファイル名が揃うこと、`actors.yaml` と `touches` の id が正本にあること）。
+検査は `apps/backend/crates/application/tests/it/user_stories.rs`（必須の欄があること、id とファイル名が揃うこと、`actors.yaml` と `touches` の id が正本にあること）。
 
 ## いまのストーリー
 

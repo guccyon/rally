@@ -25,13 +25,13 @@
 
 - 改名は「新しい列を expand → 両方に書いて写す → 古い列を contract」で行い、`RENAME` は使わない
 - **contract は人間承認**。contract のマイグレーションを含む PR は manifest の `always_human_approve` の `destructive_schema`（列・テーブルの削除、型の縮小）に当たり、変更種別に関わらず builder の承認なしにマージしない。contract は、それを待つ expand / 移行と別の PR に分ける
-- **緩和**: データを消さず、古い版のアプリの読み書きもそのまま通る変更。expand（と移行）に書けるのは次の形だけで、`crates/infra/tests/migration_conventions.rs` が形で判定する（例外の表は持たない）
+- **緩和**: データを消さず、古い版のアプリの読み書きもそのまま通る変更。expand（と移行）に書けるのは次の形だけで、`crates/infra/tests/it/migration_conventions.rs` が形で判定する（例外の表は持たない）
   - `DROP NOT NULL` / `DROP DEFAULT`
   - CHECK 制約の同じ名前の付け直し: `DROP CONSTRAINT x, ADD CONSTRAINT x CHECK (...)` を 1 つの `ALTER TABLE` に書く（間に制約のない瞬間を作らない）。前の定義と新しい定義がどちらも `<列> IN ('<値>', ...)` なら、検査が値を比べて、足すだけなら通し、1 つでも減らせば止める。それ以外の形（`BETWEEN` から `>=` など）は値の増減を比べられないので、文に `-- relax: 理由` があるときだけ通し、緩和かはレビューで確かめる
   - 一意・外部キーの制約の削除（`ALTER TABLE <スキーマ>.<テーブル> DROP CONSTRAINT [IF EXISTS] x`）と、一意の索引の削除（`DROP INDEX [IF EXISTS] <スキーマ>.x`）: 一意性・参照の緩和。文に `-- relax: 理由` があるときだけ通す（何が代わりに守るか・なぜ古い版も動くかを書く）。制約・索引の種類は、前のマイグレーション（同じファイルの前の文を含む）で作ったときの定義から読む。名前のない列の制約は Postgres の既定の名前（`<テーブル>_<列>_check` / `_key` / `_fkey`）で数える
 - `-- relax: 理由` は、外す文の直前（前の `;` より後）か文の中に行コメントで書く。理由が空なら数えない
 - 緩和でないものは、理由があっても破壊的として止める: 許す値を減らす CHECK の付け直し（contract に分ける。古い版が書く値を拒む）、`CASCADE` の付いた削除（頼っている他の制約も消す）、CHECK・主キー・一意でない索引の削除、列・テーブル・スキーマの削除
-- expand / 移行の段に破壊的な文（緩和の形でない `DROP`・`RENAME`・`TRUNCATE`・`DELETE`・`ALTER ... TYPE`・`SET NOT NULL`）があれば、`crates/infra/tests/migration_conventions.rs` が `cargo test` で落とす（L1）。ファイル名の形もここで検査する
+- expand / 移行の段に破壊的な文（緩和の形でない `DROP`・`RENAME`・`TRUNCATE`・`DELETE`・`ALTER ... TYPE`・`SET NOT NULL`）があれば、`crates/infra/tests/it/migration_conventions.rs` が `cargo test` で落とす（L1）。ファイル名の形もここで検査する
 
 ### 3. 初版のスキーマ（Gen1 のコア 3 コンテキスト）
 
@@ -101,8 +101,8 @@ DB で守れるものは制約にする（アプリの判定が漏れても壊�
 
 ### 5. 検査
 
-- `crates/infra/tests/migration_conventions.rs`: ファイル名と段の規約（Postgres 不要。`cargo test` で常に走る）
-- `crates/infra/tests/schema.rs`: 空の DB にマイグレーションを当て、テーブルの一覧と上の制約を確かめる。Postgres が要るので `#[ignore]` にし、`DATABASE_URL` を設定して `cargo test -p infra -- --include-ignored` で走らせる。CI で走らせるには CI に Postgres を足す（工場側の段 0 の作業）
+- `crates/infra/tests/it/migration_conventions.rs`: ファイル名と段の規約（Postgres 不要。`cargo test` で常に走る）
+- `crates/infra/tests/it/schema.rs`: 空の DB にマイグレーションを当て、テーブルの一覧と上の制約を確かめる。Postgres が要るので `#[ignore]` にし、`DATABASE_URL` を設定して `cargo test -p infra -- --include-ignored` で走らせる。CI で走らせるには CI に Postgres を足す（工場側の段 0 の作業）
 
 ## 選ばなかった案
 

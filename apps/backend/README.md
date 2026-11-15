@@ -15,6 +15,21 @@ Rally のバックエンド（Rust / axum / PostgreSQL）の Cargo ワークス�
 
 ツールチェーンは `rust-toolchain.toml`（stable、rustfmt・clippy 付き）。
 
+## 結合テストの置き方と絞り込み
+
+結合テストはクレートごとに 1 つのテストバイナリ `it` にまとめる（Issue #1634。`tests/` のファイルごとに別のバイナリを作るとリンクの時間と `target` の容量がかさむため）。`crates/<クレート>/tests/it/main.rs` が `tests/it/` の各ファイルを `mod` で読み、共通の部品も `tests/it/support/` の `mod support` として同じバイナリに入れる（各ファイルからは `use crate::support;`）。テストのファイルを足したら `main.rs` に `mod` を足す（足さないとそのファイルはビルドもされない）。`tests/it/` の外の `tests/*.rs` に置くと別のバイナリになるので置かない。テストが 1 ファイルだけのクレート（`architecture`）はそのまま。
+
+テストの名前の頭にファイル名のモジュールが付く（例: `startup::starts_in_memory_without_database_url`）。ファイル単位の絞り込みは `--test <ファイル名>` ではなく、バイナリ `it` とモジュールの名前で行う。
+
+```sh
+cargo test -p server --test it startup::                        # server の startup.rs のテストだけ
+cargo test -p server --test it startup:: -- --include-ignored   # Postgres が要るものも
+cargo test -p server --test it -- --exact startup::starts_in_memory_without_database_url   # 1 本だけ
+cargo test -p server --test it -- --list                         # 名前の一覧
+```
+
+絞り込みの語は名前の部分一致なので、`slots::` は `coach_slots::` のテストも拾う。1 ファイルだけにしたいときは `--exact` で名前を書くか、`--skip coach_slots::` を足す。
+
 ## データベース
 
 ローカルの Postgres は `compose.yaml`（Docker Compose）で起動する。スキーマは `crates/infra/migrations/` の sqlx のマイグレーションで、変更は expand → 移行 → contract の 3 段に分ける（[ADR 0004](../../docs/adr/0004-schema-expand-contract.md)）。
@@ -27,9 +42,9 @@ cargo sqlx migrate run --source crates/infra/migrations
 cargo sqlx migrate info --source crates/infra/migrations
 ```
 
-マイグレーションのファイル名は `<14 桁の版>_<段>_<説明>.sql`（段は `expand` / `migrate` / `contract`）。規約は `crates/infra/tests/migration_conventions.rs` が `cargo test` で検査する。
+マイグレーションのファイル名は `<14 桁の版>_<段>_<説明>.sql`（段は `expand` / `migrate` / `contract`）。規約は `crates/infra/tests/it/migration_conventions.rs` が `cargo test` で検査する。
 
-スキーマの検証（`crates/infra/tests/schema.rs`）は Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して次で走らせる（テストごとに新しい DB を作ってマイグレーションを当てる）。
+スキーマの検証（`crates/infra/tests/it/schema.rs`）は Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して次で走らせる（テストごとに新しい DB を作ってマイグレーションを当てる）。
 
 ```sh
 cargo test -p infra -- --include-ignored
@@ -55,7 +70,7 @@ curl -i http://127.0.0.1:8080/version   # 200 {"app_version":"0.1.0"}
 | `CLOCK_OFFSET_SECONDS` | サーバーの時計を実際より進める秒数（0 以上の整数。ないか空なら 0）。ユースケースが読む時刻（`application::clock::Clock`）だけが進み、DB の `now()` の既定値は進まない。触れる環境（staging）で QA が「翌日」「暦月の境」をまたぐ流れを確かめるためのもので、工場の shipper が `.factory-config/ship.yaml` の `touch.clock_env` で渡す（factory-engine の ADR 0028 の scenario_time）。本番には渡さない。整数でない値では起動しない |
 | `APP_VERSION` | `GET /version`（認証なし）が `{"app_version": "..."}` で返す版。ないか空なら `"unknown"`。出荷した版を確かめる運用の口で、`/healthz` と同じく生徒・本部の API の契約（`specs/contracts`）には載せない |
 
-起動の試験（バイナリを起動して HTTP で確かめる）は `crates/server/tests/startup.rs`。Postgres を使うものは `DATABASE_URL` を設定して `cargo test -p server --test startup -- --include-ignored` で走らせる。
+起動の試験（バイナリを起動して HTTP で確かめる）は `crates/server/tests/it/startup.rs`。Postgres を使うものは `DATABASE_URL` を設定して `cargo test -p server --test it startup:: -- --include-ignored` で走らせる。
 行動イベントの配信先は環境変数 `ANALYTICS_SINK` で選ぶ（既定はインメモリ。下の「行動イベントの配信先」）。
 通話基盤は環境変数 `VIDEO_CALL_PROVIDER` で選ぶ（既定は `twilio`。下の「通話基盤の切り替え」）。
 
@@ -64,7 +79,7 @@ curl -i http://127.0.0.1:8080/version   # 200 {"app_version":"0.1.0"}
 `domain::identity`（表示名・自己紹介文は `domain::profile`）がモデルの生成時に検証し、破れば `DomainError` を返す。
 
 - 役割（生徒・コーチ・本部）とスポーツの組み合わせ: 生徒はちょうど 1 つ、コーチは 1 つ以上（提供スポーツの集合）、本部はなし
-- スポーツは提供スポーツの 6 種類（Blueprint の tennis / golf / baseball / soccer / basketball と、変更シナリオ cs-001 で足した swimming）のどれか。student-app の `POST /accounts` はさらにゴルフを 422 で断る（契約の `Sport` がゴルフを含まない）。水泳は DB の sport の CHECK 制約の付け直し（`20261028000003_expand_swimming.sql`）で足し、月額（ゴルフ以外）の規則（`ContractType::covers`）は変えずに月額に入る。水泳の一周（コーチ・枠・月額の受講権・予約）は `crates/server/tests/swimming.rs`（Postgres。`--include-ignored`）
+- スポーツは提供スポーツの 6 種類（Blueprint の tennis / golf / baseball / soccer / basketball と、変更シナリオ cs-001 で足した swimming）のどれか。student-app の `POST /accounts` はさらにゴルフを 422 で断る（契約の `Sport` がゴルフを含まない）。水泳は DB の sport の CHECK 制約の付け直し（`20261028000003_expand_swimming.sql`）で足し、月額（ゴルフ以外）の規則（`ContractType::covers`）は変えずに月額に入る。水泳の一周（コーチ・枠・月額の受講権・予約）は `crates/server/tests/it/swimming.rs`（Postgres。`--include-ignored`）
 - コーチの自己紹介文（profile の `CoachBio`）は空でもよく 400 文字まで（契約の `maxLength`。前後の空白も削らずに持つ）。登録したばかりのコーチは空
 - 表示名（profile の `DisplayName`）は空（空白だけ）でなく 50 文字まで（契約の `maxLength`）。メールアドレスは `@` の前後が空でない最小の形で、一意性は大文字小文字を区別しない
 
@@ -79,12 +94,12 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 | review の失敗（`domain::review::ReviewError`）の API の `message`・HTTP の状態・`code` | `interface` の `review_error.rs`（`From<ReviewError> for ApiError`。ハンドラーは変種を個別に拾わない） |
 | entitlement の失敗（`domain::entitlement::EntitlementError` と、受講権がない 404・すでにある 409）の API の `message`・HTTP の状態・`code` | `interface` の `entitlement_error.rs`（`From<EntitlementError> for ApiError` と `entitlement_not_found`・`already_subscribed`・`live_lesson_quota_exceeded`。予約の確定の 409 `live_lesson_quota_exceeded` の応答もここ。ハンドラーは変種を個別に拾わない） |
 | scheduling の失敗（`domain::scheduling::SchedulingError` と、予約の作成・確定・キャンセルと枠の公開のユースケースの失敗）の API の `message`・HTTP の状態・`code` | `interface` の `scheduling_error.rs`（`From<SchedulingError>`・`From<CreateBookingError>`・`From<ConfirmBookingError>`・`From<CancelBookingError>`・`From<PublishSlotError>`・`From<ListBookingsError>` for `ApiError`。同じ変種でも操作で応答が違うのでユースケースの失敗ごとに写し、どれも変種を漏れなく並べる。ハンドラーは変種を個別に拾わない） |
-| DB の `identity.accounts.role` / `sport` の値・モックのトークンの役割 | `infra::identity_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
+| DB の `identity.accounts.role` / `sport` の値・モックのトークンの役割 | `infra::identity_values`（CHECK との一致は `crates/infra/tests/it/schema.rs`） |
 | アカウント ID の UUID のテキスト形式（契約の `format: uuid`・トークン） | `application::identity::account_id_uuid`（`uuid` クレートに任せる。interface と infra の両方から使うので application に置く） |
 
-保存先の障害は `application::Unavailable`（原因を `source` に持つ）で返す。interface は 500 `internal` に固定の文言だけを返し、原因はクライアントに出さない（標準エラー出力に書く。統合テストは `crates/interface/tests/internal_error.rs`）。
+保存先の障害は `application::Unavailable`（原因を `source` に持つ）で返す。interface は 500 `internal` に固定の文言だけを返し、原因はクライアントに出さない（標準エラー出力に書く。統合テストは `crates/interface/tests/it/internal_error.rs`）。
 
-`POST /accounts` の統合テスト（`crates/interface/tests/accounts.rs`）は、レスポンスを `specs/contracts/api/student-app/openapi.yaml` のスキーマで検査する。生徒の登録で行動イベント `account.registered` が 1 回発火することもここで確かめる。トークンは `TokenIssuer` が発行する（このテストではテスト用の偽物）。
+`POST /accounts` の統合テスト（`crates/interface/tests/it/accounts.rs`）は、レスポンスを `specs/contracts/api/student-app/openapi.yaml` のスキーマで検査する。生徒の登録で行動イベント `account.registered` が 1 回発火することもここで確かめる。トークンは `TokenIssuer` が発行する（このテストではテスト用の偽物）。
 
 ## profile: プロフィールの置き場所
 
@@ -95,27 +110,27 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 - `GET /coaches`（admin-web の `listCoaches`）: 本部が呼べる（コーチは 403）。同じパスを生徒が呼ぶと student-app の `listCoachesForStudent`（下の matching）の形で返す（ルーターは `interface::coaches_router`。`require_role(&[Role::Headquarters, Role::Student])` のうえで、ハンドラーがトークンの役割で形を選ぶ）。コーチの役割のアカウントの `coach_id` と `display_name` と受付の状態（scheduling に問い合わせる）と、直近 30 日に終わったレッスンの数 `recent_lesson_count`（同期・非同期の合計。完了記録を `LessonCoachRecentLessonCountLookup` で読み、domain の `CoachLessonCount::tally_recent` で数える。期間は `RecentLessonPeriod`）を返す。任意の `acceptance_status`・`sport` で絞る。ページングはせず、行動イベントは発火しない
 - 並べ方の正本は契約（表示名の Unicode のコードポイントの順、同じ表示名は `coach_id` の順）。保存先のポート `AccountRepository::list_coaches` が並べて返す。Postgres は `ORDER BY display_name COLLATE "C", account_id`（DB の照合順序に依らない。UTF-8 のバイト順はコードポイントの順と同じ）、インメモリは `(表示名の文字列, AccountId)` の順で、両方が同じ並びになる。読んだ行は `Account`（提供スポーツを含む）に戻す
-- テスト: `application::profile::list_coaches`（コーチだけ・並べ方）、`crates/interface/tests/coaches.rs`（契約の形・並べ方・403 / 401）、`crates/infra/tests/pg_account_repository.rs`（Postgres。照合順序に依らない並びとスポーツの復元。`--include-ignored`）
+- テスト: `application::profile::list_coaches`（コーチだけ・並べ方）、`crates/interface/tests/it/coaches.rs`（契約の形・並べ方・403 / 401）、`crates/infra/tests/it/pg_account_repository.rs`（Postgres。照合順序に依らない並びとスポーツの復元。`--include-ignored`）
 
 ## identity: 本部が見る生徒の一覧（D118）
 
 - `GET /students`（admin-web の `listStudents`）: 本部だけが呼べる（`interface::students_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。生徒の役割のアカウントごとに `student_id`・表示名・スポーツ・受講権の契約種別 `contract_type` と契約プラン `plan`（受講権がなければどちらも null。ワンショットは `plan` が null）・最後に予約を作った時刻 `last_booked_at`（予約の状態を問わない。なければ null）・登録した時刻 `registered_at` を返す。メールアドレスは返さない。任意の条件で絞れる: 表示名の検索語 `q`・スポーツ `sport`・その日（`YYYY-MM-DD`。日本時間）の始まり以降に予約を作っていない（一度も予約していない生徒を含む）`not_booked_since`。付けた条件をすべて満たす生徒だけで、どれも付けなければすべての生徒。不正な値は 422 `validation_failed`。ページング・件数の上限はなく、行動イベントは発火しない（読み取りだけ）
 - 並べ方の正本は契約（登録の新しい順、同じ時刻は `student_id` の順）。保存先のポート `AccountRepository::list_students` が並べて返す（Postgres は `ORDER BY created_at DESC, account_id`）
 - ユースケースは `application::identity::ListStudents`（条件は `ListStudentsQuery`。スポーツと最後に予約した時刻での絞り込みはユースケースの中でし、日付の始まりは `scheduling::calendar_day` で決める。entitlement には絞り込んだあとの生徒だけを問い合わせる）。他のコンテキストの表は直接読まず、ポートで生徒の ID をまとめて問い合わせる: 受講権の契約種別と契約プラン `StudentContractLookup`（実装は `entitlement::EntitlementStudentContractLookup`。`EntitlementRepository::find_by_student` を生徒ごとに読む）、最後に予約した時刻 `StudentLastBookingLookup`（実装は `scheduling::SchedulingStudentLastBookingLookup`。`BookingRepository::last_booked_at_of_students`。Postgres は `scheduling.bookings` の `max(created_at)` を生徒ごとに 1 回の問い合わせで）。DB の変更はない
-- テスト: `application::identity::list_students`（生徒だけ・並べ方・まとめて 1 回の問い合わせ・生徒がいなければ問い合わせない・障害・表示名の検索語・スポーツでの絞り込み（そのスポーツの生徒だけを問い合わせ、いなければ問い合わせない）・日本時間の日付の始まりちょうどの境界と一度も予約していない生徒・条件の組み合わせ（残る生徒だけを entitlement に問い合わせる））と各ポートの実装の単体テスト、`crates/interface/tests/students.rs`（契約の形・本部 200・空・`q`・`sport`・`not_booked_since`（日本時間の日付）とその組み合わせ・不正な `q`・`sport`・`not_booked_since` は 422・コーチ / 生徒 403（条件を付けても）・401・500 に理由を出さない）、`crates/infra/tests/pg_account_repository.rs`・`pg_booking_repository.rs`（Postgres の並び・最後に予約した時刻。`--include-ignored`）、`crates/server/tests/students.rs`（Postgres の組み立てで登録 → 月額契約 → 予約が一覧に出る・`sport` と `not_booked_since` とその組み合わせで絞れる・条件を付けてもコーチ / 生徒は 403。`--include-ignored`）。パスパラメータを受けないので 404 はない。`q`・`sport`・`not_booked_since` が不正なら 422 `validation_failed`
+- テスト: `application::identity::list_students`（生徒だけ・並べ方・まとめて 1 回の問い合わせ・生徒がいなければ問い合わせない・障害・表示名の検索語・スポーツでの絞り込み（そのスポーツの生徒だけを問い合わせ、いなければ問い合わせない）・日本時間の日付の始まりちょうどの境界と一度も予約していない生徒・条件の組み合わせ（残る生徒だけを entitlement に問い合わせる））と各ポートの実装の単体テスト、`crates/interface/tests/it/students.rs`（契約の形・本部 200・空・`q`・`sport`・`not_booked_since`（日本時間の日付）とその組み合わせ・不正な `q`・`sport`・`not_booked_since` は 422・コーチ / 生徒 403（条件を付けても）・401・500 に理由を出さない）、`crates/infra/tests/it/pg_account_repository.rs`・`pg_booking_repository.rs`（Postgres の並び・最後に予約した時刻。`--include-ignored`）、`crates/server/tests/it/students.rs`（Postgres の組み立てで登録 → 月額契約 → 予約が一覧に出る・`sport` と `not_booked_since` とその組み合わせで絞れる・条件を付けてもコーチ / 生徒は 403。`--include-ignored`）。パスパラメータを受けないので 404 はない。`q`・`sport`・`not_booked_since` が不正なら 422 `validation_failed`
 
 ## identity: 本部が見る生徒 1 人の利用の様子（D139）
 
 - `GET /students/{student_id}/activity`（admin-web の `getStudentActivity`）: 本部だけが呼べる（`interface::student_activity_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。生徒の `student_id`・表示名と、これからの予約 `upcoming_bookings`（未確定・確定で開始が現在時刻より後。開始の古い順。上限なし）・直近の受けたレッスン `recent_lessons`（完了の新しい順に最大 20 件）・キャンセルした予約の件数 `cancelled_booking_count`（これまでのすべて）・返信のないまま既定の時間（24 時間）の過ぎたスレッドの数 `unanswered_message_thread_count`（`listUnansweredMessageThreads` に `student_id` だけを付けた一覧の件数と同じ。domain の `StudentUnansweredMessageThreadCount` が `UnansweredThreadCriteria` の既定で数える。本文は返さない）・その生徒がつけた直近の低い評価の件数 `low_rated_review_count` とそのうち本部が未対応の件数 `unhandled_low_rated_review_count`（`listLowRatedLessonReviews` に `student_id` だけ（と `handled=false`）を付けた一覧の件数と同じ。domain の `StudentLowRatedReviewCount` が `LowRatedReviewCriteria` で数える。評価されたコーチを問わない。評価の本文は返さない）を返す。予約とレッスンにはコーチの表示名を添える（引けなければ載せない）。生徒を特定する情報は表示名と ID だけ。`student_id` が UUID でない・ない・生徒でなければ 404。行動イベントは発火しない（読み取りだけ）
 - ユースケースは `application::identity::GetStudentActivity`（件数の上限は `GetStudentActivity::RECENT_LESSON_LIMIT`）。他のコンテキストの表は直接読まず、ポートで問い合わせる: これからの予約とキャンセルの件数 `StudentBookingActivityLookup`（実装は `scheduling::SchedulingStudentBookingActivityLookup`。`BookingRepository::bookings_of_student`）、直近の受けたレッスン `StudentLessonHistoryLookup`（実装は `lesson::LessonStudentLessonHistoryLookup`。`LessonCompletionRepository::completions_of_student`）、コーチの表示名 `StudentActivityCoachDisplayNameLookup`（実装は `profile::ProfileCoachDisplayNameLookup`）。DB の変更はない
-- テスト: `application::identity::get_student_activity`（組み立て・404・問い合わせの回数・障害）と各ポートの実装の単体テスト、`crates/interface/tests/student_activity.rs`（契約の形・20 件の上限・404・403 / 401）、`crates/server/tests/student_activity.rs`（Postgres の組み立てで予約 → キャンセル → 動画添削の完了が出る。`--include-ignored`）
+- テスト: `application::identity::get_student_activity`（組み立て・404・問い合わせの回数・障害）と各ポートの実装の単体テスト、`crates/interface/tests/it/student_activity.rs`（契約の形・20 件の上限・404・403 / 401）、`crates/server/tests/it/student_activity.rs`（Postgres の組み立てで予約 → キャンセル → 動画添削の完了が出る。`--include-ignored`）
 
 ## review: 本部が見る低い評価の一覧（D122）
 
 - `GET /lesson-reviews/low`（admin-web の `listLowRatedLessonReviews`）: 本部だけが呼べる（`interface::low_rated_reviews_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。直近 30 日（照会した時刻の 30 × 24 時間前（含む）から照会した時刻（含む）まで）に送られた★2 以下の評価を、コーチを問わず送った時刻の新しい順（同じ時刻は `review_id` の順）に返す。各評価に `review_id`・`lesson_id`・コーチの ID と表示名・生徒の ID と表示名（引けなければ表示名の項目を載せない）・点・一言・送った時刻・レッスンメニューの写し（なければ null）を載せ、一覧にしきい値 `max_rating` と期間 `period_days` を添える。ページング・件数の上限はなく、行動イベントは発火しない（読み取りだけ）
 - しきい値（2）と期間（30 日）の正本は契約で、実装は domain の `review::LowRatedReviewCriteria` の 1 か所（選び方と並べ方も `LowRatedReviewCriteria::select`）。interface はレスポンスの `max_rating` / `period_days` にその定数をそのまま載せる
 - ユースケースは `application::review::ListLowRatedReviews`。保存先のポート `LessonReviewRepository::find_submitted_since`（期間の始まり以降の評価を点で絞らずに読む。Postgres は `submitted_at >= $1`）で読み、domain で選ぶ。メニューは評価の一覧と同じ `ReviewedLessonMenuLookup`（実装は `lesson::LessonCompletionMenuLookup`）、表示名はポート `review::ReviewedCoachDisplayNameLookup` / `review::ReviewerDisplayNameLookup`（実装は `profile::ProfileCoachDisplayNameLookup` / `profile::ProfileStudentDisplayNameLookup`）で、載せる評価のコーチ・生徒の ID をまとめて問い合わせる。DB の変更はない
-- テスト: `domain::review::low_rated_review_criteria`（★2 と★3 の境目・30 日の両端・並べ方）、`application::review::list_low_rated_reviews`（コーチを問わない・メニューと表示名・低い評価がなければ表示名を問い合わせない）、`crates/interface/tests/low_rated_reviews.rs`（契約の形・本部 200・空・コーチ / 生徒 403・401・500 に理由を出さない）、`crates/infra/tests/pg_lesson_review_repository.rs`（Postgres の `find_submitted_since` の境目と一覧。`--include-ignored`）、`crates/server/tests/low_rated_reviews.rs`（Postgres の組み立てで一覧と 403。`--include-ignored`）。パスパラメータを受けないので 404 はない（422 はクエリ `sport`・`handled` の値の誤り）
+- テスト: `domain::review::low_rated_review_criteria`（★2 と★3 の境目・30 日の両端・並べ方）、`application::review::list_low_rated_reviews`（コーチを問わない・メニューと表示名・低い評価がなければ表示名を問い合わせない）、`crates/interface/tests/it/low_rated_reviews.rs`（契約の形・本部 200・空・コーチ / 生徒 403・401・500 に理由を出さない）、`crates/infra/tests/it/pg_lesson_review_repository.rs`（Postgres の `find_submitted_since` の境目と一覧。`--include-ignored`）、`crates/server/tests/it/low_rated_reviews.rs`（Postgres の組み立てで一覧と 403。`--include-ignored`）。パスパラメータを受けないので 404 はない（422 はクエリ `sport`・`handled` の値の誤り）
 
 ## review: 評価へのコーチの返信（D131）
 
@@ -123,7 +138,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 返信できるかと上書きは domain の `review::LessonReview::write_reply`、文の規則（空でない・200 文字まで）は `review::LessonReviewReplyComment` の 1 か所。ユースケースは `application::review::ReplyToLessonReview`（保存先のポート `LessonReviewRepository::find_by_id` で読み、`save_reply` で返信だけを書く）
 - 返信は評価の一覧（admin-web・student-app の `listCoachReviews`、admin-web の `listLowRatedLessonReviews`）の評価ごとの `reply` に載る（なければ null）
 - DB は `review.lesson_reviews` に `reply_comment` / `replied_at` を足す expand（`20261101000002_expand_lesson_review_reply.sql`。ADR 0004 の 3）
-- テスト: `domain::review::lesson_review`・`lesson_review_reply_comment`（評価されたコーチだけ・上書き・文の境目）、`application::review::reply_to_lesson_review`（保存・上書き・403 にあたる拒否・ない評価）、`crates/interface/tests/review_replies.rs`（契約の形・200・上書き・他のコーチ / 本部 / 生徒 403・401・404・422・500 に理由を出さない）、`crates/interface/tests/reviews.rs`・`low_rated_reviews.rs`（一覧の `reply`）、`crates/infra/tests/pg_lesson_review_repository.rs`・`schema.rs`（Postgres の保存と上書き・制約。`--include-ignored`）、`crates/server/tests/coach_reviews.rs`（Postgres の組み立てで返信して生徒の一覧に載る。`--include-ignored`）
+- テスト: `domain::review::lesson_review`・`lesson_review_reply_comment`（評価されたコーチだけ・上書き・文の境目）、`application::review::reply_to_lesson_review`（保存・上書き・403 にあたる拒否・ない評価）、`crates/interface/tests/it/review_replies.rs`（契約の形・200・上書き・他のコーチ / 本部 / 生徒 403・401・404・422・500 に理由を出さない）、`crates/interface/tests/it/reviews.rs`・`low_rated_reviews.rs`（一覧の `reply`）、`crates/infra/tests/it/pg_lesson_review_repository.rs`・`schema.rs`（Postgres の保存と上書き・制約。`--include-ignored`）、`crates/server/tests/it/coach_reviews.rs`（Postgres の組み立てで返信して生徒の一覧に載る。`--include-ignored`）
 
 ## review: 低い評価への本部の対応済みの印（D148）
 
@@ -131,14 +146,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 印を付けられるかと 2 回目の扱いは domain の `review::LessonReview::mark_handled`（低い点の判定は `LowRatedReviewCriteria::is_low_rating` の 1 か所）、印は `review::LowRatedReviewHandling`。ユースケースは `application::review::MarkLowRatedReviewHandled`（`LessonReviewRepository::find_by_id` で読み、`save_handling` で印だけを書き、読み直して返す。Postgres は `WHERE handled_at IS NULL` で最初の印だけを残す）
 - `listLowRatedLessonReviews` の各評価に `handling`（印。なければ null）を載せ、任意のクエリ `handled`（`false` で未対応だけ、`true` で対応済みだけ。`true` / `false` でなければ 422）で絞れる。`sport` と合わせられ、しきい値・期間・並べ方は変わらない
 - DB は `review.lesson_reviews` に `handled_at` / `handled_by` / `handled_by_role` を足す expand（`20261102000003_expand_lesson_review_handling.sql`。ADR 0004 の 3）
-- テスト: `domain::review::lesson_review`・`low_rated_review_criteria`（低い点だけ・2 回目は最初の印・期間を問わない）、`application::review::mark_low_rated_review_handled`・`list_low_rated_reviews`（保存・2 回目・409 にあたる拒否・ない評価・`handled` の絞り込み）、`crates/interface/tests/low_rated_review_handlings.rs`（契約の形・200・2 回目・409・404・403 / 401・500 に理由を出さない）、`crates/interface/tests/low_rated_reviews.rs`（一覧の `handling` と `handled`・422）、`crates/infra/tests/pg_lesson_review_repository.rs`（Postgres の保存・最初の印が残る・絞り込み・制約。`--include-ignored`）、`crates/server/tests/low_rated_reviews.rs`（Postgres の組み立てで印を付けて未対応だけに絞る。`--include-ignored`）
+- テスト: `domain::review::lesson_review`・`low_rated_review_criteria`（低い点だけ・2 回目は最初の印・期間を問わない）、`application::review::mark_low_rated_review_handled`・`list_low_rated_reviews`（保存・2 回目・409 にあたる拒否・ない評価・`handled` の絞り込み）、`crates/interface/tests/it/low_rated_review_handlings.rs`（契約の形・200・2 回目・409・404・403 / 401・500 に理由を出さない）、`crates/interface/tests/it/low_rated_reviews.rs`（一覧の `handling` と `handled`・422）、`crates/infra/tests/it/pg_lesson_review_repository.rs`（Postgres の保存・最初の印が残る・絞り込み・制約。`--include-ignored`）、`crates/server/tests/it/low_rated_reviews.rs`（Postgres の組み立てで印を付けて未対応だけに絞る。`--include-ignored`）
 
 ## profile: コーチの自己紹介文（D18）
 
 - `PUT /me/profile`（admin-web の `updateMyCoachProfile`）: コーチだけが呼べる（`require_role(&[Role::Coach])`。本部・生徒は 403）。トークンのコーチの自己紹介文を `bio` で丸ごと置き換え、`GET /me` と同じ形の `Account` を返す。`bio` がない・文字列でない・400 文字を超えると 422（何も変えない）。トークンのコーチのアカウントがなければ `GET /me` と同じく 401。行動イベントは発火しない
 - `GET /me`（`getMyAccount`）はコーチのときだけ `bio` を返す（書いていなければ空文字列）。本部・生徒の応答には載らない
 - 自己紹介文は `profile::CoachBio` で、ユースケースは `application::profile::UpdateCoachProfile`（書き換え）と `GetCoachBio`（`GET /me` に添える）。保存先は profile のポート `CoachProfileRepository`（`find_coach_bio`・`update_coach_bio`。コーチのアカウントがなければ読み書きとも `None`）。`/me` のハンドラーは identity の `GetAccount` で読んだアカウントに自己紹介文を添えて応答を組み立てる。Postgres は `identity.coaches.bio`（マイグレーション `20261028000002_expand_coach_bio.sql`。既定は空、`coaches_bio_length` で 400 文字まで）
-- テスト: `crates/domain/src/profile/coach_bio.rs`（空・上限・超過）、`application::profile::update_coach_profile`（置き換え・空に戻す・超過で変えない・コーチ以外）・`get_coach_bio`（書いた文・空・コーチ以外）、`crates/infra/tests/pg_account_repository.rs`（Postgres の往復・コーチ以外は読み書きとも `None`）・`schema.rs`（既定の空・`coaches_bio_length`）、`crates/interface/tests/me.rs`（契約の形・コーチ / 本部 / 生徒・422・401）、`crates/server/tests/coach_profile.rs`（Postgres の組み立てで保存される。`--include-ignored`）
+- テスト: `crates/domain/src/profile/coach_bio.rs`（空・上限・超過）、`application::profile::update_coach_profile`（置き換え・空に戻す・超過で変えない・コーチ以外）・`get_coach_bio`（書いた文・空・コーチ以外）、`crates/infra/tests/it/pg_account_repository.rs`（Postgres の往復・コーチ以外は読み書きとも `None`）・`schema.rs`（既定の空・`coaches_bio_length`）、`crates/interface/tests/it/me.rs`（契約の形・コーチ / 本部 / 生徒・422・401）、`crates/server/tests/it/coach_profile.rs`（Postgres の組み立てで保存される。`--include-ignored`）
 
 ## profile: 本部が見るプロフィールの書きかけのコーチ（D176）
 
@@ -147,7 +162,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 「足りない」の判定は domain の `profile::MissingCoachProfileFields` の 1 か所（今は自己紹介文 `bio` が空か空白だけのとき）。項目は `profile::CoachProfileField`、契約の文字列（`bio`）は interface の `contract.rs` の対応表。表示名と提供スポーツは空にできないので対象にしない
 - `updated_at` は、プロフィールの更新の時刻を保存していない（`identity.coaches` に列がない）ので今は常に null。DB の変更はしていない
 - ユースケースは `application::profile::ListIncompleteCoachProfiles`。コーチは `AccountRepository::list_coaches`、自己紹介文は `CoachProfileRepository::list_coach_bios`（Postgres は `identity.coaches` の `coach_id, bio`）で読む
-- テスト: `crates/domain/src/profile/missing_coach_profile_fields.rs`（空・空白だけ・書いた文）、`crates/domain/src/profile/coach_sport_filter.rs`（複数の提供スポーツ・生徒と本部・絞らない）、`application::profile::list_incomplete_coach_profiles`（対象と並び・消せばまた載る・0 件・競技で絞る）、`crates/infra/tests/pg_account_repository.rs`（`list_coach_bios`）、`crates/interface/tests/incomplete_coach_profiles.rs`（契約の形・競技で絞る・422・403・401）、`crates/server/tests/incomplete_coach_profiles.rs`（Postgres の組み立て。`--include-ignored`）
+- テスト: `crates/domain/src/profile/missing_coach_profile_fields.rs`（空・空白だけ・書いた文）、`crates/domain/src/profile/coach_sport_filter.rs`（複数の提供スポーツ・生徒と本部・絞らない）、`application::profile::list_incomplete_coach_profiles`（対象と並び・消せばまた載る・0 件・競技で絞る）、`crates/infra/tests/it/pg_account_repository.rs`（`list_coach_bios`）、`crates/interface/tests/it/incomplete_coach_profiles.rs`（契約の形・競技で絞る・422・403・401）、`crates/server/tests/it/incomplete_coach_profiles.rs`（Postgres の組み立て。`--include-ignored`）
 
 ## matching: 生徒がスポーツでコーチを探す（D96）
 
@@ -156,7 +171,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - ゴルフは golf-app の範囲: `sport=golf` は 422（student-app の `Sport` にない）。生徒自身のスポーツがゴルフ（student-app からは登録できない）なら空の配列。`sport` を省いて生徒のアカウントがなければ 401
 - 各項目に、生徒のお気に入り（下の D126）に入っているか `is_favorite` を添える（お気に入りの保存先 `FavoriteCoachRepository::find_by_student` を 1 回読む）
 - matching の保存先はお気に入りだけで、ほかは他のコンテキストの持ち物をポートで読む: 生徒のスポーツ `StudentSportLookup`（実装は `profile::ProfileStudentSportLookup`）、提供スポーツと表示名 `CoachCandidateLookup`（`profile::ProfileCoachCandidateLookup`）、評価の件数と平均 `CoachReviewSummaryLookup`（`review::ReviewCoachReviewSummaryLookup`。数え方は domain の `CoachReviewSummary::tally`）、公開中のメニューの数 `PublishedLessonMenuCountLookup`（`catalog::CatalogPublishedLessonMenuCountLookup`）。DB の変更はない
-- テスト: `application::matching::list_coaches_for_student`（絞り込み・並べ方・生徒がいない）と各ポートの実装の単体テスト、`crates/interface/tests/coaches.rs`（両方の契約の形・生徒 200・`sport` の絞り込み・422・コーチ 403・401）
+- テスト: `application::matching::list_coaches_for_student`（絞り込み・並べ方・生徒がいない）と各ポートの実装の単体テスト、`crates/interface/tests/it/coaches.rs`（両方の契約の形・生徒 200・`sport` の絞り込み・422・コーチ 403・401）
 
 ## matching: 生徒のお気に入りのコーチ（D126）
 
@@ -164,28 +179,28 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 同じコーチを何度入れても 1 件で、`favorited_at` は最初のまま（Postgres は `matching.favorite_coaches` の主キー `(student_id, coach_id)` に `ON CONFLICT DO NOTHING`）。外すのは何度でもでき、入っていないコーチを外しても 200
 - 入れる: コーチでない ID・ない ID・ゴルフだけのコーチ（`getCoachProfile` が 404 のコーチ）・UUID でない ID は 404、トークンの生徒のアカウントがなければ 401。生徒がコーチを入れるかは domain の `matching::FavoriteCoach::new`（`MatchingError::NotAStudent` / `NotACoach`）、ゴルフを除くのはユースケース `application::matching::AddFavoriteCoach` に境界が渡す student-app のスポーツ（`AddFavoriteCoachCommand::sports`）
 - お気に入りは matching の持ち物（Postgres の `matching` スキーマ。マイグレーション `20261101000001_expand_favorite_coaches.sql`。生徒は役割つきの外部キー、相手は `identity.coaches`）。入れる・一覧のコーチの表示名と提供スポーツは catalog の `CreateLessonMenu` と同じく `AccountRepository::find` で読み、評価の件数と平均は `CoachReviewSummaryLookup`
-- テスト: `crates/domain/src/matching/favorite_coach.rs`（生徒だけ・相手はコーチだけ）、`application::matching::add_favorite_coach`（1 件で最初の時刻・ない / ゴルフだけのコーチ・生徒でない・コーチでない）・`remove_favorite_coach`・`list_favorite_coaches`（並べ方・表示名・評価・ないコーチは載せない）、`crates/interface/tests/favorite_coaches.rs`（契約の形・200・404・401・403）、`crates/infra/tests/pg_favorite_coach_repository.rs`・`schema.rs`（Postgres の往復・組で 1 件・役割の外部キー。`--include-ignored`）、`crates/server/tests/favorite_coaches.rs`（Postgres の組み立てで `is_favorite` まで通す。`--include-ignored`）
+- テスト: `crates/domain/src/matching/favorite_coach.rs`（生徒だけ・相手はコーチだけ）、`application::matching::add_favorite_coach`（1 件で最初の時刻・ない / ゴルフだけのコーチ・生徒でない・コーチでない）・`remove_favorite_coach`・`list_favorite_coaches`（並べ方・表示名・評価・ないコーチは載せない）、`crates/interface/tests/it/favorite_coaches.rs`（契約の形・200・404・401・403）、`crates/infra/tests/it/pg_favorite_coach_repository.rs`・`schema.rs`（Postgres の往復・組で 1 件・役割の外部キー。`--include-ignored`）、`crates/server/tests/it/favorite_coaches.rs`（Postgres の組み立てで `is_favorite` まで通す。`--include-ignored`）
 
 ## profile: 生徒が見るコーチの紹介（D98）
 
 - `GET /coaches/{coach_id}`（student-app の `getCoachProfile`）: 生徒だけが呼べる（`require_role(&[Role::Student])`。コーチ・本部は 403）。コーチの `coach_id`・`display_name`・`bio`（書いていなければ null）・`sports`（提供スポーツを `Sport` の順で。ゴルフは載せない）・`is_favorite`（トークンの生徒のお気に入りか。profile のポート `CoachFavoriteLookup` を matching の `MatchingCoachFavoriteLookup` が実装する）を返す。行動イベントは発火しない
 - コーチでない ID・ない ID・UUID でない ID・ゴルフだけのコーチは 404。ゴルフを除くのは境界（interface）で、ユースケース `application::profile::GetCoachProfile` は `AccountRepository::find` で読んだコーチの紹介（`CoachProfile`。ゴルフも含む）をそのまま返す。ルーターは `catalog_router` などと同じく別の `coach_profile_router`
-- テスト: `application::profile::get_coach_profile`（コーチの紹介・空の自己紹介文・コーチ以外は `None`）、`crates/interface/tests/coach_profiles.rs`（契約の形・null の `bio`・ゴルフを除く・404・403 / 401）、`crates/server/tests/coach_profile.rs`（Postgres の組み立てで書いた自己紹介文が出る。`--include-ignored`）
+- テスト: `application::profile::get_coach_profile`（コーチの紹介・空の自己紹介文・コーチ以外は `None`）、`crates/interface/tests/it/coach_profiles.rs`（契約の形・null の `bio`・ゴルフを除く・404・403 / 401）、`crates/server/tests/it/coach_profile.rs`（Postgres の組み立てで書いた自己紹介文が出る。`--include-ignored`）
 
 ## profile: 生徒の自分の表示名（D100）
 
 - `GET /me/profile`（student-app の `getMyStudentProfile`）・`PATCH /me/profile`（`updateMyStudentProfile`）: 生徒だけが呼べる（`require_role(&[Role::Student])`。コーチ・本部は 403）。応答は登録（`POST /accounts`）の `student` と同じ `Student`（`student_id`・`display_name`・`sport`・`created_at`。形は `accounts::student_body` の 1 か所）。`PATCH` は `display_name` だけを置き換える。表示名の規則は登録と同じ domain の `profile::DisplayName`（空・空白だけ・50 文字超は 422。何も変えない）。`display_name` がない・文字列でないときも 422。トークンの生徒のアカウントがなければ 401。行動イベントは発火しない
 - 取得のユースケースは admin-web の `GET /me` と同じ `application::identity::GetAccount`、変更は `application::profile::UpdateStudentProfile`（admin-web の `UpdateCoachProfile` の生徒の分）。保存先はポート `AccountRepository::update_student_display_name`（生徒のアカウントがなければ何も変えずに `None`）。Postgres は既存の `identity.accounts.display_name` を書き換えるだけで、DB の変更はない
 - 同じパスの `PUT /me/profile`（コーチ）は `interface::me_router`、生徒の `GET`・`PATCH` は別のルーター `interface::my_profile_router` にし、`server` が `merge` する（axum は同じパスのメソッドを 1 つにまとめる）
-- テスト: `application::profile::update_student_profile`（置き換え・上限ちょうど・空 / 空白だけ / 超過で変えない・生徒以外）、`crates/interface/tests/my_profile.rs`（契約の形・取得・変更・422・403・401）、`crates/infra/tests/pg_account_repository.rs`（Postgres の往復・生徒以外は変えない）、`crates/server/tests/student_profile.rs`（Postgres の組み立てで保存される・コーチの `PUT /me/profile` と並んで動く。`--include-ignored`）
+- テスト: `application::profile::update_student_profile`（置き換え・上限ちょうど・空 / 空白だけ / 超過で変えない・生徒以外）、`crates/interface/tests/it/my_profile.rs`（契約の形・取得・変更・422・403・401）、`crates/infra/tests/it/pg_account_repository.rs`（Postgres の往復・生徒以外は変えない）、`crates/server/tests/it/student_profile.rs`（Postgres の組み立てで保存される・コーチの `PUT /me/profile` と並んで動く。`--include-ignored`）
 
 ## 認証と認可（モック）
 
 - アクセストークンはアカウント ID と役割を載せた不透明な文字列で、`Authorization: Bearer <access_token>` で送る（契約の `bearerAuth`）。発行・検証は application のポート `identity::TokenIssuer` / `TokenVerifier`、実装は infra の `MockTokenService` だけ
 - `MockTokenService` は**署名なし**の固定形式 `mock.<役割>.<アカウント ID>` で、誰でも任意の役割のトークンを作れる。Gen1 のローカル起動とテスト用で、本番では署名付きの実装に差し替える。パスワード・外部 IdP・失効は扱わない
 - `POST /accounts` と `GET /healthz` 以外のエンドポイントは認証必須にする。ハンドラーの引数に `interface::AuthenticatedAccount` を取れば、トークンがない・無効なら 401 `unauthorized`（`WWW-Authenticate: Bearer`）。役割で絞るルートは `route_layer(interface::require_role(&[Role::Coach]))` を重ね、役割が合わなければ 403 `forbidden`（admin-web の本部とコーチの同居。ADR 0002 Q3）
-- トークンはどの ID でも通るが、本部の操作の記録（コーチのお休みの `scheduling.coach_leaves.created_by` など）は実在の本部のアカウントへの外部キーを持つので、登録のない ID の本部のトークンではその操作は保存できずに 500 になる（Issue #1480。`crates/server/tests/coach_leaves.rs`）。触れる環境の本部のログインの手がかりは、下の「合成シード」が登録した本部を指す
-- 401 / 403 / 200 の統合テストは `crates/server/tests/auth.rs`（infra のモックで発行したトークンと、`POST /accounts` が返したトークンを使う）
+- トークンはどの ID でも通るが、本部の操作の記録（コーチのお休みの `scheduling.coach_leaves.created_by` など）は実在の本部のアカウントへの外部キーを持つので、登録のない ID の本部のトークンではその操作は保存できずに 500 になる（Issue #1480。`crates/server/tests/it/coach_leaves.rs`）。触れる環境の本部のログインの手がかりは、下の「合成シード」が登録した本部を指す
+- 401 / 403 / 200 の統合テストは `crates/server/tests/it/auth.rs`（infra のモックで発行したトークンと、`POST /accounts` が返したトークンを使う）
 
 ## scheduling: スロットの公開と検索
 
@@ -195,12 +210,12 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 不変条件は `domain::scheduling` が持ち、破れば `domain::scheduling::SchedulingError` を返す（枠・定員・席・カレンダー・予約・枠へのメニューの結びつけ。集約・値オブジェクトと、ユースケースの `PublishSlotError::Invalid`・`WithdrawSlotError::Invalid`・`CreateBookingError::Invalid`・`ConfirmBookingError::Invalid`・`CancelBookingError::Invalid`、保存先のクロージャもこれ）: 開始 < 終了（期間は終了を含まない）、Gen1 の定員は 1、同じコーチの時間を占める枠（`open` / `booked`）は重ならない（集約 `CoachCalendar`。`closed` は時間を占めない）。重なりは 409 `slot_overlaps`
 - 重なりの判定は domain だけに置き、DB の排他制約は置かない。Postgres の実装（`infra::PgSlotRepository`）はコーチごとの advisory lock で並行な公開を直列にする（ADR 0004 の 4）
 - `server` はスロットの保存先も当面インメモリ（`InMemorySlotRepository`）。`scheduling.slots.coach_id` が `identity.coaches` を指すので、アカウントの保存先を Postgres にするときに一緒に差し替える
-- 統合テスト: `crates/interface/tests/slots.rs`（契約の形・403・絞り込み・ページング）、`crates/server/tests/slots.rs`（モックのトークンで通す）、`crates/infra/tests/pg_slot_repository.rs`（Postgres。重なりの拒否と並行な公開・検索・取り下げと並行な予約。`--include-ignored`）、`crates/interface/tests/slot_withdrawals.rs`（取り下げの 200・404・409・403）
+- 統合テスト: `crates/interface/tests/it/slots.rs`（契約の形・403・絞り込み・ページング）、`crates/server/tests/it/slots.rs`（モックのトークンで通す）、`crates/infra/tests/it/pg_slot_repository.rs`（Postgres。重なりの拒否と並行な公開・検索・取り下げと並行な予約。`--include-ignored`）、`crates/interface/tests/it/slot_withdrawals.rs`（取り下げの 200・404・409・403）
 
 | 何の文字列か | 置き場所 |
 |---|---|
 | 契約の `Sport`（admin-web は 6 種類、student-app はゴルフを除く 5 種類）・`SlotStatus`・`date-time`・`next_cursor` | `interface` の `contract.rs` |
-| DB の `scheduling.slots.status` の値 | `infra::scheduling_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
+| DB の `scheduling.slots.status` の値 | `infra::scheduling_values`（CHECK との一致は `crates/infra/tests/it/schema.rs`） |
 | スロット ID の UUID のテキスト形式 | `application::scheduling::slot_id_uuid` |
 
 ## scheduling: 予約の作成と確定（体験予約を含む）
@@ -210,7 +225,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 不変条件は `domain::scheduling::Booking` が持つ: 公開中（`open`）のスロットにしか予約できない（予約済みは 409 `slot_already_booked`、閉じた枠はない枠と同じ 404）、1 スロットに有効な（キャンセルされていない）予約は 1 件（二重予約は 409 `slot_already_booked`）、体験予約はその生徒の初回だけ（キャンセルされていない予約が 1 件でもあるか、完了したレッスン（lesson_completion）が 1 件でもあれば 409 `trial_already_used`。受け終えた体験予約をあとでキャンセルしても使用済みのまま。判定は `Booking::is_trial_available` の 1 か所で、`CreateBooking` は体験予約のときだけ完了記録の保存先 `LessonCompletionRepository` から有無を読む。`listMyBookings` の `trial_available` も同じ判定）
 - ポート `BookingRepository` は予約とスロットを一緒に読み書きし、判定は domain に任せて読み取りから保存までを直列にする。`server` は当面インメモリ（`InMemoryBookingRepository`。スロットの保存先と中身を共有）。Postgres の実装はアカウント・スロットの保存先を Postgres にするときに足す（DB は `bookings_one_active_per_slot` でも二重予約を防ぐ）
 - 境界間イベントはポート `DomainEventPublisher`（発行の失敗でユースケースを失敗させない）。Gen1 はメッセージ基盤を選定していないので、`server` は infra の `InMemoryDomainEventBus`（`LoggingDomainEventPublisher` と同じ `domain_event BookingConfirmed {...}` の 1 行を標準出力に書き、同じプロセスの購読側（entitlement）に渡す）で組み立てる
-- 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・二重予約・体験予約の 1 回限り・確定でスロットが埋まること・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで一周の入口を通す。予約をせずに動画の添削を受け終えて完了を記録した生徒は `trial_available` が false で、体験予約は 409 `trial_already_used`・通常の予約は通る）、`crates/infra/tests/domain_event_payload.rs`（`BookingConfirmed` のペイロードが AsyncAPI の `required` と一致すること）
+- 統合テスト: `crates/interface/tests/it/bookings.rs`（契約の形・二重予約・体験予約の 1 回限り・確定でスロットが埋まること・403 / 404 / 409）、`crates/server/tests/it/bookings.rs`（モックのトークンで一周の入口を通す。予約をせずに動画の添削を受け終えて完了を記録した生徒は `trial_available` が false で、体験予約は 409 `trial_already_used`・通常の予約は通る）、`crates/infra/tests/it/domain_event_payload.rs`（`BookingConfirmed` のペイロードが AsyncAPI の `required` と一致すること）
 
 | 何の文字列か | 置き場所 |
 |---|---|
@@ -224,14 +239,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - キャンセル規定（開始の何時間前以降なら回数を消費するか）は `domain::scheduling::CancellationPolicy` の 1 か所だけに置く（不変条件 3。ADR 0002 Q2）。判定の境界（ちょうどの時刻は消費する側）と前後のテストもそこにある。閾値を application・interface・infra や entitlement に写さない
 - 判定の結果は境界間イベント `BookingCancelled` の `consumes_quota` に載せて発行する（scheduling → entitlement / notification / analytics）。受講権（ビデオ通話の暦月の枠）の消費の実行は entitlement が購読して行う（下の「entitlement: 月額契約の開始と通話の枠の消費」）。API のレスポンスと行動イベントには判定を載せない
 - 行動イベント `booking.cancelled` を 1 回発火する。`hours_before_start` はキャンセルした時刻から開始時刻までの時間を時間単位で切り捨てた整数（開始後のキャンセルは負）
-- 統合テスト: `crates/interface/tests/bookings.rs`（契約の形・23 / 25 時間前の `consumes_quota`・スロットが空くこと・403 / 404 / 409）、`crates/server/tests/bookings.rs`（モックのトークンで通す）、`crates/infra/tests/domain_event_payload.rs`（`BookingCancelled` のペイロードが AsyncAPI の `required` と一致すること）
+- 統合テスト: `crates/interface/tests/it/bookings.rs`（契約の形・23 / 25 時間前の `consumes_quota`・スロットが空くこと・403 / 404 / 409）、`crates/server/tests/it/bookings.rs`（モックのトークンで通す）、`crates/infra/tests/it/domain_event_payload.rs`（`BookingCancelled` のペイロードが AsyncAPI の `required` と一致すること）
 
 ## scheduling: 生徒の次の操作（ADR 0010）
 
 - `GET /me/next-actions`（student-app の `getMyNextActions`）: 生徒だけが呼べる（コーチ・本部は 403、トークンがなければ 401）。トークンの生徒の予約と予約した枠・予約が結び付いた通話セッション・送った動画・完了記録・受講権の有無を読み、次の操作を優先の順に 3 件まで返す。なければ空の配列（200）。照会だけで何も保存せず、ビデオ通話の枠も消費しない（ADR 0005）。行動イベントは発火しない
 - 決め方（確定待ち → 入室前チェックを開ける同期レッスン → 完了の記録のないレッスン → 次の同期レッスン 1 件 → 添削待ちの動画 → 完了したレッスンがあり受講権がない）は `domain::scheduling::NextAction::decide` の 1 か所だけに置く（契約の `getMyNextActions` の説明が正）。入室前チェックを開けるのは開始の 5 分前から（`NextAction::PREJOIN_CHECK_LEAD`）。完了したかは完了記録だけで決め、通話の終了や添削の返却から推し量らない（ADR 0006）。どの入力も本人のものだけを使う
 - ユースケースは `application::scheduling::GetMyNextActions`。通話セッションは、確定済みで枠の開始時刻を過ぎた予約のものだけを予約ごとに読む（`LiveLessonSessionRepository::find_by_booking`）。コーチの表示名は profile に問い合わせる（`BookingCoachDisplayNameLookup`。`server` は `ProfileCoachDisplayNameLookup`）
-- テスト: `domain::scheduling::next_action`（各状態の kind と順・5 分前の境目・進行中 / 終了したセッション・完了の記録の有無・受講権・3 件まで・他の生徒の記録を使わない）、`application::scheduling::get_my_next_actions`（保存先から読んで決める・表示名をまとめて 1 回で問い合わせる・操作がなければ問い合わせない）、`crates/interface/tests/student_next_actions.rs`（契約の形・各 kind の項目・他の生徒の分を返さない・空・403 / 401）、`crates/server/tests/student_next_actions.rs`（インメモリと Postgres の組み立てで予約 → 確定に沿って返る。Postgres は `--include-ignored`）
+- テスト: `domain::scheduling::next_action`（各状態の kind と順・5 分前の境目・進行中 / 終了したセッション・完了の記録の有無・受講権・3 件まで・他の生徒の記録を使わない）、`application::scheduling::get_my_next_actions`（保存先から読んで決める・表示名をまとめて 1 回で問い合わせる・操作がなければ問い合わせない）、`crates/interface/tests/it/student_next_actions.rs`（契約の形・各 kind の項目・他の生徒の分を返さない・空・403 / 401）、`crates/server/tests/it/student_next_actions.rs`（インメモリと Postgres の組み立てで予約 → 確定に沿って返る。Postgres は `--include-ignored`）
 
 ## scheduling: スポーツごとの予約枠の需給
 
@@ -241,14 +256,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 判定の式と期間の正本は契約（`specs/contracts/api/admin-web/openapi.yaml` の `getSlotSupply`）。実装は `domain::scheduling::SlotSupply` の 1 か所だけ（期間 `WINDOW` = 30 日、閾値 `SHORTAGE_PERCENT` = 60）で、数え方（`tally`）も domain が持つ。保存先は期間に開始する枠とその予約を読むだけ（`BookingRepository::slots_starting_between`）で、数えない。閾値と期間を application・interface・infra に写さない
 - 期間（指定しなければ）は現在時刻の 30 日前（含む）から現在時刻（含まない）に開始する枠。`published_slots` は `open` / `booked` の枠、`booking_students` は（閉じた枠を含む）その枠に予約を作った生徒（予約の状態を問わず、同じ生徒は 1 人）。判定は上から順に、月額の契約の対象でないスポーツ（ゴルフ。`ContractType::Monthly.covers`）は数を問わず `not_applicable`、枠も生徒も 0 なら `no_activity`、生徒が 1 人以上で `booking_students >= published_slots × 0.6` なら `insufficient`、それ以外は `sufficient`
 - スロットの検索は記録していない（行動イベントにも DB にもない）ので、需要は予約の作成だけから数える
-- テスト: `domain::scheduling::slot_supply`（閾値の境界・0 の扱い・ゴルフの対象外・数え方・指定しないときの期間 `default_period`）、`application::scheduling::calendar_day`（`period` の既定・両端・31 日の上限・`to` だけで今日より前）、`application::scheduling::get_slot_supply`（期間の端・日付の指定・片方を省いたとき・違反）、`crates/interface/tests/slot_supply.rs`（契約の形・期間の外を数えないこと・`from`・`to` の指定と省略・422・403 / 401）、`crates/server/tests/slot_supply.rs`（モックのトークンで通す。Postgres の組み立てで来週の日付を指定して数える・既定の期間・422 の `headquarters_reads_the_supply_of_next_week_from_postgres` は `--include-ignored`）、`crates/infra/tests/pg_booking_repository.rs`（Postgres。期間の枠と予約の読み取り。`--include-ignored`）、`crates/seed/tests/slot_supply.rs`（合成シードの種 42 で `insufficient` のスポーツがあり、すべてではないこと。Postgres。`cargo test -p seed -- --include-ignored`）
+- テスト: `domain::scheduling::slot_supply`（閾値の境界・0 の扱い・ゴルフの対象外・数え方・指定しないときの期間 `default_period`）、`application::scheduling::calendar_day`（`period` の既定・両端・31 日の上限・`to` だけで今日より前）、`application::scheduling::get_slot_supply`（期間の端・日付の指定・片方を省いたとき・違反）、`crates/interface/tests/it/slot_supply.rs`（契約の形・期間の外を数えないこと・`from`・`to` の指定と省略・422・403 / 401）、`crates/server/tests/it/slot_supply.rs`（モックのトークンで通す。Postgres の組み立てで来週の日付を指定して数える・既定の期間・422 の `headquarters_reads_the_supply_of_next_week_from_postgres` は `--include-ignored`）、`crates/infra/tests/it/pg_booking_repository.rs`（Postgres。期間の枠と予約の読み取り。`--include-ignored`）、`crates/seed/tests/it/slot_supply.rs`（合成シードの種 42 で `insufficient` のスポーツがあり、すべてではないこと。Postgres。`cargo test -p seed -- --include-ignored`）
 
 ## scheduling: 本部が見る予約の一覧（D120）
 
 - `GET /bookings`（admin-web の `listBookings`）: 本部だけが呼べる（`interface::headquarters_bookings_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。同じパスの `POST /bookings`（student-app の予約の作成。生徒だけ）とは `merge` で 1 つのパスにまとまる。すべてのコーチの枠への予約を、状態を問わず開始の古い順（同じ開始は予約の作成の新しい順、次に `booking_id`）に返し、各行に予約（`Booking`。体験予約か・予約した時点のレッスンメニューを含む）とコーチ・生徒の表示名（profile から。引けなければ載せない）を載せる。行動イベントは発火しない
 - 期間は日付（日本時間）の `from` から `to` まで（両端を含む）。省いた `from` は今日、省いた `to` は `from` から 7 日目。期間の規則（1 日以上 31 日まで）は `domain::scheduling::BookingPeriod` の 1 か所、日付と時刻の変換は `application::scheduling::calendar_day`（タイムゾーンは暦月と同じ `entitlement::calendar_month` の日本時間）。違反と `YYYY-MM-DD` でない値は 422 `validation_failed`。予約がなければ空の配列（404 はない）
 - 保存先は予約枠の需給と同じ `BookingRepository::slots_starting_between` を読むだけで、DB の変更はない
-- テスト: `domain::scheduling::booking_period`（1 日・31 日・逆転・超過・端）、`application::scheduling::list_bookings`（日本時間の日付の境目・既定の 7 日・並べ方・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/headquarters_bookings.rs`（契約の形・既定の期間・403 / 401・422）、`crates/server/tests/bookings.rs`（`POST /bookings` と同じパスで通す）、`crates/server/tests/headquarters_bookings.rs`（Postgres の組み立て。`--include-ignored`）
+- テスト: `domain::scheduling::booking_period`（1 日・31 日・逆転・超過・端）、`application::scheduling::list_bookings`（日本時間の日付の境目・既定の 7 日・並べ方・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/it/headquarters_bookings.rs`（契約の形・既定の期間・403 / 401・422）、`crates/server/tests/it/bookings.rs`（`POST /bookings` と同じパスで通す）、`crates/server/tests/it/headquarters_bookings.rs`（Postgres の組み立て。`--include-ignored`）
 
 ## scheduling: 本部が見るキャンセルされた予約の一覧（D185）
 
@@ -256,7 +271,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 期間は日付（日本時間）の `from` から `to` まで（両端を含む）で、規則は `listBookings` と同じ `domain::scheduling::BookingPeriod`（1 日以上 31 日まで。違反と日付でない値は 422）。省いたときは今日までの 7 日（`from` だけなら `from` から、`to` だけなら `to` までの 7 日）。ユースケースは `application::scheduling::ListCancelledBookings`（失敗は `ListBookingsError` を共有）
 - キャンセルした人は domain の `Booking::cancelled_by`（`BookingCanceller`）。今キャンセルできるのは予約した生徒（`Booking::cancel`。`student`）と、コーチのお休みで本部（`Booking::cancel_by_headquarters`。`headquarters`）。DB は `scheduling.bookings.cancelled_by` に持ち（値の対応は infra の `scheduling_values::booking_canceller_value`）、記録を残し始める前にキャンセルした行（NULL）は予約した生徒のまま `student` で読む（`Booking::with_restored_canceller`）。契約の値は `interface::contract::booking_canceller_to_contract`
 - 保存先は `BookingRepository::bookings_cancelled_between`（Postgres は `scheduling.bookings.cancelled_at` の範囲で読む）。DB の変更はない
-- テスト: `domain::scheduling::booking`（`cancelled_by`）、`application::scheduling::list_cancelled_bookings`（日本時間の日付の境目・既定の期間・並べ方・違反・0 件で表示名を問い合わせない・キャンセルした人で絞る）、`crates/infra/tests/pg_booking_repository.rs`（期間の端・キャンセルしていない予約を読まない。`--include-ignored`）、`crates/interface/tests/headquarters_cancelled_bookings.rs`（契約の形・既定の期間・`cancelled_by` とほかの条件の組み合わせ・403 / 401・422・`getBooking` と並べること）、`crates/server/tests/headquarters_cancelled_bookings.rs`（Postgres の組み立てで `cancelBooking` から通す。`--include-ignored`）
+- テスト: `domain::scheduling::booking`（`cancelled_by`）、`application::scheduling::list_cancelled_bookings`（日本時間の日付の境目・既定の期間・並べ方・違反・0 件で表示名を問い合わせない・キャンセルした人で絞る）、`crates/infra/tests/it/pg_booking_repository.rs`（期間の端・キャンセルしていない予約を読まない。`--include-ignored`）、`crates/interface/tests/it/headquarters_cancelled_bookings.rs`（契約の形・既定の期間・`cancelled_by` とほかの条件の組み合わせ・403 / 401・422・`getBooking` と並べること）、`crates/server/tests/it/headquarters_cancelled_bookings.rs`（Postgres の組み立てで `cancelBooking` から通す。`--include-ignored`）
 
 ## scheduling: コーチの受付の停止・再開（D116）
 
@@ -265,27 +280,27 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 停止中のコーチは: 枠の検索から除く（`SlotRepository::search`。Postgres は `NOT EXISTS` で除いた後に `LIMIT`）、予約の作成は枠の状態の判定の後で 409 `coach_not_accepting_bookings`（`CreateBooking` が `BookingRepository::find_coach_acceptance` で読む）、コーチを探す一覧（matching）から除く（`SuspendedCoachLookup`）。本部のコーチの一覧（profile の `ListCoaches`）は 1 件ごとに状態を添える（`CoachAcceptanceLookup`）。入っている予約の確定・キャンセルと、コーチの枠の公開・取り下げは止めない
 - 受付の状態は予約を保存するトランザクションの前に読むので、止めた直後の並行な予約が 1 件通ることはある（止めた後の予約を止めるのが目的で、厳密な排他はしない）
 - DB は `scheduling.coach_acceptances`（マイグレーション `20261031000006_expand_coach_acceptances.sql`。コーチ 1 人に 0 か 1 行、行がなければ受付中）。Postgres の停止・再開はコーチごとの advisory lock の中で読み、`INSERT ... ON CONFLICT` で書く。インメモリの `InMemoryCoachAcceptanceRepository` はスロットの保存先と共有する（`InMemorySlotRepository::coach_acceptances`）
-- テスト: `domain::scheduling::coach_acceptance`、`application::scheduling`（`suspend_coach`・`resume_coach`・`scheduling_coach_acceptance_lookup`・`search_slots`・`create_booking`）・`matching::list_coaches_for_student`・`profile::list_coaches`、`crates/infra/tests/pg_coach_acceptance_repository.rs`（往復・並行な停止・検索から除く）・`schema.rs`（CHECK と外部キー）、`crates/interface/tests/coach_acceptances.rs`（200・404・409・403・401）・`coaches.rs`・`bookings.rs`、`crates/server/tests/coach_acceptance.rs`（Postgres の組み立てで一周。`--include-ignored`）
+- テスト: `domain::scheduling::coach_acceptance`、`application::scheduling`（`suspend_coach`・`resume_coach`・`scheduling_coach_acceptance_lookup`・`search_slots`・`create_booking`）・`matching::list_coaches_for_student`・`profile::list_coaches`、`crates/infra/tests/it/pg_coach_acceptance_repository.rs`（往復・並行な停止・検索から除く）・`schema.rs`（CHECK と外部キー）、`crates/interface/tests/it/coach_acceptances.rs`（200・404・409・403・401）・`coaches.rs`・`bookings.rs`、`crates/server/tests/it/coach_acceptance.rs`（Postgres の組み立てで一周。`--include-ignored`）
 
 | 何の文字列か | 置き場所 |
 |---|---|
 | 契約の `CoachAcceptanceStatus` | `interface` の `contract.rs` |
-| DB の `scheduling.coach_acceptances.status`・`scheduling.coach_acceptance_changes.status` の値 | `infra::scheduling_values`（CHECK との一致は `crates/infra/tests/schema.rs`） |
+| DB の `scheduling.coach_acceptances.status`・`scheduling.coach_acceptance_changes.status` の値 | `infra::scheduling_values`（CHECK との一致は `crates/infra/tests/it/schema.rs`） |
 
 ## scheduling: コーチの受付を止めた・再開した記録（D147）
 
 - `GET /coaches/{coach_id}/acceptance-changes`（admin-web の `listCoachAcceptanceChanges`）: 本部だけが呼べる（停止・再開と同じ `coach_acceptance_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。コーチ 1 人の受付を止めた・再開した記録を、変えた時刻の新しい順（同じ時刻は後に保存した方が先）に `{ coach_id, changes: [{ acceptance_status, changed_by, changed_at }] }` で返す。`acceptance_status` は変えた後の状態、`changed_by` は操作した本部のアカウント。コーチでない・ない・UUID でない ID は 404、記録がなければ空の配列。行動イベント・境界間イベントは発火しない
 - 記録は domain の `CoachAcceptanceChange`。作るのは `CoachAcceptance::suspend`・`resume`（操作した本部のアカウントと時刻を受け取り、状態を変えたときだけ記録を返す）の 1 か所で、409 の違反では作らない。`SuspendCoach`・`ResumeCoach` はトークンのアカウントと時計（`Clock`）の今を渡す。照会は `ListCoachAcceptanceChanges`（コーチがいるかは停止・再開と同じく `CoachIntroductionLookup`）
 - 保存は `CoachAcceptanceRepository::update` が受付と記録を同じ保存の中で書き（Postgres は同じトランザクション。記録が書けなければ受付も変えない）、`CoachAcceptanceRepository::changes` が新しい順に読む。DB は `scheduling.coach_acceptance_changes`（マイグレーション `20261102000001_expand_coach_acceptance_changes.sql`。追記だけで、操作したのは `role = 'headquarters'` のアカウントだけ: 役割つきの外部キー）。この表を足す前の停止・再開の記録はない
-- テスト: `domain::scheduling::coach_acceptance`、`application::scheduling`（`suspend_coach`・`resume_coach`・`list_coach_acceptance_changes`）、`crates/infra/tests/pg_coach_acceptance_repository.rs`（記録と並べ方・違反は残さない・記録が書けなければ受付も変えない）・`schema.rs`（CHECK と外部キー）、`crates/interface/tests/coach_acceptances.rs`（200・404・403・401）、`crates/server/tests/coach_acceptance.rs`（Postgres の組み立てで一周。`--include-ignored`）
+- テスト: `domain::scheduling::coach_acceptance`、`application::scheduling`（`suspend_coach`・`resume_coach`・`list_coach_acceptance_changes`）、`crates/infra/tests/it/pg_coach_acceptance_repository.rs`（記録と並べ方・違反は残さない・記録が書けなければ受付も変えない）・`schema.rs`（CHECK と外部キー）、`crates/interface/tests/it/coach_acceptances.rs`（200・404・403・401）、`crates/server/tests/it/coach_acceptance.rs`（Postgres の組み立てで一周。`--include-ignored`）
 
 ## catalog: 本部がレッスンメニューを非公開にした・公開に戻した記録（D187）
 
 - `GET /lesson-menus/{lesson_menu_id}/publication-changes`（admin-web の `listLessonMenuPublicationChanges`）: 本部だけが呼べる（非公開・公開に戻す操作と同じ `lesson_menu_publication_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。メニュー 1 件を本部が非公開にした・公開に戻した記録を、操作した時刻の新しい順（同じ時刻は後に保存した方が先）に `{ lesson_menu_id, changes: [{ action, reason, changed_by, changed_at }] }` で返す。`action` は `unpublished` / `republished`、`reason` は非公開にしたときの理由（書かなければ空文字列。公開に戻した記録は null）、`changed_by` は操作した本部のアカウント。ない・UUID でない ID は 404、記録がなければ空の配列。コーチが自分で公開・非公開を変えたことは載らない。行動イベント・境界間イベントは発火しない
 - 記録は domain の `LessonMenuPublicationChange`（操作は `LessonMenuPublicationAction`）。作るのは `LessonMenu::unpublish_by_headquarters`・`republish_by_headquarters`（操作した本部のアカウントと時刻を受け取り、メニューを変えたときだけ記録を返す）の 1 か所で、409 の違反では作らない。`UnpublishLessonMenu`・`RepublishLessonMenu` はトークンのアカウントと時計（`Clock`）の今を渡す。照会は `ListLessonMenuPublicationChanges`（メニューがあるかは `LessonMenuRepository::find`）
 - 保存は `LessonMenuRepository::change_publication` がメニューと記録を同じ保存の中で書き（Postgres は行を `FOR UPDATE` で取った同じトランザクション。記録が書けなければメニューも変えず、並行な非公開は 1 つだけ通る）、`LessonMenuRepository::publication_changes` が新しい順に読む。DB は `catalog.lesson_menu_publication_changes`（マイグレーション `20261104000001_expand_lesson_menu_publication_changes.sql`。追記だけで、操作したのは `role = 'headquarters'` のアカウントだけ: 役割つきの外部キー）。この表を足す前の非公開・公開に戻す操作の記録はない
-- 文字列の対応: 契約の `LessonMenuPublicationAction` は `interface` の `contract.rs`、DB の `action` は `infra::catalog_values`（CHECK との一致は `crates/infra/tests/schema.rs`）
-- テスト: `domain::catalog::lesson_menu`、`application::catalog`（`unpublish_lesson_menu`・`republish_lesson_menu`・`list_lesson_menu_publication_changes`）、`crates/infra/tests/pg_lesson_menu_repository.rs`（記録と並べ方・違反は残さない・記録が書けなければメニューも変えない・並行な非公開）・`schema.rs`（CHECK と外部キー）、`crates/interface/tests/lesson_menu_publications.rs`（200・404・403・401）、`crates/server/tests/lesson_menu_publications.rs`（Postgres の組み立てで一周。`--include-ignored`）
+- 文字列の対応: 契約の `LessonMenuPublicationAction` は `interface` の `contract.rs`、DB の `action` は `infra::catalog_values`（CHECK との一致は `crates/infra/tests/it/schema.rs`）
+- テスト: `domain::catalog::lesson_menu`、`application::catalog`（`unpublish_lesson_menu`・`republish_lesson_menu`・`list_lesson_menu_publication_changes`）、`crates/infra/tests/it/pg_lesson_menu_repository.rs`（記録と並べ方・違反は残さない・記録が書けなければメニューも変えない・並行な非公開）・`schema.rs`（CHECK と外部キー）、`crates/interface/tests/it/lesson_menu_publications.rs`（200・404・403・401）、`crates/server/tests/it/lesson_menu_publications.rs`（Postgres の組み立てで一周。`--include-ignored`）
 
 ## entitlement: 契約種別と利用権の型
 
@@ -295,7 +310,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 月をまたいだら `used` は 0 から数える（`LiveLessonQuota::in_month` / `Entitlement::in_month`）。時刻がどの暦月かは `application::entitlement::calendar_month` の 1 か所で決める。暦月は日本時間（UTC+9）で区切る（ADR 0005）
 - `GET /entitlements/me`（student-app の `getMyEntitlement`）: 生徒だけが呼べる（コーチ・本部は 403）。照会するのはトークンのアカウントの受講権で、通話の枠は今の暦月のもの。受講権がなければ 404。照会だけで何も保存しない
 - ポート `EntitlementRepository`（受講権と月額契約）。`server` は当面インメモリ（`InMemoryEntitlementRepository`）。Postgres の実装はアカウントの保存先を Postgres にするときに足す（枠を予約ごとに持つので、`live_lesson_quotas` に予約ごとの行を expand で足す。ADR 0005）
-- 統合テスト: `crates/interface/tests/entitlements.rs`（契約の形・月をまたいだ枠のリセット・ワンショットの形・403 / 404）、`crates/server/tests/entitlements.rs`（モックのトークンで通す）
+- 統合テスト: `crates/interface/tests/it/entitlements.rs`（契約の形・月をまたいだ枠のリセット・ワンショットの形・403 / 404）、`crates/server/tests/it/entitlements.rs`（モックのトークンで通す）
 
 | 何の文字列か | 置き場所 |
 |---|---|
@@ -314,7 +329,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 上限を超える回（standard の 3 回目・plus の 5 回目）の拒否: `ConfirmBooking` は確定の前に scheduling のポート `QuotaGate` で entitlement に「もう 1 回予約してよいか」を問い合わせ（実装は `EntitlementQuotaGate`。規則は `Entitlement::may_book_live_lesson`）、否なら 409 `live_lesson_quota_exceeded`（確定しない）。scheduling は回数も上限も知らない。受講権のない生徒（月額契約の前の体験予約など）は制約を受けない
 - 購読のつなぎ込み: `server` は境界間イベントを infra の `InMemoryDomainEventBus`（メッセージ基盤のモック。標準出力に 1 行書き、同じプロセスの購読側にその場で渡す。購読側の失敗は標準エラー出力に書いて捨てる）で発行する。現在時刻は `server::router_at(clock)` で差し替えられる（`router()` は OS の時計）
 - Postgres では契約プランを `entitlement.subscriptions.plan`（`20261028000005_expand_subscription_plan.sql`。既存の契約は standard）に持ち、受講権を読むときに元の契約から引く。`live_lesson_quotas.remaining_live_lessons` の CHECK は 0 以上だけで、上限の数は DB に書かない
-- 統合テスト: `crates/server/tests/live_lesson_quota.rs`（一周: standard は同じ暦月の 3 回目の確定が 409、翌月は再び確定できる、plus は 4 回目まで確定でき 5 回目が 409、23 時間前のキャンセルで枠が減り 25 時間前のキャンセルで戻る）、`crates/server/tests/subscription_plan.rs`（Postgres の組み立てで plus の 5 回目と standard の 3 回目が 409。`--include-ignored`）、`crates/interface/tests/subscriptions.rs`（契約の形・プラン・409・422・403 / 401）、`crates/interface/tests/bookings.rs`（409 `live_lesson_quota_exceeded`）、`crates/infra/tests/in_memory_domain_event_bus.rs`（購読側への配送）、`crates/infra/tests/domain_event_payload.rs`（`SubscriptionStarted` のペイロード）
+- 統合テスト: `crates/server/tests/it/live_lesson_quota.rs`（一周: standard は同じ暦月の 3 回目の確定が 409、翌月は再び確定できる、plus は 4 回目まで確定でき 5 回目が 409、23 時間前のキャンセルで枠が減り 25 時間前のキャンセルで戻る）、`crates/server/tests/it/subscription_plan.rs`（Postgres の組み立てで plus の 5 回目と standard の 3 回目が 409。`--include-ignored`）、`crates/interface/tests/it/subscriptions.rs`（契約の形・プラン・409・422・403 / 401）、`crates/interface/tests/it/bookings.rs`（409 `live_lesson_quota_exceeded`）、`crates/infra/tests/it/in_memory_domain_event_bus.rs`（購読側への配送）、`crates/infra/tests/it/domain_event_payload.rs`（`SubscriptionStarted` のペイロード）
 
 ## live-lesson: 通話セッションの開始・終了
 
@@ -336,7 +351,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
   組み立ては `server::router_with_video_call`（`main` が使う）。`router_at` / `router_with_analytics` / `router_with_push_sender` / `router_with_postgres` は `twilio` のまま
 - 保存先はポート `LiveLessonSessionRepository`。`server` は当面インメモリ（`InMemoryLiveLessonSessionRepository`）。Postgres のテーブル `live_lesson.sessions`（expand）は置いたが、実装は予約の保存先を Postgres にするときに足す。予約は scheduling の持ち物なので外部キーは張らない（ADR 0004 の 3）
-- 統合テスト: `crates/interface/tests/live_lesson_sessions.rs`（契約の形・確定前の予約の 409・終了で 4 属性が `call.ended` に載ること・参加者以外の 404・422 / 401）、`crates/server/tests/live_lesson_sessions.rs`（モックのトークンと通話基盤のモックで一周）、`crates/infra/tests/mock_video_call_provider.rs`（低品質が 15% 前後。種ごとに ±0.03 の幅で見る）、`crates/infra/tests/mock_alt_video_call_provider.rs`（別の基盤の生の値からの換算を境界の値で・範囲外は障害・分布）、`crates/infra/tests/video_call_provider_contract.rs`（ポートの契約を両方のモックと `VideoCallBackend` が満たすこと）、`crates/server/tests/video_call_backend.rs`（環境変数での切り替えと、選んだ基盤で組み立てたルーターで通話を一周。`room_token` の形で基盤を見分ける）、`crates/infra/tests/schema.rs`（`live_lesson.sessions` の制約。`--include-ignored`）
+- 統合テスト: `crates/interface/tests/it/live_lesson_sessions.rs`（契約の形・確定前の予約の 409・終了で 4 属性が `call.ended` に載ること・参加者以外の 404・422 / 401）、`crates/server/tests/it/live_lesson_sessions.rs`（モックのトークンと通話基盤のモックで一周）、`crates/infra/tests/it/mock_video_call_provider.rs`（低品質が 15% 前後。種ごとに ±0.03 の幅で見る）、`crates/infra/tests/it/mock_alt_video_call_provider.rs`（別の基盤の生の値からの換算を境界の値で・範囲外は障害・分布）、`crates/infra/tests/it/video_call_provider_contract.rs`（ポートの契約を両方のモックと `VideoCallBackend` が満たすこと）、`crates/server/tests/it/video_call_backend.rs`（環境変数での切り替えと、選んだ基盤で組み立てたルーターで通話を一周。`room_token` の形で基盤を見分ける）、`crates/infra/tests/it/schema.rs`（`live_lesson.sessions` の制約。`--include-ignored`）
 
 | 何の文字列か | 置き場所 |
 |---|---|
@@ -351,15 +366,15 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - `POST /videos`（student-app の `submitVideo`）: 生徒だけが呼べる（コーチ・本部は 403）。送る生徒はトークンのアカウント。動画の保存先（ポート `async_lesson::VideoStorage`）に本体の PUT 先を発行させ、`upload_url` で返す。動画本体はクライアントが保存先に直接 PUT し、バックエンドは通さない。送付すると境界間イベント `VideoReviewRequested` を発行し（messaging がその生徒とコーチのスレッドに、なければ開いて添削依頼のメッセージを足す。docs/adr/0007 の決定 7）、行動イベント `video.submitted` を 1 回発火する。送付の回数は数えない（月額は送り放題）。ゴルフ（golf-app の範囲）・`content_type` が `video/mp4` / `video/quicktime` でない・`coach_id` が UUID でない・`note` が 1000 文字を超えるときは 422。Gen1 はアップロードの完了を受け取らないので、レスポンスの `status` は常に `awaiting_upload`。`note` は長さだけを見て保存しない（AI の一次フィードバックの材料に渡すだけ）
 - `GET /videos/{video_id}/review`（`getVideoReview`）: 動画の当事者（送った生徒・送り先のコーチ）だけが読める（役割では絞らない。当事者でないアカウント・ない動画・UUID でない ID には 404）。コーチが返すまでは `status: in_progress`（未返却）で、`review_id`・`comment`・`returned_at` は null
 - `POST /videos/{video_id}/review`（admin-web の `returnVideoReview`）: コーチだけが呼べ（生徒・本部は 403）、返せるのは自分に送られた動画だけ（それ以外は 404）。返却は 1 回（2 回目は 409 `invalid_video_state`）、コメントが空か 4000 文字を超えると 422。返却すると境界間イベント `VideoReviewReturned` を発行し（notification が生徒に通知し、messaging がスレッドに添削の返却のメッセージを足す）、行動イベント `video_review.returned` を 1 回発火する。返却のリードタイムをセマンティック層で `occurred_at - submitted_at` と計算できるよう、送付の時刻 `submitted_at` も載せる
-- `GET /videos/me`（student-app の `listMyVideos`。D74）: 生徒だけが呼べ（コーチ・本部は 403）、トークンの生徒が送った動画だけを、添削待ちも返却済みも含めて送った時刻の新しい順（同じ時刻は動画 ID の順）に返す。ユースケースは `ListMyVideos`（保存先の `VideoRepository::videos_of_student`）で、送り先のコーチの表示名はポート `async_lesson::VideoCoachDisplayNameLookup`（実装は `profile::ProfileCoachDisplayNameLookup`）で添える。添削の状態は `review_status`（`contract.rs` の `video_review_status_to_contract`）。添削のコメント・AI の一次フィードバックは載せず、ゴルフの動画（golf-app の範囲）は interface で除く。`router_with` の引数を増やさないよう別のルーター `interface::my_videos_router` にし、`server` が `merge` する。統合テストは `crates/interface/tests/my_videos.rs`
-- `GET /coaches/me/videos`（admin-web の `listMyCoachVideos`）: コーチだけが呼べ（生徒・本部は 403）、トークンのコーチに送られた動画を添削待ち（送られた時刻の古い順）→ 返却済み（返却の新しい順）に返す（ユースケースは `ListCoachVideos`）。任意のクエリ `pending_only=true`（D206）なら添削を返していない動画だけを同じ並びで返す。「返却待ち」の判定は `domain::async_lesson::Video::is_awaiting_review` の 1 か所で、本部の返却待ちの一覧（`PendingVideoReviewFilter`）も同じ関数を通す。省いたとき・`false` は絞らず、`true` / `false` でなければ 422 `validation_failed`。DB の変更はない（`VideoRepository::videos_of_coach` を読んでから絞る）。テスト: `domain::async_lesson::video`、`application::async_lesson::list_coach_videos`、`crates/interface/tests/videos.rs`（契約の形・422）、`crates/server/tests/coach_videos.rs`（Postgres の組み立て。`--include-ignored`）
+- `GET /videos/me`（student-app の `listMyVideos`。D74）: 生徒だけが呼べ（コーチ・本部は 403）、トークンの生徒が送った動画だけを、添削待ちも返却済みも含めて送った時刻の新しい順（同じ時刻は動画 ID の順）に返す。ユースケースは `ListMyVideos`（保存先の `VideoRepository::videos_of_student`）で、送り先のコーチの表示名はポート `async_lesson::VideoCoachDisplayNameLookup`（実装は `profile::ProfileCoachDisplayNameLookup`）で添える。添削の状態は `review_status`（`contract.rs` の `video_review_status_to_contract`）。添削のコメント・AI の一次フィードバックは載せず、ゴルフの動画（golf-app の範囲）は interface で除く。`router_with` の引数を増やさないよう別のルーター `interface::my_videos_router` にし、`server` が `merge` する。統合テストは `crates/interface/tests/it/my_videos.rs`
+- `GET /coaches/me/videos`（admin-web の `listMyCoachVideos`）: コーチだけが呼べ（生徒・本部は 403）、トークンのコーチに送られた動画を添削待ち（送られた時刻の古い順）→ 返却済み（返却の新しい順）に返す（ユースケースは `ListCoachVideos`）。任意のクエリ `pending_only=true`（D206）なら添削を返していない動画だけを同じ並びで返す。「返却待ち」の判定は `domain::async_lesson::Video::is_awaiting_review` の 1 か所で、本部の返却待ちの一覧（`PendingVideoReviewFilter`）も同じ関数を通す。省いたとき・`false` は絞らず、`true` / `false` でなければ 422 `validation_failed`。DB の変更はない（`VideoRepository::videos_of_coach` を読んでから絞る）。テスト: `domain::async_lesson::video`、`application::async_lesson::list_coach_videos`、`crates/interface/tests/it/videos.rs`（契約の形・422）、`crates/server/tests/it/coach_videos.rs`（Postgres の組み立て。`--include-ignored`）
 - 不変条件は `domain::async_lesson::Video` が持つ: 返せるのは送り先のコーチだけ、返却は 1 回、返却は送付の後（同じ時刻は許す）、着手できない動画は返せない。状態（`Submitted` / `Reviewed`）は添削の有無で決まる
 - 不変条件 2（ゴルフの添削はワンショット決済が確定した動画にしか着手できない）: 規則は `domain::entitlement::ContractType::may_start_review` の 1 か所（月額は常に可、ワンショットは決済が確定した動画だけ）。返却の前にポート `async_lesson::ReviewGate` で問い合わせ、実装の `entitlement::EntitlementReviewGate` は動画のスポーツの契約種別（`ContractType::for_sport`）で答える。Gen1 はワンショットの決済（billing）を実装しないので、ゴルフの動画には常に 409 `review_payment_not_confirmed`。Gen1 は着手と返却を分けないので、返却が着手を兼ねる
 - 保存先はポート `VideoRepository`。`server` は当面インメモリ（`InMemoryVideoRepository`）で、動画の保存先は infra の `MockVideoStorage`（`https://mock-storage.invalid/videos/<動画 ID>` を返す。署名・有効期限はなく、PUT しても何も保存されない）。Postgres のテーブル `async_lesson.videos` / `video_reviews`（expand）は置いたが、実装はアカウントの保存先を Postgres にするときに足す
-- AI の一次フィードバック（変更シナリオ cs-006。glossary の `ai_feedback`）: `SubmitVideo` は動画を保存した直後に同じ処理の中でポート `async_lesson::AiFeedbackGenerator` を呼び（材料は `AiFeedbackRequest`: 動画の ID・スポーツ・形式・生徒の一言 `note`）、返った文と作った時刻（`Clock` の今）を `domain::async_lesson::AiFeedback` として動画に付けて保存する（`Video::record_ai_feedback`。1 本に 1 つ、送付の後）。AI・保存先のどちらが失敗しても送付は成功させ、一次フィードバックは空のまま（失敗の理由は `SubmittedVideo::ai_feedback_failure` で返し、interface が標準エラー出力に書く。application は書かない）。コーチの添削とは別の項目で、返却で上書きされず、添削の着手条件（`ReviewGate`）にも関わらない。`getVideoReview`・`returnVideoReview`・`listMyCoachVideos` の応答の `ai_feedback`（`comment`・`created_at`。なければ null）で返す。Gen1 の実装は infra の `MockAiFeedbackGenerator`（スポーツごとの決まった文。外に出ない）。Postgres は `async_lesson.videos` の `ai_feedback_comment` / `ai_feedback_created_at`（`20261028000004_expand_video_ai_feedback.sql`）。テスト: `crates/application/src/async_lesson/submit_video.rs`（成功・AI の失敗で送付は成功）、`crates/infra/tests/mock_ai_feedback_generator.rs`、`crates/infra/tests/pg_video_repository.rs`・`schema.rs`（Postgres）、`crates/interface/tests/videos.rs`（契約の形）、`crates/server/tests/ai_feedback.rs`（Postgres の組み立てで一周。`--include-ignored`）
-- 送付で選ぶレッスンメニュー（D67）: `submitVideo` の任意の `lesson_menu_id` を `SubmitVideo` がポート `async_lesson::VideoLessonMenuLookup` で引き、`Video::submit_with_lesson_menu` が選べるか（送り先のコーチの・公開中の・非同期の・動画と同じスポーツのメニュー）を確かめて、送った時点の ID・名前を `domain::async_lesson::VideoLessonMenu` として動画に写す（後でメニューが直されても変わらない）。選べない・メニューがないときは何も保存せずイベントも発火せず 422 `validation_failed`。`submitVideo`・`getVideoReview`・`returnVideoReview`・`listMyCoachVideos` の応答の `lesson_menu`（`lesson_menu_id`・`name`。なければ null）で返す。Postgres は `async_lesson.videos` の `lesson_menu_id` / `lesson_menu_name`（`20261031000003_expand_video_lesson_menu.sql`。外部キーは張らない）。テスト: `crates/domain/src/async_lesson/video.rs`・`video_lesson_menu.rs`、`crates/application/src/async_lesson/submit_video.rs`、`crates/infra/tests/pg_video_repository.rs`・`schema.rs`（Postgres）、`crates/interface/tests/videos.rs`（両アプリの契約の形）
+- AI の一次フィードバック（変更シナリオ cs-006。glossary の `ai_feedback`）: `SubmitVideo` は動画を保存した直後に同じ処理の中でポート `async_lesson::AiFeedbackGenerator` を呼び（材料は `AiFeedbackRequest`: 動画の ID・スポーツ・形式・生徒の一言 `note`）、返った文と作った時刻（`Clock` の今）を `domain::async_lesson::AiFeedback` として動画に付けて保存する（`Video::record_ai_feedback`。1 本に 1 つ、送付の後）。AI・保存先のどちらが失敗しても送付は成功させ、一次フィードバックは空のまま（失敗の理由は `SubmittedVideo::ai_feedback_failure` で返し、interface が標準エラー出力に書く。application は書かない）。コーチの添削とは別の項目で、返却で上書きされず、添削の着手条件（`ReviewGate`）にも関わらない。`getVideoReview`・`returnVideoReview`・`listMyCoachVideos` の応答の `ai_feedback`（`comment`・`created_at`。なければ null）で返す。Gen1 の実装は infra の `MockAiFeedbackGenerator`（スポーツごとの決まった文。外に出ない）。Postgres は `async_lesson.videos` の `ai_feedback_comment` / `ai_feedback_created_at`（`20261028000004_expand_video_ai_feedback.sql`）。テスト: `crates/application/src/async_lesson/submit_video.rs`（成功・AI の失敗で送付は成功）、`crates/infra/tests/it/mock_ai_feedback_generator.rs`、`crates/infra/tests/it/pg_video_repository.rs`・`schema.rs`（Postgres）、`crates/interface/tests/it/videos.rs`（契約の形）、`crates/server/tests/it/ai_feedback.rs`（Postgres の組み立てで一周。`--include-ignored`）
+- 送付で選ぶレッスンメニュー（D67）: `submitVideo` の任意の `lesson_menu_id` を `SubmitVideo` がポート `async_lesson::VideoLessonMenuLookup` で引き、`Video::submit_with_lesson_menu` が選べるか（送り先のコーチの・公開中の・非同期の・動画と同じスポーツのメニュー）を確かめて、送った時点の ID・名前を `domain::async_lesson::VideoLessonMenu` として動画に写す（後でメニューが直されても変わらない）。選べない・メニューがないときは何も保存せずイベントも発火せず 422 `validation_failed`。`submitVideo`・`getVideoReview`・`returnVideoReview`・`listMyCoachVideos` の応答の `lesson_menu`（`lesson_menu_id`・`name`。なければ null）で返す。Postgres は `async_lesson.videos` の `lesson_menu_id` / `lesson_menu_name`（`20261031000003_expand_video_lesson_menu.sql`。外部キーは張らない）。テスト: `crates/domain/src/async_lesson/video.rs`・`video_lesson_menu.rs`、`crates/application/src/async_lesson/submit_video.rs`、`crates/infra/tests/it/pg_video_repository.rs`・`schema.rs`（Postgres）、`crates/interface/tests/it/videos.rs`（両アプリの契約の形）
 - 送り先のコーチがいるか・生徒のスポーツと合うかは確かめない（アカウントを読むポートがまだない。Postgres の実装では `videos.coach_id` の外部キーが `identity.coaches` を指す）。契約の `submitVideo` の 404 はそのときに返す
-- 統合テスト: `crates/interface/tests/videos.rs`（契約の形・送付 → 返却の一連と返却前の未返却・`video.submitted` / `video_review.returned` の属性・ゴルフの 409・403 / 404 / 409 / 422 / 401）、`crates/server/tests/videos.rs`（モックのトークンと保存先のモックで一周）、`crates/infra/tests/mock_video_storage.rs`、`crates/infra/tests/schema.rs`（`async_lesson` の制約。`--include-ignored`）
+- 統合テスト: `crates/interface/tests/it/videos.rs`（契約の形・送付 → 返却の一連と返却前の未返却・`video.submitted` / `video_review.returned` の属性・ゴルフの 409・403 / 404 / 409 / 422 / 401）、`crates/server/tests/it/videos.rs`（モックのトークンと保存先のモックで一周）、`crates/infra/tests/it/mock_video_storage.rs`、`crates/infra/tests/it/schema.rs`（`async_lesson` の制約。`--include-ignored`）
 
 | 何の文字列か | 置き場所 |
 |---|---|
@@ -373,7 +388,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - `GET /message-threads/unanswered`（admin-web の `listUnansweredMessageThreads`）: 本部だけが呼べる（`interface::unanswered_message_threads_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。最後の発言が生徒のもので、照会した時刻に返信を待ち始めてから（コーチの最後の発言のあとの最初の生徒の発言から。催促してもリセットされない）`older_than_hours` 時間（省けば 24。1〜168 の外・整数でなければ 422）以上たったスレッドを、経過の長い順（待ち始めの古い順。同じ時刻は `thread_id` の順）に返す。各行はスレッドの ID・担当コーチと生徒の ID と表示名（引けなければ表示名の項目を載せない。ポート `messaging::ThreadCoachDisplayNameLookup` / `ThreadStudentDisplayNameLookup`、実装は profile）・待ち始め `waiting_since`・経過時間 `elapsed_sec`。**メッセージの本文・種類・スタンプは返さない**（本部は件数と時間だけを見る）。照会だけで、既読にしない。DB の変更はない
 - 発言は当事者がチャットとして送ったメッセージ（本文・スタンプ。`MessageKind::is_chat`）だけで、添削依頼・添削の返却とシステムのメッセージは数えない。判定は domain の `MessageThread::awaiting_coach_reply_since`、既定・範囲・境界と並べ方は `messaging::UnansweredThreadCriteria` の 1 か所。範囲の外は `MessagingError::UnansweredThreadHoursOutOfRange`（interface の `messaging_error.rs` で 422）
 - ユースケースは `application::messaging::ListUnansweredMessageThreads`。保存先のポート `MessageThreadRepository::list_all`（すべてのスレッドをメッセージごと読む。ページングなし。docs/adr/0007 の決定 6・10）で読み、domain で選ぶ
-- テスト: `domain::messaging::message_thread`（発言の数え方・待ち始め・催促で変わらないこと）・`unanswered_thread_criteria`（24 時間ちょうどの境界・範囲・並べ方）、`application::messaging::list_unanswered_message_threads`（基準の時間・表示名をまとめて 1 回・空なら問い合わせない・既読にしない）、`crates/interface/tests/unanswered_message_threads.rs`（契約の形・本文を返さない・422・403 / 401）、`crates/infra/tests/pg_message_thread_repository.rs`（`list_all`）、`crates/server/tests/unanswered_message_threads.rs`（Postgres の組み立てで 23 時間 59 分では出ず 24 時間 30 分で出て、コーチが返すと消える。`--include-ignored`）
+- テスト: `domain::messaging::message_thread`（発言の数え方・待ち始め・催促で変わらないこと）・`unanswered_thread_criteria`（24 時間ちょうどの境界・範囲・並べ方）、`application::messaging::list_unanswered_message_threads`（基準の時間・表示名をまとめて 1 回・空なら問い合わせない・既読にしない）、`crates/interface/tests/it/unanswered_message_threads.rs`（契約の形・本文を返さない・422・403 / 401）、`crates/infra/tests/it/pg_message_thread_repository.rs`（`list_all`）、`crates/server/tests/it/unanswered_message_threads.rs`（Postgres の組み立てで 23 時間 59 分では出ず 24 時間 30 分で出て、コーチが返すと消える。`--include-ignored`）
 
 ## async-lesson: 本部が見る返した動画添削の記録（D174）
 
@@ -381,7 +396,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - かかった時間（送付から返却まで。時間で端数は切り捨て）は KPI `video_review_lead_time`（`specs/analytics/kpi.yaml`）の 1 件分で、数え方は `domain::async_lesson::Video::review_lead_hours` の 1 か所（返却待ちの一覧の経過時間 `PendingVideoReviewFilter::elapsed_hours` も同じ関数を通す）
 - 期間の規則（1 日以上 31 日まで）と絞り込み・並べ方は `domain::async_lesson::ReturnedVideoReviewFilter`、日付と時刻の変換は予約の一覧と同じ `application::scheduling::calendar_day`。両方を省けば今日までの 7 日、片方だけならもう片方はそこから 7 日目。動画のスポーツ（送ったときのスポーツ）での絞り込みは返却待ちの一覧と同じ `Video::is_in_sport` の 1 か所、`sport` の値の読み方も同じ `interface` の `admin_web_sport`。違反と `YYYY-MM-DD` でない値・UUID でない `coach_id`・`Sport` の値でない `sport` は 422 `validation_failed`。該当がなければ空の配列（404 はない）
 - 保存先は `VideoRepository::videos_returned_between`（Postgres は `async_lesson.video_reviews.returned_at` で期間を絞って `videos` と結ぶ）。DB の変更はない
-- テスト: `domain::async_lesson::video`（かかった時間の端・スポーツ）、`domain::async_lesson::returned_video_review_filter`（期間の規則・端・コーチ・スポーツ・並べ方）、`application::async_lesson::list_returned_video_reviews`（日本時間の日付の境目・既定の 7 日・片方だけの期間・スポーツと期間・コーチの組み合わせ・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/returned_video_reviews.rs`（契約の形・403 / 401・422・500）、`crates/infra/tests/pg_video_repository.rs`・`crates/server/tests/returned_video_reviews.rs`（Postgres。`--include-ignored`）
+- テスト: `domain::async_lesson::video`（かかった時間の端・スポーツ）、`domain::async_lesson::returned_video_review_filter`（期間の規則・端・コーチ・スポーツ・並べ方）、`application::async_lesson::list_returned_video_reviews`（日本時間の日付の境目・既定の 7 日・片方だけの期間・スポーツと期間・コーチの組み合わせ・違反・0 件で表示名を問い合わせない）、`crates/interface/tests/it/returned_video_reviews.rs`（契約の形・403 / 401・422・500）、`crates/infra/tests/it/pg_video_repository.rs`・`crates/server/tests/it/returned_video_reviews.rs`（Postgres。`--include-ignored`）
 
 ## レッスンの完了記録（is_first_lesson と LessonCompleted）
 
@@ -391,8 +406,8 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 完了記録は元の集約が発行する: `domain::live_lesson::LiveLessonSession::complete` と `domain::async_lesson::Video::complete` が `domain::lesson::LessonCompletion` を返す。`is_first_lesson` はその生徒の完了記録が同期・非同期あわせて 0 件のときだけ true で、判定は `LessonCompletion` の 1 か所
 - `application::lesson::RecordLessonCompletion` は元の集約を読み、保存先（ポート `LessonCompletionRepository::record`。同じ生徒の既存の記録を渡し、読み取りから保存までを生徒ごとに直列にする）に保存してから、行動イベント `lesson.completed`（`lesson_type`・`is_first_lesson`）を 1 回発火し、境界間イベント `LessonCompleted`（billing・review・analytics 向け）を 1 回発行する。billing・review の購読はまだない
 - 保存先は当面インメモリ（`InMemoryLessonCompletionRepository`）で、通話セッション・動画の保存先と同じ中身を読む。Postgres のテーブル `live_lesson.lesson_completions` / `async_lesson.lesson_completions`（expand）は置いたが、実装は通話セッション・動画の保存先を Postgres にするときに足す（2 つのテーブルをまたいだ初回の重なりは生徒ごとの advisory lock で防ぐ）
-- `GET /lessons/completions/me`（student-app の `listMyLessonCompletions`。D104）: 生徒だけが呼べ（コーチ・本部は 403）、トークンの生徒の完了したレッスンを通話・動画添削の両方とも完了した時刻の新しい順（同じ時刻は完了記録の ID の順）に返す。ページングと件数の上限はない。ユースケースは `application::lesson::ListMyLessonCompletions`（保存先の `LessonCompletionRepository::completions_of_student`）で、ほかのコンテキストの保存先は直接読まない: コーチの表示名はポート `lesson::LessonCompletionCoachDisplayNameLookup`（実装は `profile::ProfileCoachDisplayNameLookup`）、評価を付けたかはポート `lesson::LessonCompletionReviewLookup`（実装は `review::ReviewLessonCompletionReviewLookup`）、レッスンメニューは完了記録の元（通話セッションに結び付いたその生徒の予約・動画）が持つ写し（読み方は評価の一覧の `LessonCompletionMenuLookup` と共有の `lesson_completion_menus.rs`。予約は `SchedulingBookingLookup`）。行動イベントは発火しない。`router_with` の引数を増やさないよう別のルーター `interface::my_lesson_completions_router` にし、`server` が `merge` する。統合テストは `crates/interface/tests/my_lesson_completions.rs`（契約の形・並び・評価済みの印・403 / 401）と `crates/server/tests/lessons.rs` の一周の最後
-- 統合テスト: `crates/interface/tests/lessons.rs`（契約の形・通話と動画の両方からの完了・同じ生徒の 2 回目で `is_first_lesson` が false・イベント・409 / 404 / 422 / 401）、`crates/server/tests/lessons.rs`（予約 → 通話 → 完了、動画 → 添削 → 完了の一周）、`crates/infra/tests/domain_event_payload.rs`（`LessonCompleted` のペイロード）、`crates/infra/tests/schema.rs`（`lesson_completions` の制約。`--include-ignored`）
+- `GET /lessons/completions/me`（student-app の `listMyLessonCompletions`。D104）: 生徒だけが呼べ（コーチ・本部は 403）、トークンの生徒の完了したレッスンを通話・動画添削の両方とも完了した時刻の新しい順（同じ時刻は完了記録の ID の順）に返す。ページングと件数の上限はない。ユースケースは `application::lesson::ListMyLessonCompletions`（保存先の `LessonCompletionRepository::completions_of_student`）で、ほかのコンテキストの保存先は直接読まない: コーチの表示名はポート `lesson::LessonCompletionCoachDisplayNameLookup`（実装は `profile::ProfileCoachDisplayNameLookup`）、評価を付けたかはポート `lesson::LessonCompletionReviewLookup`（実装は `review::ReviewLessonCompletionReviewLookup`）、レッスンメニューは完了記録の元（通話セッションに結び付いたその生徒の予約・動画）が持つ写し（読み方は評価の一覧の `LessonCompletionMenuLookup` と共有の `lesson_completion_menus.rs`。予約は `SchedulingBookingLookup`）。行動イベントは発火しない。`router_with` の引数を増やさないよう別のルーター `interface::my_lesson_completions_router` にし、`server` が `merge` する。統合テストは `crates/interface/tests/it/my_lesson_completions.rs`（契約の形・並び・評価済みの印・403 / 401）と `crates/server/tests/it/lessons.rs` の一周の最後
+- 統合テスト: `crates/interface/tests/it/lessons.rs`（契約の形・通話と動画の両方からの完了・同じ生徒の 2 回目で `is_first_lesson` が false・イベント・409 / 404 / 422 / 401）、`crates/server/tests/it/lessons.rs`（予約 → 通話 → 完了、動画 → 添削 → 完了の一周）、`crates/infra/tests/it/domain_event_payload.rs`（`LessonCompleted` のペイロード）、`crates/infra/tests/it/schema.rs`（`lesson_completions` の制約。`--include-ignored`）
 
 | 何の文字列か | 置き場所 |
 |---|---|
@@ -409,7 +424,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 送る前にその通知をお知らせとして残し（下の「お知らせ」）、次に受け取る人の通知の受け取り設定（下の「通知の受け取り設定」）を読み、その通知の種類（`PushNotification::kind()`）がオフなら送らない
 - 同じイベントの再送で 2 回送らないよう、送った通知を `event_id` と組にしてプロセスのメモリに覚える（受け取り設定がオフで送らなかった通知も覚え、あとでオンに戻しても再送では送らない。受け取り設定を読めなかった通知は送れなかった通知と同じく再送で送り直す。1 イベントで 2 件送る予約の確定も通知ごとに覚え、送れなかった通知だけを再送で送り直す。1 件が送れなくても残りは送り、障害を返す）。プロセスを再起動すると忘れる
 - 組み立ては `server` の `InMemoryDomainEventBus` の購読側（`MessageThreadSubscriber` と組にして足した）。`ReturnVideoReview`・`SendMessage` にも同じバスを発行先として渡す。テストから送り先を差し替える組み立ては `server::router_with_push_sender`
-- テスト: `crates/domain/src/notification/push_notification.rs`（受け取る人）、`crates/application/src/notification/push_notification_subscriber.rs`（予約の確定は生徒とコーチに 1 件ずつ・1 イベント 1 回・メッセージは送り手でない側へ・ほかのイベントで送らない・失敗後の再送・片方だけ失敗したときは失敗した方だけを再送で送る）、`crates/application/src/async_lesson/return_video_review.rs`・`messaging/send_message.rs`（保存したら発行し、拒否では発行しない）、`crates/infra/tests/domain_event_payload.rs`（`VideoReviewReturned` / `MessageSent` のペイロードが AsyncAPI の `required` と一致すること）、`crates/infra/tests/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/notifications.rs`（予約の作成では送らず、確定で生徒とコーチに 1 件ずつ、キャンセルでは送らない。動画の送付では送らず、返却で生徒に 1 件。コーチの送信は生徒へ、生徒の送信はコーチへ、拒否された送信では送らない）
+- テスト: `crates/domain/src/notification/push_notification.rs`（受け取る人）、`crates/application/src/notification/push_notification_subscriber.rs`（予約の確定は生徒とコーチに 1 件ずつ・1 イベント 1 回・メッセージは送り手でない側へ・ほかのイベントで送らない・失敗後の再送・片方だけ失敗したときは失敗した方だけを再送で送る）、`crates/application/src/async_lesson/return_video_review.rs`・`messaging/send_message.rs`（保存したら発行し、拒否では発行しない）、`crates/infra/tests/it/domain_event_payload.rs`（`VideoReviewReturned` / `MessageSent` のペイロードが AsyncAPI の `required` と一致すること）、`crates/infra/tests/it/mock_push_sender.rs`（記録と 1 行の形）、`crates/server/tests/it/notifications.rs`（予約の作成では送らず、確定で生徒とコーチに 1 件ずつ、キャンセルでは送らない。動画の送付では送らず、返却で生徒に 1 件。コーチの送信は生徒へ、生徒の送信はコーチへ、拒否された送信では送らない）
 
 ### 通知の受け取り設定（D16）
 
@@ -417,7 +432,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - student-app の `GET /notification-settings/me`（`getMyNotificationSettings`）と `PUT /notification-settings/me`（`updateMyNotificationSettings`）。生徒だけ（ほかの役割は 403）。PUT は書いた種類だけを変え、書かなかった種類は今のまま（真偽値でなければ 422）。行動イベントは発火しない。契約の項目名（`booking_confirmed` / `booking_cancelled_by_headquarters` / `video_review_returned` / `message_received` / `announcement`）との対応は `interface` の `notification_settings.rs` だけ
 - 保存先はポート `NotificationSettingsRepository`（保存していなければ既定を返す。変更は読み取りから保存までを直列にする）。Postgres は `notification.notification_settings`（アカウント × 種類で 1 行。マイグレーション `20261028000001_expand_notification_settings.sql`、種類の文字列は `infra::notification_values`）。`PgNotificationSettingsRepository` はアカウントごとの advisory lock の中で読み、すべての種類の行を upsert する。`router_at` などの組み立ては当面インメモリ（`InMemoryNotificationSettingsRepository`）、`router_with_postgres` は Postgres
 - コーチの受け取り設定を変える操作（admin-web）はまだない。コーチへの通知（`BookingReceived`・コーチへの `MessageReceived`）も同じ表を読むので、行がなければすべて送る
-- テスト: `crates/domain/src/notification/notification_settings.rs`（既定はすべてオン・オフとオンの切り替え）、`crates/application/src/notification/`（`get_notification_settings.rs`・`update_notification_settings.rs`、`push_notification_subscriber.rs` のオフなら送らず再送でも送らない・オフの種類だけを止める・設定を読めなければ再送で送る）、`crates/infra/tests/pg_notification_settings_repository.rs`（既定・往復・並行な変更が互いを消さない）・`schema.rs`（種類の CHECK・1 アカウント 1 種類 1 行・アカウントへの外部キー）、`crates/interface/tests/notification_settings.rs`（契約の形・既定・部分の変更・422・403・401）、`crates/server/tests/notifications.rs`（オフにした生徒には送らずコーチには送る・Postgres の組み立てで保存される）
+- テスト: `crates/domain/src/notification/notification_settings.rs`（既定はすべてオン・オフとオンの切り替え）、`crates/application/src/notification/`（`get_notification_settings.rs`・`update_notification_settings.rs`、`push_notification_subscriber.rs` のオフなら送らず再送でも送らない・オフの種類だけを止める・設定を読めなければ再送で送る）、`crates/infra/tests/it/pg_notification_settings_repository.rs`（既定・往復・並行な変更が互いを消さない）・`schema.rs`（種類の CHECK・1 アカウント 1 種類 1 行・アカウントへの外部キー）、`crates/interface/tests/it/notification_settings.rs`（契約の形・既定・部分の変更・422・403・401）、`crates/server/tests/it/notifications.rs`（オフにした生徒には送らずコーチには送る・Postgres の組み立てで保存される）
 
 ### お知らせ（D108）
 
@@ -425,7 +440,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - student-app の `GET /notifications/me`（`listMyNotifications`。作った時刻の新しい順、同じ時刻は後に残したものが先。ページングなし）と `POST /notifications/me/read`（`markMyNotificationsRead`。すべて既読にして一覧を返す）。生徒だけ（ほかの役割は 403）。各行は `notification_id`・`kind`（`NotificationKind` と同じ綴り）・`body`・`created_at`・`is_read`。本文（利用者に見せる文言）と種類の値の対応は `interface` の `notifications.rs` だけ。行動イベントは発火しない
 - 既読は domain の `Notification::mark_read`（最初に読んだ時刻のまま。既読にする時刻より後に作ったものは読まない）。保存先から戻す `Notification::restore` も、既読が作った時刻より前なら `NotificationError::NotificationReadBeforeCreated` で断る（DB の `notifications_read_after_created` と同じ不変条件）。ユースケースは `ListMyNotifications`・`MarkMyNotificationsRead`
 - 保存先はポート `NotificationRepository`（同じプッシュ通知のお知らせは 1 件。再送や送り直しで 2 件にしない）。Postgres は `notification.notifications`（マイグレーション `20261031000004_expand_notifications.sql`。種類の文字列は `infra::notification_values` の `push_notification_kind_value`）。`PgNotificationRepository` は `ON CONFLICT DO NOTHING` で残し（`notifications_one_per_push`）、既読は受け取る人のまだ読んでいない行を `FOR UPDATE` で読んで `mark_read` に通してから書く。`router_at` などの組み立ては当面インメモリ（`InMemoryNotificationRepository`）、`router_with_postgres` は Postgres
-- テスト: `crates/domain/src/notification/notification.rs`（既読の時刻）、`crates/application/src/notification/`（`list_my_notifications.rs`・`mark_my_notifications_read.rs`、`push_notification_subscriber.rs` の送った通知を 1 件ずつ残す・オフでも残す・送り直しで 2 件にしない・残せなければ送らない）、`crates/infra/tests/pg_notification_repository.rs`（変種ごとの往復・受け取る人ごとの新しい順・同じプッシュ通知は 1 件・既読）・`schema.rs`（種類の CHECK・中身の形・1 通知 1 件・既読は作った後）、`crates/interface/tests/notifications.rs`（契約の形・自分の分だけ・新しい順・すべて既読・403・401）、`crates/server/tests/notifications.rs`（オフにした種類もお知らせに残り、既読にできる）
+- テスト: `crates/domain/src/notification/notification.rs`（既読の時刻）、`crates/application/src/notification/`（`list_my_notifications.rs`・`mark_my_notifications_read.rs`、`push_notification_subscriber.rs` の送った通知を 1 件ずつ残す・オフでも残す・送り直しで 2 件にしない・残せなければ送らない）、`crates/infra/tests/it/pg_notification_repository.rs`（変種ごとの往復・受け取る人ごとの新しい順・同じプッシュ通知は 1 件・既読）・`schema.rs`（種類の CHECK・中身の形・1 通知 1 件・既読は作った後）、`crates/interface/tests/it/notifications.rs`（契約の形・自分の分だけ・新しい順・すべて既読・403・401）、`crates/server/tests/it/notifications.rs`（オフにした種類もお知らせに残り、既読にできる）
 
 ### 本部からのお知らせ（D124）
 
@@ -434,14 +449,14 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - ユースケース `SendAnnouncement` は対象の生徒を profile に問い合わせ（ポート `AnnouncementRecipientLookup`、実装 `ProfileAnnouncementRecipientLookup`）、いなければ `NotificationError::AnnouncementWithoutRecipients`（404）で何も残さない。送った記録を残してから生徒ごとにお知らせ（`PushNotification::Announcement`、種類 `NotificationKind::Announcement`）を残し、受け取り設定でオンの生徒にだけプッシュ通知を送る。プッシュ通知を送れなくても止めない（お知らせは残っている）
 - 生徒のお知らせの本文は送った記録の題と本文を改行でつないだもの。`ListMyNotifications`・`MarkMyNotificationsRead` は本部からのお知らせに送った記録を添えて返す（`MyNotification`）。student-app の通知の受け取り設定に `announcement` を足した
 - 保存先はポート `AnnouncementRepository`。Postgres は `notification.announcements`（マイグレーション `20261101000004_expand_announcements.sql`）。同じマイグレーションで `notification.notifications` に `announcement_id`（送った記録への外部キー）を足し、`coach_id` の NOT NULL を外して種類ごとの形（`notifications_kind_shape`）で守り、同じお知らせは 1 人に 1 件（`notifications_one_per_announcement`）。`router_at` などの組み立ては当面インメモリ（`InMemoryAnnouncementRepository`）、`router_with_postgres` は Postgres
-- テスト: `crates/domain/src/notification/`（`announcement.rs`・`announcement_title.rs`・`announcement_body.rs`）、`crates/application/src/notification/`（`send_announcement.rs`・`list_announcements.rs`・`list_my_notifications.rs`）と `crates/application/src/profile/profile_announcement_recipient_lookup.rs`、`crates/infra/tests/pg_announcement_repository.rs`・`pg_notification_repository.rs`・`schema.rs`、`crates/interface/tests/announcements.rs`（契約の形・全員とスポーツ・受け取り設定・一覧・404・422・403・401）・`notifications.rs`、`crates/server/tests/notifications.rs`（生徒のお知らせに届く・Postgres の組み立てで保存される）
+- テスト: `crates/domain/src/notification/`（`announcement.rs`・`announcement_title.rs`・`announcement_body.rs`）、`crates/application/src/notification/`（`send_announcement.rs`・`list_announcements.rs`・`list_my_notifications.rs`）と `crates/application/src/profile/profile_announcement_recipient_lookup.rs`、`crates/infra/tests/it/pg_announcement_repository.rs`・`pg_notification_repository.rs`・`schema.rs`、`crates/interface/tests/it/announcements.rs`（契約の形・全員とスポーツ・受け取り設定・一覧・404・422・403・401）・`notifications.rs`、`crates/server/tests/it/notifications.rs`（生徒のお知らせに届く・Postgres の組み立てで保存される）
 - 本部が送ったお知らせを取り下げる（glossary の `announcement_withdrawal`、domain の `AnnouncementWithdrawal`。取り下げた本部のアカウントと時刻）。admin-web の `POST /announcements/{announcement_id}/withdraw`（`withdrawAnnouncement`。200 で取り下げたあとの記録）。本部だけ（ほかの役割は 403）、ない・UUID でないお知らせは 404、取り下げ済みは `NotificationError::AnnouncementAlreadyWithdrawn`（409 `announcement_already_withdrawn`。最初の取り下げを残す）。判定は `Announcement::withdraw` の 1 か所で、ユースケース `WithdrawAnnouncement` は読んで取り下げて保存するだけ（失敗は `WithdrawAnnouncementError`）。行動イベント・境界間イベントは発火しない
 - 取り下げたお知らせは `MyNotification::attach`（`ListMyNotifications`・`MarkMyNotificationsRead` の共通の 1 か所）で生徒の一覧から外す。生徒ごとのお知らせの行と既読は消さない。本部の `listAnnouncements` には残り、admin-web の `Announcement.withdrawal`（取り下げていなければ null）で分かる。保存先は `AnnouncementRepository` に `find`・`update` を足し、Postgres は `notification.announcements` に `withdrawn_by`・`withdrawn_at` を足す（マイグレーション `20261102000002_expand_announcement_withdrawal.sql`。両方 NULL か両方あり。`update` は取り下げ済みの行を上書きしない）
-- テスト: `crates/domain/src/notification/`（`announcement.rs`・`announcement_withdrawal.rs`）、`crates/application/src/notification/`（`withdraw_announcement.rs`・`list_my_notifications.rs`・`mark_my_notifications_read.rs`）、`crates/infra/tests/pg_announcement_repository.rs`・`schema.rs`、`crates/interface/tests/announcements.rs`（取り下げ・一覧の `withdrawal`・409・404・403・401）、`crates/server/tests/notifications.rs`（生徒のお知らせから外れる・Postgres の組み立て）
+- テスト: `crates/domain/src/notification/`（`announcement.rs`・`announcement_withdrawal.rs`）、`crates/application/src/notification/`（`withdraw_announcement.rs`・`list_my_notifications.rs`・`mark_my_notifications_read.rs`）、`crates/infra/tests/it/pg_announcement_repository.rs`・`schema.rs`、`crates/interface/tests/it/announcements.rs`（取り下げ・一覧の `withdrawal`・409・404・403・401）、`crates/server/tests/it/notifications.rs`（生徒のお知らせから外れる・Postgres の組み立て）
 - 本部が送る前のお知らせを下書きとして残す（glossary の `announcement_draft`、domain の `AnnouncementDraft`。作った本部のアカウント・題・本文・対象のスポーツ・作った時刻・最後に直した時刻）。admin-web の `POST /announcement-drafts`（`createAnnouncementDraft`。201）・`GET /announcement-drafts`（`listAnnouncementDrafts`。最後に直した時刻の新しい順）・`PUT /announcement-drafts/{announcement_draft_id}`（`updateAnnouncementDraft`）・`DELETE`（`deleteAnnouncementDraft`。残った一覧を返す）・`POST /announcement-drafts/{announcement_draft_id}/send`（`sendAnnouncementDraft`。201 で送った記録）。本部だけ（ほかの役割は 403）、ない・UUID でない下書きは 404。下書きは生徒に届かない。行動イベント・境界間イベントは発火しない
 - 書きかけなので題・本文は空でもよく、上限（`AnnouncementTitle::MAX_CHARS`・`AnnouncementBody::MAX_CHARS`）だけを `AnnouncementDraft::new`・`revise` で守る（超えれば 422）。送るときの検証は `AnnouncementDraft::sendable`（送るお知らせの `AnnouncementTitle::new`・`AnnouncementBody::new` と同じ規則）で、ユースケース `SendAnnouncementDraft` は送るのを `SendAnnouncement` に任せ（対象の生徒がいなければ 404）、送れたら下書きを消す（消せなくても送ったことは失敗にしない）。失敗は `AnnouncementDraftError`
 - 保存先はポート `AnnouncementDraftRepository`（`update`・`delete` はないとき `false`）。Postgres は `notification.announcement_drafts`（マイグレーション `20261103000001_expand_announcement_drafts.sql`。表を足す expand だけ）。`router_at` などの組み立ては当面インメモリ（`InMemoryAnnouncementDraftRepository`）、`router_with_postgres` は Postgres
-- テスト: `crates/domain/src/notification/announcement_draft.rs`、`crates/application/src/notification/`（`create_announcement_draft.rs`・`update_announcement_draft.rs`・`delete_announcement_draft.rs`・`list_announcement_drafts.rs`・`send_announcement_draft.rs`）、`crates/infra/tests/pg_announcement_draft_repository.rs`・`schema.rs`、`crates/interface/tests/announcement_drafts.rs`（契約の形・空の下書き・書き直し・削除・下書きから送る・422・404・403・401）、`crates/server/tests/notifications.rs`（Postgres の組み立てで下書きから送ると生徒に届く）
+- テスト: `crates/domain/src/notification/announcement_draft.rs`、`crates/application/src/notification/`（`create_announcement_draft.rs`・`update_announcement_draft.rs`・`delete_announcement_draft.rs`・`list_announcement_drafts.rs`・`send_announcement_draft.rs`）、`crates/infra/tests/it/pg_announcement_draft_repository.rs`・`schema.rs`、`crates/interface/tests/it/announcement_drafts.rs`（契約の形・空の下書き・書き直し・削除・下書きから送る・422・404・403・401）、`crates/server/tests/it/notifications.rs`（Postgres の組み立てで下書きから送ると生徒に届く）
 
 ## 行動イベントの配信先（モック）と発火の網羅
 
@@ -470,9 +485,9 @@ curl -s 'http://127.0.0.1:9090/rally-analytics?list-type=2'   # 書かれたオ�
 |---|---|
 | 行動イベントの属性（events.yaml の `required` と `common_optional`）・`lesson_type` の値・JSON Lines の 1 行 | `infra::analytics_event_payload`（`sport` は `infra::identity_values`、時刻は `domain_event_payload` と同じ RFC 3339） |
 
-- テスト: `crates/infra/tests/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形・共通の任意属性は値が分かるときだけ付き、どのイベントの `required` にもないこと）、`crates/infra/tests/analytics_common_attributes.rs`（環境変数から共通の任意属性を読むこと）、`crates/infra/tests/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周。版の環境変数があれば `release_id` / `app_version` が付くこと）
-- 発火の網羅: `crates/application/tests/analytics_emission.rs` がソースを静的に読み、events.yaml の全イベントに発火するユースケースがあることを、テストの中の対応表（イベント名 → `AnalyticsEvent` の変種 → ユースケースとファイル）で確かめる。イベントを足したら表に 1 行足す。表にない `emit` も落とす
-- セマンティック層: `crates/application/tests/kpi_semantic_layer.rs` が kpi.yaml を読み、6 つの KPI の式が events.yaml にある名前（イベント名と `required` の属性）と語彙だけを参照し、`inputs` が式の読むイベントと一致すること、events.yaml の `kpi` がその KPI の `inputs` に入っていることを確かめる。CI は `apps/backend` に変更があるときだけ走るので、specs/ だけを変えたら手元で `cargo test -p application` を走らせる
+- テスト: `crates/infra/tests/it/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形・共通の任意属性は値が分かるときだけ付き、どのイベントの `required` にもないこと）、`crates/infra/tests/it/analytics_common_attributes.rs`（環境変数から共通の任意属性を読むこと）、`crates/infra/tests/it/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/it/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周。版の環境変数があれば `release_id` / `app_version` が付くこと）
+- 発火の網羅: `crates/application/tests/it/analytics_emission.rs` がソースを静的に読み、events.yaml の全イベントに発火するユースケースがあることを、テストの中の対応表（イベント名 → `AnalyticsEvent` の変種 → ユースケースとファイル）で確かめる。イベントを足したら表に 1 行足す。表にない `emit` も落とす
+- セマンティック層: `crates/application/tests/it/kpi_semantic_layer.rs` が kpi.yaml を読み、6 つの KPI の式が events.yaml にある名前（イベント名と `required` の属性）と語彙だけを参照し、`inputs` が式の読むイベントと一致すること、events.yaml の `kpi` がその KPI の `inputs` に入っていることを確かめる。CI は `apps/backend` に変更があるときだけ走るので、specs/ だけを変えたら手元で `cargo test -p application` を走らせる
 
 ## 合成シード
 
@@ -487,7 +502,7 @@ cargo run -p seed -- --seed 42
 
 ## 一周シナリオの E2E（API レベル）
 
-Walking Skeleton の完了条件（段 7 の T19）。`crates/server/tests/walking_skeleton.rs` が、保存先をすべて Postgres にした組み立て（`server::router_with_postgres`。通話基盤・動画の保存先・アクセストークンはモック、境界間イベントはインメモリのイベントバス、行動イベントはインメモリの `RecordingAnalyticsSink`）を TCP で待ち受けさせ、HTTP だけで次を通す。
+Walking Skeleton の完了条件（段 7 の T19）。`crates/server/tests/it/walking_skeleton.rs` が、保存先をすべて Postgres にした組み立て（`server::router_with_postgres`。通話基盤・動画の保存先・アクセストークンはモック、境界間イベントはインメモリのイベントバス、行動イベントはインメモリの `RecordingAnalyticsSink`）を TCP で待ち受けさせ、HTTP だけで次を通す。
 
 1. 生徒の登録 → コーチが枠を公開 → 生徒が検索して体験予約 → 確定
 2. 通話の開始 → 終了 → 完了記録（`is_first_lesson=true`）
@@ -500,7 +515,7 @@ Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_UR
 
 ```sh
 export DATABASE_URL=postgres://rally@127.0.0.1:5432/rally   # docker compose up -d --wait の Postgres
-cargo test -p server --test walking_skeleton -- --include-ignored
+cargo test -p server --test it walking_skeleton:: -- --include-ignored
 ```
 
 ## CI で走らせるコマンド
