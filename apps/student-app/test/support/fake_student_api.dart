@@ -844,6 +844,9 @@ abstract final class Fixtures {
         confirmedAt: status == BookingStatus.pending ? null : now,
         cancelledAt: status == BookingStatus.cancelled ? now : null,
         lessonMenu: lessonMenu,
+        endsAt: startsAt.add(const Duration(hours: 1)),
+        sport: sport,
+        coachDisplayName: coachDisplayName,
       ),
       slot: Slot(
         slotId: 'slot-$bookingId',
