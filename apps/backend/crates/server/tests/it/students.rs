@@ -624,6 +624,16 @@ async fn headquarters_lists_only_students_with_pending_videos_from_postgres(pool
     clock.set(at(300));
     submit_video(&router, &taro_token, &coach_id, "tennis").await;
     let returned = submit_video(&router, &jiro_token, &coach_id, "tennis").await;
+    // はなこは 2 本送るので月額契約を結ぶ（月額契約の前は体験として 1 本だけ。#1653）
+    let (status, body) = send(
+        &router,
+        "POST",
+        "/subscriptions",
+        Some(&hanako_token),
+        Some(json!({ "sport": "swimming", "payment_method_token": "tok_mock" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
     for _ in 0..2 {
         submit_video(&router, &hanako_token, &swim_coach_id, "swimming").await;
     }

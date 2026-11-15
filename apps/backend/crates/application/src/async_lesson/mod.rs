@@ -23,10 +23,10 @@ mod update_video_error;
 mod video_coach_display_name_lookup;
 pub mod video_id_uuid;
 mod video_lesson_menu_lookup;
+mod video_review_gate;
 pub mod video_review_id_uuid;
 mod video_storage;
 mod video_student_display_name_lookup;
-mod video_submission_gate;
 
 pub use ai_feedback_generator::AiFeedbackGenerator;
 pub use ai_feedback_request::AiFeedbackRequest;
@@ -54,6 +54,6 @@ pub use submit_video::{SubmitVideo, SubmitVideoCommand, SubmitVideoError, Submit
 pub use update_video_error::UpdateVideoError;
 pub use video_coach_display_name_lookup::VideoCoachDisplayNameLookup;
 pub use video_lesson_menu_lookup::VideoLessonMenuLookup;
+pub use video_review_gate::VideoReviewGate;
 pub use video_storage::VideoStorage;
 pub use video_student_display_name_lookup::VideoStudentDisplayNameLookup;
-pub use video_submission_gate::VideoSubmissionGate;

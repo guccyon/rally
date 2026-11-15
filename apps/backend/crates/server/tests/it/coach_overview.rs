@@ -356,6 +356,7 @@ async fn counts_bookings_of_the_coach_cancelled_in_the_last_30_days_from_postgre
         server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
 
     // たなかの枠を 4 つ、いとうの枠を 1 つ開け、生徒がすべて予約する（枠の開始は 2099 年）
+    subscribe(&router, &taro_token).await;
     let mut bookings = Vec::new();
     for (i, token) in [
         &tanaka_token,
@@ -548,4 +549,17 @@ async fn counts_unanswered_message_threads_of_the_coach_as_the_default_list_from
             );
         }
     }
+}
+
+/// `token` の生徒がテニスの月額契約（standard）を始める（月額契約の前の生徒は、体験を使った後の通常の予約を断られるので。#1656）。
+async fn subscribe(router: &Router, token: &str) {
+    let (status, body) = send(
+        router,
+        "POST",
+        "/subscriptions",
+        token,
+        Some(json!({ "sport": "tennis", "payment_method_token": "tok_mock" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 }

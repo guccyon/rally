@@ -115,6 +115,7 @@ async fn headquarters_reads_cancelled_bookings_by_cancellation_date_from_postgre
         server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
 
     // 11 月の枠を 3 つ予約する（枠の開始はキャンセルした日付と関係しない）
+    subscribe(&router, &taro_token).await;
     let mut booking_ids = Vec::new();
     for (coach, starts_at, ends_at) in [
         (
@@ -599,6 +600,8 @@ async fn headquarters_narrows_cancelled_bookings_by_the_sport_of_the_coach_in_po
         server::router_with_postgres(pool, clock.clone(), RecordingAnalyticsSink::default());
 
     // 11 月にたなかの枠（テニス）・いとうの枠（サッカー）・たなかの枠（テニス）・たなかの枠（テニス）を予約する
+    subscribe(&router, &taro_token).await;
+    subscribe(&router, &jiro_token).await;
     let mut booked = Vec::new();
     for (coach, sport, starts_at, ends_at, student) in [
         (
@@ -735,4 +738,18 @@ async fn headquarters_narrows_cancelled_bookings_by_the_sport_of_the_coach_in_po
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// `token` の生徒がテニスの月額契約（standard）を始める（月額契約の前の生徒は、体験を使った後の通常の予約を断られるので。#1656）。
+async fn subscribe(router: &Router, token: &str) {
+    let (status, body) = send(
+        router,
+        post_json(
+            "/subscriptions",
+            token,
+            json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 }

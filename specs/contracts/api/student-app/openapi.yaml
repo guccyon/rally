@@ -244,7 +244,12 @@ paths:
         どちらか 1 回なので、動画を送った生徒は体験予約できない。月額契約の生徒（受講権がある）も体験予約はできない
         （409 `trial_already_used`）。受け終えた体験予約をあとでキャンセルしても、完了したレッスンが残るので体験は使用済みのまま
         （2 回目の体験予約は 409 `trial_already_used`）。受けていない体験予約をキャンセルしただけなら、今までどおり体験予約できる。
-        通常の予約（`is_trial: false`）はこの判定を受けない。スロットのコーチが受付を止めていれば（admin-web の
+        通常の予約（`is_trial: false`）はこの判定（409 `trial_already_used`）を受けない。そのかわり、月額契約の前の生徒（受講権の
+        ビデオ通話の暦月の枠がない。ワンショットも同じ）が体験をすでに使っていれば（体験予約と同じ判定で、今体験予約できないなら）、
+        通常の予約も 403 `live_lesson_not_entitled` で断る（スロットの状態・同じ生徒の 2 回目の判定の後。受付の停止より先）。
+        体験を使い終えた生徒が通常の予約で無料のビデオ通話を受け続けられないようにするためで、クライアントはこのとき月額契約
+        （`startSubscription`）への入口を出す。月額契約の生徒と、体験をまだ使っていない生徒の通常の予約は今までどおり作れる。
+        スロットのコーチが受付を止めていれば（admin-web の
         `suspendCoach`。glossary の coach_acceptance が停止中）409 `coach_not_accepting_bookings`（スロットの状態の判定の後。
         閉じたスロットは 404、満席は 409 `slot_already_booked` のまま）。受付を止める前に入った予約の確定・キャンセルは止めない。
         生徒だけが呼べる（それ以外の役割は 403）。予約（作成）では受講権を消費しない。
@@ -3073,6 +3078,7 @@ components:
         - login_code_invalid
         - login_code_expired
         - too_many_requests
+        - live_lesson_not_entitled
         - video_review_not_entitled
 
     Error:

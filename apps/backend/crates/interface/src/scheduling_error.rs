@@ -7,6 +7,7 @@
 //! - 予約の作成（`createBooking`）: ないスロットと閉じた枠（`SlotNotOpen` の `closed`）は 404 `not_found`、満席・
 //!   同じ生徒の 2 回目・公開中でない枠（`SlotAlreadyBooked`・`SlotAlreadyBookedByStudent`・`SlotNotOpen`）は 409
 //!   `slot_already_booked`（文言で分ける）、2 回目の体験予約（`TrialAlreadyUsed`）は 409 `trial_already_used`、
+//!   体験を使った月額契約の前の生徒の通常の予約（`LiveLessonNotEntitled`）は 403 `live_lesson_not_entitled`、
 //!   受付を止めているコーチの枠（`CoachNotAcceptingBookings`）は 409 `coach_not_accepting_bookings`、それ以外は 422
 //!   `validation_failed`
 //! - 予約の確定（`confirmBooking`）: ない予約と別の生徒の予約（`BookingOfAnotherStudent`。あることも知らせない）は
@@ -41,7 +42,7 @@
 //!   変わった（`CoachLeavePreviewOutdated`）は 409 `leave_preview_outdated`、それ以外はお休みでは起きない（保存した値の破損）ので 500
 //! - 境界で値を作るとき（定員の検証など。`From<SchedulingError>`）は、どの変種も 422 `validation_failed`
 //!
-//! 403 に当たる失敗はない（役割は `require_role` の層が確かめ、別の生徒の予約は 404 で隠す）。
+//! 403 に当たる失敗は予約の作成の `live_lesson_not_entitled` だけ（役割は `require_role` の層が確かめ、別の生徒の予約は 404 で隠す）。
 
 use application::scheduling::{
     CancelBookingError, ChangeCoachAcceptanceError, CoachLeaveError, ConfirmBookingError,
@@ -104,6 +105,9 @@ impl From<CreateBookingError> for ApiError {
             }
             SchedulingError::TrialAlreadyUsed => {
                 Self::conflict("trial_already_used", describe(&error))
+            }
+            SchedulingError::LiveLessonNotEntitled => {
+                Self::forbidden_because("live_lesson_not_entitled", describe(&error))
             }
             SchedulingError::CoachNotAcceptingBookings => {
                 Self::conflict("coach_not_accepting_bookings", describe(&error))
@@ -168,6 +172,7 @@ impl From<ConfirmBookingError> for ApiError {
             | SchedulingError::SlotStatusMismatchesSeats { .. }
             | SchedulingError::SlotAlreadyBookedByStudent
             | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::LiveLessonNotEntitled
             | SchedulingError::BookingAlreadyCancelled
             | SchedulingError::BookingOfAnotherSlot
             | SchedulingError::LessonMenuOfAnotherCoach
@@ -216,6 +221,7 @@ impl From<CancelBookingError> for ApiError {
             | SchedulingError::SlotStatusMismatchesSeats { .. }
             | SchedulingError::SlotAlreadyBookedByStudent
             | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::LiveLessonNotEntitled
             | SchedulingError::BookingNotPending { .. }
             | SchedulingError::BookingOfAnotherSlot
             | SchedulingError::LiveLessonQuotaExceeded
@@ -264,6 +270,7 @@ impl From<PublishSlotError> for ApiError {
             | SchedulingError::SlotStatusMismatchesSeats { .. }
             | SchedulingError::SlotAlreadyBookedByStudent
             | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::LiveLessonNotEntitled
             | SchedulingError::BookingNotPending { .. }
             | SchedulingError::BookingAlreadyCancelled
             | SchedulingError::BookingOfAnotherStudent
@@ -320,6 +327,7 @@ impl From<WithdrawSlotError> for ApiError {
             | SchedulingError::SlotStatusMismatchesSeats { .. }
             | SchedulingError::SlotAlreadyBookedByStudent
             | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::LiveLessonNotEntitled
             | SchedulingError::BookingNotPending { .. }
             | SchedulingError::BookingAlreadyCancelled
             | SchedulingError::BookingOfAnotherStudent
@@ -374,6 +382,7 @@ impl From<ListBookingsError> for ApiError {
             | SchedulingError::SlotStatusMismatchesSeats { .. }
             | SchedulingError::SlotAlreadyBookedByStudent
             | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::LiveLessonNotEntitled
             | SchedulingError::BookingNotPending { .. }
             | SchedulingError::BookingAlreadyCancelled
             | SchedulingError::BookingOfAnotherStudent
@@ -424,6 +433,7 @@ impl From<ChangeCoachAcceptanceError> for ApiError {
             | SchedulingError::SlotStatusMismatchesSeats { .. }
             | SchedulingError::SlotAlreadyBookedByStudent
             | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::LiveLessonNotEntitled
             | SchedulingError::BookingNotPending { .. }
             | SchedulingError::BookingAlreadyCancelled
             | SchedulingError::BookingOfAnotherStudent
@@ -480,6 +490,7 @@ impl From<CoachLeaveError> for ApiError {
             | SchedulingError::SlotStatusMismatchesSeats { .. }
             | SchedulingError::SlotAlreadyBookedByStudent
             | SchedulingError::TrialAlreadyUsed
+            | SchedulingError::LiveLessonNotEntitled
             | SchedulingError::BookingNotPending { .. }
             | SchedulingError::BookingAlreadyCancelled
             | SchedulingError::BookingOfAnotherStudent
@@ -533,6 +544,9 @@ fn describe(error: &SchedulingError) -> String {
             slot_status_label(*status)
         ),
         SchedulingError::TrialAlreadyUsed => "体験予約は初回の予約だけ".to_string(),
+        SchedulingError::LiveLessonNotEntitled => {
+            "体験を使った後のビデオ通話の予約は月額契約の生徒だけ".to_string()
+        }
         SchedulingError::BookingNotPending { status } => {
             format!("確定待ちの予約でない（{}）", booking_status_label(*status))
         }
@@ -681,6 +695,10 @@ mod tests {
                 "体験予約は初回の予約だけ",
             ),
             (
+                SchedulingError::LiveLessonNotEntitled,
+                "体験を使った後のビデオ通話の予約は月額契約の生徒だけ",
+            ),
+            (
                 SchedulingError::BookingNotPending {
                     status: BookingStatus::Confirmed,
                 },
@@ -789,6 +807,7 @@ mod tests {
                 | SchedulingError::SlotStatusMismatchesSeats { .. }
                 | SchedulingError::SlotAlreadyBookedByStudent
                 | SchedulingError::TrialAlreadyUsed
+                | SchedulingError::LiveLessonNotEntitled
                 | SchedulingError::BookingNotPending { .. }
                 | SchedulingError::BookingAlreadyCancelled
                 | SchedulingError::BookingOfAnotherStudent
@@ -890,6 +909,12 @@ mod tests {
                     StatusCode::CONFLICT,
                     "trial_already_used",
                     "体験予約は初回の予約だけ",
+                ),
+                (
+                    SchedulingError::LiveLessonNotEntitled,
+                    StatusCode::FORBIDDEN,
+                    "live_lesson_not_entitled",
+                    "体験を使った後のビデオ通話の予約は月額契約の生徒だけ",
                 ),
                 (
                     SchedulingError::CoachNotAcceptingBookings,

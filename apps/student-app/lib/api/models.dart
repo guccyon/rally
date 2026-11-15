@@ -250,6 +250,7 @@ enum ErrorCode {
   loginCodeInvalid('login_code_invalid'),
   loginCodeExpired('login_code_expired'),
   tooManyRequests('too_many_requests'),
+  liveLessonNotEntitled('live_lesson_not_entitled'),
   videoReviewNotEntitled('video_review_not_entitled'),
 
   /// 契約にない（このアプリの版が知らない）値。契約の enum には含まれない。

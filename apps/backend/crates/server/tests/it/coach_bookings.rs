@@ -97,6 +97,7 @@ async fn coach_narrows_own_bookings_by_date_from_postgres(pool: PgPool) {
     );
 
     // tanaka の枠: 今日（日本時間の 10 月 26 日 12 時）・11 月 2 日 0 時・11 月 9 日 12 時（日本時間）。ito の枠は 10 月 27 日
+    subscribe(&router, &taro).await;
     for (coach, starts_at, ends_at) in [
         (&tanaka, "2026-10-26T03:00:00Z", "2026-10-26T04:00:00Z"),
         (&tanaka, "2026-11-01T15:00:00Z", "2026-11-01T16:00:00Z"),
@@ -195,4 +196,18 @@ async fn coach_narrows_own_bookings_by_date_from_postgres(pool: PgPool) {
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{query}: {body}");
         assert_eq!(body["code"], "validation_failed", "{query}: {body}");
     }
+}
+
+/// `token` の生徒がテニスの月額契約（standard）を始める（月額契約の前の生徒は、体験を使った後の通常の予約を断られるので。#1656）。
+async fn subscribe(router: &Router, token: &str) {
+    let (status, body) = send(
+        router,
+        post_json(
+            "/subscriptions",
+            token,
+            json!({ "sport": "tennis", "payment_method_token": "tok_mock" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 }

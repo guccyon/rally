@@ -9,8 +9,8 @@ use application::{
     catalog::lesson_menu_id_uuid,
     clock::Clock,
     domain_event::DomainEventPublisher,
+    entitlement::TrialUsageLookup,
     identity::{TokenVerifier, account_id_uuid},
-    lesson::LessonCompletionRepository,
     scheduling::{
         BookingCoachDisplayNameLookup, BookingRepository, CancelBooking, CancelBookingCommand,
         ConfirmBooking, ConfirmBookingCommand, CreateBooking, CreateBookingCommand,
@@ -40,7 +40,7 @@ use crate::{
 
 /// `/bookings` のハンドラーが使うユースケース。`describe_booking` は返す予約にスロットとコーチの表示名を添える。
 pub struct BookingsState<B, J, M, G, A, P, C, K> {
-    pub create_booking: CreateBooking<B, J, M, A, C>,
+    pub create_booking: CreateBooking<B, J, M, G, A, C>,
     pub confirm_booking: ConfirmBooking<B, G, A, P, C>,
     pub cancel_booking: CancelBooking<B, A, P, C>,
     pub describe_booking: DescribeBooking<B, K>,
@@ -99,7 +99,7 @@ pub async fn create_booking<B, J, M, G, A, P, C, K>(
 where
     B: BookingRepository,
     J: LessonMenuLookup,
-    M: LessonCompletionRepository,
+    M: TrialUsageLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -135,7 +135,7 @@ pub async fn confirm_booking<B, J, M, G, A, P, C, K>(
 where
     B: BookingRepository,
     J: LessonMenuLookup,
-    M: LessonCompletionRepository,
+    M: TrialUsageLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -168,7 +168,7 @@ pub async fn cancel_booking<B, J, M, G, A, P, C, K>(
 where
     B: BookingRepository,
     J: LessonMenuLookup,
-    M: LessonCompletionRepository,
+    M: TrialUsageLookup,
     G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -265,7 +265,7 @@ pub(crate) fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLesso
 /// どれも生徒だけ。同じパスの `GET /bookings`（本部が見る予約の一覧）は [`crate::headquarters_bookings_router`] にあり、
 /// `merge` で 1 つのパスにまとまる。
 pub fn bookings_router<B, J, M, G, A, P, C, K, T>(
-    create_booking: CreateBooking<B, J, M, A, C>,
+    create_booking: CreateBooking<B, J, M, G, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     describe_booking: DescribeBooking<B, K>,
@@ -274,7 +274,7 @@ pub fn bookings_router<B, J, M, G, A, P, C, K, T>(
 where
     B: BookingRepository + 'static,
     J: LessonMenuLookup + 'static,
-    M: LessonCompletionRepository + 'static,
+    M: TrialUsageLookup + 'static,
     G: QuotaGate + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,

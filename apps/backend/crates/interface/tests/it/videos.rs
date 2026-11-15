@@ -22,7 +22,10 @@ use application::{
     },
     catalog::{LessonMenuRepository, lesson_menu_id_uuid},
     domain_event::DomainEvent,
-    entitlement::{EntitlementQuotaGate, EntitlementReviewGate, GetEntitlement, StartSubscription},
+    entitlement::{
+        EntitlementQuotaGate, EntitlementReviewGate, EntitlementTrialUsageLookup,
+        EntitlementVideoReviewGate, GetEntitlement, StartSubscription,
+    },
     identity::{
         AccessToken, AccountRepository, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer,
         TokenVerifier, account_id_uuid,
@@ -52,6 +55,9 @@ use domain::{
     catalog::{
         LessonDuration, LessonFormat, LessonMenu, LessonMenuContent, LessonMenuDescription,
         LessonMenuId, LessonMenuName,
+    },
+    entitlement::{
+        Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
     identity::{Account, AccountId, Email, Role},
     profile::DisplayName,
@@ -89,6 +95,8 @@ impl TokenVerifier for FakeTokens {
 
 const STUDENT: &str = "student:1";
 const OTHER_STUDENT: &str = "student:2";
+/// 月額契約の前の生徒（動画は体験として 1 本だけ）
+const TRIAL_STUDENT: &str = "student:3";
 const COACH: &str = "coach:9";
 const OTHER_COACH: &str = "coach:8";
 const HEADQUARTERS: &str = "headquarters:5";
@@ -197,7 +205,9 @@ fn app() -> App {
     let clock = ManualClock::new(submitted_at());
     let slots = InMemorySlotRepository::default();
     let bookings = InMemoryBookingRepository::new(slots.clone());
-    let entitlements = InMemoryEntitlementRepository::default();
+    // 生徒 1 は月額契約（動画は送り放題）。生徒 2・3 は月額契約の前
+    let entitlements = InMemoryEntitlementRepository::with_entitlements([monthly(STUDENT)]);
+    let completions = InMemoryLessonCompletionRepository::default();
     let accounts = InMemoryAccountRepository::default();
     let lesson_menus = lesson_menus();
     let videos = InMemoryVideoRepository::with_videos([
@@ -248,7 +258,8 @@ fn app() -> App {
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
             ),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock.clone(),
         ),
@@ -284,7 +295,7 @@ fn app() -> App {
                 InMemoryAccountRepository::default(),
             ),
             EntitlementQuotaGate::new(entitlements.clone()),
-            application::in_memory::InMemoryLessonCompletionRepository::default(),
+            application::in_memory::FixedTrialUsage::default(),
             clock.clone(),
         ),
         application::scheduling::ListCoachBookings::new(
@@ -309,10 +320,10 @@ fn app() -> App {
             events.clone(),
             clock.clone(),
         ),
-        GetEntitlement::new(entitlements, clock.clone()),
+        GetEntitlement::new(entitlements.clone(), clock.clone()),
         StartLiveLessonSession::new(
             InMemoryLiveLessonSessionRepository::default(),
-            SchedulingBookingLookup::new(bookings),
+            SchedulingBookingLookup::new(bookings.clone()),
             FixedVideoCallProvider::default(),
             analytics.clone(),
             clock.clone(),
@@ -324,11 +335,23 @@ fn app() -> App {
             clock.clone(),
         ),
         SubmitVideo::new(
-            application::in_memory::OpenVideoSubmissionGate,
             videos.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
             FixedVideoStorage,
             FixedAiFeedbackGenerator,
+            EntitlementVideoReviewGate::new(
+                EntitlementTrialUsageLookup::new(
+                    entitlements.clone(),
+                    completions.clone(),
+                    videos.clone(),
+                ),
+                CancelBooking::new(
+                    bookings.clone(),
+                    analytics.clone(),
+                    events.clone(),
+                    clock.clone(),
+                ),
+            ),
             analytics.clone(),
             events.clone(),
             clock.clone(),
@@ -348,7 +371,7 @@ fn app() -> App {
         RecordLessonCompletion::new(
             InMemoryLiveLessonSessionRepository::default(),
             InMemoryVideoRepository::default(),
-            InMemoryLessonCompletionRepository::default(),
+            completions,
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             clock.clone(),
@@ -671,6 +694,56 @@ async fn monthly_students_can_submit_videos_without_limit() {
         app.submitted_video().await;
     }
     assert_eq!(app.video_events().len(), 3);
+}
+
+/// `token` の生徒の月額（standard・テニス）の受講権。
+fn monthly(token: &str) -> Entitlement {
+    Entitlement::monthly(
+        EntitlementId::from_u128(account_id(token).as_u128()),
+        account_id(token),
+        Sport::Tennis,
+        SubscriptionId::from_u128(account_id(token).as_u128()),
+        LiveLessonQuota::fresh(
+            SubscriptionPlan::Standard,
+            YearMonth::new(2026, 10).unwrap(),
+        ),
+    )
+    .unwrap()
+}
+
+/// 月額契約の前の生徒は体験として 1 本だけ送れる。2 本目は 403 `video_review_not_entitled` で、動画もイベントも残らない
+/// （#1653）
+#[tokio::test]
+async fn students_without_the_monthly_entitlement_submit_only_one_video_as_the_trial() {
+    let app = app();
+    let (status, body) = app.submit(Some(TRIAL_STUDENT), tennis_video()).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let analytics = app.analytics.events().len();
+    let events = app.events.events().len();
+
+    let (status, body) = app.submit(Some(TRIAL_STUDENT), tennis_video()).await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["code"], "video_review_not_entitled");
+    assert_eq!(
+        app.analytics.events().len(),
+        analytics,
+        "video.submitted は出さない"
+    );
+    assert_eq!(
+        app.events.events().len(),
+        events,
+        "VideoReviewRequested は出さない"
+    );
+    let (_, list) = app.list_coach_videos_with_query(Some(COACH), "").await;
+    let from_trial_student = list["videos"]
+        .as_array()
+        .unwrap()
+        .iter()
+        // 置いた動画には相談内容がない。相談内容があるのは生徒 3 が送った動画だけ
+        .filter(|v| v["note"] == tennis_video()["note"])
+        .count();
+    assert_eq!(from_trial_student, 1, "断った動画は保存しない: {list}");
 }
 
 #[tokio::test]
