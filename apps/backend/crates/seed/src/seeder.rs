@@ -103,6 +103,7 @@ where
             bookings.clone(),
             CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
             PgLessonCompletionRepository::new(pool.clone()),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             clock.clone(),
         );

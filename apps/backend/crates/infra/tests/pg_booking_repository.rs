@@ -767,14 +767,29 @@ async fn find_slot_reads_the_slot_with_its_lesson_menu(pool: PgPool) {
 async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
     let bookings = PgBookingRepository::new(pool.clone());
     let menus = PgLessonMenuRepository::new(pool.clone());
+    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
+    // 1 人で通常の予約を 3 件作るので、月額契約（standard）の生徒にする（月額契約の前の生徒は 2 件目から断られる）
+    let monthly = domain::entitlement::Entitlement::monthly(
+        domain::entitlement::EntitlementId::from_u128(1),
+        student,
+        Sport::Tennis,
+        domain::entitlement::SubscriptionId::from_u128(2),
+        domain::entitlement::LiveLessonQuota::fresh(
+            domain::entitlement::SubscriptionPlan::Standard,
+            domain::entitlement::YearMonth::new(2026, 10).unwrap(),
+        ),
+    )
+    .unwrap();
     let create = CreateBooking::new(
         bookings.clone(),
         CatalogLessonMenuLookup::new(menus.clone()),
         infra::PgLessonCompletionRepository::new(pool.clone()),
+        application::entitlement::EntitlementQuotaGate::new(
+            application::in_memory::InMemoryEntitlementRepository::with_entitlements([monthly]),
+        ),
         RecordingAnalyticsSink::default(),
         FixedClock(at(1)),
     );
-    let (student, coach) = (support::student(&pool).await, support::coach(&pool).await);
     let published = lesson_menu(&pool, 1, coach, true).await;
     let to_unpublish = lesson_menu(&pool, 2, coach, true).await;
     let bound = slot_with_menu(&pool, coach, 30, &published).await;

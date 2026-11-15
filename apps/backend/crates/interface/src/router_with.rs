@@ -89,7 +89,7 @@ pub fn router_with<
     update_coach_profile: UpdateCoachProfile<R>,
     publish_slot: PublishSlot<S, J, A, C>,
     search_slots: SearchSlots<S, J, I, C>,
-    create_booking: CreateBooking<B, J, M, A, C>,
+    create_booking: CreateBooking<B, J, M, G, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
     cancel_booking: CancelBooking<B, A, P, C>,
     describe_booking: DescribeBooking<B, Bk>,

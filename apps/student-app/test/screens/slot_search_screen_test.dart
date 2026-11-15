@@ -256,6 +256,41 @@ void main() {
       expect(find.text('予約する'), findsOneWidget);
       expect(find.text('体験予約する'), findsNothing);
     });
+
+    testWidgets('通常の予約が 403 live_lesson_not_entitled なら文言と「月額契約へ進む」を出し、押すと月額契約の画面へ', (
+      tester,
+    ) async {
+      final api = FakeStudentApi(
+        failures: {
+          'createBooking': const StudentApiException(
+            statusCode: 403,
+            error: ApiError(
+              code: ErrorCode.liveLessonNotEntitled,
+              message: 'not entitled',
+            ),
+          ),
+        },
+      );
+      // 体験を使い終えた生徒（サーバーが `trial_available: false` を返した）
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered.copyWith(canBookTrial: false),
+      );
+
+      await tapText(tester, 'テニス');
+      expect(find.text('月額契約へ進む'), findsNothing);
+      await tapText(tester, '予約する');
+
+      expect(
+        find.text('体験はすでに使っています。ビデオ通話のレッスンは月額契約を始めると予約できます。'),
+        findsOneWidget,
+      );
+      expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
+      await tapText(tester, '月額契約へ進む');
+      expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+    });
   });
 
   testWidgets('そのスポーツのスロットがなければその旨を出す', (tester) async {

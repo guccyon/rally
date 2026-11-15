@@ -188,6 +188,27 @@ final screens = <Screen>[
     await _register(t);
     await tapText(t, 'スロットを探して予約する');
   }, api: () => _api(myBookings: const [], lessonCompletions: const [])),
+  // 体験を使った月額契約の前の生徒の通常の予約が断られた（403 live_lesson_not_entitled。「月額契約へ進む」を出す。#1656）
+  Screen(
+    'slot-search-not-entitled',
+    'スロットを探す: 月額契約の前で予約できない',
+    (t) async {
+      await _register(t);
+      await tapText(t, 'スロットを探して予約する');
+      await tapText(t, '予約する');
+    },
+    api: () => _api(
+      failures: const {
+        'createBooking': StudentApiException(
+          statusCode: 403,
+          error: ApiError(
+            code: ErrorCode.liveLessonNotEntitled,
+            message: 'not entitled',
+          ),
+        ),
+      },
+    ),
+  ),
   Screen('slot-search-coach', 'スロットを探す: コーチで絞る', (t) async {
     await _register(t);
     await tapText(t, 'コーチを探す');

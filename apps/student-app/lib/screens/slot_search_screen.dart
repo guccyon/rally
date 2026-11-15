@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/error_message.dart';
 import '../api/models.dart';
 import '../state/student_flow.dart';
 import '../ui/coach_review_entry.dart';
@@ -10,7 +11,8 @@ import '../ui/lesson_menu_entry.dart';
 import '../ui/sport_selector.dart';
 
 /// スロットの検索（`searchSlots`。スポーツで絞り、コーチの紹介から来たときはそのコーチでも絞って、見出しにコーチの名前と
-/// 「絞り込みを外す」を出す）と予約（`createBooking`。サーバーの判定 `trial_available` が true なら体験予約、そうでなければ通常の予約。自分の予約をまだ読めていない間は押せない）。検索の読み込み中・0 件・読めなかったとき（「もう一度読み込む」）を出し分ける
+/// 「絞り込みを外す」を出す）と予約（`createBooking`。サーバーの判定 `trial_available` が true なら体験予約、そうでなければ通常の予約。自分の予約をまだ読めていない間は押せない）。検索の読み込み中・0 件・読めなかったとき（「もう一度読み込む」）を出し分ける。
+/// 体験を使った月額契約の前の生徒の通常の予約が断られた（403 `live_lesson_not_entitled`）ときは、失敗の文言の下に「月額契約へ進む」を出す
 class SlotSearchScreen extends ConsumerWidget {
   const SlotSearchScreen({super.key});
 
@@ -66,9 +68,17 @@ class SlotSearchScreen extends ConsumerWidget {
           ),
       ];
     }
+    final notEntitled = state.errorMessage == liveLessonNotEntitledMessage;
     return FlowScaffold(
       title: 'スロットを探す',
       children: [
+        if (notEntitled) ...[
+          OutlinedButton(
+            onPressed: state.busy ? null : notifier.goToSubscription,
+            child: const Text('月額契約へ進む'),
+          ),
+          const SizedBox(height: 8),
+        ],
         // コーチの紹介の「このコーチの空き枠を見る」から来たときの見出し（外すとすべてのコーチの枠を探し直す）
         if (coach != null) ...[
           Row(
