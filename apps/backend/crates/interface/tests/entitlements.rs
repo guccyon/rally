@@ -211,6 +211,7 @@ fn router(now: SystemTime) -> Router {
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::in_memory::InMemoryLiveLessonSessionRepository::default(),
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
@@ -247,6 +248,7 @@ fn router(now: SystemTime) -> Router {
             clock,
         ),
         SubmitVideo::new(
+            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),

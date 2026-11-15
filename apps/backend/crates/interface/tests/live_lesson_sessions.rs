@@ -188,6 +188,7 @@ fn app() -> App {
         ),
         application::scheduling::ListCoachBookings::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),
+            application::in_memory::InMemoryLiveLessonSessionRepository::default(),
             application::profile::ProfileStudentDisplayNameLookup::new(
                 InMemoryAccountRepository::default(),
             ),
@@ -217,6 +218,7 @@ fn app() -> App {
         ),
         EndLiveLessonSession::new(sessions, video, analytics.clone(), clock.clone()),
         SubmitVideo::new(
+            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),

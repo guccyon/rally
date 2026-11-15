@@ -5,7 +5,6 @@ use application::catalog::{
     ListLessonMenuPublicationChanges, RepublishLessonMenu, UnpublishLessonMenu,
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -14,6 +13,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         UnpublishLessonMenu::new(ports.lesson_menus(), ports.clock()),
         RepublishLessonMenu::new(ports.lesson_menus(), ports.clock()),
         ListLessonMenuPublicationChanges::new(ports.lesson_menus()),
-        MockTokenService,
+        ports.tokens(),
     )
 }

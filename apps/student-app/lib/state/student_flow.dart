@@ -447,7 +447,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   final StudentFlowState _initial;
 
   @override
-  StudentFlowState build() => _initial;
+  StudentFlowState build() {
+    // 同じブラウザーのほかのタブでログアウトした・別の生徒が登録したら、このタブも前の生徒の状態を捨てる（#1669）
+    final changes = ref
+        .read(sessionStoreProvider)
+        .changesElsewhere
+        .listen((_) => _followSessionElsewhere());
+    ref.onDispose(changes.cancel);
+    return _initial;
+  }
 
   StudentApi get _api => ref.read(studentApiProvider);
 
@@ -522,6 +530,37 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// ホームの欄を読み直す
   Future<void> refreshHome() => run(_loadHome);
+
+  /// アプリやタブが前面に戻ったときに、月額契約への入口を出す元を読み直す（別のタブや端末で契約したかもしれない。ADR 0010）。
+  /// 受講権（`getMyEntitlement`）と「次にやること」（[NextActionsNotifier.load]。「月額契約へ進む」も出す）を並べて読む。
+  /// busy にせず、失敗の文言も出さない。ホームでは、受講権を読めなければ今月のビデオ通話の欄にだけ旨を出し（[StudentFlowState.homeFailures]）、
+  /// 読めたら下ろす。ほかの段では [SubscriptionNotifier.refreshEntitlement]。登録の前は何もしない
+  Future<void> refreshOnResume() async {
+    if (state.student == null) return;
+    await Future.wait([
+      _refreshEntitlementOnResume(),
+      ref.read(nextActionsProvider.notifier).load(),
+    ]);
+  }
+
+  Future<void> _refreshEntitlementOnResume() async {
+    final subscription = ref.read(subscriptionProvider.notifier);
+    if (state.step != FlowStep.home) return subscription.refreshEntitlement();
+    var failed = false;
+    try {
+      await subscription.loadEntitlement();
+    } on StudentApiException {
+      failed = true;
+    }
+    if (!ref.mounted) return;
+    state = state.copyWith(
+      homeFailures: Set.unmodifiable({
+        for (final section in state.homeFailures)
+          if (section != HomeSection.entitlement) section,
+        if (failed) HomeSection.entitlement,
+      }),
+    );
+  }
 
   /// ホームの欄（自分の予約・受講権（[SubscriptionNotifier.loadEntitlement]）・スレッド（[ChatNotifier.loadThreads]）・自分の動画・
   /// お気に入りのコーチ（[FavoriteCoachesNotifier.loadForHome]））と、
@@ -606,7 +645,13 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   }
 
   /// `searchSlots`。スポーツで絞る（コーチで絞っていればそのまま絞る）。
-  Future<void> searchSlots(Sport sport) => run(() => _search(sport));
+  /// 体験予約できるか（[StudentFlowState.canBookTrial]）をまだ読めていなければ、自分の予約も読んで決める
+  Future<void> searchSlots(Sport sport) => run(
+    () => Future.wait([
+      _search(sport),
+      if (state.canBookTrial == null) _refreshMyBookingsQuietly(),
+    ]),
+  );
 
   /// コーチの絞り込みを外して、今のスポーツで探し直す
   Future<void> clearSearchCoach() {
@@ -736,31 +781,30 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// `createBooking`。サーバーの判定で体験予約できれば体験予約（[StudentFlowState.canBookTrial]）、できなければ通常の予約。
   /// 作成直後は pending なので確定待ちへ。409 `trial_already_used`（読んだ予約が古かった）なら、失敗の文言を出したうえで
   /// 自分の予約を読み直し、ボタンを通常の予約に切り替える
-  /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは何もしない
-  Future<void> bookSlot(Slot slot) {
-    final trial = state.canBookTrial;
-    if (trial == null) return Future.value();
-    return run(() async {
-      final Booking booking;
-      try {
-        booking = await _api.createBooking(
-          CreateBookingRequest(slotId: slot.slotId, isTrial: trial),
-        );
-      } on StudentApiException catch (e) {
-        if (e.error?.code == ErrorCode.trialAlreadyUsed) {
-          await _refreshMyBookingsQuietly();
-        }
-        rethrow;
-      }
-      state = state.copyWith(
-        bookedSlot: slot,
-        booking: booking,
-        openBookingId: booking.bookingId,
-        bookingLookup: BookingLookup.ready,
-        step: FlowStep.bookingPending,
+  /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは、先に自分の予約を読んでから決める
+  /// （読めなければ失敗の文言を出して予約を作らない。予約の件数からは数え直さない）
+  Future<void> bookSlot(Slot slot) => run(() async {
+    if (state.canBookTrial == null) await _loadMyBookings();
+    final trial = state.canBookTrial ?? false;
+    final Booking booking;
+    try {
+      booking = await _api.createBooking(
+        CreateBookingRequest(slotId: slot.slotId, isTrial: trial),
       );
-    });
-  }
+    } on StudentApiException catch (e) {
+      if (e.error?.code == ErrorCode.trialAlreadyUsed) {
+        await _refreshMyBookingsQuietly();
+      }
+      rethrow;
+    }
+    state = state.copyWith(
+      bookedSlot: slot,
+      booking: booking,
+      openBookingId: booking.bookingId,
+      bookingLookup: BookingLookup.ready,
+      step: FlowStep.bookingPending,
+    );
+  });
 
   /// 予約の確定待ちの画面を予約の ID で開き、`listMyBookings` からその予約を読み直す（自分の予約の「内容を確かめて確定する」。
   /// ADR 0010 の決定 3）。確定は呼ばない（中身を見せた画面で押す）。読めるまで別の予約の中身は出さない
@@ -1056,7 +1100,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(notificationSettings: settings);
   }
 
-  /// 自分のプロフィールを開く（`getMyStudentProfile` と、月額契約の欄の `getMyEntitlement`（[SubscriptionNotifier.loadForProfile]）を並べて読む）。
+  /// 自分のプロフィールを開く（`getMyStudentProfile` と、月額契約の欄の `getMyEntitlement`（[SubscriptionNotifier.refreshEntitlement]）を並べて読む）。
   /// 閉じたら今の段に戻る。読めなくても登録で受け取った表示名はそのまま出す（受講権を読めなくても失敗の文言は出さず、月額契約の欄にだけ旨を出す）
   Future<void> openProfile() {
     if (state.step != FlowStep.profile) {
@@ -1068,7 +1112,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     return run(
       () => Future.wait([
         _loadProfile(),
-        ref.read(subscriptionProvider.notifier).loadForProfile(),
+        ref.read(subscriptionProvider.notifier).refreshEntitlement(),
       ]),
     );
   }
@@ -1081,6 +1125,24 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// サーバーには何も送らない（トークンを失効させる API はない）。次の生徒のホームはサーバーから読み直す（ADR 0010）
   void logout() {
     ref.read(sessionStoreProvider).clear();
+    _discardSession();
+  }
+
+  /// ほかのタブ（[SessionStore.changesElsewhere]）が残した登録の結果を変えた・消したとき。このタブの生徒のトークンが
+  /// 残っていなければ（ログアウトした・次の人が登録した）、残したものには触らずに（次の人のものなので消さない）前の生徒の状態を捨てて
+  /// 登録の画面にする。トークンも捨てるので、このタブから前の生徒として送れない。同じトークンのまま（表示名を変えたなど）なら何もしない。
+  /// 登録の画面のタブはそのまま（次の人のホームに切り替えない）
+  void _followSessionElsewhere() {
+    final accessToken = state.accessToken;
+    if (accessToken == null) return;
+    if (ref.read(sessionStoreProvider).read()?.accessToken == accessToken) {
+      return;
+    }
+    _discardSession();
+  }
+
+  /// 前の生徒の状態（トークン・生徒・予約・チャット・契約・お知らせなど）を捨てて登録の画面にする
+  void _discardSession() {
     ref
       ..invalidate(chatProvider)
       ..invalidate(subscriptionProvider)

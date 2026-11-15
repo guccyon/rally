@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:js_interop';
+
 import 'package:web/web.dart' as web;
 
 import 'session_store.dart';
@@ -36,5 +39,21 @@ class _LocalStorageSessionStore implements SessionStore {
     } on Object {
       // 消せなくても次に読んだときのトークンがまた 401 になり、そこで登録の画面になる
     }
+  }
+
+  /// 同じブラウザーのほかのタブが localStorage のこのキーを変えた・消したとき（storage イベント。自分のタブの変更では来ない）。
+  /// key が null なのは localStorage が丸ごと消されたとき
+  @override
+  Stream<void> get changesElsewhere {
+    late final StreamController<void> controller;
+    final listener = ((web.StorageEvent event) {
+      final key = event.key;
+      if (key == null || key == _key) controller.add(null);
+    }).toJS;
+    controller = StreamController<void>(
+      onListen: () => web.window.addEventListener('storage', listener),
+      onCancel: () => web.window.removeEventListener('storage', listener),
+    );
+    return controller.stream;
   }
 }

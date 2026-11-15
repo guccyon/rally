@@ -8,6 +8,8 @@
 //! `GET /coaches/me/bookings`（admin-web の `listMyCoachBookings`）はコーチ本人の枠への予約だけをスロットの開始時刻の古い順に、
 //! 生徒の表示名を添えて返すことと、コーチ以外は 403 を確かめる。任意の `from`・`to`（枠の開始の日付。日本時間）を付ければ
 //! `listBookings` と同じ規則（省いた日付の決め方・422 の条件）で期間に絞り、付けなければ今までどおり絞らないことを確かめる。
+//! 通話中のセッションが結び付いた予約（グループの枠では結び付いた予約のどれも）にだけ `live_lesson_session` を載せ、本部が
+//! 終わらせたセッションの予約とセッションのない予約には載せないことを確かめる。
 //! `GET /coaches/me/slots`（admin-web の `listMyCoachSlots`）はコーチ本人の枠だけを、終わった枠・閉じた枠も含めて開始時刻の古い順に、
 //! 有効な予約が入っているかと、結びついたレッスンメニュー（なければ null）を添えて返すことと、コーチ以外は 403 を確かめる。
 //! 任意の `from`・`to`（枠の開始の日付。日本時間）で絞れ、省いたときの決め方と 422 の条件が `listBookings` と同じことを確かめる。
@@ -125,6 +127,10 @@ fn slot_id(id: u128) -> String {
 struct App {
     router: Router,
     slots: InMemorySlotRepository,
+    /// 予約の保存先（コーチの予約の一覧の通話中のセッションの準備に、開始時刻を過ぎた枠の予約を直に入れる）
+    bookings: InMemoryBookingRepository,
+    /// コーチの予約の一覧が読む通話セッションの保存先
+    sessions: InMemoryLiveLessonSessionRepository,
     /// 枠に結びついたレッスンメニューを引く保存先
     lesson_menus: application::in_memory::InMemoryLessonMenuRepository,
     accounts: InMemoryAccountRepository,
@@ -174,6 +180,7 @@ fn app_with_entitlements(
     let accounts = InMemoryAccountRepository::default();
     let lesson_menus = application::in_memory::InMemoryLessonMenuRepository::default();
     let completions = InMemoryLessonCompletionRepository::default();
+    let sessions = InMemoryLiveLessonSessionRepository::default();
     let router = interface::router_with(
         RegisterAccount::new(
             InMemoryAccountRepository::default(),
@@ -233,13 +240,14 @@ fn app_with_entitlements(
         ),
         ListCoachBookings::new(
             bookings.clone(),
+            sessions.clone(),
             application::profile::ProfileStudentDisplayNameLookup::new(accounts.clone()),
             clock,
         ),
         application::scheduling::ListCoachSlots::new(
             slots.clone(),
             application::catalog::CatalogLessonMenuLookup::new(lesson_menus.clone()),
-            bookings,
+            bookings.clone(),
             clock,
         ),
         StartSubscription::new(
@@ -265,6 +273,7 @@ fn app_with_entitlements(
             clock,
         ),
         SubmitVideo::new(
+            application::in_memory::OpenVideoSubmissionGate,
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
                 application::in_memory::InMemoryLessonMenuRepository::default(),
@@ -351,6 +360,8 @@ fn app_with_entitlements(
     App {
         router,
         slots,
+        bookings,
+        sessions,
         lesson_menus,
         accounts,
         completions,
@@ -1605,6 +1616,136 @@ async fn coach_lists_bookings_of_own_slots_oldest_slot_first_including_cancelled
     // 照会では何も発火しない
     assert_eq!(app.analytics.events().len(), analytics);
     assert_eq!(app.events.events().len(), events);
+}
+
+/// 確定した予約を、予約の保存先に直に入れる（開始時刻を過ぎた枠は契約の操作では予約できないので）。
+async fn confirmed_booking(
+    app: &App,
+    id: u128,
+    student: &str,
+    slot: u128,
+) -> domain::scheduling::Booking {
+    use application::scheduling::BookingRepository;
+
+    let student = account_id(student);
+    let booking = app
+        .bookings
+        .reserve(SlotId::from_u128(slot), student, |slot, existing| {
+            domain::scheduling::Booking::reserve(
+                BookingId::from_u128(id),
+                student,
+                false,
+                slot,
+                existing,
+                SystemTime::UNIX_EPOCH,
+            )
+        })
+        .await
+        .unwrap();
+    app.bookings
+        .update(booking.id(), |booking, slot| {
+            booking.confirm(student, slot, SystemTime::UNIX_EPOCH)
+        })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn bookings_in_a_call_carry_the_live_lesson_session_summary() {
+    use application::live_lesson::LiveLessonSessionRepository;
+    use domain::live_lesson::{LiveLessonSession, SessionBooking, SessionId};
+
+    // スロット 30 は現在の 1 時間前に始まった定員 3 の枠、31 は 2 時間前に始まった枠
+    let started = |id: u128, hours_ago: u64, capacity: i64| {
+        let starts_at = SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(hours_ago * 3600);
+        Slot::restore(
+            SlotId::from_u128(id),
+            COACH,
+            Sport::Tennis,
+            starts_at,
+            starts_at + Duration::from_secs(3 * 3600),
+            SlotStatus::Open,
+            domain::scheduling::SlotSeats::vacant(
+                domain::scheduling::SlotCapacity::new(capacity).unwrap(),
+            ),
+        )
+        .unwrap()
+    };
+    let app = app_with_monthly([started(30, 1, 3), started(31, 2, 1)]);
+    let first = confirmed_booking(&app, 100, STUDENT, 30).await;
+    let second = confirmed_booking(&app, 101, OTHER_STUDENT, 30).await;
+    let ended = confirmed_booking(&app, 102, STUDENT, 31).await;
+    let session_started_at = SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(1800);
+    // グループの枠のセッションは 2 人目の予約で開始した
+    app.sessions
+        .insert(
+            LiveLessonSession::restore(
+                SessionId::from_u128(500),
+                second.id(),
+                second.student_id(),
+                COACH,
+                vec![SessionBooking::new(first.id(), first.student_id())],
+                session_started_at,
+                None,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    // スロット 31 のセッションは本部が終わらせた
+    let mut ended_by_headquarters = LiveLessonSession::restore(
+        SessionId::from_u128(501),
+        ended.id(),
+        ended.student_id(),
+        COACH,
+        vec![],
+        SystemTime::UNIX_EPOCH + NOW - Duration::from_secs(2 * 3600),
+        None,
+    )
+    .unwrap();
+    ended_by_headquarters
+        .end_by_headquarters(HEADQUARTERS_ID, SystemTime::UNIX_EPOCH + NOW)
+        .unwrap();
+    app.sessions.insert(ended_by_headquarters).await.unwrap();
+    // スロット 10 はまだ始まっていない
+    create(&app.router, STUDENT, 10, false).await;
+
+    let (status, body) = get_my_coach_bookings(&app.router, Some(COACH_TOKEN)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_coach_list_contract(status, &body);
+    let items = body["bookings"].as_array().unwrap();
+    let session_of = |booking: &domain::scheduling::Booking| {
+        items
+            .iter()
+            .find(|item| item["booking"]["booking_id"] == booking_id_uuid::format(booking.id()))
+            .unwrap()
+            .get("live_lesson_session")
+            .cloned()
+    };
+    let summary = json!({
+        "session_id": "00000000-0000-0000-0000-0000000001f4",
+        "status": "in_progress",
+        "started_at": "2026-10-25T23:30:00Z",
+    });
+    assert_eq!(
+        session_of(&first),
+        Some(summary.clone()),
+        "グループの枠では結び付いた予約のどれにも載る"
+    );
+    assert_eq!(session_of(&second), Some(summary));
+    assert_eq!(
+        session_of(&ended),
+        None,
+        "本部が終わらせたセッションは終了扱いで載らない"
+    );
+    assert_eq!(items.len(), 4);
+    assert!(
+        items
+            .iter()
+            .filter(|item| item["slot"]["slot_id"] == slot_id(10))
+            .all(|item| item.get("live_lesson_session").is_none()),
+        "セッションのない予約には載らない"
+    );
 }
 
 #[tokio::test]

@@ -1,12 +1,20 @@
-use std::{cmp::Reverse, collections::BTreeSet};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet},
+    time::SystemTime,
+};
 
-use domain::identity::AccountId;
+use domain::{
+    identity::AccountId,
+    live_lesson::{LiveLessonSession, SessionStatus},
+    scheduling::{Booking, BookingId, BookingStatus, Slot},
+};
 use time::Date;
 
 use super::{
     BookingRepository, CoachBookingList, ListBookingsError, StudentDisplayNameLookup, calendar_day,
 };
-use crate::clock::Clock;
+use crate::{Unavailable, clock::Clock, live_lesson::LiveLessonSessionRepository};
 
 /// コーチの自分の予約の一覧のユースケース（admin-web の `listMyCoachBookings`。コーチだけが呼ぶ）。
 ///
@@ -14,9 +22,13 @@ use crate::clock::Clock;
 /// 古い順に並べる（同じ開始時刻は予約の作成の新しい順、それも同じなら予約 ID の順）。日付の `from`・`to` をどちらも
 /// 省けば期間で絞らない。どちらかがあれば、本部が見る予約の一覧（[`super::ListBookings`]）と同じ規則（[`calendar_day::period`]）で
 /// 期間にし、スロットの開始がその期間に入る予約だけに絞る。一覧に出る生徒の表示名は profile に問い合わせて
-/// （[`StudentDisplayNameLookup`]）添える。読むだけで何も変えない。
-pub struct ListCoachBookings<B, D, C> {
+/// （[`StudentDisplayNameLookup`]）添える。予約が結び付いた通話中のセッションを live-lesson の保存先から読んで添える
+/// （[`LiveLessonSessionRepository::find_by_booking`]。グループレッスンでは結び付いた予約のどれからでも引ける）。
+/// セッションを読むのは、確定済みで枠の開始時刻を過ぎた予約だけ（セッションは確定した予約の枠の開始からしか始められない）。
+/// 終了したセッション（本部が終わらせたものを含む）は添えない。読むだけで何も変えない。
+pub struct ListCoachBookings<B, L, D, C> {
     bookings: B,
+    sessions: L,
     students: D,
     clock: C,
 }
@@ -30,15 +42,17 @@ pub struct ListCoachBookingsQuery {
     pub to: Option<Date>,
 }
 
-impl<B, D, C> ListCoachBookings<B, D, C>
+impl<B, L, D, C> ListCoachBookings<B, L, D, C>
 where
     B: BookingRepository,
+    L: LiveLessonSessionRepository,
     D: StudentDisplayNameLookup,
     C: Clock,
 {
-    pub fn new(bookings: B, students: D, clock: C) -> Self {
+    pub fn new(bookings: B, sessions: L, students: D, clock: C) -> Self {
         Self {
             bookings,
+            sessions,
             students,
             clock,
         }
@@ -49,14 +63,11 @@ where
         coach_id: AccountId,
         query: ListCoachBookingsQuery,
     ) -> Result<CoachBookingList, ListBookingsError> {
+        let now = self.clock.now();
         let dates = if query.from.is_none() && query.to.is_none() {
             None
         } else {
-            Some(calendar_day::period(
-                query.from,
-                query.to,
-                self.clock.now(),
-            )?)
+            Some(calendar_day::period(query.from, query.to, now)?)
         };
         let mut items = match dates {
             None => self.bookings.bookings_of_coach(coach_id).await?,
@@ -91,12 +102,55 @@ where
                 .find_student_display_names(&student_ids)
                 .await?
         };
+        let sessions = self.sessions_in_progress(&items, now).await?;
         Ok(CoachBookingList {
             from: dates.map(|(from, _, _)| from),
             to: dates.map(|(_, to, _)| to),
             items,
             students,
+            sessions,
         })
+    }
+
+    /// `items` の予約のうち、確定済みで枠の開始時刻（`now` まで）を過ぎた予約が結び付いた通話中のセッション（予約 ID
+    /// ごと）。グループレッスンのセッションは 1 回読めば、結び付いた予約のうち一覧のものすべてに入れる（読み直さない）。
+    async fn sessions_in_progress(
+        &self,
+        items: &[(Booking, Slot)],
+        now: SystemTime,
+    ) -> Result<BTreeMap<BookingId, LiveLessonSession>, Unavailable> {
+        let started: BTreeSet<BookingId> = items
+            .iter()
+            .filter(|(booking, slot)| {
+                booking.status() == BookingStatus::Confirmed && slot.starts_at() <= now
+            })
+            .map(|(booking, _)| booking.id())
+            .collect();
+        let mut asked = BTreeSet::new();
+        let mut sessions = BTreeMap::new();
+        for booking_id in &started {
+            if !asked.insert(*booking_id) {
+                continue;
+            }
+            let Some(session) = self.sessions.find_by_booking(*booking_id).await? else {
+                continue;
+            };
+            let linked: Vec<BookingId> = session
+                .bookings()
+                .iter()
+                .map(|linked| linked.booking_id())
+                .chain([*booking_id])
+                .filter(|linked| started.contains(linked))
+                .collect();
+            asked.extend(linked.iter().copied());
+            if session.status() != SessionStatus::InProgress {
+                continue;
+            }
+            for linked in linked {
+                sessions.insert(linked, session.clone());
+            }
+        }
+        Ok(sessions)
     }
 }
 
@@ -110,15 +164,19 @@ mod tests {
 
     use domain::{
         catalog::Sport,
+        live_lesson::{SessionBooking, SessionId},
         profile::DisplayName,
-        scheduling::{Booking, BookingStatus, SchedulingError, Slot, SlotId, SlotStatus},
+        scheduling::{SchedulingError, SlotCapacity, SlotId, SlotSeats, SlotStatus},
     };
     use time::Month;
 
     use super::*;
     use crate::{
         Unavailable,
-        in_memory::{FixedClock, InMemoryBookingRepository, InMemorySlotRepository},
+        in_memory::{
+            FixedClock, InMemoryBookingRepository, InMemoryLiveLessonSessionRepository,
+            InMemorySlotRepository,
+        },
         scheduling::BookingRepository,
     };
 
@@ -239,10 +297,15 @@ mod tests {
         book(&bookings, STUDENT, 4, 5).await;
 
         let lookup = RecordingLookup::default();
-        let list = ListCoachBookings::new(bookings, lookup.clone(), clock())
-            .execute(COACH, ListCoachBookingsQuery::default())
-            .await
-            .unwrap();
+        let list = ListCoachBookings::new(
+            bookings,
+            InMemoryLiveLessonSessionRepository::default(),
+            lookup.clone(),
+            clock(),
+        )
+        .execute(COACH, ListCoachBookingsQuery::default())
+        .await
+        .unwrap();
         assert_eq!(
             ids(&list),
             [
@@ -279,10 +342,15 @@ mod tests {
         ]));
         book(&bookings, STUDENT, 2, 0).await;
         let lookup = RecordingLookup::default();
-        let list = ListCoachBookings::new(bookings, lookup.clone(), clock())
-            .execute(COACH, ListCoachBookingsQuery::default())
-            .await
-            .unwrap();
+        let list = ListCoachBookings::new(
+            bookings,
+            InMemoryLiveLessonSessionRepository::default(),
+            lookup.clone(),
+            clock(),
+        )
+        .execute(COACH, ListCoachBookingsQuery::default())
+        .await
+        .unwrap();
         assert!(list.items.is_empty());
         assert!(list.students.is_empty());
         assert!(lookup.asked.lock().unwrap().is_empty());
@@ -308,6 +376,7 @@ mod tests {
     async fn slot_ids(query: ListCoachBookingsQuery) -> Result<Vec<u128>, ListBookingsError> {
         let list = ListCoachBookings::new(
             bookings_around_next_week().await,
+            InMemoryLiveLessonSessionRepository::default(),
             RecordingLookup::default(),
             clock(),
         )
@@ -324,6 +393,7 @@ mod tests {
     async fn without_dates_lists_every_booking_as_before() {
         let list = ListCoachBookings::new(
             bookings_around_next_week().await,
+            InMemoryLiveLessonSessionRepository::default(),
             RecordingLookup::default(),
             clock(),
         )
@@ -346,6 +416,7 @@ mod tests {
         assert_eq!(slot_ids(query_from_to(2, 8)).await.unwrap(), [2, 3]);
         let list = ListCoachBookings::new(
             bookings_around_next_week().await,
+            InMemoryLiveLessonSessionRepository::default(),
             RecordingLookup::default(),
             clock(),
         )
@@ -377,6 +448,7 @@ mod tests {
         };
         let list = ListCoachBookings::new(
             bookings_around_next_week().await,
+            InMemoryLiveLessonSessionRepository::default(),
             RecordingLookup::default(),
             clock(),
         )
@@ -421,5 +493,227 @@ mod tests {
                 SchedulingError::BookingPeriodTooLong { max_days: 31 }
             ))
         ));
+    }
+
+    const THIRD_STUDENT: AccountId = AccountId::from_u128(3);
+    const HEADQUARTERS: AccountId = AccountId::from_u128(9);
+
+    /// 定員 `capacity` の `COACH` の枠 `id`（`hour` 時に始まる）
+    fn group_slot(id: u128, hour: u64, capacity: i64) -> Slot {
+        Slot::restore(
+            SlotId::from_u128(id),
+            COACH,
+            Sport::Tennis,
+            at(hour),
+            at(hour + 1),
+            SlotStatus::Open,
+            SlotSeats::vacant(SlotCapacity::new(capacity).unwrap()),
+        )
+        .unwrap()
+    }
+
+    async fn confirmed(
+        bookings: &InMemoryBookingRepository,
+        student: AccountId,
+        slot: u128,
+    ) -> Booking {
+        let booking = book(bookings, student, slot, 0).await;
+        bookings
+            .update(booking.id(), |booking, slot| {
+                booking.confirm(student, slot, at(1))
+            })
+            .await
+            .unwrap()
+    }
+
+    /// `first` で開始し、`others` も結び付いた、`hour` 時に始まった通話中のセッション `id`
+    fn session(id: u128, first: &Booking, others: &[&Booking], hour: u64) -> LiveLessonSession {
+        LiveLessonSession::restore(
+            SessionId::from_u128(id),
+            first.id(),
+            first.student_id(),
+            COACH,
+            others
+                .iter()
+                .map(|other| SessionBooking::new(other.id(), other.student_id()))
+                .collect(),
+            at(hour),
+            None,
+        )
+        .unwrap()
+    }
+
+    /// 問い合わせた予約を記録する、セッションの保存先
+    #[derive(Clone)]
+    struct RecordingSessions {
+        inner: InMemoryLiveLessonSessionRepository,
+        asked: Arc<Mutex<Vec<BookingId>>>,
+    }
+
+    impl RecordingSessions {
+        fn with_sessions(sessions: impl IntoIterator<Item = LiveLessonSession>) -> Self {
+            Self {
+                inner: InMemoryLiveLessonSessionRepository::with_sessions(sessions),
+                asked: Arc::default(),
+            }
+        }
+    }
+
+    impl LiveLessonSessionRepository for RecordingSessions {
+        fn next_id(&self) -> SessionId {
+            self.inner.next_id()
+        }
+
+        async fn find(
+            &self,
+            session_id: SessionId,
+        ) -> Result<Option<LiveLessonSession>, Unavailable> {
+            self.inner.find(session_id).await
+        }
+
+        async fn find_by_booking(
+            &self,
+            booking_id: BookingId,
+        ) -> Result<Option<LiveLessonSession>, Unavailable> {
+            self.asked.lock().unwrap().push(booking_id);
+            self.inner.find_by_booking(booking_id).await
+        }
+
+        async fn find_in_progress_started_at_or_before(
+            &self,
+            started_at_or_before: SystemTime,
+            coach_id: Option<AccountId>,
+            student_id: Option<AccountId>,
+        ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+            self.inner
+                .find_in_progress_started_at_or_before(started_at_or_before, coach_id, student_id)
+                .await
+        }
+
+        async fn find_started_between(
+            &self,
+            starts_at: SystemTime,
+            ends_at: SystemTime,
+            coach_id: Option<AccountId>,
+            student_id: Option<AccountId>,
+        ) -> Result<Vec<LiveLessonSession>, Unavailable> {
+            self.inner
+                .find_started_between(starts_at, ends_at, coach_id, student_id)
+                .await
+        }
+
+        async fn insert(
+            &self,
+            session: LiveLessonSession,
+        ) -> Result<(), crate::live_lesson::InsertSessionError> {
+            self.inner.insert(session).await
+        }
+
+        async fn update<F>(
+            &self,
+            session_id: SessionId,
+            update: F,
+        ) -> Result<LiveLessonSession, crate::live_lesson::UpdateSessionError>
+        where
+            F: FnOnce(&mut LiveLessonSession) -> Result<(), domain::DomainError> + Send,
+        {
+            self.inner.update(session_id, update).await
+        }
+    }
+
+    async fn list_with(
+        bookings: InMemoryBookingRepository,
+        sessions: RecordingSessions,
+    ) -> CoachBookingList {
+        ListCoachBookings::new(bookings, sessions, RecordingLookup::default(), clock())
+            .execute(COACH, ListCoachBookingsQuery::default())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn bookings_in_a_call_carry_the_session_in_progress_and_others_do_not() {
+        let now = hour_of(2, 12);
+        let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([
+            slot(1, COACH, now - 1),
+            slot(2, COACH, now - 3),
+            slot(3, COACH, now - 2),
+        ]));
+        let in_call = confirmed(&bookings, STUDENT, 1).await;
+        let ended = confirmed(&bookings, STUDENT, 2).await;
+        let without_session = confirmed(&bookings, OTHER_STUDENT, 3).await;
+        let mut ended_by_headquarters = session(11, &ended, &[], now - 3);
+        ended_by_headquarters
+            .end_by_headquarters(HEADQUARTERS, at(now - 2))
+            .unwrap();
+        let sessions = RecordingSessions::with_sessions([
+            session(10, &in_call, &[], now - 1),
+            ended_by_headquarters,
+        ]);
+
+        let list = list_with(bookings, sessions).await;
+        assert_eq!(list.sessions.len(), 1, "通話中のセッションの予約だけに載る");
+        let session = &list.sessions[&in_call.id()];
+        assert_eq!(session.id(), SessionId::from_u128(10));
+        assert_eq!(session.status(), SessionStatus::InProgress);
+        assert_eq!(session.started_at(), at(now - 1));
+        assert!(
+            !list.sessions.contains_key(&ended.id()),
+            "本部が終わらせたセッションは終了扱いで載らない"
+        );
+        assert!(!list.sessions.contains_key(&without_session.id()));
+    }
+
+    #[tokio::test]
+    async fn every_booking_linked_to_a_group_session_carries_it_with_a_single_lookup() {
+        let now = hour_of(2, 12);
+        let bookings =
+            InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([group_slot(
+                1,
+                now - 1,
+                3,
+            )]));
+        let first = confirmed(&bookings, STUDENT, 1).await;
+        let second = confirmed(&bookings, OTHER_STUDENT, 1).await;
+        let third = confirmed(&bookings, THIRD_STUDENT, 1).await;
+        // 2 人目の予約で開始したセッション（3 人目の予約は結び付いた予約の 2 番目以降）
+        let sessions =
+            RecordingSessions::with_sessions([session(10, &second, &[&first, &third], now - 1)]);
+
+        let list = list_with(bookings, sessions.clone()).await;
+        for booking in [&first, &second, &third] {
+            assert_eq!(
+                list.sessions.get(&booking.id()).map(LiveLessonSession::id),
+                Some(SessionId::from_u128(10)),
+                "結び付いた予約のどれにも同じセッションが載る"
+            );
+        }
+        assert_eq!(
+            sessions.asked.lock().unwrap().len(),
+            1,
+            "結び付いた予約のセッションは読み直さない"
+        );
+    }
+
+    #[tokio::test]
+    async fn sessions_are_not_looked_up_for_unconfirmed_or_not_yet_started_bookings() {
+        let now = hour_of(2, 12);
+        let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([
+            slot(1, COACH, now - 1),
+            slot(2, COACH, now + 1),
+            slot(3, COACH, now),
+        ]));
+        book(&bookings, STUDENT, 1, 0).await;
+        confirmed(&bookings, STUDENT, 2).await;
+        let starting_now = confirmed(&bookings, OTHER_STUDENT, 3).await;
+        let sessions = RecordingSessions::with_sessions([]);
+
+        let list = list_with(bookings, sessions.clone()).await;
+        assert!(list.sessions.is_empty());
+        assert_eq!(
+            *sessions.asked.lock().unwrap(),
+            [starting_now.id()],
+            "確定済みで枠の開始時刻（ちょうどを含む）を過ぎた予約だけ問い合わせる"
+        );
     }
 }

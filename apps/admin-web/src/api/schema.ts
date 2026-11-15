@@ -969,6 +969,10 @@ export interface paths {
          *       予約した生徒の表示名 `student_display_name` を載せる。生徒のアカウントが引けないときは `student_display_name` を載せない
          *     - 各項目の予約には、予約した時点のレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`BookingLessonMenu`。なければ null）を
          *       載せる。生徒が予約したときに枠に結びついていた公開中のメニューの写しで、その後にメニューを直しても変わらない
+         *     - 予約に結び付いた通話中のセッション（glossary の live_lesson_session。`status` が `in_progress`）があれば、その項目に
+         *       `live_lesson_session`（`session_id`・`status`・`started_at`）を載せる。終了したセッションしかない・セッションがないときは載せない。
+         *       再読み込みのあとでも、通話中の予約を一覧から見つけて通話に戻れるようにするため。グループレッスンの枠では、セッションに
+         *       結び付いた予約（`LiveLessonSession` の `bookings`）のどの項目にも同じセッションを載せる
          *     - 期間: 任意の `from`・`to`（予約されたスロットが開始する日付。日本時間。両端を含む）で絞れる（「来週の予約」だけを見る）。
          *       どちらも省けば今までどおり期間で絞らず、応答に `from` / `to` を載せない。どちらかを付けたときの日付の扱いと 422 の条件は
          *       `listBookings` と同じ: `from` の日本時間 0 時（含む）から `to` の翌日の日本時間 0 時（含まない）までに開始する予約。
@@ -1085,6 +1089,8 @@ export interface paths {
          *       コーチの添削とは別の項目で、返却で上書きされない。AI が作れなかったときは null
          *     - 各項目の `lesson_menu` は、生徒が動画を送った時点で選んだ自分の非同期レッスンのレッスンメニュー（ID・名前の写し。
          *       `VideoLessonMenu`）。メニューの今の中身ではない。メニューを選ばずに送られた動画は null
+         *     - 各項目の `note` は、生徒が動画を送ったときに書いたコーチへの相談内容（student-app の `submitVideo` の `note`。
+         *       送った時点のまま）。書かずに送られた動画と、相談内容を保存するようになる前に送られた動画は null
          *     - 絞り込み（任意）: `pending_only` が `true` なら、添削をまだ返していない（`returnVideoReview` していない。
          *       `review_status` が `in_progress`）動画だけを返す。「返却待ち」の判定は `listPendingVideoReviews` と同じ（実装は
          *       backend の domain `Video::is_awaiting_review` の 1 か所）。並べ方は変わらない（送られた時刻の古い順）。
@@ -1922,7 +1928,7 @@ export interface paths {
          *     messaging が購読する。Gen1 は matching がないので、確定した予約のコーチを担当コーチとみなす）。
          *     `unread_count` は呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数。
          *     student-app の `listMessageThreads`（生徒）と同じ操作で、admin-web ではコーチが呼ぶ。形は student-app と同じに、
-         *     コーチがまだ返事をしていないか（`unanswered`）を足したもの。
+         *     コーチがまだ返事をしていないか（`unanswered`）と生徒の表示名（`student_display_name`。任意）を足したもの。
          *
          *     - 未返信 `unanswered`: 最後の発言が生徒のもの。発言は当事者がチャットとして送ったメッセージ（`kind` が `text` か
          *       `stamp`）だけで、添削依頼・添削の返却（`video_review_request` / `video_review_returned`）と送り手がシステムの
@@ -1934,6 +1940,8 @@ export interface paths {
          *       3. 同じ時刻はスレッド ID の順
          *       未返信のスレッドがなければ、最後の出来事の新しい順だけになる
          *     - 呼んだコーチが担当するスレッドだけを返す（他のコーチのスレッドは返らない）
+         *     - 各スレッドには相手の生徒の表示名 `student_display_name`（今のアカウントの表示名）を載せる。
+         *       生徒のアカウントが引けないときは `student_display_name` を載せない
          *     - 照会だけで、何も保存しない（既読にしない・通知を送らない）
          */
         get: operations["listMessageThreads"];
@@ -2476,6 +2484,25 @@ export interface components {
             slot: components["schemas"]["Slot"];
             /** @description 予約した生徒のアカウントの表示名。生徒のアカウントが引けないときは載らない */
             student_display_name?: string;
+            live_lesson_session?: components["schemas"]["CoachBookingLiveLessonSession"];
+        };
+        /**
+         * @description コーチの自分の予約の一覧の 1 件に載る、その予約の通話中のセッション（glossary の live_lesson_session）の要約。
+         *     通話中のセッションがあるときだけ載る（載せる条件は `listMyCoachBookings` の説明）。セッションの全体は
+         *     `startLiveLessonSession` / `endLiveLessonSession` が返す `LiveLessonSession`
+         */
+        CoachBookingLiveLessonSession: {
+            /**
+             * Format: uuid
+             * @description 通話セッションの ID（`LiveLessonSession` の `session_id` と同じ）
+             */
+            session_id: string;
+            status: components["schemas"]["LiveLessonSessionStatus"];
+            /**
+             * Format: date-time
+             * @description 通話を始めた時刻
+             */
+            started_at: string;
         };
         /** @description コーチの自分の予約の一覧（期間と並べ方は `listMyCoachBookings` の説明） */
         CoachBookingList: {
@@ -3573,6 +3600,11 @@ export interface components {
              *     直されても、送った時点のまま。メニューを選ばずに送った動画（この項目を足す前の動画を含む）は null。動画を返す操作では必ず載せる
              */
             lesson_menu?: components["schemas"]["VideoLessonMenu"] | null;
+            /**
+             * @description 生徒が動画を送ったときに書いたコーチへの相談内容（student-app の `submitVideo` の `note`）。送った時点のまま。
+             *     書かずに送った動画と、相談内容を保存するようになる前に送った動画は null
+             */
+            note?: string | null;
         };
         /** @description コーチに届いた動画の一覧（並べ方は `listMyCoachVideos` の説明） */
         CoachVideoList: {
@@ -3732,12 +3764,14 @@ export interface components {
              */
             read_at?: string | null;
         };
-        /** @description glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）。student-app の同名のスキーマに、未返信（`unanswered`）を足した形 */
+        /** @description glossary の message_thread（生徒と担当コーチの 1 対 1 のチャットのスレッド。生徒とコーチの組に 1 つ）。student-app の同名のスキーマに、未返信（`unanswered`）と生徒の表示名（`student_display_name`。任意）を足した形 */
         MessageThread: {
             /** Format: uuid */
             thread_id: string;
             /** Format: uuid */
             student_id: string;
+            /** @description スレッドの生徒のアカウントの表示名（今の表示名）。生徒のアカウントが引けないときは載らない */
+            student_display_name?: string;
             /** Format: uuid */
             coach_id: string;
             /**

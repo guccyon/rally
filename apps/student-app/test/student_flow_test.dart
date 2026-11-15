@@ -51,7 +51,8 @@ void main() {
     expect(find.text('予約が確定しました'), findsOneWidget);
   }
 
-  Future<void> recordAndSubscribe(WidgetTester tester) async {
+  /// 完了の記録 → 評価のあと、評価の画面の「月額契約へ進む」から月額契約の画面を開く
+  Future<void> recordAndOpenSubscription(WidgetTester tester) async {
     expect(find.text('レッスンの完了'), findsOneWidget);
     await tapText(tester, '完了を記録する');
     expect(find.text('初回レッスンを完了しました'), findsOneWidget);
@@ -64,8 +65,11 @@ void main() {
     await tapText(tester, '評価を送る');
     expect(find.text('評価を送りました'), findsOneWidget);
     await tapText(tester, '月額契約へ進む');
-
     expect(find.text('月額契約'), findsOneWidget);
+  }
+
+  Future<void> recordAndSubscribe(WidgetTester tester) async {
+    await recordAndOpenSubscription(tester);
     await tapText(tester, '月額契約を始める');
     expect(find.text('月額契約を開始しました'), findsOneWidget);
   }
@@ -108,6 +112,7 @@ void main() {
       'recordLessonCompletion',
       'submitLessonReview',
       'listSubscriptionPlans',
+      'getMyEntitlement',
       'startSubscription',
     ]);
   });
@@ -160,8 +165,57 @@ void main() {
         'recordLessonCompletion',
         'submitLessonReview',
         'listSubscriptionPlans',
+        'getMyEntitlement',
         'startSubscription',
       ]);
+    },
+  );
+
+  testWidgets(
+    '別のタブで月額契約したあと、このタブが前面に戻るとホームの契約の欄と「次にやること」を読み直し、「月額契約へ進む」を出さない（#1606）',
+    (tester) async {
+      // 契約の前は「次にやること」にも「月額契約へ進む」が出る
+      final api = FakeStudentApi(myBookings: const [])
+        ..nextActions.add(Fixtures.nextStartSubscription);
+      // 「次にやること」のカードの下の今月のビデオ通話の欄まで 1 画面に収める
+      tester.view.physicalSize = const Size(1200, 4000);
+      addTearDown(tester.view.reset);
+      await pumpApp(tester, api);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'メールアドレス'),
+        'yamada@example.com',
+      );
+      await tester.enterText(find.widgetWithText(TextFormField, '表示名'), '山田');
+      await tapText(tester, 'テニス');
+      await tapText(tester, '登録する');
+      expect(
+        find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+        findsOneWidget,
+      );
+      expect(find.text('月額契約で、続けて教わりましょう'), findsOneWidget);
+
+      // 別のタブでスタンダードを始め、このタブは裏に回っていた（サーバーの次の操作からも契約が消える）
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      await tester.pump();
+      api.entitlement = Fixtures.subscriptionStartedWith(
+        SubscriptionPlan.standard,
+      ).entitlement;
+      api.nextActions.clear();
+      api.calls.clear();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(api.calls, ['getMyEntitlement', 'getMyNextActions']);
+      expect(find.text('月額契約で、続けて教わりましょう'), findsNothing);
+      expect(
+        find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
+        findsNothing,
+      );
+      expect(find.text('月額契約へ進む'), findsNothing);
+      expect(find.text('月 2 回のうち残り 2 回'), findsOneWidget);
+      expect(find.text('プラン: スタンダード'), findsOneWidget);
     },
   );
 
@@ -430,6 +484,7 @@ void main() {
       final failures = await writeBeforeSubscription(tester, 'フォームの相談です');
 
       await tapText(tester, '月額契約へ進む');
+      expect(find.text('プランを選んでください'), findsOneWidget);
       await tapText(tester, '月額契約を始める');
       expect(find.text('月額契約を開始しました'), findsOneWidget);
       failures.remove('sendMessage');
@@ -488,6 +543,50 @@ void main() {
     await tapText(tester, '通話を終了する');
     await recordAndSubscribe(tester);
     expect(find.text('チャットへ戻る'), findsNothing);
+  });
+
+  testWidgets('月額契約の前の生徒が月額契約の画面を開くと、プランを選べる（#1630）', (tester) async {
+    final api = FakeStudentApi(
+      myBookings: const [],
+      lessonCompletions: const [],
+    );
+    await pumpApp(tester, api);
+    await registerAndBook(tester);
+    await tapText(tester, 'ビデオ通話で受ける');
+    await tapText(tester, '入室する');
+    await tapText(tester, '通話を終了する');
+    await recordAndOpenSubscription(tester);
+
+    expect(find.text('プランを選んでください'), findsOneWidget);
+    expect(find.byType(RadioGroup<SubscriptionPlan>), findsOneWidget);
+    expect(find.text('月額契約を始める'), findsOneWidget);
+    expect(find.text('今の月額契約'), findsNothing);
+    expect(api.calls, contains('listSubscriptionPlans'));
+  });
+
+  testWidgets('サーバーの受講権が月額の生徒が月額契約の画面を開くと、プランの欄を出さず今の契約を出す（ADR 0010。#1630）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      myBookings: const [],
+      lessonCompletions: const [],
+      entitlement: Fixtures.subscriptionStarted.entitlement,
+    );
+    await pumpApp(tester, api);
+    await registerAndBook(tester);
+    await tapText(tester, 'ビデオ通話で受ける');
+    await tapText(tester, '入室する');
+    await tapText(tester, '通話を終了する');
+    await recordAndOpenSubscription(tester);
+
+    expect(find.text('今の月額契約'), findsOneWidget);
+    expect(find.text('プラン: スタンダード'), findsOneWidget);
+    expect(find.textContaining('今月のビデオ通話: '), findsOneWidget);
+    expect(find.text('プランを選んでください'), findsNothing);
+    expect(find.text('月額契約を始める'), findsNothing);
+    expect(find.text('チャットへ戻る'), findsNothing);
+    expect(api.calls, isNot(contains('listSubscriptionPlans')));
+    expect(api.calls, isNot(contains('startSubscription')));
   });
 
   test('自分の予約は copyWith で読み取り専用にして持ち、外から書き換えられない', () {

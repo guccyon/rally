@@ -140,6 +140,7 @@ where
             clock.clone(),
         );
         let submit = SubmitVideo::new(
+            application::in_memory::OpenVideoSubmissionGate, // 初期データは体験の制限をかけずに送る
             videos.clone(),
             CatalogLessonMenuLookup::new(PgLessonMenuRepository::new(pool.clone())),
             MockVideoStorage,

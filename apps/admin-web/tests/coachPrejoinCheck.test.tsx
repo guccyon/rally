@@ -212,6 +212,12 @@ describe("入室前チェック", () => {
       expect(screen.getByText("通話中")).toBeInTheDocument();
       expect(screen.getByText("カメラ: 入・マイク: 入（入室前チェックのまま）")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "通話を終了" })).toBeEnabled();
+      // 開発者向けの語（セッション ID の UUID・「モック」）は出さず、映像が出ない旨はコーチに分かる言葉で出す（#1631）
+      const inCall = screen.getByRole("region", { name: "ビデオ通話中" });
+      expect(inCall).toHaveTextContent("映像が表示されなくても、故障ではありません。");
+      expect(inCall).not.toHaveTextContent(SESSION_ID);
+      expect(inCall).not.toHaveTextContent(/セッション ID|モック/);
+      expect(inCall).not.toHaveTextContent(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       expect(heading).toHaveFocus();
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
       expect(scrollIntoView.mock.contexts.at(-1)).toBe(heading);
@@ -223,6 +229,7 @@ describe("入室前チェック", () => {
       expect(screen.queryByRole("heading", { name: "ビデオ通話中" })).not.toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("通話を終了しました。");
       expect(screen.getByText("1500 秒")).toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent(SESSION_ID);
       // 押したボタンが消えても焦点は迷子にならず、一覧の先頭に移る
       expect(document.activeElement).not.toBe(document.body);
       expect(document.activeElement).toContainElement(screen.getByRole("status"));
@@ -243,6 +250,81 @@ describe("入室前チェック", () => {
     expect(screen.getByRole("heading", { name: "ビデオ通話中" })).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "通話を終了" })).toBeEnabled();
+  });
+
+  test("入室したあと部品を作り直しても（再読み込み）、一覧の通話中の行から通話に戻って終了できる", async () => {
+    const { coachApi, user, view } = await openCheck({}, 0);
+    await user.click(screen.getByRole("button", { name: "入室する" }));
+    await screen.findByRole("heading", { name: "ビデオ通話中" });
+
+    // 再読み込み: 部品を作り直すと、手元の通話の状態は消え、一覧の live_lesson_session だけが残る
+    view.unmount();
+    const reloaded = api();
+    reloaded.listMyCoachBookings.mockResolvedValue({
+      ok: true,
+      data: {
+        bookings: [
+          { ...BOOKING, live_lesson_session: { session_id: SESSION_ID, status: "in_progress", started_at: STARTS_AT } },
+        ],
+      },
+    });
+    reloaded.endLiveLessonSession.mockResolvedValue({
+      ok: true,
+      data: { ...STARTED, status: "ended", ended_at: "2026-11-08T03:25:00Z", duration_sec: 1500 },
+    });
+    render(<LiveSessionPanel api={reloaded} media={fakeLocalMedia().media} />);
+
+    const row = await screen.findByRole("row", { name: /鈴木 一郎/ });
+    expect(row).toHaveTextContent("通話中");
+    expect(within(row).queryByRole("button", { name: "入室前チェック" })).not.toBeInTheDocument();
+    await user.click(within(row).getByRole("button", { name: "通話に戻る" }));
+
+    // 入室前チェックは通さず、同じ予約で開始を呼ぶ（通話中なら同じセッションが 201 で返る）
+    expect(screen.queryByRole("heading", { name: "入室前チェック" })).not.toBeInTheDocument();
+    expect(reloaded.startLiveLessonSession).toHaveBeenCalledWith({ booking_id: BOOKING_ID });
+    expect(coachApi.startLiveLessonSession).toHaveBeenCalledTimes(1);
+    const heading = await screen.findByRole("heading", { name: "ビデオ通話中" });
+    expect(heading).toHaveFocus();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("通話に戻りました。");
+    // カメラ・マイクの入切は入室前チェックから引き継いでいないので出さない
+    expect(screen.queryByText(/入室前チェックのまま/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "通話を終了" }));
+
+    expect(reloaded.endLiveLessonSession).toHaveBeenCalledWith(SESSION_ID);
+    const upcoming = await screen.findByRole("table", { name: "これからの予約" });
+    expect(screen.getByRole("status")).toHaveTextContent("通話を終了しました。");
+    expect(screen.getByText("1500 秒")).toBeInTheDocument();
+    // 終えた通話の行には、もう戻る操作も入室前チェックも出さない
+    const ended = within(upcoming).getByRole("row", { name: /鈴木 一郎/ });
+    expect(within(ended).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  test("通話中の行から戻れなければ（その間に終わっていた）理由を出し、一覧のまま", async () => {
+    vi.setSystemTime(startsIn(-10));
+    const coachApi = api(async () => ({
+      ok: false,
+      code: "invalid_session_state",
+      message: "通話の状態が変わっています。",
+    }));
+    coachApi.listMyCoachBookings.mockResolvedValue({
+      ok: true,
+      data: {
+        bookings: [
+          { ...BOOKING, live_lesson_session: { session_id: SESSION_ID, status: "in_progress", started_at: STARTS_AT } },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    render(<LiveSessionPanel api={coachApi} media={fakeLocalMedia().media} />);
+
+    const row = await screen.findByRole("row", { name: /鈴木 一郎/ });
+    await user.click(within(row).getByRole("button", { name: "通話に戻る" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("通話の状態が変わっています。");
+    expect(screen.getByRole("table", { name: "これからの予約" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "ビデオ通話中" })).not.toBeInTheDocument();
   });
 
   test("入室で 409 slot_not_started が返ったら今の文言を出し、チェックは開いたまま", async () => {

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { ResultMessage } from "@/components/ui/ResultMessage";
 import { formatDateTime, knownStamp, STAMPS } from "@/components/labels";
 
-import { VideoReviewCommentForm } from "./VideoReviewCommentForm";
+import { StudentNote, VideoReviewCommentForm } from "./VideoReviewCommentForm";
 
 // 契約の SendMessageRequest.body の maxLength。
 const BODY_MAX_LENGTH = 2000;
@@ -183,6 +183,8 @@ export function MessageThreadView({
     return (
       <ReviewCard title={title} sentAt={message.sent_at}>
         <p>{studentName}が動画を送って、添削を依頼しました。</p>
+        {/* 添削の欄（VideoReviewCommentForm）を開いている間は、欄の中に出すのでここでは出さない。 */}
+        {video && reviewingVideoId !== video.video_id && <StudentNote video={video} />}
         {!video ? (
           <p className="text-text-muted">
             添削の状態を確かめられませんでした。「動画の添削」の一覧から確かめてください。

@@ -114,6 +114,8 @@ pub enum DomainError {
         menu: crate::catalog::Sport,
         video: crate::catalog::Sport,
     },
+    /// 動画に添えるコーチへの相談内容が長すぎる（`max` は文字数）
+    VideoNoteTooLong { max: usize },
 }
 
 impl fmt::Display for DomainError {

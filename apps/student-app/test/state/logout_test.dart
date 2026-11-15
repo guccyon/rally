@@ -166,4 +166,114 @@ void main() {
     expect(callsAfter.first, 'registerAccount');
     expect(callsAfter, containsAll(['listMessageThreads', 'getMyEntitlement']));
   });
+
+  group('ほかのタブでログアウトしたとき（#1669）', () {
+    /// 次の人が別のタブで登録した結果（別のトークンと生徒）
+    final nextPerson = SavedSession(
+      accessToken: 'mock.student.next',
+      student: Student(
+        studentId: '77777777-7777-4777-8777-777777777777',
+        displayName: '中学生ゆうき',
+        sport: Sport.tennis,
+        createdAt: Fixtures.now,
+      ),
+    );
+
+    /// このタブでチャットのスレッド（担当コーチとの相談）を開いておく
+    Future<ProviderContainer> openThread(
+      WidgetTester tester,
+      FakeStudentApi api,
+      MemorySessionStore store,
+    ) async {
+      final container = await openApp(tester, api, store);
+      await container.read(chatProvider.notifier).openThread(Fixtures.thread);
+      await tester.pumpAndSettle();
+      expect(container.read(studentFlowProvider).step, FlowStep.messages);
+      expect(container.read(chatProvider).messages, isNotEmpty);
+      return container;
+    }
+
+    void expectLoggedOut(ProviderContainer container) {
+      expect(find.text('アカウント登録'), findsOneWidget);
+      expect(find.text('山田さん、こんにちは'), findsNothing);
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.register);
+      expect(state.accessToken, isNull);
+      expect(state.student, isNull);
+      expect(state.myBookings, isNull);
+      expect(container.read(chatProvider).thread, isNull);
+      expect(container.read(chatProvider).threads, isNull);
+      expect(container.read(chatProvider).messages, isNull);
+      expect(container.read(subscriptionProvider).entitlement, isNull);
+    }
+
+    testWidgets('開いていたタブもチャットとホームの状態を捨てて登録の画面になり、サーバーには何も送らない', (
+      tester,
+    ) async {
+      final store = savedStore();
+      final api = FakeStudentApi();
+      final container = await openThread(tester, api, store);
+      final callsBefore = List.of(api.calls);
+
+      store.replaceElsewhere(null);
+      await tester.pumpAndSettle();
+
+      expectLoggedOut(container);
+      expect(api.calls, callsBefore);
+    });
+
+    testWidgets('次の人が別のタブで登録しても、このタブに前の生徒は出ず、次の人の登録の結果は消さない', (
+      tester,
+    ) async {
+      final store = savedStore();
+      final api = FakeStudentApi();
+      final container = await openThread(tester, api, store);
+
+      store.replaceElsewhere(null);
+      await tester.pumpAndSettle();
+      store.replaceElsewhere(nextPerson);
+      await tester.pumpAndSettle();
+
+      expectLoggedOut(container);
+      expect(store.read()!.accessToken, nextPerson.accessToken);
+    });
+
+    testWidgets('ログアウトの知らせを受けずに次の人の登録だけが届いても、前の生徒のトークンを捨てて前の生徒として送れない', (
+      tester,
+    ) async {
+      final store = savedStore();
+      final api = FakeStudentApi();
+      final container = await openThread(tester, api, store);
+
+      store.replaceElsewhere(nextPerson);
+      await tester.pumpAndSettle();
+
+      expectLoggedOut(container);
+      expect(store.read()!.accessToken, nextPerson.accessToken);
+      // メッセージ欄はもうなく、送る操作もスレッドがないので送らない
+      expect(find.text('送信する'), findsNothing);
+      expect(api.requests.whereType<SendMessageRequest>(), isEmpty);
+    });
+
+    testWidgets('ほかのタブが同じ生徒のまま残し直しただけ（表示名を変えたなど）なら、このタブはそのまま', (
+      tester,
+    ) async {
+      final store = savedStore();
+      final container = await openApp(tester, FakeStudentApi(), store);
+
+      store.replaceElsewhere(
+        SavedSession(
+          accessToken: Fixtures.registered.accessToken,
+          student: Fixtures.student,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('山田さん、こんにちは'), findsOneWidget);
+      expect(
+        container.read(studentFlowProvider).accessToken,
+        Fixtures.registered.accessToken,
+      );
+    });
+  });
 }

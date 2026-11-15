@@ -7,7 +7,7 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     entitlement::EntitlementRepository,
-    identity::AccountRepository,
+    identity::{AccountRepository, TokenIssuer, TokenVerifier},
     lesson::LessonCompletionRepository,
     live_lesson::{LiveLessonSessionRepository, VideoCallProvider},
     matching::FavoriteCoachRepository,
@@ -48,6 +48,7 @@ pub(crate) trait Ports {
     type VideoCall: VideoCallProvider + Clone + 'static;
     type Push: PushSender + Clone + 'static;
     type Events: DomainEventPublisher + Clone + 'static;
+    type Tokens: TokenIssuer + TokenVerifier + Clone + 'static;
 
     fn accounts(&self) -> Self::Accounts;
     fn slots(&self) -> Self::Slots;
@@ -75,4 +76,6 @@ pub(crate) trait Ports {
     fn push(&self) -> Self::Push;
     /// 境界間イベントの発行先（インメモリのイベントバス）。
     fn events(&self) -> Self::Events;
+    /// アクセストークンの発行・検証（本部・コーチ・生徒のどの機能も同じものを使う）。
+    fn tokens(&self) -> Self::Tokens;
 }

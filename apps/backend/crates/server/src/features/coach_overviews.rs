@@ -18,7 +18,6 @@ use application::{
     },
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -40,6 +39,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             SchedulingCoachRecentCancelledBookingCountLookup::new(ports.bookings(), ports.clock()),
             MessagingCoachUnansweredMessageThreadCountLookup::new(ports.threads(), ports.clock()),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

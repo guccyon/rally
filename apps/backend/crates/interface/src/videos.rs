@@ -10,7 +10,7 @@ use application::{
         AiFeedbackGenerator, GetVideoReview, GetVideoReviewError, GetVideoReviewQuery,
         ReturnVideoReview, ReturnVideoReviewCommand, ReturnVideoReviewError, ReviewGate,
         SubmitVideo, SubmitVideoCommand, SubmitVideoError, VideoLessonMenuLookup, VideoRepository,
-        VideoStorage, video_id_uuid, video_review_id_uuid,
+        VideoStorage, VideoSubmissionGate, video_id_uuid, video_review_id_uuid,
     },
     catalog::lesson_menu_id_uuid,
     clock::Clock,
@@ -25,7 +25,7 @@ use axum::{
 };
 use domain::{
     DomainError,
-    async_lesson::{ReviewComment, Video},
+    async_lesson::{ReviewComment, Video, VideoNote},
     identity::Role,
 };
 use serde::{Deserialize, Serialize};
@@ -40,18 +40,15 @@ use crate::{
     message,
 };
 
-/// student-app の `SubmitVideoRequest.note` の `maxLength`（文字数）。
-const NOTE_MAX_CHARS: usize = 1000;
-
 /// `/videos` のハンドラーが使うユースケース。
-pub struct VideosState<V, M, S, F, G, A, P, C> {
-    pub submit_video: SubmitVideo<V, M, S, F, A, P, C>,
+pub struct VideosState<N, V, M, S, F, G, A, P, C> {
+    pub submit_video: SubmitVideo<N, V, M, S, F, A, P, C>,
     pub get_video_review: GetVideoReview<V>,
     pub return_video_review: ReturnVideoReview<V, G, A, P, C>,
 }
 
 /// ハンドラーが共有する [`VideosState`]（axum の `State` で受け取る）。
-type Shared<V, M, S, F, G, A, P, C> = State<Arc<VideosState<V, M, S, F, G, A, P, C>>>;
+type Shared<N, V, M, S, F, G, A, P, C> = State<Arc<VideosState<N, V, M, S, F, G, A, P, C>>>;
 
 /// student-app の `SubmitVideoRequest`。
 #[derive(Deserialize)]
@@ -134,14 +131,16 @@ pub(crate) fn ai_feedback_body(video: &Video) -> Result<Option<AiFeedbackBody>, 
 
 /// `POST /videos`。生徒だけが呼べる（役割は `require_role` の層が確かめる）。送る生徒はトークンのアカウント。
 ///
-/// `note`（コーチへの相談内容）は長さだけを確かめ、Gen1 では保存しない（AI の一次フィードバックの材料に渡すだけ）。
+/// `note`（コーチへの相談内容）は domain の [`VideoNote`] で確かめ（長すぎれば 422。空白だけなら書かなかったのと
+/// 同じ）、動画とともに保存する（送り先のコーチが admin-web の `listMyCoachVideos` で読む）。本文はログに書かない。
 /// `lesson_menu_id`（任意）が UUID でない・メニューがない・動画で選べないメニューなら 422。
-pub async fn submit_video<V, M, S, F, G, A, P, C>(
-    State(state): Shared<V, M, S, F, G, A, P, C>,
+pub async fn submit_video<N, V, M, S, F, G, A, P, C>(
+    State(state): Shared<N, V, M, S, F, G, A, P, C>,
     account: AuthenticatedAccount,
     request: Result<Json<SubmitVideoRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<VideoBody>), ApiError>
 where
+    N: VideoSubmissionGate,
     V: VideoRepository,
     M: VideoLessonMenuLookup,
     S: VideoStorage,
@@ -153,22 +152,14 @@ where
 {
     let Json(request) =
         request.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
-    if request
-        .note
-        .as_ref()
-        .is_some_and(|note| note.chars().count() > NOTE_MAX_CHARS)
-    {
-        return Err(ApiError::validation_failed(format!(
-            "note は {NOTE_MAX_CHARS} 文字まで"
-        )));
-    }
+    let note = request.note.map(VideoNote::new).transpose()?.flatten();
     let command = SubmitVideoCommand {
         student_id: account.account_id(),
         coach_id: account_id_uuid::parse(&request.coach_id)
             .map_err(|_| ApiError::validation_failed("coach_id が UUID でない"))?,
         sport: student_app_sport(&request.sport)?,
         content_type: video_content_type_from_contract(&request.content_type)?,
-        note: request.note,
+        note,
         lesson_menu_id: request
             .lesson_menu_id
             .as_deref()
@@ -185,6 +176,10 @@ where
         .await
         .map_err(|error| match error {
             SubmitVideoError::Invalid(error) => ApiError::from(error),
+            SubmitVideoError::NotEntitled => ApiError::forbidden_because(
+                "video_review_not_entitled",
+                "体験はすでに使っています。動画の添削は月額契約を始めると使えます",
+            ),
             SubmitVideoError::LessonMenuNotFound => {
                 ApiError::validation_failed(message::LESSON_MENU_NOT_FOUND)
             }
@@ -211,12 +206,13 @@ where
 
 /// `GET /videos/{video_id}/review`。動画の当事者（送った生徒・送り先のコーチ）が添削を読む。コーチがまだ返して
 /// いなければ `in_progress`（未返却）。
-pub async fn get_video_review<V, M, S, F, G, A, P, C>(
-    State(state): Shared<V, M, S, F, G, A, P, C>,
+pub async fn get_video_review<N, V, M, S, F, G, A, P, C>(
+    State(state): Shared<N, V, M, S, F, G, A, P, C>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
 ) -> Result<Json<VideoReviewBody>, ApiError>
 where
+    N: VideoSubmissionGate,
     V: VideoRepository,
     M: VideoLessonMenuLookup,
     S: VideoStorage,
@@ -248,13 +244,14 @@ where
 
 /// `POST /videos/{video_id}/review`（admin-web）。コーチだけが呼べ（役割は `require_role` の層が確かめる）、
 /// 返せるのは自分に送られた動画だけ。
-pub async fn return_video_review<V, M, S, F, G, A, P, C>(
-    State(state): Shared<V, M, S, F, G, A, P, C>,
+pub async fn return_video_review<N, V, M, S, F, G, A, P, C>(
+    State(state): Shared<N, V, M, S, F, G, A, P, C>,
     account: AuthenticatedAccount,
     Path(video_id): Path<String>,
     request: Result<Json<ReturnVideoReviewRequest>, JsonRejection>,
 ) -> Result<Json<VideoReviewBody>, ApiError>
 where
+    N: VideoSubmissionGate,
     V: VideoRepository,
     M: VideoLessonMenuLookup,
     S: VideoStorage,
@@ -322,13 +319,14 @@ fn review_body(video: &Video) -> Result<VideoReviewBody, ApiError> {
 ///
 /// `POST /videos`（動画の送付）は生徒だけ、`POST /videos/{video_id}/review`（admin-web の添削の返却）はコーチだけ。
 /// `GET /videos/{video_id}/review`（添削結果の取得）は役割で絞らず、動画の当事者かをユースケースが確かめる。
-pub fn videos_router<W, J, U, Y, Q, A, P, C, T>(
-    submit_video: SubmitVideo<W, J, U, Y, A, P, C>,
+pub fn videos_router<N, W, J, U, Y, Q, A, P, C, T>(
+    submit_video: SubmitVideo<N, W, J, U, Y, A, P, C>,
     get_video_review: GetVideoReview<W>,
     return_video_review: ReturnVideoReview<W, Q, A, P, C>,
     tokens: T,
 ) -> Router
 where
+    N: VideoSubmissionGate + 'static,
     W: VideoRepository + 'static,
     J: VideoLessonMenuLookup + 'static,
     U: VideoStorage + 'static,
@@ -343,13 +341,13 @@ where
     Router::new()
         .route(
             "/videos",
-            post(self::submit_video::<W, J, U, Y, Q, A, P, C>)
+            post(self::submit_video::<N, W, J, U, Y, Q, A, P, C>)
                 .route_layer(require_role(&[Role::Student])),
         )
         .route(
             "/videos/{video_id}/review",
-            get(self::get_video_review::<W, J, U, Y, Q, A, P, C>).merge(
-                post(self::return_video_review::<W, J, U, Y, Q, A, P, C>)
+            get(self::get_video_review::<N, W, J, U, Y, Q, A, P, C>).merge(
+                post(self::return_video_review::<N, W, J, U, Y, Q, A, P, C>)
                     .route_layer(require_role(&[Role::Coach])),
             ),
         )

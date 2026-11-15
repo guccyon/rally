@@ -623,6 +623,7 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
     // ユースケースを通すと、スロットの開始時刻の古い順で、生徒の表示名が添わる
     let list = application::scheduling::ListCoachBookings::new(
         bookings.clone(),
+        infra::PgLiveLessonSessionRepository::new(pool.clone()),
         application::profile::ProfileStudentDisplayNameLookup::new(
             infra::PgAccountRepository::new(pool.clone()),
         ),
@@ -864,6 +865,7 @@ async fn booking_keeps_the_lesson_menu_of_the_time_of_booking(pool: PgPool) {
     .unwrap();
     let of_coach = ListCoachBookings::new(
         bookings.clone(),
+        infra::PgLiveLessonSessionRepository::new(pool.clone()),
         application::profile::ProfileStudentDisplayNameLookup::new(PgAccountRepository::new(
             pool.clone(),
         )),
