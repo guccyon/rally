@@ -78,9 +78,15 @@ class FakeStudentApi implements StudentApi {
 
   /// `listMyBookings` の `trial_available`。サーバーと同じく、キャンセルされていない予約がなく、
   /// 受けたレッスン（[lessonCompletions]）もなければ true
+  /// [trialAvailableAnswer] を入れていればそれを返す
   bool get trialAvailable =>
-      myBookings.every((b) => b.booking.status == BookingStatus.cancelled) &&
-      lessonCompletions.isEmpty;
+      trialAvailableAnswer ??
+      (myBookings.every((b) => b.booking.status == BookingStatus.cancelled) &&
+          lessonCompletions.isEmpty);
+
+  /// 入れておくと、`listMyBookings` の `trial_available` は予約や受けたレッスンによらずこの値になる
+  /// （アプリが予約の件数などから数え直さず、サーバーの判定に従うことを確かめる）
+  bool? trialAvailableAnswer;
 
   /// true にすると、`listMyBookings` の応答に `trial_available` を載せない（古いサーバーの応答）
   bool omitTrialAvailable = false;

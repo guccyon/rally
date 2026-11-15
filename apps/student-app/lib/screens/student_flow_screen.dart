@@ -25,7 +25,7 @@ import 'video_review_screen.dart';
 import 'video_submit_screen.dart';
 
 /// 状態の段に応じて画面を出し分ける（画面遷移は state.step だけで決まる）。
-/// アプリやタブが前面に戻ったら、月額契約の欄を読み直す（[StudentFlowNotifier.refreshEntitlementOnResume]。
+/// アプリやタブが前面に戻ったら、月額契約の欄と「次にやること」を読み直す（[StudentFlowNotifier.refreshOnResume]。
 /// 別のタブや端末で契約したあとに「月額契約へ進む」を出したままにしない）。
 class StudentFlowScreen extends ConsumerStatefulWidget {
   const StudentFlowScreen({super.key});
@@ -42,8 +42,7 @@ class _StudentFlowScreenState extends ConsumerState<StudentFlowScreen> {
     super.initState();
     // Web 版では、タブを切り替えて戻ったとき（visibilitychange）にも呼ばれる
     _lifecycle = AppLifecycleListener(
-      onResume: () =>
-          ref.read(studentFlowProvider.notifier).refreshEntitlementOnResume(),
+      onResume: () => ref.read(studentFlowProvider.notifier).refreshOnResume(),
     );
   }
 

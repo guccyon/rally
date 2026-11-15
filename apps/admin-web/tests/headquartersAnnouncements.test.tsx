@@ -1889,3 +1889,41 @@ describe("画面への配置", () => {
     expect(replace).toHaveBeenCalledWith("/");
   });
 });
+
+describe("書きかけを破棄する前の確認", () => {
+  const CONFIRM = "保存していない変更があります。破棄して開きますか？";
+
+  test("入力が空のままなら確認なしですぐ開く", async () => {
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncementDrafts: draftListOf(DRAFTS) })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+
+    await user.click(within(draftItems()[1]!).getByRole("button", { name: "開いて直す" }));
+
+    expect(screen.queryByText(CONFIRM)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("本文")).toHaveValue("テニスの新しいコーチの紹介（書きかけ）");
+  });
+
+  test("書きかけがあるとき、「やめる」で入力はそのまま、「破棄して開く」で開く", async () => {
+    const user = userEvent.setup();
+    render(<Announcements api={apiOf({ listAnnouncementDrafts: draftListOf(DRAFTS) })} />);
+    await screen.findByRole("list", { name: "下書きの一覧" });
+    await user.type(screen.getByLabelText("題"), "書きかけ");
+
+    await user.click(within(draftItems()[1]!).getByRole("button", { name: "開いて直す" }));
+    expect(screen.getByText(CONFIRM)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "やめる" }));
+    expect(screen.queryByText(CONFIRM)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("題")).toHaveValue("書きかけ");
+
+    await user.click(within(draftItems()[1]!).getByRole("button", { name: "開いて直す" }));
+    await user.click(screen.getByRole("button", { name: "破棄して開く" }));
+    expect(screen.queryByText(CONFIRM)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("題")).toHaveValue("");
+    expect(screen.getByLabelText("本文")).toHaveValue("テニスの新しいコーチの紹介（書きかけ）");
+
+    await user.type(screen.getByLabelText("題"), "あ");
+    await user.click(screen.getByRole("button", { name: "新しく書く" }));
+    expect(screen.getByText(CONFIRM)).toBeInTheDocument();
+  });
+});

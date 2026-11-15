@@ -7,7 +7,6 @@ use application::{
     scheduling::{ListCoachAcceptanceChanges, ResumeCoach, SuspendCoach},
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -27,6 +26,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.coach_acceptances(),
             ProfileCoachIntroductionLookup::new(ports.accounts()),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

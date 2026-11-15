@@ -278,13 +278,13 @@ final screens = <Screen>[
   }),
   Screen('lesson-completion', 'レッスンの完了', _toCompletion),
   Screen('lesson-review', 'レッスンの評価', _toReview),
-  // 契約の画面は開くと受講権を読み直すので、プランを選ぶ画面は契約の前の生徒で撮る
+  // 月額契約の前の生徒（getMyEntitlement が 404）。プランを選ぶ画面
   Screen('subscription', '月額契約', (t) async {
     await _toReview(t);
     await tapText(t, '月額契約へ進む');
   }, api: () => _api(subscribed: false)),
-  // 別のタブなどで契約済みの生徒が開いたとき（今のプランと残りの回数。プランの欄は出さない。#1606）
-  Screen('subscription-active', '月額契約: 契約済みで開いた', (t) async {
+  // サーバーの受講権が月額の生徒（別のタブなどで契約済み）。プランの欄を出さず今の契約を出す（ADR 0010。#1620）
+  Screen('subscription-active', '月額契約: 契約済み', (t) async {
     await _toReview(t);
     await tapText(t, '月額契約へ進む');
   }),
@@ -296,16 +296,12 @@ final screens = <Screen>[
       await _register(t);
       await tapText(t, 'コーチを探す');
     }, width: width),
-    Screen(
-      'subscription-w${width.round()}',
-      '月額契約（幅 ${width.round()}）',
-      (t) async {
-        await _toReview(t);
-        await tapText(t, '月額契約へ進む');
-      },
-      width: width,
-      api: () => _api(subscribed: false),
-    ),
+    Screen('subscription-w${width.round()}', '月額契約（幅 ${width.round()}）', (
+      t,
+    ) async {
+      await _toReview(t);
+      await tapText(t, '月額契約へ進む');
+    }, width: width, api: () => _api(subscribed: false)),
   ],
   Screen('message-threads', 'チャット: スレッドの一覧', (t) async {
     await _register(t);
@@ -316,7 +312,8 @@ final screens = <Screen>[
     await _tapTooltip(t, 'チャット');
     await tapText(t, '担当コーチ');
   }),
-  // チャットで送れず（月額契約の前）「月額契約へ進む」から始めた後の完了の画面（「チャットへ戻る」を出す。#1565）
+  // チャットで送れず（月額契約の前）「月額契約へ進む」から始めた後の完了の画面（「チャットへ戻る」を出す。#1565）。
+  // 契約の前の生徒にしないと、契約の画面に「月額契約を始める」が出ずにたどれない（#1630）
   Screen(
     'subscription-from-chat',
     '月額契約: チャットから始めた後',
@@ -366,7 +363,7 @@ final screens = <Screen>[
 ];
 
 /// キャプチャ用の API のモック。既定の見本に、受講権とお知らせとお気に入りのコーチを足して画面を埋める。
-/// [subscribed] が false なら受講権を足さない（月額契約の前の生徒）
+/// [subscribed] を false にすると受講権を持たせない（月額契約の前。`getMyEntitlement` が 404）
 FakeStudentApi _api({
   Map<String, StudentApiException> failures = const {},
   List<MyBooking>? myBookings,

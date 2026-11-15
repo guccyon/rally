@@ -103,7 +103,7 @@ class SubscriptionNotifier extends Notifier<SubscriptionState> {
   }
 
   /// 受講権を読み直す（[loadEntitlement]）。プロフィールと契約の画面を開いたとき、アプリやタブが前面に戻ったとき
-  /// （[StudentFlowNotifier.refreshEntitlementOnResume]）に呼ぶ。読めなければ [SubscriptionState.entitlementFailed] を
+  /// （[StudentFlowNotifier.refreshOnResume]）に呼ぶ。読めなければ [SubscriptionState.entitlementFailed] を
   /// 立てるだけで投げない（ほかの欄はそのまま使え、失敗の文言も出さない）
   Future<void> refreshEntitlement() async {
     state = state.copyWith(entitlementFailed: false);

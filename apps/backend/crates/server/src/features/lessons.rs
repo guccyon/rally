@@ -3,7 +3,6 @@
 
 use application::lesson::RecordLessonCompletion;
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -17,6 +16,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.events(),
             ports.clock(),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

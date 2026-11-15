@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,8 +44,12 @@ abstract class SessionStore {
   /// [session] で置き換えて残す。残せなくても例外は投げない（開いている間はそのまま使える）
   void save(SavedSession session);
 
-  /// 残した登録の結果を消す（トークンが無効だったとき）
+  /// 残した登録の結果を消す（トークンが無効だったとき・ログアウト）
   void clear();
+
+  /// 同じ端末のほかの所（Web 版は同じブラウザーで開いたほかのタブ）が、残した登録の結果を変えた・消したときの知らせ。
+  /// 自分の [save] / [clear] では知らせない。中身は [read] で読み直す。ほかの所と分け合わない置き場所は何も知らせない
+  Stream<void> get changesElsewhere;
 }
 
 /// 開いている間だけ持つ [SessionStore]（テストと、端末の保管の置き場所が分からないとき）。同じものを渡し直せば開き直しを再現できる
@@ -67,6 +72,17 @@ class MemorySessionStore implements SessionStore {
 
   @override
   void clear() => _raw = null;
+
+  final _changesElsewhere = StreamController<void>.broadcast(sync: true);
+
+  @override
+  Stream<void> get changesElsewhere => _changesElsewhere.stream;
+
+  /// テストで、ほかのタブが残した登録の結果を [session] に置き換えた（null なら消した）ことを再現する
+  void replaceElsewhere(SavedSession? session) {
+    _raw = session?.encode();
+    _changesElsewhere.add(null);
+  }
 }
 
 /// 登録の結果を残す所。`main` が [openSessionStore] で開いたもので差し替える。

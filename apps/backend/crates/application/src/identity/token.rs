@@ -1,9 +1,9 @@
 //! アクセストークンの発行・検証のポート。
 //!
 //! トークンはアカウント ID と役割を載せた不透明な文字列で、クライアントは中身を読まない
-//! （`Authorization: Bearer <access_token>`。OpenAPI の `bearerAuth`）。Gen1 の実装は
-//! infra のモック（署名なし）で、本番では署名付きの実装に差し替える。パスワード・外部 IdP・
-//! 失効はこのポートの範囲外。
+//! （`Authorization: Bearer <access_token>`。OpenAPI の `bearerAuth`）。実装は infra の
+//! 署名付きのもの（本番・staging）と、署名なしのモック（ローカルの起動とテスト）で、server が
+//! 起動時に選ぶ（Issue #1593）。パスワード・外部 IdP・失効はこのポートの範囲外。
 
 use domain::identity::{AccountId, Role};
 

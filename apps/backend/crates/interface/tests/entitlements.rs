@@ -181,10 +181,16 @@ fn router(now: SystemTime) -> Router {
             clock,
         ),
         CancelBooking::new(
-            bookings,
+            bookings.clone(),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,
+        ),
+        application::scheduling::DescribeBooking::new(
+            bookings.clone(),
+            application::profile::ProfileCoachDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
         ),
         GetSlotSupply::new(
             InMemoryBookingRepository::new(InMemorySlotRepository::default()),

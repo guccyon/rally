@@ -1,4 +1,4 @@
-//! [`Ports`] の実装。集約ごとの保存先と、時計・行動トラッキング・通話基盤・境界間イベントの発行先をまとめて持つ。
+//! [`Ports`] の実装。集約ごとの保存先と、時計・行動トラッキング・通話基盤・境界間イベントの発行先・アクセストークンをまとめて持つ。
 
 use application::{
     analytics::AnalyticsSink,
@@ -7,7 +7,7 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     entitlement::EntitlementRepository,
-    identity::AccountRepository,
+    identity::{AccountRepository, TokenIssuer, TokenVerifier},
     lesson::LessonCompletionRepository,
     live_lesson::{LiveLessonSessionRepository, VideoCallProvider},
     matching::FavoriteCoachRepository,
@@ -27,17 +27,18 @@ use crate::{Repositories, ports::Ports};
 
 /// 保存先（[`Repositories`]）と、保存先のほかのポートの実装。
 #[allow(clippy::type_complexity)]
-pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D> {
+pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T> {
     pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
     pub(crate) clock: C,
     pub(crate) analytics: A,
     pub(crate) video_call: V,
     pub(crate) push: P,
     pub(crate) events: D,
+    pub(crate) tokens: T,
 }
 
-impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D> Ports
-    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D>
+impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T> Ports
+    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T>
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
@@ -60,6 +61,7 @@ where
     V: VideoCallProvider + Clone + 'static,
     P: PushSender + Clone + 'static,
     D: DomainEventPublisher + Clone + 'static,
+    T: TokenIssuer + TokenVerifier + Clone + 'static,
 {
     type Accounts = R;
     type Slots = S;
@@ -82,6 +84,7 @@ where
     type VideoCall = V;
     type Push = P;
     type Events = D;
+    type Tokens = T;
 
     fn accounts(&self) -> R {
         self.repositories.accounts.clone()
@@ -165,5 +168,9 @@ where
 
     fn events(&self) -> D {
         self.events.clone()
+    }
+
+    fn tokens(&self) -> T {
+        self.tokens.clone()
     }
 }

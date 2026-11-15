@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::{
     auth::{AuthenticatedAccount, TokenVerification, require_role},
-    bookings::{BookingBody, booking_body},
+    bookings::{BookingBody, student_app_booking_body},
     contract::date_time_to_contract,
     error::ApiError,
     slots::{StudentAppSlotBody, student_app_slot_body},
@@ -70,9 +70,14 @@ where
             .iter()
             .map(|(booking, slot)| {
                 let cancellation = list.cancellations.get(&booking.id());
+                let coach = list.coaches.get(&slot.coach_id());
                 Ok(MyBookingBody {
-                    booking: booking_body(booking)?,
-                    slot: student_app_slot_body(slot, list.coaches.get(&slot.coach_id()), None)?,
+                    booking: student_app_booking_body(
+                        booking,
+                        slot,
+                        coach.map(|coach| &coach.display_name),
+                    )?,
+                    slot: student_app_slot_body(slot, coach, None)?,
                     cancel_consumes_quota: cancellation.map(|preview| preview.consumes_quota()),
                     free_cancel_until: cancellation
                         .and_then(|preview| preview.free_cancel_until())

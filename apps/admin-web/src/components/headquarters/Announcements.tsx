@@ -183,6 +183,13 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   // 語を続けて変えたときに、前の語の遅れて返った結果で上書きしないための番号。
   const latestDraftRequest = useRef(0);
   const [openedId, setOpenedId] = useState<string | null>(null);
+  // フォームの今の入力と、開いている下書き（なければ空）の中身。違えば書きかけがある。
+  const formInput = useRef<AnnouncementInput>(EMPTY_INPUT);
+  const savedInput = useRef<AnnouncementInput>(EMPTY_INPUT);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const trackInput = useCallback((input: AnnouncementInput) => {
+    formInput.current = input;
+  }, []);
   const [seed, setSeed] = useState<FormSeed>({ key: 0, initial: EMPTY_INPUT, reviewOnOpen: false });
   // 期間の欄の値（draftPeriod）と、今の一覧を読んだ期間（appliedPeriod。取り下げの後の取り直しにも使う）。
   const [draftPeriod, setDraftPeriod] = useState<Period>(() => recentPeriod(Date.now()));
@@ -440,13 +447,29 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     setSeed((current) => ({ key: current.key + 1, initial, reviewOnOpen }));
   }
 
+  /** 書きかけ（開いている下書きや空の入力と違う入力）があれば、ページの中で確かめてから `action` を実行する。 */
+  function guardUnsaved(action: () => void) {
+    const a = formInput.current;
+    const b = savedInput.current;
+    if (a.sport === b.sport && a.title === b.title && a.body === b.body) {
+      setPendingAction(null);
+      action();
+      return;
+    }
+    setPendingAction(() => action);
+  }
+
   function open(draft: AnnouncementDraft, reviewOnOpen: boolean) {
+    setPendingAction(null);
+    savedInput.current = inputOfDraft(draft);
     setDraftResult(null);
     setOpenedId(draft.announcement_draft_id);
     reseed(inputOfDraft(draft), reviewOnOpen);
   }
 
   function startNew() {
+    setPendingAction(null);
+    savedInput.current = EMPTY_INPUT;
     setOpenedId(null);
     reseed(EMPTY_INPUT, false);
   }
@@ -458,12 +481,14 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
       const created = await api.createAnnouncementDraft(request);
       if (created.ok) {
         setOpenedId(created.data.announcement_draft_id);
+        savedInput.current = inputOfDraft(created.data);
         putFirst(created.data);
       }
       return created;
     }
     const updated = await api.updateAnnouncementDraft(openedId, request);
     if (updated.ok) {
+      savedInput.current = inputOfDraft(updated.data);
       putFirst(updated.data);
       return updated;
     }
@@ -476,7 +501,11 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
   }
 
   async function send(request: Schemas["SendAnnouncementRequest"]): Promise<Result<Announcement>> {
-    if (openedId === null) return api.sendAnnouncement(request);
+    if (openedId === null) {
+      const sentNew = await api.sendAnnouncement(request);
+      if (sentNew.ok) savedInput.current = EMPTY_INPUT;
+      return sentNew;
+    }
     // 確かめた中身で送るように、先に下書きを直す
     const updated = await api.updateAnnouncementDraft(openedId, toAnnouncementDraftRequest(request));
     if (!updated.ok) {
@@ -487,9 +516,11 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
     }
     // 絞っているときは、送り終わってから一覧を直す（送る前に読み直すと、送った下書きが遅れて一覧に戻りうる）
     const filtered = isDraftFiltered(appliedDraftFilter.current);
+    savedInput.current = inputOfDraft(updated.data);
     if (!filtered) putFirst(updated.data);
     const sent = await api.sendAnnouncementDraft(openedId);
     if (sent.ok) {
+      savedInput.current = EMPTY_INPUT;
       removeDraft(openedId);
       setOpenedId(null);
     } else if (filtered) {
@@ -533,13 +564,27 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
               下書き{opened ? `「${draftTitleOf(opened)}」` : ""}
               を開いています。送ると下書きは消え、送ったお知らせに移ります。
             </span>
-            <Button variant="secondary" onClick={startNew}>
+            <Button variant="secondary" onClick={() => guardUnsaved(startNew)}>
               新しく書く
             </Button>
           </div>
         )}
+        {pendingAction && (
+          <div role="group" aria-label="書きかけを破棄する前の確認" className="mb-3 space-y-2 rounded-md border p-2">
+            <p className="text-sm">保存していない変更があります。破棄して開きますか？</p>
+            <div className="flex gap-2">
+              <Button variant="danger" onClick={pendingAction}>
+                破棄して開く
+              </Button>
+              <Button variant="secondary" onClick={() => setPendingAction(null)}>
+                やめる
+              </Button>
+            </div>
+          </div>
+        )}
         <AnnouncementForm
           key={seed.key}
+          onInputChange={trackInput}
           initial={seed.initial}
           reviewOnOpen={seed.reviewOnOpen}
           send={send}
@@ -626,8 +671,8 @@ export function Announcements({ api }: { api: AnnouncementsApi }) {
           <AnnouncementDraftList
             drafts={drafts.drafts}
             openedId={openedId}
-            onOpen={(draft) => open(draft, false)}
-            onSend={(draft) => open(draft, true)}
+            onOpen={(draft) => guardUnsaved(() => open(draft, false))}
+            onSend={(draft) => guardUnsaved(() => open(draft, true))}
             onDelete={deleteDraft}
           />
         )}

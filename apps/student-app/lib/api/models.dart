@@ -214,7 +214,8 @@ enum NotificationKind {
   bookingCancelledByHeadquarters('booking_cancelled_by_headquarters'),
   videoReviewReturned('video_review_returned'),
   messageReceived('message_received'),
-  announcement('announcement');
+  announcement('announcement'),
+  lessonReminder('lesson_reminder');
 
   const NotificationKind(this.wire);
   final String wire;
@@ -249,6 +250,7 @@ enum ErrorCode {
   loginCodeInvalid('login_code_invalid'),
   loginCodeExpired('login_code_expired'),
   tooManyRequests('too_many_requests'),
+  videoReviewNotEntitled('video_review_not_entitled'),
 
   /// 契約にない（このアプリの版が知らない）値。契約の enum には含まれない。
   unknown('');
@@ -1832,6 +1834,7 @@ class NotificationSettings {
     required this.videoReviewReturned,
     required this.messageReceived,
     required this.announcement,
+    this.lessonReminder = true,
   });
 
   final String studentId;
@@ -1851,6 +1854,9 @@ class NotificationSettings {
   /// 本部からのお知らせの通知を受け取るか
   final bool announcement;
 
+  /// レッスンの前日と開始 1 時間前のリマインドを受け取るか（false ならお知らせも作られない。契約で任意の項目なので、ないときは true）
+  final bool lessonReminder;
+
   /// [kind] の通知を受け取るか
   bool receives(NotificationKind kind) => switch (kind) {
     NotificationKind.bookingConfirmed => bookingConfirmed,
@@ -1859,6 +1865,7 @@ class NotificationSettings {
     NotificationKind.videoReviewReturned => videoReviewReturned,
     NotificationKind.messageReceived => messageReceived,
     NotificationKind.announcement => announcement,
+    NotificationKind.lessonReminder => lessonReminder,
   };
 
   /// [kind] だけを [receives] に変えた設定
@@ -1881,6 +1888,9 @@ class NotificationSettings {
         announcement: kind == NotificationKind.announcement
             ? receives
             : announcement,
+        lessonReminder: kind == NotificationKind.lessonReminder
+            ? receives
+            : lessonReminder,
       );
 
   factory NotificationSettings.fromJson(Map<String, dynamic> json) =>
@@ -1892,6 +1902,7 @@ class NotificationSettings {
         videoReviewReturned: json['video_review_returned'] as bool,
         messageReceived: json['message_received'] as bool,
         announcement: json['announcement'] as bool,
+        lessonReminder: json['lesson_reminder'] as bool? ?? true,
       );
 }
 
@@ -1903,6 +1914,7 @@ class UpdateNotificationSettingsRequest {
     this.videoReviewReturned,
     this.messageReceived,
     this.announcement,
+    this.lessonReminder,
   });
 
   /// [kind] 1 つだけを [receives] に変える
@@ -1926,6 +1938,9 @@ class UpdateNotificationSettingsRequest {
     NotificationKind.announcement => UpdateNotificationSettingsRequest(
       announcement: receives,
     ),
+    NotificationKind.lessonReminder => UpdateNotificationSettingsRequest(
+      lessonReminder: receives,
+    ),
   };
 
   final bool? bookingConfirmed;
@@ -1933,6 +1948,7 @@ class UpdateNotificationSettingsRequest {
   final bool? videoReviewReturned;
   final bool? messageReceived;
   final bool? announcement;
+  final bool? lessonReminder;
 
   Map<String, dynamic> toJson() => {
     'booking_confirmed': ?bookingConfirmed,
@@ -1940,6 +1956,7 @@ class UpdateNotificationSettingsRequest {
     'video_review_returned': ?videoReviewReturned,
     'message_received': ?messageReceived,
     'announcement': ?announcement,
+    'lesson_reminder': ?lessonReminder,
   };
 }
 
@@ -1951,6 +1968,7 @@ class ApiNotification {
     required this.body,
     required this.createdAt,
     required this.isRead,
+    this.bookingId,
   });
 
   final String notificationId;
@@ -1967,6 +1985,9 @@ class ApiNotification {
   /// 既読か（`markMyNotificationsRead` で既読にする）
   final bool isRead;
 
+  /// 結び付く予約（レッスンのリマインドに載る）。予約に結び付かないお知らせは null
+  final String? bookingId;
+
   factory ApiNotification.fromJson(Map<String, dynamic> json) =>
       ApiNotification(
         notificationId: json['notification_id'] as String,
@@ -1974,6 +1995,7 @@ class ApiNotification {
         body: json['body'] as String,
         createdAt: _dateTime(json['created_at']),
         isRead: json['is_read'] as bool,
+        bookingId: json['booking_id'] as String?,
       );
 }
 

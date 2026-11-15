@@ -1,7 +1,8 @@
-//! インフラ層。application のポートを Postgres とモックの外部連携（トークン・境界間イベント・通話基盤・動画の保存先・AI の一次フィードバック・プッシュ通知・行動トラッキング）で実装する。
+//! インフラ層。application のポートを Postgres とモックの外部連携（トークン（モックと署名付き）・境界間イベント・通話基盤・動画の保存先・AI の一次フィードバック・プッシュ通知・行動トラッキング）で実装する。
 //!
 //! 依存してよいのは domain と application（docs/adr/0003-backend-layers.md）。
 
+mod access_token_backend;
 mod analytics_common_attributes;
 mod analytics_destination;
 pub mod analytics_event_payload;
@@ -10,6 +11,7 @@ pub mod domain_event_payload;
 pub mod entitlement_values;
 pub mod identity_values;
 mod in_memory_domain_event_bus;
+mod invalid_signing_key;
 mod logging_domain_event_publisher;
 pub mod messaging_values;
 mod mock_ai_feedback_generator;
@@ -39,12 +41,15 @@ mod pg_slot_repository;
 mod pg_support;
 mod pg_video_repository;
 pub mod scheduling_values;
+mod signed_token_service;
 mod unknown_video_call_provider;
 mod video_call_backend;
 
+pub use access_token_backend::AccessTokenBackend;
 pub use analytics_common_attributes::AnalyticsCommonAttributes;
 pub use analytics_destination::AnalyticsDestination;
 pub use in_memory_domain_event_bus::InMemoryDomainEventBus;
+pub use invalid_signing_key::InvalidSigningKey;
 pub use logging_domain_event_publisher::LoggingDomainEventPublisher;
 pub use mock_ai_feedback_generator::MockAiFeedbackGenerator;
 pub use mock_alt_video_call_provider::MockAltVideoCallProvider;
@@ -69,6 +74,7 @@ pub use pg_notification_repository::PgNotificationRepository;
 pub use pg_notification_settings_repository::PgNotificationSettingsRepository;
 pub use pg_slot_repository::PgSlotRepository;
 pub use pg_video_repository::PgVideoRepository;
+pub use signed_token_service::SignedTokenService;
 pub use unknown_video_call_provider::UnknownVideoCallProvider;
 pub use video_call_backend::VideoCallBackend;
 

@@ -119,6 +119,7 @@ mod tests {
     };
 
     use domain::{
+        async_lesson::VideoId,
         catalog::Sport,
         entitlement::{
             Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
@@ -423,6 +424,25 @@ mod tests {
         assert!(
             !trial_available(bookings, [completion(1, STUDENT, 2)]).await,
             "受け終えた体験予約をキャンセルしても使用済み"
+        );
+    }
+
+    #[tokio::test]
+    async fn trial_is_not_available_with_only_an_async_lesson_completion() {
+        let bookings = InMemoryBookingRepository::new(InMemorySlotRepository::with_slots([slot(
+            1, COACH, 10,
+        )]));
+        let reviewed = LessonCompletion::restore(
+            LessonCompletionId::from_u128(1),
+            STUDENT,
+            COACH,
+            LessonSource::Async(VideoId::from_u128(1)),
+            at(2),
+            true,
+        );
+        assert!(
+            !trial_available(bookings, [reviewed]).await,
+            "予約がなくても、動画の添削を受け終えていれば使用済み"
         );
     }
 

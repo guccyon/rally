@@ -447,7 +447,15 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   final StudentFlowState _initial;
 
   @override
-  StudentFlowState build() => _initial;
+  StudentFlowState build() {
+    // 同じブラウザーのほかのタブでログアウトした・別の生徒が登録したら、このタブも前の生徒の状態を捨てる（#1669）
+    final changes = ref
+        .read(sessionStoreProvider)
+        .changesElsewhere
+        .listen((_) => _followSessionElsewhere());
+    ref.onDispose(changes.cancel);
+    return _initial;
+  }
 
   StudentApi get _api => ref.read(studentApiProvider);
 
@@ -523,11 +531,19 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームの欄を読み直す
   Future<void> refreshHome() => run(_loadHome);
 
-  /// アプリやタブが前面に戻ったときに、月額契約の欄を受講権（`getMyEntitlement`）で読み直す（別のタブや端末で契約したかもしれない。ADR 0010）。
-  /// busy にせず、失敗の文言も出さない。ホームでは、読めなければ今月のビデオ通話の欄にだけ旨を出し（[StudentFlowState.homeFailures]）、
+  /// アプリやタブが前面に戻ったときに、月額契約への入口を出す元を読み直す（別のタブや端末で契約したかもしれない。ADR 0010）。
+  /// 受講権（`getMyEntitlement`）と「次にやること」（[NextActionsNotifier.load]。「月額契約へ進む」も出す）を並べて読む。
+  /// busy にせず、失敗の文言も出さない。ホームでは、受講権を読めなければ今月のビデオ通話の欄にだけ旨を出し（[StudentFlowState.homeFailures]）、
   /// 読めたら下ろす。ほかの段では [SubscriptionNotifier.refreshEntitlement]。登録の前は何もしない
-  Future<void> refreshEntitlementOnResume() async {
+  Future<void> refreshOnResume() async {
     if (state.student == null) return;
+    await Future.wait([
+      _refreshEntitlementOnResume(),
+      ref.read(nextActionsProvider.notifier).load(),
+    ]);
+  }
+
+  Future<void> _refreshEntitlementOnResume() async {
     final subscription = ref.read(subscriptionProvider.notifier);
     if (state.step != FlowStep.home) return subscription.refreshEntitlement();
     var failed = false;
@@ -756,7 +772,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     }
   }
 
-  /// `createBooking`。体験予約をまだ使っていなければ体験予約（[StudentFlowState.canBookTrial]）、使っていれば通常の予約。
+  /// `createBooking`。サーバーの判定で体験予約できれば体験予約（[StudentFlowState.canBookTrial]）、できなければ通常の予約。
   /// 作成直後は pending なので確定待ちへ。409 `trial_already_used`（読んだ予約が古かった）なら、失敗の文言を出したうえで
   /// 自分の予約を読み直し、ボタンを通常の予約に切り替える
   /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは何もしない
@@ -1104,6 +1120,24 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// サーバーには何も送らない（トークンを失効させる API はない）。次の生徒のホームはサーバーから読み直す（ADR 0010）
   void logout() {
     ref.read(sessionStoreProvider).clear();
+    _discardSession();
+  }
+
+  /// ほかのタブ（[SessionStore.changesElsewhere]）が残した登録の結果を変えた・消したとき。このタブの生徒のトークンが
+  /// 残っていなければ（ログアウトした・次の人が登録した）、残したものには触らずに（次の人のものなので消さない）前の生徒の状態を捨てて
+  /// 登録の画面にする。トークンも捨てるので、このタブから前の生徒として送れない。同じトークンのまま（表示名を変えたなど）なら何もしない。
+  /// 登録の画面のタブはそのまま（次の人のホームに切り替えない）
+  void _followSessionElsewhere() {
+    final accessToken = state.accessToken;
+    if (accessToken == null) return;
+    if (ref.read(sessionStoreProvider).read()?.accessToken == accessToken) {
+      return;
+    }
+    _discardSession();
+  }
+
+  /// 前の生徒の状態（トークン・生徒・予約・チャット・契約・お知らせなど）を捨てて登録の画面にする
+  void _discardSession() {
     ref
       ..invalidate(chatProvider)
       ..invalidate(subscriptionProvider)
@@ -1193,7 +1227,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     );
   });
 
-  /// 読んだら、応答の Date で時計のずれを合わせ直す（予約の確定と入室前チェックの時刻の判断に使う）
+  /// 読んだら、応答の Date で時計のずれを合わせ直し（予約の確定と入室前チェックの時刻の判断に使う）、
+  /// 体験予約できるかをサーバーの判定 `trial_available` で置き換える（載っていなければ false）
   Future<void> _loadMyBookings() async {
     final list = await _api.listMyBookings();
     ref.read(serverClockProvider.notifier).adjust(list.clockOffset);

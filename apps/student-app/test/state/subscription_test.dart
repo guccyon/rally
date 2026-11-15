@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
 import 'package:rally_student_app/api/student_api.dart';
+import 'package:rally_student_app/state/next_actions.dart';
 import 'package:rally_student_app/state/student_flow.dart';
 import 'package:rally_student_app/state/subscription.dart';
 
@@ -243,7 +244,7 @@ void main() {
   });
 
   test(
-    '前面に戻ったとき、ホームでは受講権を読み直し、読めなければ今月のビデオ通話の欄にだけ旨を出し、読めたら下ろす（#1606）',
+    '前面に戻ったとき、ホームでは受講権と次にやることを読み直し、読めなければ今月のビデオ通話の欄にだけ旨を出し、読めたら下ろす（#1606）',
     () async {
       final api = FakeStudentApi(
         failures: {'getMyEntitlement': Fixtures.unreachable},
@@ -258,9 +259,9 @@ void main() {
       );
       final flow = container.read(studentFlowProvider.notifier);
 
-      await flow.refreshEntitlementOnResume();
+      await flow.refreshOnResume();
 
-      expect(api.calls, ['getMyEntitlement']);
+      expect(api.calls, ['getMyEntitlement', 'getMyNextActions']);
       expect(container.read(studentFlowProvider).homeFailures, {
         HomeSection.threads,
         HomeSection.entitlement,
@@ -270,7 +271,7 @@ void main() {
 
       api.failures.remove('getMyEntitlement');
       api.entitlement = Fixtures.subscriptionStarted.entitlement;
-      await flow.refreshEntitlementOnResume();
+      await flow.refreshOnResume();
 
       expect(container.read(studentFlowProvider).homeFailures, {
         HomeSection.threads,
@@ -278,6 +279,7 @@ void main() {
       final state = container.read(subscriptionProvider);
       expect(state.entitlement, Fixtures.subscriptionStarted.entitlement);
       expect(state.hasActiveSubscription, isTrue);
+      expect(container.read(nextActionsProvider).actions, isEmpty);
     },
   );
 
@@ -288,9 +290,7 @@ void main() {
       flow: StudentFlowState(step: FlowStep.register),
     );
 
-    await container
-        .read(studentFlowProvider.notifier)
-        .refreshEntitlementOnResume();
+    await container.read(studentFlowProvider.notifier).refreshOnResume();
 
     expect(api.calls, isEmpty);
   });
