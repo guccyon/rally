@@ -8,7 +8,6 @@ use application::{
     scheduling::SchedulingBookingLookup,
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -30,6 +29,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
                 ports.videos(),
             ),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

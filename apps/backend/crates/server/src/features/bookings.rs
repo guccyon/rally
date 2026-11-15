@@ -9,7 +9,6 @@ use application::{
     scheduling::{CancelBooking, ConfirmBooking, CreateBooking, DescribeBooking},
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -39,6 +38,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.bookings(),
             ProfileCoachDisplayNameLookup::new(ports.accounts()),
         ),
-        MockTokenService,
+        ports.tokens(),
     )
 }

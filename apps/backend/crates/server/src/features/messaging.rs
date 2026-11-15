@@ -6,7 +6,6 @@ use application::{
     messaging::{ListMessageThreads, ListMessages, MarkMessageThreadRead, SendMessage},
 };
 use axum::Router;
-use infra::MockTokenService;
 
 use crate::ports::Ports;
 
@@ -22,6 +21,6 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
             ports.clock(),
         ),
         MarkMessageThreadRead::new(ports.threads(), ports.clock()),
-        MockTokenService,
+        ports.tokens(),
     )
 }
