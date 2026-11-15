@@ -16,11 +16,13 @@ pub trait NotificationRepository: Send + Sync {
     /// 新しいお知らせの ID。
     fn next_id(&self) -> NotificationId;
 
-    /// お知らせ `notification` を残す。同じプッシュ通知のお知らせがすでにあれば何もしない（障害にもしない）。
+    /// お知らせ `notification` を残し、新しく残したかを返す。同じプッシュ通知のお知らせがすでにあれば何もせず `false`
+    /// （障害にもしない）。レッスンのリマインドは (予約, 時点, 宛先) が同じなら同じプッシュ通知なので、定期の処理が同じ窓で
+    /// 何度残そうとしても 1 件（[`super::SendLessonReminders`] は `true` のときだけプッシュ通知を送る）。
     fn insert(
         &self,
         notification: Notification,
-    ) -> impl Future<Output = Result<(), Unavailable>> + Send;
+    ) -> impl Future<Output = Result<bool, Unavailable>> + Send;
 
     /// `recipient` が受け取るお知らせ。作った時刻の新しい順（同じ時刻は後に残したものが先）。
     fn find_by_recipient(

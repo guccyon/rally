@@ -1,9 +1,10 @@
 //! notification の値と、DB に保存する文字列の対応表。
 //!
-//! `notification.notification_settings.kind` と `notification.notifications.kind`（CHECK 制約の値）はこの表だけを通す。
+//! `notification.notification_settings.kind` と `notification.notifications.kind`・`lesson_reminder_timing`（CHECK 制約の値）は
+//! この表だけを通す。
 //! CHECK との一致は `tests/it/schema.rs` が確かめる。
 
-use domain::notification::{NotificationKind, PushNotification};
+use domain::notification::{LessonReminderTiming, NotificationKind, PushNotification};
 
 /// `notification.notification_settings.kind` の値。
 pub const fn notification_kind_value(kind: NotificationKind) -> &'static str {
@@ -14,6 +15,7 @@ pub const fn notification_kind_value(kind: NotificationKind) -> &'static str {
         NotificationKind::MessageReceived => "message_received",
         NotificationKind::Announcement => "announcement",
         NotificationKind::BookingCancelledByHeadquarters => "booking_cancelled_by_headquarters",
+        NotificationKind::LessonReminder => "lesson_reminder",
     }
 }
 
@@ -31,9 +33,11 @@ pub const VIDEO_REVIEW_RETURNED: &str = "video_review_returned";
 pub const MESSAGE_RECEIVED: &str = "message_received";
 pub const ANNOUNCEMENT: &str = "announcement";
 pub const BOOKING_CANCELLED_BY_HEADQUARTERS: &str = "booking_cancelled_by_headquarters";
+/// 生徒へもコーチへも同じ値（どちらへかは `recipient_id` で分かる）
+pub const LESSON_REMINDER: &str = "lesson_reminder";
 
 /// `notification.notifications.kind` のすべての値（CHECK 制約の値の順）。
-pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 7] = [
+pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 8] = [
     BOOKING_CONFIRMED,
     BOOKING_RECEIVED,
     VIDEO_REVIEW_REQUESTED,
@@ -41,6 +45,7 @@ pub const PUSH_NOTIFICATION_KIND_VALUES: [&str; 7] = [
     MESSAGE_RECEIVED,
     ANNOUNCEMENT,
     BOOKING_CANCELLED_BY_HEADQUARTERS,
+    LESSON_REMINDER,
 ];
 
 /// `notification.notifications.kind` の値（プッシュ通知の変種ごと）。
@@ -55,7 +60,24 @@ pub const fn push_notification_kind_value(notification: &PushNotification) -> &'
         PushNotification::VideoReviewReturned { .. } => VIDEO_REVIEW_RETURNED,
         PushNotification::MessageReceived { .. } => MESSAGE_RECEIVED,
         PushNotification::Announcement { .. } => ANNOUNCEMENT,
+        PushNotification::LessonReminder { .. } | PushNotification::CoachLessonReminder { .. } => {
+            LESSON_REMINDER
+        }
     }
+}
+
+/// `notification.notifications.lesson_reminder_timing` の値。
+pub const fn lesson_reminder_timing_value(timing: LessonReminderTiming) -> &'static str {
+    match timing {
+        LessonReminderTiming::DayBefore => "day_before",
+        LessonReminderTiming::HourBefore => "hour_before",
+    }
+}
+
+pub fn lesson_reminder_timing_from_value(value: &str) -> Option<LessonReminderTiming> {
+    LessonReminderTiming::ALL
+        .into_iter()
+        .find(|timing| lesson_reminder_timing_value(*timing) == value)
 }
 
 #[cfg(test)]
@@ -71,5 +93,16 @@ mod tests {
             );
         }
         assert_eq!(notification_kind_from_value("booking_cancelled"), None);
+    }
+
+    #[test]
+    fn round_trips_every_lesson_reminder_timing() {
+        for timing in LessonReminderTiming::ALL {
+            assert_eq!(
+                lesson_reminder_timing_from_value(lesson_reminder_timing_value(timing)),
+                Some(timing)
+            );
+        }
+        assert_eq!(lesson_reminder_timing_from_value("week_before"), None);
     }
 }

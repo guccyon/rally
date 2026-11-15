@@ -5,7 +5,8 @@
 //! お知らせの種類（domain の `NotificationKind`）と契約の `NotificationKind` の値の対応と、プッシュ通知の中身から
 //! 本文（利用者に見せる文言）を決める対応はこのファイルだけに置く。本部からのお知らせの本文は、送った記録の題と本文を
 //! 改行でつないだもの。本部による予約のキャンセル（コーチのお休み）の本文は [`crate::coach_leave_text`] が決める（種類は
-//! `booking_cancelled_by_headquarters`）。
+//! `booking_cancelled_by_headquarters`）。レッスンのリマインド（`lesson_reminder`）は、時点（前日・1 時間前）と受け取る側で
+//! 本文を決め、結び付く予約を `booking_id` に載せる（それ以外の種類には今は載せない）。
 
 use std::sync::Arc;
 
@@ -16,6 +17,7 @@ use application::{
         AnnouncementRepository, CoachLeaveNoticeLookup, ListMyNotifications,
         MarkMyNotificationsRead, MyNotification, NotificationRepository, notification_id_uuid,
     },
+    scheduling::booking_id_uuid,
 };
 use axum::{
     Json, Router,
@@ -25,7 +27,7 @@ use axum::{
 use domain::{
     identity::Role,
     messaging::MessageSender,
-    notification::{Announcement, NotificationKind, PushNotification},
+    notification::{Announcement, LessonReminderTiming, NotificationKind, PushNotification},
 };
 use serde::Serialize;
 
@@ -56,6 +58,9 @@ pub struct NotificationBody {
     body: String,
     created_at: String,
     is_read: bool,
+    /// お知らせが結び付く予約。レッスンのリマインドだけが持つ
+    #[serde(skip_serializing_if = "Option::is_none")]
+    booking_id: Option<String>,
 }
 
 /// `GET /notifications/me`。生徒とコーチが呼べる（役割は `require_role` の層が確かめる）。照会するのはトークンの
@@ -131,6 +136,10 @@ fn notification_body(mine: &MyNotification) -> Result<NotificationBody, ApiError
         body,
         created_at: date_time_to_contract(notification.created_at())?,
         is_read: notification.is_read(),
+        booking_id: notification
+            .push()
+            .lesson_reminder()
+            .map(|(booking_id, _)| booking_id_uuid::format(booking_id)),
     })
 }
 
@@ -145,6 +154,7 @@ const fn notification_kind_to_contract(kind: NotificationKind) -> &'static str {
         NotificationKind::VideoReviewReturned => "video_review_returned",
         NotificationKind::MessageReceived => "message_received",
         NotificationKind::Announcement => "announcement",
+        NotificationKind::LessonReminder => "lesson_reminder",
     }
 }
 
@@ -164,6 +174,22 @@ const fn notification_text(push: &PushNotification) -> Option<&'static str> {
             sender: MessageSender::Student,
             ..
         } => "生徒からメッセージが届きました",
+        PushNotification::LessonReminder {
+            timing: LessonReminderTiming::DayBefore,
+            ..
+        } => "予約したレッスンが近づいています",
+        PushNotification::LessonReminder {
+            timing: LessonReminderTiming::HourBefore,
+            ..
+        } => "予約したレッスンが 1 時間以内に始まります",
+        PushNotification::CoachLessonReminder {
+            timing: LessonReminderTiming::DayBefore,
+            ..
+        } => "担当するレッスンが近づいています",
+        PushNotification::CoachLessonReminder {
+            timing: LessonReminderTiming::HourBefore,
+            ..
+        } => "担当するレッスンが 1 時間以内に始まります",
         PushNotification::Announcement { .. }
         | PushNotification::BookingCancelledByHeadquarters { .. } => return None,
     })

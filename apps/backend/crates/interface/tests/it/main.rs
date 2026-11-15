@@ -23,6 +23,7 @@ mod incomplete_coach_profiles;
 mod internal_error;
 mod lesson_menu_publications;
 mod lesson_menus;
+mod lesson_reminders;
 mod lesson_stats;
 mod lessons;
 mod live_lesson_sessions;
