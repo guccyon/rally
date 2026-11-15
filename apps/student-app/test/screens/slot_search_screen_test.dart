@@ -240,6 +240,9 @@ void main() {
       final api = FakeStudentApi(
         myBookings: const [],
         lessonCompletions: const [],
+        failures: {
+          'listMyBookings': const StudentApiException(statusCode: 503),
+        },
       );
       final container = await pumpScreen(
         tester,
@@ -252,8 +255,9 @@ void main() {
         ),
       );
 
-      // スポーツで絞るだけでは自分の予約を読まない
+      // 自分の予約を読めなければ、決めずに予約のボタンを押せないままにする
       await tapText(tester, 'テニス');
+      expect(api.calls, contains('listMyBookings'));
       expect(container.read(studentFlowProvider).canBookTrial, isNull);
       final button = find.widgetWithText(FilledButton, '予約する');
       expect(button, findsOneWidget);
@@ -262,12 +266,45 @@ void main() {
       await tester.pumpAndSettle();
       expect(api.calls, isNot(contains('createBooking')));
 
-      await container.read(studentFlowProvider.notifier).goToSlotSearch();
+      // スポーツで絞り直すと、まだ読めていない自分の予約を読んで trial_available で決める
+      api.failures.clear();
+      await container
+          .read(studentFlowProvider.notifier)
+          .searchSlots(Sport.tennis);
       await tester.pumpAndSettle();
+      expect(container.read(studentFlowProvider).canBookTrial, isTrue);
       await tapText(tester, '体験予約する');
 
       final request = api.requests.last as CreateBookingRequest;
       expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': true});
+    });
+
+    testWidgets('予約の判定をまだ読めていないまま予約するときは、先に自分の予約を読んでから trial_available で決める', (
+      tester,
+    ) async {
+      final api = FakeStudentApi(
+        myBookings: const [],
+        lessonCompletions: const [],
+      )..trialAvailableAnswer = false;
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: StudentFlowState(
+          step: FlowStep.slotSearch,
+          accessToken: Fixtures.registered.accessToken,
+          student: Fixtures.student,
+        ),
+      );
+
+      await container
+          .read(studentFlowProvider.notifier)
+          .bookSlot(Fixtures.slot);
+      await tester.pumpAndSettle();
+
+      expect(api.calls, ['listMyBookings', 'createBooking']);
+      final request = api.requests.last as CreateBookingRequest;
+      expect(request.toJson(), {'slot_id': Fixtures.slotId, 'is_trial': false});
     });
 
     testWidgets('体験予約が 409 trial_already_used なら文言を出し、予約を読み直して「予約する」に切り替える', (

@@ -369,6 +369,69 @@ void main() {
     expect(find.textContaining(RegExp(r'^自分 ・ .* ・ 未読$')), findsOneWidget);
   });
 
+  group('添削の依頼が 403 video_review_not_entitled なら月額契約への入口を出す', () {
+    FakeStudentApi notEntitledApi() => FakeStudentApi(
+      failures: {
+        'submitVideo': const StudentApiException(
+          statusCode: 403,
+          error: ApiError(
+            code: ErrorCode.videoReviewNotEntitled,
+            message: 'not entitled',
+          ),
+        ),
+      },
+    );
+
+    Future<void> requestReview(WidgetTester tester) async {
+      await tapText(tester, '動画を選ぶ');
+      await tapText(tester, '依頼する');
+    }
+
+    testWidgets('チャットの「添削を依頼する」から', (tester) async {
+      final api = notEntitledApi();
+      final container = await pumpScreen(
+        tester,
+        const MessagesScreen(),
+        api: api,
+        initial: threadOpened(),
+        chat: threadChat(),
+      );
+      expect(find.text('月額契約へ進む'), findsNothing);
+
+      await tapText(tester, '添削を依頼する');
+      await requestReview(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('体験はすでに使っています。動画の添削は月額契約を始めると使えます。'), findsOneWidget);
+      expect(find.text('月額契約へ進む'), findsOneWidget);
+
+      await tapText(tester, '月額契約へ進む');
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.subscription);
+      // 契約を始めたあとに、開いていたスレッドへ戻れる
+      expect(state.subscriptionFromChat, isTrue);
+    });
+
+    testWidgets('ホームの「添削を依頼する」から（スレッドを開いてすぐに依頼を出す）', (tester) async {
+      final api = notEntitledApi();
+      final container = await pumpScreen(
+        tester,
+        const MessagesScreen(),
+        api: api,
+        initial: threadOpened(),
+        chat: threadChat().copyWith(promptVideoReviewRequest: true),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await requestReview(tester);
+
+      expect(find.text('月額契約へ進む'), findsOneWidget);
+      await tapText(tester, '月額契約へ進む');
+      expect(container.read(studentFlowProvider).step, FlowStep.subscription);
+    });
+  });
+
   testWidgets('「スタンプ」で 8 種類から選ぶと、そのスタンプを sendMessage で送り、スレッドに大きな絵文字で出す', (
     tester,
   ) async {

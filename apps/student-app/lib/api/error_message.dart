@@ -4,6 +4,10 @@ import 'student_api.dart';
 /// チャットを送れなかった（月額契約の前）ときの文言。画面はこれと一致したときに、月額契約へ進む入口を添える
 const chatNotEntitledMessage = 'チャットは月額契約を始めると使えます。';
 
+/// 動画の添削を依頼できなかった（403 `video_review_not_entitled`。体験を使い終えた月額契約の前）ときの文言。
+/// 画面はこれと一致したときに、月額契約へ進む入口を添える
+const videoReviewNotEntitledMessage = '体験はすでに使っています。動画の添削は月額契約を始めると使えます。';
+
 /// API の失敗 → 画面の文言。契約の `ErrorCode` を日本語にするのはここだけ
 /// （`Error.message` は表示用ではないので出さない。例外は表示名の変更の 422 だけで、[profileErrorMessageOf]）。
 String errorMessageOf(Object error) {
@@ -38,8 +42,7 @@ String errorMessageOf(Object error) {
     ErrorCode.loginCodeInvalid => '確認コードが違います。メールに届いた 6 桁のコードを確かめてください。',
     ErrorCode.loginCodeExpired => '確認コードの有効期限が切れました。コードを送り直してください。',
     ErrorCode.tooManyRequests => '試した回数が多すぎます。しばらく待ってからやり直してください。',
-    ErrorCode.videoReviewNotEntitled =>
-      '体験はすでに使っています。動画の添削は月額契約を始めると使えます。',
+    ErrorCode.videoReviewNotEntitled => videoReviewNotEntitledMessage,
     ErrorCode.unknown => 'エラーが起きました。時間をおいてやり直してください。',
   };
 }
