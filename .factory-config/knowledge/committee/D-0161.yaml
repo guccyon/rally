@@ -1,0 +1,72 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0161
+pr: https://github.com/guccyon/rally/pull/1773
+decided_at: '2026-11-16'
+outcome: human
+requires_human: true
+knowledge: []
+votes:
+- role: consistency
+  vote: human
+  reasons:
+  - この PR は知見（K-*.yaml）を足したり状態を変えたりせず、knowledge/README.md の決まりを readme.d/01.md〜13.md
+    の 13 個の断片に分けて置くだけで、知見の置き場の構造を変える変更なので人が決めるべきです。
+  - readme.d/ の 13 個の断片は今の knowledge/README.md と行ごとに同じ中身で、README.md はこの PR で変わっていないため、同じ決まりの正本が
+    2 つになり、どちらか一方だけ直したときにずれます。
+  - 'README.md を readme.d/ から組み立てるなら、INDEX.md と同じように .factory-config/aggregates.yaml
+    に compile: generate の生成物として宣言し、README.md に「手で編集しない」と書く変更を同じ PR に入れてください（D-0160
+    の INDEX.md の扱いと揃えるため）。'
+  - readme.d/13.md は「この README には手で一覧を書かない」「test_check.py がこの README に手書きの一覧が戻っていれば落とす」と
+    README.md を指したままで、断片に分けたあと K-0004 の issue 1369 の解決策の照合先が README.md か readme.d/
+    かが決まっていません。
+  - 断片方式は K-0002（CHANGELOG）・K-0022・K-0031 が共有の追記型ファイルの衝突の手当として書いている向きと合っていますが、knowledge/README.md
+    の衝突を示す事例記録や知見は示されておらず、この分け方の根拠になる知見が変更セットに添えられていません。
+  - 変更セットの決まり（影響を受ける既存の知見の扱いを添える）から見ると、少なくとも K-0004 の issue 1369 の解決策について「直す」か「そのまま」かを書き添えるべきです。
+  personal_data: false
+- role: evidence
+  vote: human
+  reasons:
+  - readme.d/01.md から 13.md をつなぐと既存の README.md と1字も違わないので、新しい主張も確かさの変更もありません。
+  - そのため根拠の面で新たに辿るべき一次記録はなく、文中の議決 D-0021・D-0034・D-0071・D-0077・D-0116・D-0130・D-0141
+    や Issue 番号も、既存の README にあったものをそのまま写しているだけです。
+  - 一方で、readme.d/ に断片を置く理由を示す Issue・議決・事例記録は、knowledge/ にも specs/ にも見つかりません。
+  - README.md と readme.d/ の二重管理は知見の置き場の構造を変えるので、委員会ではなく人がその要否と正本をどちらにするかを決めるべきです。
+  - 氏名・連絡先・利用者 ID・本文の引用などの個人情報は含まれていません。
+  personal_data: false
+- role: enforcement
+  vote: human
+  reasons:
+  - この PR は知見（K-*.yaml）を足さず、README.md の中身を readme.d/01.md〜13.md の 13 個の断片に分けて置くだけで、断片をつなげると今の
+    README.md と 1 文字も違いません。
+  - 'README.md と readme.d/ が同じ中身の二重の原本になりますが、どちらが正でどちらが生成物かを宣言した場所（aggregates.yaml
+    の compile: generate など）が材料のどこにもありません。'
+  - このままでは片方だけ直したときのずれを機械で止められず、決まりを書いた README のずれはどの PR の審査にも響くので、外したときの痛さは大きいです。
+  - ずれは連結して比べるだけで機械的に確かめられ、線は引きやすく作る費用も小さいので、採るなら決定論で担保するべきです。
+  - 知見の置き場に新しいディレクトリを作り、README の原本をどこに置くかを変えるのは置き場の構造の変更なので、採るかどうかはオーナーである人が決めるべきです。
+  - 確かさの上げ下げの対象になる知見はこの PR に含まれていません。
+  personal_data: false
+- role: dissent
+  vote: human
+  reasons:
+  - この PR は新しい知見を足していません。knowledge/README.md を 1 行ずつ readme.d/01.md〜13.md に分けただけで、つなげると今の
+    README.md と 1 字も違いません。
+  - 'README.md は残ったままで、readme.d/ から README.md を作る宣言（.factory-config/aggregates.yaml
+    の compile など）も、片方が正本だという取り決めも差分にありません。このままだと同じ決まりが 2 か所にあり、片方だけ直したときにずれます（反例:
+    13.md だけ直すと README.md が古いまま残ります）。'
+  - README.md を断片に分けて組み立てるのは知見の置き場の構造を変えることなので、委員会ではなく人が決めるべきです。
+  - 採るなら、readme.d/ を正本として README.md を生成物と宣言する（08.md の INDEX.md と同じ形）か、README.md を正本にして
+    readme.d/ を消すか、どちらか 1 つに絞ってください。
+  - '書き換えの衝突（Issue #1369）を減らす狙いなら、行ごとに分けても効き目は薄いです。衝突のもとになっている長い 13.md の 1 行はそのまま
+    1 ファイルに残っています。'
+  personal_data: false
+enforcement:
+- knowledge: knowledge/readme.d（README.md の断片）
+  level: deterministic
+  solution_kind: config
+  proposal: 'README.md を `.factory-config/aggregates.yaml` に `compile: generate` の生成物として宣言し、readme.d/*.md
+    を番号順に連結して作る command を 1 つだけ置き、手で編集しない旨を README の先頭の断片に書く。'
+- knowledge: knowledge/readme.d（README.md の断片）
+  level: deterministic
+  solution_kind: ci_check
+  proposal: pull_request で走る knowledge-check に、readme.d/*.md を連結した結果が README.md と一致しなければ落とす検査を足し、continue-on-error
+    を真にしない。
