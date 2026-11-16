@@ -8,7 +8,7 @@ import { useState } from "react";
 import { expect, test, vi } from "vitest";
 
 import { CameraPreview } from "@/components/ui/CameraPreview";
-import { countdownAnnouncement, countdownReadAloud, formatCountdown } from "@/components/ui/countdown";
+import { countdownReadAloud, formatCountdown } from "@/components/ui/countdown";
 import { JoinBar } from "@/components/ui/JoinBar";
 import { LevelMeter } from "@/components/ui/LevelMeter";
 import { MediaToggle, mediaToggleLabel, type MediaToggleKind } from "@/components/ui/MediaToggle";
@@ -120,13 +120,18 @@ test("残り時間は 1 時間未満だけ「分:秒」で、読み上げは分�
   expect(countdownReadAloud(0)).toBe("開始時刻になりました。入室できます");
 });
 
-test("読み上げの文は 1 分ごとと 0 になったときだけ変わる", () => {
-  expect(countdownAnnouncement(180)).toBe("開始まで あと 3 分");
-  expect(countdownAnnouncement(168)).toBe("開始まで あと 3 分");
-  expect(countdownAnnouncement(121)).toBe("開始まで あと 3 分");
-  expect(countdownAnnouncement(120)).toBe("開始まで あと 2 分");
-  expect(countdownAnnouncement(0)).toBe("開始時刻になりました。入室できます");
-  expect(countdownAnnouncement(7200)).toBe("");
+test("読み上げの文は大きな残り時間と同じ残りを指し、1 分ごとと 0 になったときだけ変わる", () => {
+  const { rerender } = render(<JoinBar startTime="12:00" remainingSeconds={142} onJoin={() => {}} />);
+  expect(screen.getByText("2:22")).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("開始まで あと 2 分 22 秒");
+  rerender(<JoinBar startTime="12:00" remainingSeconds={121} onJoin={() => {}} />);
+  expect(screen.getByRole("status")).toHaveTextContent("開始まで あと 2 分 22 秒");
+  rerender(<JoinBar startTime="12:00" remainingSeconds={120} onJoin={() => {}} />);
+  expect(screen.getByRole("status")).toHaveTextContent("開始まで あと 2 分");
+  rerender(<JoinBar startTime="12:00" remainingSeconds={27} onJoin={() => {}} />);
+  expect(screen.getByText("0:27")).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("開始まで あと 27 秒");
+  expect(screen.getByRole("status")).not.toHaveTextContent("1 分");
 });
 
 test("入室の帯は開始時刻の前は「入室する」を無効にし、理由と残り時間を出す。開始時刻になったら開き直さずに押せる", async () => {
@@ -138,7 +143,7 @@ test("入室の帯は開始時刻の前は「入室する」を無効にし、�
   expect(screen.getByRole("button", { name: "入室する" })).toBeDisabled();
   expect(screen.getByText("開始時刻になると入室できます")).toHaveClass("text-text-muted");
   expect(screen.getByText("2:48")).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("開始まで あと 3 分");
+  expect(screen.getByRole("status")).toHaveTextContent("開始まで あと 2 分 48 秒");
 
   rerender(<JoinBar startTime="12:00" remainingSeconds={0} onJoin={onJoin} />);
   expect(screen.queryByText("2:48")).toBeNull();
