@@ -5492,6 +5492,13 @@ components:
         room_token:
           type: [string, "null"]
           description: 通話に参加するためのトークン（Twilio Video 相当。Gen1 はモック）。終了後は null
+        coach_joined_at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            コーチが最初にこのセッションに入室した時刻（コーチが `startLiveLessonSession` を呼んで通話に入った最初の時刻。
+            コーチが開始したセッションでは `started_at` と同じ）。入り直しても最初の時刻のまま変わらない。
+            コーチがまだ入室していないときと、入室を記録する前に始まったセッションは null か載らない。Issue #1654
         bookings:
           type: array
           description: |
@@ -5512,6 +5519,13 @@ components:
         student_id:
           type: string
           format: uuid
+        student_joined_at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            この予約の生徒が最初にこのセッションに入室した時刻（生徒が `startLiveLessonSession` を呼んで通話に入った最初の時刻）。
+            入り直しても最初の時刻のまま変わらない。生徒がまだ入室していないときと、入室を記録する前に始まったセッションは
+            null か載らない。Issue #1654
 
     OverdueLiveLessonSessionList:
       type: object
