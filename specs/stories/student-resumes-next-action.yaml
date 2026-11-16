@@ -48,6 +48,7 @@ must_not:
   - "添削待ちのように押して進む操作がないときに、primary のボタンを出す"
   - "続きの画面を開いたとき、すでに状態が変わった予約（確定済み・キャンセル済み）に「予約を確定する」を出す、または同じレッスンの完了を二重に記録する（脇の画面（自分の予約・お知らせ・プロフィールなど）から戻ったときと、「予約を確定する」が 409 invalid_booking_state のときも、予約を読み直して今の状態を出す。#1514）"
   - "確定済みの予約を自分の予約でキャンセルして閉じたとき、戻った続きの画面に確定済みの表示や「ビデオ通話で受ける」「動画を送って添削を受ける」が残る、またはキャンセルした予約のレッスン（動画の送付・入室前チェック）に進める（戻った画面は予約を ID で読み直し、キャンセル済みの旨と「ホームに戻る」を出す。#1364）"
+  - "自分の予約で「この予約をキャンセルする」をすばやく二度押ししたとき、「予約をキャンセルしますか？」の確認が 2 枚重なる、または 1 回の「キャンセルする」でキャンセル済みになったあとに確認が残り、押すと「予約の状態が変わっています。予約を確かめてください。」と出る（自分の操作のあとなのに何かが起きたように見える。#1583）"
   - "ブラウザーの「戻る」でアプリから抜ける（ホームで押したときも）、登録の画面に戻る、またはアプリの閉じる・戻るのボタンと違う画面に移る（#1519・#1584）"
   - "脇の画面（プロフィールなど）から開いた月額契約の画面で、ブラウザーの「戻る」が開いた画面ではなくホームに移る（#1584）"
   - "ビデオ通話の最中にブラウザーの「戻る」を押したとき、確かめずに通話の画面を離れる（#1519）"
@@ -73,7 +74,7 @@ touches:
     - student-app.getMyEntitlement
   events: [booking.confirmed, call.started, lesson.completed, subscription.started]
 origin:
-  issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431", "guccyon/rally#1514", "guccyon/rally#1364", "guccyon/rally#1519", "guccyon/rally#1560", "guccyon/rally#1597", "guccyon/rally#1729", "guccyon/rally#1584"]
+  issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431", "guccyon/rally#1514", "guccyon/rally#1364", "guccyon/rally#1519", "guccyon/rally#1560", "guccyon/rally#1597", "guccyon/rally#1729", "guccyon/rally#1583", "guccyon/rally#1584"]
   note: "生徒アプリで「次の操作がその直後の画面にしかなく、一度離れると戻れない」不具合がまとまって見つかり、1 件ずつ当て布をせずサーバーの状態から次の操作を出すことにした（ADR 0010。画面は specs/ux/issue-1436.yaml）"
   retro: false
 status: active
