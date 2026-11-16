@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/error_message.dart';
@@ -168,6 +170,7 @@ class StudentFlowState {
     this.homeFailures = const {},
     this.settingsReturnStep,
     this.subscriptionFromChat = false,
+    this.subscriptionReturnStep = FlowStep.home,
     this.notificationSettings,
     this.profileReturnStep,
     this.bookingsReturnStep,
@@ -270,6 +273,10 @@ class StudentFlowState {
   /// true なら、契約を始めたあとに開いていたスレッドへ戻る入口を出す（[ChatNotifier.returnFromSubscription]）
   final bool subscriptionFromChat;
 
+  /// 月額契約の画面で「戻る」を押したときに戻る段。脇の画面（プロフィールなど）から開いたらその画面、
+  /// 一周の段（ホーム・レッスンの完了・スロットを探す画面など）から開いたらホーム（[StudentFlowNotifier.closeSubscription]）
+  final FlowStep subscriptionReturnStep;
+
   /// 通知の受け取り設定（`getMyNotificationSettings`。未取得なら null）。
   /// 切り替えたときは保存を待たずに変え、保存に失敗したら元に戻す
   final NotificationSettings? notificationSettings;
@@ -336,6 +343,7 @@ class StudentFlowState {
     Set<HomeSection>? homeFailures,
     FlowStep? settingsReturnStep,
     bool? subscriptionFromChat,
+    FlowStep? subscriptionReturnStep,
     NotificationSettings? notificationSettings,
     FlowStep? profileReturnStep,
     FlowStep? bookingsReturnStep,
@@ -375,6 +383,8 @@ class StudentFlowState {
     homeFailures: homeFailures ?? this.homeFailures,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     subscriptionFromChat: subscriptionFromChat ?? this.subscriptionFromChat,
+    subscriptionReturnStep:
+        subscriptionReturnStep ?? this.subscriptionReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
     profileReturnStep: profileReturnStep ?? this.profileReturnStep,
     bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
@@ -431,6 +441,10 @@ final clockProvider = Provider<DateTime Function()>(
   (ref) => ref.watch(serverClockProvider).now,
 );
 
+/// コーチの入室を待つあいだ（[LiveLessonSession.awaitingCoach]）に通話セッションを取り直す間隔（`getLiveLessonSession`）。
+/// 待機から通話中への切り替えはこの間隔ぶん遅れる。値はここ 1 か所で持つ（ADR 0015）
+const liveLessonAwaitingCoachRefetchInterval = Duration(seconds: 5);
+
 final studentFlowProvider =
     NotifierProvider<StudentFlowNotifier, StudentFlowState>(
       StudentFlowNotifier.new,
@@ -454,7 +468,42 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         .changesElsewhere
         .listen((_) => _followSessionElsewhere());
     ref.onDispose(changes.cancel);
+    ref.onDispose(() => _awaitingCoachRefetch?.cancel());
     return _initial;
+  }
+
+  /// コーチの入室待ちのあいだの次の取り直し（[_followCoachJoin]）
+  Timer? _awaitingCoachRefetch;
+
+  /// 持っている通話セッションがコーチの入室待ちなら、[liveLessonAwaitingCoachRefetchInterval] のあとに取り直す。
+  /// 応答を受けてから次を決めるので、取り直しは重ならない。待機でなくなったら（コーチの入室・通話の終了・別のセッション・
+  /// 状態を捨てた）止める。取り直しに失敗しても文言は出さず、待機のまま次の間隔で取り直す
+  void _followCoachJoin() {
+    _awaitingCoachRefetch?.cancel();
+    final waiting = state.session;
+    if (waiting == null || !waiting.awaitingCoach) return;
+    _awaitingCoachRefetch = Timer(
+      liveLessonAwaitingCoachRefetchInterval,
+      () async {
+        bool stillWaiting() =>
+            ref.mounted &&
+            state.session?.sessionId == waiting.sessionId &&
+            state.session!.awaitingCoach;
+        if (!stillWaiting()) return;
+        try {
+          final session = await _api.getLiveLessonSession(waiting.sessionId);
+          if (!stillWaiting()) return;
+          // 取り直しは画面の操作ではないので、出ている失敗の文言は消さない
+          state = state.copyWith(
+            session: session,
+            errorMessage: state.errorMessage,
+          );
+        } on StudentApiException {
+          // 待機のまま次の間隔で取り直す
+        }
+        if (stillWaiting()) _followCoachJoin();
+      },
+    );
   }
 
   StudentApi get _api => ref.read(studentApiProvider);
@@ -791,7 +840,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// `createBooking`。サーバーの判定で体験予約できれば体験予約（[StudentFlowState.canBookTrial]）、できなければ通常の予約。
   /// 作成直後は pending なので確定待ちへ。409 `trial_already_used`（読んだ予約が古かった）なら、失敗の文言を出したうえで
-  /// 自分の予約を読み直し、ボタンを通常の予約に切り替える
+  /// 自分の予約を読み直し、ボタンを通常の予約に切り替える。
+  /// 409 `slot_already_booked`（先に取られた）なら、失敗の文言を出したうえで検索を読み直し、その枠を一覧から外す
   /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは、先に自分の予約を読んでから決める
   /// （読めなければ失敗の文言を出して予約を作らない。予約の件数からは数え直さない）
   Future<void> bookSlot(Slot slot) => run(() async {
@@ -805,6 +855,9 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     } on StudentApiException catch (e) {
       if (e.error?.code == ErrorCode.trialAlreadyUsed) {
         await _refreshMyBookingsQuietly();
+      } else if (e.error?.code == ErrorCode.slotAlreadyBooked) {
+        // 先に取られた枠を一覧から外すため、今のスポーツ・コーチで検索を読み直す（文言は run が残す）
+        await _search(state.searchSport ?? state.student!.sport);
       }
       rethrow;
     }
@@ -937,15 +990,17 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(step: FlowStep.videoSubmit);
   }
 
-  /// `startLiveLessonSession`（映像はモックなので接続はしない）
+  /// `startLiveLessonSession`（映像はモックなので接続はしない）。コーチの入室待ちなら取り直しを始める（[_followCoachJoin]）
   Future<void> startCall() => run(() async {
     final session = await _api.startLiveLessonSession(
       StartLiveLessonSessionRequest(bookingId: state.booking!.bookingId),
     );
     state = state.copyWith(session: session);
+    _followCoachJoin();
   });
 
   /// 入室前チェックの「入室する」（`startLiveLessonSession`）。通ったらビデオ通話へ移って true を返す。
+  /// コーチの入室待ちなら取り直しを始める（[_followCoachJoin]）。
   /// 応答の前に入室前チェックから戻っていたら応答を捨てる（段を移さない）。失敗の文言は [StudentFlowState.errorMessage]
   /// 409 `slot_not_started`（サーバーの時刻ではまだ開始前）なら、その応答の Date で時計のずれを合わせ直す（入室は繰り返し送らない）。
   Future<bool> joinLiveLesson() async {
@@ -964,6 +1019,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       }
       if (!ref.mounted || state.step != FlowStep.prejoinCheck) return;
       state = state.copyWith(session: session, step: FlowStep.liveLesson);
+      _followCoachJoin();
       joined = true;
     });
     return joined;
@@ -1063,11 +1119,26 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void goToReview() => state = state.copyWith(step: FlowStep.lessonReview);
 
   /// 月額契約の画面へ（契約と受講権の操作は [SubscriptionNotifier]）。チャットから開くときは [fromChat] を true にする
-  /// （契約を始めたあとにチャットへ戻る入口を出す。ほかの入口から開いたら出さない）
+  /// （契約を始めたあとにチャットへ戻る入口を出す。ほかの入口から開いたら出さない）。
+  /// 「戻る」で戻る段（[StudentFlowState.subscriptionReturnStep]）は、脇の画面から開いたらその画面、ほかはホーム
   void goToSubscription({bool fromChat = false}) => state = state.copyWith(
     step: FlowStep.subscription,
     subscriptionFromChat: fromChat,
+    subscriptionReturnStep: state.step.isAside ? state.step : FlowStep.home,
   );
+
+  /// 月額契約の画面を閉じて、開いた脇の画面に戻る（一周の段から開いたらホームへ。ホームは欄を読み直す）。
+  /// 脇の画面に戻るときは、契約を始めていても月額契約の欄が合うよう受講権を読み直す（プロフィールを開いたときと同じ）。
+  /// チャットから開いたときは [ChatNotifier.returnFromSubscription]（スレッドを読み直して戻る）を使う
+  Future<void> closeSubscription() {
+    if (state.subscriptionFromChat) {
+      return ref.read(chatProvider.notifier).returnFromSubscription();
+    }
+    final step = state.subscriptionReturnStep;
+    if (step == FlowStep.home) return goHome();
+    returnTo(step);
+    return ref.read(subscriptionProvider.notifier).refreshEntitlement();
+  }
 
   /// 通知の受け取り設定を開く（`getMyNotificationSettings`）。閉じたら今の段に戻る。
   Future<void> openNotificationSettings() {

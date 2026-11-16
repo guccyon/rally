@@ -114,7 +114,7 @@ mod tests {
         bookings
             .update(cancelled.id(), |booking, slot| {
                 booking
-                    .cancel(AccountId::from_u128(102), slot, now())
+                    .cancel(AccountId::from_u128(102), slot, now(), true)
                     .map(|_| ())
             })
             .await

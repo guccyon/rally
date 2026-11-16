@@ -34,6 +34,7 @@ fn criteria() -> SlotCriteria {
         starts_after: at(0),
         starts_before: None,
         after: None,
+        held_by: None,
         limit: 20,
     }
 }

@@ -55,6 +55,7 @@ enforcement:
       issue: 972
       at: 2026-11-07
       decided_by: committee:D-0023
+      requires_check: []
       wired: false
       verified: false
     - kind: ci_check
@@ -71,6 +72,11 @@ enforcement:
       issue: 1034
       at: 2026-11-07
       decided_by: committee:D-0030
+      requires_check:
+        - runs: tools/conflict-check/test_watch.py
+          workflow: .github/workflows/conflict-check.yml
+        - runs: tools/conflict-check/test_engine.py
+          workflow: .github/workflows/conflict-check.yml
       wired: false
       verified: false
     - kind: test
@@ -106,6 +112,7 @@ enforcement:
       issue: 1101
       at: 2026-11-08
       decided_by: committee:D-0042
+      requires_check: []
       wired: false
       verified: false
     - kind: ci_check
@@ -141,6 +148,7 @@ enforcement:
       issue: 1100
       at: 2026-11-08
       decided_by: committee:D-0042
+      requires_check: []
       wired: false
       verified: false
     - kind: test
@@ -156,6 +164,7 @@ enforcement:
       issue: 1104
       at: 2026-11-08
       decided_by: committee:D-0043
+      requires_check: []
       wired: false
       verified: false
     - kind: ci_check
@@ -175,6 +184,9 @@ enforcement:
       issue: 1173
       at: 2026-11-08
       decided_by: committee:D-0066
+      requires_check:
+        - runs: tools/knowledge-enforcement-check/test_ci.py
+          workflow: .github/workflows/knowledge-enforcement.yml
       wired: false
       verified: false
     - kind: ci_check
@@ -192,6 +204,9 @@ enforcement:
       issue: 1178
       at: 2026-11-08
       decided_by: committee:D-0067
+      requires_check:
+        - runs: tools/knowledge-enforcement-check/test_check.py
+          workflow: .github/workflows/knowledge-enforcement.yml
       wired: false
       verified: false
     - kind: test
@@ -210,6 +225,7 @@ enforcement:
       issue: 1174
       at: 2026-11-08
       decided_by: committee:D-0066
+      requires_check: []
       wired: false
       verified: false
     - kind: test
@@ -228,6 +244,22 @@ enforcement:
       issue: 1259
       at: 2026-11-09
       decided_by: committee:D-0090
+      requires_check: []
+      wired: false
+      verified: false
+    - kind: config
+      what: >-
+        知見の委員会の週 1 の定例（2026-W46）の決定（解決策の種類は config）。Engine が .factory-config/continuation.yaml の conflict を読む差分を
+        tools/conflict-check/engine/continuation-config.patch に置いた（新しい解決策の項目は増やさず、issue 954 の線をそのまま読ませる）。
+        Engine の continuation_config.py が線を読み（ワーカーは取り込んだチェックアウト、supervisor は既定ブランチの版）、supervisor の conflict_step が
+        同じ PR でエージェントで解いた回（機械的に解いて終わった回は数えない）が max_attempts_per_pr に達したら積まずに continue.limit_reached を残し、
+        ci_failure_step が人への停止（ci:）を開く。ワーカーの entrypoint.sh は resume_session_until_attempt の回（CONTINUE_ATTEMPT）までだけ
+        セッションを引き継ぎ、衝突したファイルがすべて mechanical.paths に当たるときだけ両方の行を残して機械的に解く。
+        tools/conflict-check/engine/continuation-config.patch は Engine の main（ea188bb）に当たり、test_engine.py の PatchedEngineTest が
+        差分を当てた写しで線のテストを todo なしで通すことを確かめた。ワーカーは Engine を変えられないので、差分を Engine に当てて
+        .factory-config/engine.lock（ENGINE_REF）を上げるのは建設者で、それまで wired: false。効き目は上げた後の窓のイベント列で確かめる（verified: false）
+      issue: 1663
+      at: 2026-11-16
       wired: false
       verified: false
 decided_by: committee:D-0013

@@ -212,7 +212,9 @@ mod tests {
             .unwrap();
         bookings
             .update(booked.id(), |booking, slot| {
-                booking.cancel(STUDENT, slot, START + 2 * HOUR).map(|_| ())
+                booking
+                    .cancel(STUDENT, slot, START + 2 * HOUR, true)
+                    .map(|_| ())
             })
             .await
             .unwrap();

@@ -1,5 +1,6 @@
 //! 通話セッションの保存先（Postgres の `live_lesson.sessions` と、結び付いた予約の `live_lesson.session_bookings`、
-//! 本部が終わらせた記録の `live_lesson.session_headquarters_ends`）。
+//! 本部が終わらせた記録の `live_lesson.session_headquarters_ends`、参加者ごとの最初の入室の
+//! `live_lesson.session_participants`）。
 
 use application::{
     Unavailable,
@@ -12,7 +13,7 @@ use application::{
 use domain::{
     DomainError,
     identity::AccountId,
-    live_lesson::{ConnectionQuality, LiveLessonSession, SessionBooking, SessionId},
+    live_lesson::{ConnectionQuality, LiveLessonSession, SessionBooking, SessionId, SessionJoin},
     scheduling::BookingId,
 };
 use std::time::SystemTime;
@@ -35,6 +36,10 @@ use crate::pg_support::{is_unique_violation, timestamp};
 /// `session_headquarters_ends` に 1 行足す（`sessions` は終了の時刻と接続品質を揃えて持つ制約があり、本部の終了には
 /// 指標がない）。読むときは `sessions.ended_at` があれば参加者の終了、なければ `session_headquarters_ends` の行が
 /// 本部の終了。両方あるのは古い版に戻した間に参加者が終了したときだけで、そのときは参加者の終了を採る。
+///
+/// 参加者ごとの最初の入室（[`LiveLessonSession::joins`]）は `session_participants` に参加者ごとに 1 行持つ。開始のときは
+/// セッションと同じトランザクションで書き、入室（update）では行のない参加者の行だけを足す（`ON CONFLICT DO NOTHING`。
+/// 入り直しても最初の時刻を保つ）。行のないセッション（入室を記録する前の版が始めたもの）は、入室の記録がないものとして読む。
 #[derive(Debug, Clone)]
 pub struct PgLiveLessonSessionRepository {
     pool: PgPool,
@@ -78,7 +83,7 @@ impl PgLiveLessonSessionRepository {
     }
 }
 
-/// `row` のセッションを、結び付いた予約を読んで組み立てる。
+/// `row` のセッションを、結び付いた予約と入室の記録を読んで組み立てる。
 async fn session_with_bookings(
     conn: &mut PgConnection,
     row: SessionRow,
@@ -88,7 +93,15 @@ async fn session_with_bookings(
          WHERE session_id = $1 ORDER BY position",
     )
     .bind(row.0)
-    .fetch_all(conn)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Unavailable::new)?;
+    let joins: Vec<(Uuid, OffsetDateTime)> = sqlx::query_as(
+        "SELECT account_id, joined_at FROM live_lesson.session_participants
+         WHERE session_id = $1 ORDER BY joined_at, account_id",
+    )
+    .bind(row.0)
+    .fetch_all(&mut *conn)
     .await
     .map_err(Unavailable::new)?;
     let bookings = bookings
@@ -100,7 +113,33 @@ async fn session_with_bookings(
             )
         })
         .collect();
-    session_from_row(row, bookings)
+    let mut session = session_from_row(row, bookings)?;
+    session
+        .restore_joins(joins.into_iter().map(|(account_id, joined_at)| {
+            SessionJoin::new(account_id_uuid::from_uuid(account_id), joined_at.into())
+        }))
+        .map_err(Unavailable::new)?;
+    Ok(session)
+}
+
+/// `session` の入室の記録のうち、まだ行のない参加者の行を足す（ある参加者の行は最初の時刻のまま変えない）。
+async fn insert_joins(
+    conn: &mut PgConnection,
+    session: &LiveLessonSession,
+) -> Result<(), sqlx::Error> {
+    for join in session.joins() {
+        sqlx::query(
+            "INSERT INTO live_lesson.session_participants (session_id, account_id, joined_at)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (session_id, account_id) DO NOTHING",
+        )
+        .bind(session_id_uuid::to_uuid(session.id()))
+        .bind(account_id_uuid::to_uuid(join.account_id()))
+        .bind(timestamp(join.joined_at()))
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
 }
 
 impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
@@ -235,6 +274,9 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
             .await
             .map_err(already_has_session)?;
         }
+        insert_joins(&mut tx, &session)
+            .await
+            .map_err(already_has_session)?;
         tx.commit().await.map_err(already_has_session)?;
         Ok(())
     }
@@ -260,6 +302,7 @@ impl LiveLessonSessionRepository for PgLiveLessonSessionRepository {
             .await
             .map_err(UpdateSessionError::Unavailable)?;
         update(&mut session).map_err(UpdateSessionError::Rejected)?;
+        insert_joins(&mut tx, &session).await.map_err(unavailable)?;
 
         if let Some(ended_by) = session.ended_by_headquarters() {
             // 本部の終了は sessions の行を変えずに記録を足す（2 回目は行のロックの中で domain が拒む）

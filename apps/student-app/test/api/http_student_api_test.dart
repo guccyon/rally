@@ -247,6 +247,45 @@ void main() {
     );
     expect(sent.single.url.path, '/live-lesson-sessions/ls1/end');
 
+    final waiting = await apiReplying(200, {
+      ...session,
+      'status': 'in_progress',
+      'ended_at': null,
+      'duration_sec': null,
+      'coach_joined_at': null,
+      'bookings': [
+        {
+          'booking_id': 'b1',
+          'student_id': 's1',
+          'student_joined_at': '2026-10-28T03:00:00Z',
+        },
+      ],
+    }).getLiveLessonSession('ls1');
+    expect(sent.single.method, 'GET');
+    expect(sent.single.url.path, '/live-lesson-sessions/ls1');
+    expect(waiting.awaitingCoach, isTrue);
+    expect(
+      waiting.bookings.single.studentJoinedAt,
+      DateTime.utc(2026, 10, 28, 3),
+    );
+    final joined = await apiReplying(200, {
+      ...session,
+      'status': 'in_progress',
+      'ended_at': null,
+      'duration_sec': null,
+      'coach_joined_at': '2026-10-28T03:02:00Z',
+    }).getLiveLessonSession('ls1');
+    expect(
+      () => waiting.bookings.add(waiting.bookings.single),
+      throwsUnsupportedError,
+    );
+    expect(joined.coachJoinedAt, DateTime.utc(2026, 10, 28, 3, 2));
+    expect(joined.awaitingCoach, isFalse);
+    // 入室の項目のない（古いサーバーの）応答は、コーチの入室の記録がないものとして読む
+    final old = await apiReplying(200, session).getLiveLessonSession('ls1');
+    expect(old.coachJoinedAt, isNull);
+    expect(old.bookings, isEmpty);
+
     final myVideos = await apiReplying(200, {
       'videos': [
         {
@@ -782,11 +821,7 @@ void main() {
     expect(sent.single.method, 'GET');
     expect(sent.single.url.path, '/notifications/me');
     expect(sent.single.headers['Authorization'], 'Bearer mock.student.x');
-    expect(list.notifications.map((n) => n.notificationId), [
-      'n1',
-      'n2',
-      'n3',
-    ]);
+    expect(list.notifications.map((n) => n.notificationId), ['n1', 'n2', 'n3']);
     final first = list.notifications.first;
     expect(first.kind, NotificationKind.bookingConfirmed);
     expect(first.bookingId, isNull);

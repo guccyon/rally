@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use super::{ConnectionQuality, SessionBooking, SessionId, SessionStatus};
+use super::{ConnectionQuality, SessionBooking, SessionId, SessionJoin, SessionStatus};
 use crate::{
     DomainError,
     identity::AccountId,
@@ -15,6 +15,10 @@ use crate::{
 /// [`SessionStatus::Ended`] になる。セッションには、開始したときに確定していた同じ枠の予約がすべて結び付く
 /// （[`SessionBooking`]。マンツーマンの枠では 1 つ、グループレッスンの枠では人数分。変更シナリオ cs-004）。
 /// 参加者はコーチと、結び付いた予約の生徒たち。開始・終了できるのは参加者だけ。
+///
+/// 参加者ごとに最初の入室の時刻を持つ（[`SessionJoin`]。開始した参加者は開始の時刻に入室したもの、相手はあとから
+/// [`LiveLessonSession::join`] で入ったとき。入り直しても最初の時刻を保つ。Issue #1654）。入室を記録する前の版が始めた
+/// セッションは、記録のない参加者の入室時刻を持たない。
 ///
 /// 終了の記録がないまま残ったセッションは、本部が終わったことにできる（[`LiveLessonSession::end_by_headquarters`]）。
 /// そのときは通話基盤から指標を受け取らないので接続品質を持たず、終わらせた本部のアカウントを持つ。
@@ -31,6 +35,8 @@ pub struct LiveLessonSession {
     quality: Option<ConnectionQuality>,
     /// 本部が終わらせたときの本部のアカウント（参加者が終了したか、終了するまでは `None`）
     ended_by_headquarters: Option<AccountId>,
+    /// 参加者ごとの最初の入室（入室した順。参加者ごとに高々 1 つ）
+    joins: Vec<SessionJoin>,
 }
 
 impl LiveLessonSession {
@@ -46,7 +52,9 @@ impl LiveLessonSession {
     ///   ちょうどからは開始できる）。完了したレッスンはセッションの終了の後にしか記録できないので、枠の開始より前に
     ///   完了したレッスンはできない（Issue #899）
     /// - 同じ予約のセッションは 1 つ（[`DomainError::LiveLessonSessionAlreadyStarted`]。既存の通話中の
-    ///   セッションに入るのは [`LiveLessonSession::ensure_can_join`]）
+    ///   セッションに入るのは [`LiveLessonSession::join`]）
+    ///
+    /// 開始した `participant` は `now` に入室したものとして記録する（[`LiveLessonSession::joins`]）。
     pub fn start(
         id: SessionId,
         participant: AccountId,
@@ -90,13 +98,15 @@ impl LiveLessonSession {
             ended_at: None,
             quality: None,
             ended_by_headquarters: None,
+            joins: vec![SessionJoin::new(participant, now)],
         })
     }
 
     /// 保存先から読んだセッションを組み立てる（保存先の実装用）。`bookings` は結び付いた予約（開始した予約
     /// `booking_id` を含んでも含まなくてもよい。含まなければ先頭に足す。並びは開始した予約のあとに保つ）。
     /// `ended` は終了した時刻と、そのときに記録した接続品質（終了するまでは `None`）。終了が開始より前なら
-    /// [`DomainError::SessionEndsBeforeItStarts`]。
+    /// [`DomainError::SessionEndsBeforeItStarts`]。入室の記録は持たない（記録があれば
+    /// [`LiveLessonSession::restore_joins`] で戻す）。
     pub fn restore(
         id: SessionId,
         booking_id: BookingId,
@@ -119,7 +129,33 @@ impl LiveLessonSession {
             ended_at: ended.map(|(ended_at, _)| ended_at),
             quality: ended.map(|(_, quality)| quality),
             ended_by_headquarters: None,
+            joins: Vec::new(),
         })
+    }
+
+    /// 保存先から読んだ入室の記録 `joins` を戻す（保存先の実装用）。同じ参加者の記録が複数あれば最も早い時刻を採る。
+    /// 記録のない参加者は入室時刻を持たない（入室を記録する前の版が始めたセッション）。参加者（コーチか、結び付いた
+    /// 予約の生徒）でないアカウントの記録があれば [`DomainError::NotASessionParticipant`]（セッションは変えない）。
+    pub fn restore_joins(
+        &mut self,
+        joins: impl IntoIterator<Item = SessionJoin>,
+    ) -> Result<(), DomainError> {
+        let mut restored = self.joins.clone();
+        for join in joins {
+            if !self.is_participant(join.account_id()) {
+                return Err(DomainError::NotASessionParticipant);
+            }
+            match restored
+                .iter_mut()
+                .find(|j| j.account_id() == join.account_id())
+            {
+                Some(existing) if join.joined_at() < existing.joined_at() => *existing = join,
+                Some(_) => {}
+                None => restored.push(join),
+            }
+        }
+        self.joins = restored;
+        Ok(())
     }
 
     /// 参加者 `participant` が予約 `booking` で、このセッション（開始済み）の通話に入れるかを確かめる。
@@ -145,6 +181,23 @@ impl LiveLessonSession {
         }
         if self.ended_at.is_some() || !self.links(booking.id()) {
             return Err(DomainError::LiveLessonSessionAlreadyStarted);
+        }
+        Ok(())
+    }
+
+    /// 参加者 `participant` が予約 `booking` で、このセッション（開始済み）の通話に `now` に入る（Issue #1654）。
+    ///
+    /// 判定は [`LiveLessonSession::ensure_can_join`]。入れれば `participant` の入室を記録する。すでに入室を記録した
+    /// 参加者（入り直し）は最初の時刻のまま変えない。失敗したときはセッションを変えない。
+    pub fn join(
+        &mut self,
+        participant: AccountId,
+        booking: &Booking,
+        now: SystemTime,
+    ) -> Result<(), DomainError> {
+        self.ensure_can_join(participant, booking)?;
+        if self.joined_at(participant).is_none() {
+            self.joins.push(SessionJoin::new(participant, now));
         }
         Ok(())
     }
@@ -366,6 +419,24 @@ impl LiveLessonSession {
     pub const fn ended_by_headquarters(&self) -> Option<AccountId> {
         self.ended_by_headquarters
     }
+
+    /// 参加者ごとの最初の入室（入室した順）。
+    pub fn joins(&self) -> &[SessionJoin] {
+        &self.joins
+    }
+
+    /// 参加者 `account` が最初に入室した時刻。まだ入室していないか、入室を記録する前の版が始めたセッションでは `None`。
+    pub fn joined_at(&self, account: AccountId) -> Option<SystemTime> {
+        self.joins
+            .iter()
+            .find(|j| j.account_id() == account)
+            .map(SessionJoin::joined_at)
+    }
+
+    /// コーチが最初に入室した時刻（[`LiveLessonSession::joined_at`]）。コーチがまだ入室していなければ `None`。
+    pub fn coach_joined_at(&self) -> Option<SystemTime> {
+        self.joined_at(self.coach_id)
+    }
 }
 
 /// 開始した予約 `first` を先頭に、`others` を同じ予約・同じ生徒を除いて並べる。
@@ -469,7 +540,7 @@ mod tests {
             })
         );
         let mut cancelled = pending.clone();
-        cancelled.cancel(STUDENT, &mut slot, NOW).unwrap();
+        cancelled.cancel(STUDENT, &mut slot, NOW, true).unwrap();
         assert_eq!(
             LiveLessonSession::start(SESSION, STUDENT, &cancelled, &[], None, at(600)),
             Err(DomainError::BookingNotConfirmed {
@@ -765,7 +836,7 @@ mod tests {
             LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
         session.end(COACH, at(650), quality()).unwrap();
 
-        let restored = LiveLessonSession::restore(
+        let mut restored = LiveLessonSession::restore(
             SESSION,
             session.booking_id(),
             STUDENT,
@@ -775,6 +846,9 @@ mod tests {
             Some((at(650), quality())),
         )
         .unwrap();
+        restored
+            .restore_joins(session.joins().iter().copied())
+            .unwrap();
         assert_eq!(restored, session);
 
         assert_eq!(
@@ -1031,5 +1105,109 @@ mod tests {
         )
         .unwrap();
         assert_eq!(linked_students(&session), vec![STUDENT, GROUP[1]]);
+    }
+
+    #[test]
+    fn the_starter_joins_at_the_start_and_the_coach_has_not_joined_yet() {
+        let session =
+            LiveLessonSession::start(SESSION, STUDENT, &confirmed(), &[], None, at(600)).unwrap();
+        assert_eq!(session.joins(), &[SessionJoin::new(STUDENT, at(600))]);
+        assert_eq!(session.joined_at(STUDENT), Some(at(600)));
+        assert_eq!(session.coach_joined_at(), None);
+
+        // コーチが開始したセッションでは、コーチの入室は開始の時刻
+        let session =
+            LiveLessonSession::start(SESSION, COACH, &confirmed(), &[], None, at(600)).unwrap();
+        assert_eq!(session.coach_joined_at(), Some(at(600)));
+        assert_eq!(session.joined_at(STUDENT), None);
+    }
+
+    #[test]
+    fn joining_records_the_first_time_and_rejoining_keeps_it() {
+        let booking = confirmed();
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &booking, &[], None, at(600)).unwrap();
+
+        session.join(COACH, &booking, at(605)).unwrap();
+        assert_eq!(session.coach_joined_at(), Some(at(605)));
+        // 入り直しても最初の時刻のまま
+        session.join(COACH, &booking, at(610)).unwrap();
+        session.join(STUDENT, &booking, at(611)).unwrap();
+        assert_eq!(
+            session.joins(),
+            &[
+                SessionJoin::new(STUDENT, at(600)),
+                SessionJoin::new(COACH, at(605))
+            ]
+        );
+    }
+
+    #[test]
+    fn join_failures_change_nothing() {
+        let booking = confirmed();
+        let mut session =
+            LiveLessonSession::start(SESSION, STUDENT, &booking, &[], None, at(600)).unwrap();
+        let before = session.clone();
+        assert_eq!(
+            session.join(OTHER_STUDENT, &booking, at(605)),
+            Err(DomainError::NotASessionParticipant)
+        );
+        assert_eq!(session, before);
+
+        session.end(STUDENT, at(650), quality()).unwrap();
+        let before = session.clone();
+        assert_eq!(
+            session.join(COACH, &booking, at(651)),
+            Err(DomainError::LiveLessonSessionAlreadyStarted)
+        );
+        assert_eq!(session, before);
+    }
+
+    #[test]
+    fn each_student_of_a_group_session_joins_on_their_own() {
+        let bookings = group(3);
+        let mut session =
+            LiveLessonSession::start(SESSION, COACH, &bookings[0], &bookings, None, at(600))
+                .unwrap();
+        session.join(GROUP[2], &bookings[2], at(603)).unwrap();
+        assert_eq!(session.coach_joined_at(), Some(at(600)));
+        assert_eq!(session.joined_at(GROUP[2]), Some(at(603)));
+        assert_eq!(session.joined_at(GROUP[0]), None);
+    }
+
+    #[test]
+    fn a_restored_session_without_joins_has_no_join_times() {
+        // 入室を記録する前の版が始めたセッション
+        let mut session = LiveLessonSession::restore(
+            SESSION,
+            BookingId::from_u128(20),
+            STUDENT,
+            COACH,
+            Vec::new(),
+            at(600),
+            None,
+        )
+        .unwrap();
+        assert!(session.joins().is_empty());
+        assert_eq!(session.coach_joined_at(), None);
+
+        // 記録を戻す。同じ参加者の記録が複数あれば最も早い時刻
+        session
+            .restore_joins([
+                SessionJoin::new(COACH, at(607)),
+                SessionJoin::new(STUDENT, at(600)),
+                SessionJoin::new(COACH, at(605)),
+            ])
+            .unwrap();
+        assert_eq!(session.coach_joined_at(), Some(at(605)));
+        assert_eq!(session.joined_at(STUDENT), Some(at(600)));
+
+        // 参加者でない記録は戻さない
+        let before = session.clone();
+        assert_eq!(
+            session.restore_joins([SessionJoin::new(OTHER_STUDENT, at(601))]),
+            Err(DomainError::NotASessionParticipant)
+        );
+        assert_eq!(session, before);
     }
 }

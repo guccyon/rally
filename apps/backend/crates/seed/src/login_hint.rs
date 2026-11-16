@@ -1,12 +1,15 @@
+use crate::IncompleteHints;
 use application::identity::{TokenClaims, TokenIssuer, account_id_uuid};
+use domain::identity::Role;
 use infra::identity_values::role_from_value;
 use sqlx::{PgPool, types::Uuid};
 
 /// 触れる環境（staging）のログインの手がかり 1 件（`.factory-config/ship.yaml` の `touch.accounts`）。`value` はその
-/// アカウントのアクセストークンで、サーバーと同じ実装（`ACCESS_TOKEN_SIGNING_KEY` があれば署名付き）で発行する。
+/// アカウントのアクセストークンで、サーバーと同じ実装（`ACCESS_TOKEN_SIGNING_KEY` の鍵で署名付き）で発行する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginHint {
     pub label: String,
+    pub role: Role,
     pub value: String,
 }
 
@@ -35,10 +38,29 @@ impl LoginHint {
                 });
                 Ok(Self {
                     label,
+                    role,
                     value: token.into_string(),
                 })
             })
             .collect()
+    }
+
+    /// 手がかりが本部 1 人とコーチ 3 人そろっているか確かめる。欠けていれば、足りない役割と件数を `Err` で返す
+    /// （本部の手がかりがないまま出荷すると、本部の画面に入れない。Issue #1677）。
+    pub fn check_complete(hints: &[Self]) -> Result<(), IncompleteHints> {
+        let count = |role| hints.iter().filter(|h| h.role == role).count();
+        let shortfalls: Vec<_> = [(Role::Headquarters, 1), (Role::Coach, 3)]
+            .into_iter()
+            .filter_map(|(role, need)| {
+                let found = count(role);
+                (found < need).then_some((role, need, found))
+            })
+            .collect();
+        if shortfalls.is_empty() {
+            Ok(())
+        } else {
+            Err(IncompleteHints { shortfalls })
+        }
     }
 
     /// 1 つのアカウントのトークンを、DB にある役割で発行する（登録のないアカウントなら `None`）。

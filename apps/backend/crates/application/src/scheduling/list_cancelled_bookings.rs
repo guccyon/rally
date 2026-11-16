@@ -324,7 +324,7 @@ mod tests {
         let student = booking.student_id();
         bookings
             .update(booking.id(), |booking, slot| {
-                booking.cancel(student, slot, at).map(|_| ())
+                booking.cancel(student, slot, at, true).map(|_| ())
             })
             .await
             .unwrap();

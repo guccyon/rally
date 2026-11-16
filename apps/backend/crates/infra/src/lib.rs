@@ -3,6 +3,7 @@
 //! 依存してよいのは domain と application（docs/adr/0003-backend-layers.md）。
 
 mod access_token_backend;
+mod access_token_config_error;
 mod analytics_common_attributes;
 mod analytics_destination;
 pub mod analytics_event_payload;
@@ -48,6 +49,7 @@ mod unknown_video_call_provider;
 mod video_call_backend;
 
 pub use access_token_backend::AccessTokenBackend;
+pub use access_token_config_error::AccessTokenConfigError;
 pub use analytics_common_attributes::AnalyticsCommonAttributes;
 pub use analytics_destination::AnalyticsDestination;
 pub use in_memory_domain_event_bus::InMemoryDomainEventBus;

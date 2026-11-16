@@ -52,6 +52,22 @@ void main() {
     expect(state.searchSport, isNull);
   });
 
+  testWidgets('表示名欄の文字数の残りは、表示は 0/50 のまま、読み上げは日本語（#1521）', (
+    tester,
+  ) async {
+    await pumpScreen(tester, const RegisterScreen(), api: FakeStudentApi());
+
+    expect(find.text('0/50'), findsOneWidget);
+    expect(find.bySemanticsLabel('残り 50 文字'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('characters remaining')), findsNothing);
+
+    await tester.enterText(find.widgetWithText(TextFormField, '表示名'), '山田');
+    await tester.pump();
+
+    expect(find.text('2/50'), findsOneWidget);
+    expect(find.bySemanticsLabel('残り 48 文字'), findsOneWidget);
+  });
+
   testWidgets('水泳を選んで登録すると、水泳で登録し、ホームからスロットを探すと水泳で絞る', (tester) async {
     final api = FakeStudentApi();
     final container = await pumpScreen(

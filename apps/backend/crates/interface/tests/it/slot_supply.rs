@@ -211,6 +211,7 @@ fn app_with_accounts(
         ),
         CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,

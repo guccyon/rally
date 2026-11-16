@@ -120,9 +120,12 @@ export function CancelledBookingList({
   const [state, setState] = useState<State>({ kind: "loading" });
   // 条件を続けて変えたときに、前の条件の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
+  // 最後に読みにいった条件（コーチの一覧が読めたときに、選択肢に無いコーチで読んでいないかを確かめる）。
+  const lastFetched = useRef<Filter | null>(null);
 
   const fetchList = useCallback(
     async (filter: Filter): Promise<State> => {
+      lastFetched.current = filter;
       const response = await api.listCancelledBookings({
         ...(filter.period ?? {}),
         ...(filter.coachId === "" ? {} : { coach_id: filter.coachId }),
@@ -164,20 +167,40 @@ export function CancelledBookingList({
   }, [fetchList, initialCoachId, initialLessonMenuId, initialSport, initialCancelledBy]);
 
   // コーチの選択肢。読めなくても一覧は期間だけで引けるようにし、コーチの絞り込みだけを使えなくする。
+  // 読めたとき、URL の coach_id などが選択肢に無ければ「すべて」に戻し（表示と送る値を一致させる）、その coach_id で読んでいたら
+  // コーチを付けずに読み直して URL からも外す。
   useEffect(() => {
     let active = true;
     void api.listCoaches().then((response) => {
       if (!active) return;
-      setCoaches(
-        response.ok
-          ? { kind: "loaded", coaches: response.data.coaches }
-          : { kind: "failed", message: response.message },
-      );
+      if (!response.ok) {
+        setCoaches({ kind: "failed", message: response.message });
+        return;
+      }
+      setCoaches({ kind: "loaded", coaches: response.data.coaches });
+      const known = (coachId: string) =>
+        coachId === "" || response.data.coaches.some((coach) => coach.coach_id === coachId);
+      setDraft((current) => (known(current.coachId) ? current : { ...current, coachId: "" }));
+      const fetched = lastFetched.current;
+      if (fetched === null || known(fetched.coachId)) return;
+      const applied = { ...fetched, coachId: "" };
+      onFilterChange?.(applied);
+      const request = ++latestRequest.current;
+      setState({ kind: "loading" });
+      void fetchList(applied).then((next) => {
+        if (request !== latestRequest.current) return;
+        setState(next);
+        if (next.kind === "loaded") {
+          const used = { from: next.list.from, to: next.list.to };
+          setDraft((current) => (current.period === null ? { ...current, period: used } : current));
+        }
+      });
     });
     return () => {
       active = false;
     };
-  }, [api]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 開いたときの 1 回だけ（onFilterChange は最新を使わなくてよい）
+  }, [api, fetchList]);
 
   // レッスンメニューの選択肢。コーチと同じく、読めなくても一覧は引けるようにし、レッスンメニューの絞り込みだけを使えなくする。
   useEffect(() => {

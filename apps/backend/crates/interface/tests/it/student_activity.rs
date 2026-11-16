@@ -216,7 +216,7 @@ async fn app() -> Router {
         if slot_id == 23 {
             bookings
                 .update(booking.id(), |booking, slot| {
-                    booking.cancel(STUDENT, slot, at(11)).map(|_| ())
+                    booking.cancel(STUDENT, slot, at(11), true).map(|_| ())
                 })
                 .await
                 .unwrap();

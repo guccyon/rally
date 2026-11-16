@@ -2,11 +2,11 @@
 schema_version: "0.1"
 status: draft
 section: governance
-version: 0.10.0    # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
+version: 0.13.0    # 正本の版。semver。破る変更（名前・値の削除や意味の変更）は major、足すのは minor、文の直しは patch
 
 lifecycle:
   stages:
-    - {id: proposed, ja: 提案, meaning: 案だけ。画面では使わない（例 ダークモードの配色、下のタブ）}
+    - {id: proposed, ja: 提案, meaning: 案だけ。画面では使わない（例 ダークモードの配色）}
     - {id: trial, ja: 試用, meaning: 画面で使ってよい。名前と値は変わりうる。オンボーディングの部品はここから}
     - {id: stable, ja: 安定, meaning: 名前と値を守る。変えるときは major の版と移行}
     - {id: deprecated, ja: 廃止, meaning: 新しい画面で使わない。代わりの部品と消す版を書く}
@@ -65,12 +65,21 @@ lint:   # 決定論の検査に移す基準（check が deterministic のもの�
     target: 入室前チェックの画面と camera_preview・level_meter の実装
     detect: MediaRecorder・captureStream・canvas の toBlob と toDataURL、getUserMedia の stream を fetch・WebSocket・RTCPeerConnection に渡すコード（must なので最初からマージを止める）
   - id: state-color-map
-    detect: status_tag と timeline の点の色が booking_state・slot_state の対応と違う
+    detect: status_tag と timeline の点の色が booking_state・slot_state（tokens.yaml）と call_quality_state（components.yaml の status_tag）の対応と違う（call_quality_state は 0.13.0 から）
+  - id: row-highlight-only
+    target: admin-web の src/（src/components/ui/DataTable.tsx を除く）
+    detect: 表の行・セルに danger.container の面（bg-danger-container など）を直に付けている要素。急ぎの行は DataTable の row_highlight だけで付ける（0.13.0）
   - id: description-list-only
     target: admin-web の src/（src/components/ui/DescriptionList.tsx を除く）
     detect: dl 要素を直に書いている要素（0.8.0）
   - id: one-kpi-hero
     detect: 1 画面に kpi_figure の hero が 2 つ以上。指標の値の場所に「0」「-」「N/A」・空の文字（出せないときは「—」と理由。0.9.0）
+  - id: table-sort-aria
+    target: admin-web の src/（src/components/ui/DataTable.tsx を除く）
+    detect: th の中に直に書いた並べ替えの button と onClick、aria-sort のない今の並びの th、画面の中で行を並べ替える sort（table_sort。0.11.0）
+  - id: nav-bar-only
+    target: student-app の lib/（lib/ui/components の下のタブの部品を除く）
+    detect: NavigationBar・BottomNavigationBar を直に書く。AppBar の actions に画面の移動だけの IconButton。ラベルのない行き先（0.12.0）
 lint_rollout: 最初は警告だけ。今の画面の違反を直し終えたら、must の基準の lint だけをマージを止める検査にする
 
 requests:   # 画面のタスクから来た部品の求めのうち、まだ足していないもの
@@ -81,7 +90,7 @@ requests:   # 画面のタスクから来た部品の求めのうち、まだ足
   - id: patterns-detail-items
     from: "#1030"
     stage: 次の版
-    note: patterns の detail の structure に description_list と timeline を書き足す（0.8.0 は字数の上限で components にだけ書いた）
+    note: patterns の list の structure と rules に table_sort と value_note を書き足す（0.11.0 は字数の上限で components にだけ書いた。detail の description_list と timeline は 0.12.0 で書いた）
   - id: tokens-figure-use
     from: "#1462"
     stage: 次の版
@@ -92,11 +101,58 @@ requests:   # 画面のタスクから来た部品の求めのうち、まだ足
     note: >-
       API が前月からの向きを返すと決まったら足す。形は status_tag と同じ点と字。色は上下でなく良し悪しで選ぶ（良くなった success・悪くなった danger・同じ neutral）。
       字は「前月より良い」「前月より悪い」「前月と同じ」と印（↑↓→）を併記し、tokens.yaml に trend の色の対応を足す
+  - id: glossary-call-quality
+    from: "#1465（プロダクトデザイナー役、ADR 0025）"
+    stage: 別のタスク
+    note: >-
+      0.13.0 で glossary に call_quality_score（通話品質スコア。表の見出しは「品質スコア」）と 4 つの値の仮の呼び名を、content.yaml の glossary_mapping に同じ語を足した（#1527）。
+      low と fair の境の点と契約の enum のキーは #1465 の契約で決め、決まったら glossary と status_tag の call_quality_state の仮のキーと呼び名を合わせる
+  - id: tokens-call-quality-state
+    from: "#1465"
+    stage: 次の版
+    note: status_tag の call_quality_state と call_quality_rule、data_table の selected_contrast を tokens.yaml の color に写す（0.13.0 は字数の上限で components にだけ書いた）
+  - id: data-table-selected-use
+    from: "#1465"
+    stage: 試用
+    note: data_table の selected は #1465 の案 c だけで使う（推す案 a では使わない）
+
+  - id: a11y-nav-label
+    from: "#1441（0.12.0）"
+    stage: 次の版
+    note: accessibility の text-resize と platform_notes に navigation_bar のラベルを 14px で止める例外を、tokens の caption の use に「下のタブのラベル」を写す
 
 changelog:
   file: specs/design/CHANGELOG.md
   format: 版・日付・変えたもの・理由・効く画面（screens.ts と capture_test.dart の画面の id）・承認（工場か人）
   entries:   # 直近の版だけ。全文は specs/design/CHANGELOG.md
+    - version: 0.13.0
+      date: "2026-11-16"
+      change: >-
+        status_tag に call_quality_state（low は danger、fair は warning、ok と no_data は neutral。キーは仮）と call_quality_rule・状態・見本を足した。
+        data_table に selectable と状態 selected・pressed・disabled、選んだ行の loading・error を足し、row_highlight を急ぎの予約の行の専用のままにする should を足した。
+        lint に row-highlight-only を足し state-color-map を広げ、requests を 3 つ足した。glossary と content.yaml に通話品質の語を仮の呼び名で足した
+      reason: >-
+        #1465 の画面の設計で部品が足りなかった（ADR 0025・#1527）。row_highlight を低品質に広げると急ぎの予約の印が薄まる（one-hot-spot）。低品質は時間で急がないので、
+        並び順・品質の列・status_tag の danger の点で示す。トークン・既存の名前と値は変えていない。must の追加はない
+      affects: >-
+        #1465 の本部の通話品質の画面（id は #1465 で足す）、status_tag と data_table のある admin-web の画面。今変わるのは admin-web の design-catalog だけ
+      approved_by: 工場（対応・部品の状態・should・lint の追加）
+    - version: 0.12.0
+      date: "2026-11-16"
+      change: >-
+        navigation_bar を足し、patterns の navigation を proposed から決めた。button・badge・notice・join_bar から指した。
+        patterns の detail に description_list と timeline を足した（requests の patterns-detail-items の半分）。lint に nav-bar-only、requests に a11y-nav-label を足した
+      reason: アプリバーの右の入口が 7 つのラベルのないアイコンで、どれが予約か分からず親指も届かない（#1441）。5 つ目は 360px の 72px に収まる「マイページ」。トークンは変えていない
+      affects: student-app の登録後の画面（home*・my-*・message-threads・messages・notifications・notification-settings・profile・coach-*・booking-*・lesson-completion）と design-catalog。今変わるのは student-app の design-catalog だけ
+      approved_by: 工場（部品・should・lint の追加。must と色の値の変更はない）
+    - version: 0.11.0
+      date: "2026-11-16"
+      change: >-
+        table_sort（見出しで API の並べ方を選んで読み直す）と value_note（「（参考）」の語と表の下の説明）を足し、data_table から指した。lint に table-sort-aria を足した
+      reason: >-
+        #1466 の画面の設計で部品が足りなかった（ADR 0025・#1493）。並べ替えは patterns の list の「画面の中で並べ替えない」を守るため API で読み直す形にした。トークンと既存の名前・値は変えていない
+      affects: admin-web の #1466 の画面と、API に並べ方の引数がある本部の一覧と design-catalog。今変わるのは admin-web の design-catalog だけ
+      approved_by: 工場（部品・should・lint の追加。must はない）
     - version: 0.10.0
       date: "2026-11-14"
       change: >-

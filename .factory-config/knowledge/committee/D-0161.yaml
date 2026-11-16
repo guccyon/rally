@@ -1,0 +1,67 @@
+# 知見の委員会の議決（ADR 0024）。反対の票も消さずに残す。core-gates/committee_review.py が書く
+id: D-0161
+pr: https://github.com/guccyon/rally/pull/1774
+decided_at: '2026-11-16'
+outcome: adopt
+requires_human: false
+knowledge: []
+votes:
+- role: consistency
+  vote: adopt
+  reasons:
+  - K-0010・K-0014・K-0015 に足した config の解決策は、どれも issue 1663 の同じ差分 tools/conflict-check/engine/continuation-config.patch
+    を、それぞれの知見の主張に合う側から書いたもので、既存の解決策や specs/ の用語集・コンテキストと矛盾も重複もありません。
+  - K-0015 の新しい解決策（機械的な解消は tools/changelog-check/check.mjs に通ったときだけ、通らなければエージェントの回として上限に数える）は、K-0015
+    の statement に書いた線と K-0010 の issue 954 の線にそのまま合っています。
+  - K-0010 の既存の test・ci_check の解決策に requires_check（PR ごとに走らないものは []）を足したのは、触れた知見のファイルに欄を求める議決
+    D-0116・D-0141 の決まりに沿った扱いで、妥当です。
+  - 新しい 3 件に decided_by がないのは、週 1 の定例の決定で config の案が議決にないときは書かないという K-0005 の前例と同じ扱いで、decision_mismatch
+    を避ける形として整っています。
+  - K-0014 の新しい解決策が載せるのは「衝突し得るファイル」（PR と既定ブランチが変えたファイルの重なり）なので、配線した後に invalidate_when
+    の 1 つ目（衝突したファイルがその場で載る）を満たしたと読むかどうかは、次に直すときに invalidate_when の文で区別しておくとずれません。
+  - 'どれも wired: false・verified: false のままで、知見は hypothesis・draft のまま据え置くのが妥当です。'
+  personal_data: false
+- role: evidence
+  vote: adopt
+  reasons:
+  - 'K-0010・K-0014・K-0015 に足した config の解決策は、どれも issue: 1663 と at: 2026-11-16 を持っています。差分の道
+    tools/conflict-check/engine/continuation-config.patch、当てる先の Engine main（ea188bb）、確かめたテスト（test_engine.py
+    の PatchedEngineTest・test_5、engine_harness.py の worker）も名指ししているので、一次記録に辿れます。'
+  - '3 件とも wired: false・verified: false です。Engine に当てて engine.lock を上げるのは建設者で、効き目は上げた後のイベント列で確かめると本文にも書いてあり、確かめた範囲を言い過ぎていません。'
+  - '根拠に挙げた「知見の委員会の週 1 の定例（2026-W46）の決定」は committee/ にも cases/ にも記録がなく、新しい項目には decided_by
+    もありません。D-0071 が Issue #1121 で指摘したのと同じ形なので、confirmed に上げる前に定例の決定を議決か事例記録から辿れるようにしてください。'
+  - K-0010 の既存の解決策に足した requires_check は、README の決まり（議決 D-0116・D-0141）で必須の欄を埋めただけです。主張・evidence（C-0005・C-0007・C-0008
+    など）・期限は変えておらず、根拠の観点で問題はありません。
+  - 新しい事例も本物の窓での確かめもまだないので、K-0010・K-0014・K-0015 の confidence は hypothesis のままが妥当です。
+  - 差分に出てくるのは Issue の番号、ファイルの道、コミットの短いハッシュ、イベントの名前だけで、利用者や人を特定できる情報はありません。
+  personal_data: false
+- role: enforcement
+  vote: adopt
+  reasons:
+  - この PR は K-0010・K-0014・K-0015 に issue 1663 の config の解決策を足すだけで、どれも Engine への差分
+    tools/conflict-check/engine/continuation-config.patch と test_engine.py の PatchedEngineTest
+    という決定論の担保をすでに持っています。
+  - K-0010 の既存の ci_check・test の解決策に足した requires_check は、議決 D-0116・D-0141 の requires_check_missing
+    を満たすための欄の明示で、すでに check.py が機械で照らしているので新しい担保は要りません。
+  - '新しい解決策はどれも wired: false・verified: false で、差分を Engine に当てて ENGINE_REF を上げるのは建設者だと正直に書いており、未配線を決定論と言い張っていません。'
+  - 効き目は ENGINE_REF を上げた後の窓のイベント列（continue.limit_reached・continue.enqueued の conflict_files）で機械的に数えられるので、いま追加の
+    lint や CI を作る費用は見合いません。
+  - 新しい 3 件の config の解決策には decided_by がないので、この議決の id を後で書き足すと他の解決策とそろいます。
+  - Engine に配線されておらず本物の記録でまだ確かめていないので、3 件とも確かさは hypothesis のままが妥当です。
+  personal_data: false
+- role: dissent
+  vote: adopt
+  reasons:
+  - この PR は K-0010・K-0014・K-0015 に、同じ差分 tools/conflict-check/engine/continuation-config.patch（issue
+    1663）の解決策を 1 件ずつ足すだけで、知見の主張（statement）や scope は広げていないので、範囲が広すぎるとは見ません。
+  - K-0014 の解決策が continue.enqueued に載せるのは PR と既定ブランチの変更の重なりで本当に衝突したファイルではないという反例は、本文が「衝突し得るファイル」と書き、pr.conflicted
+    と handoff.saved は含めていないと範囲を自分で限っているので、採らない理由にはなりません。
+  - K-0015 の線では tools/changelog-check/check.mjs が読めないときも機械的な解消をやめてエージェントの回に数えるので、検査が壊れると直接の書き換えのない
+    PR まで 3 回で人へ上がる反例があり得ますが、安全側に倒れる作りなので、配線後に窓のイベント列で確かめる invalidate_when の観点として残せば足ります。
+  - '確かめたのは Engine の写しに差分を当てたテストと engine_harness.py だけで、どれも wired: false・verified:
+    false のままなので、3 件とも confidence は hypothesis のままにすべきです。'
+  - 新しい 3 件に decided_by がないのは、週 1 の定例の決定による config の解決策に decided_by を書かない K-0005 の
+    issue 1121 の前例と同じ扱いで、反例にはなりません。
+  - K-0010 の既存の解決策に足した requires_check は D-0116 の決まりに沿った書き足しで、どの検査も止める範囲を広げていません。
+  personal_data: false
+enforcement: []

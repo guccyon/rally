@@ -12,6 +12,7 @@ import '../support/fake_student_api.dart';
 import '../support/pump.dart';
 
 /// 段の移動をブラウザーの履歴に写し、「戻る」でアプリから抜けず、アプリの閉じる・戻るのボタンと同じ行き先に移る（#1519）。
+/// ホームで「戻る」を押してもアプリから抜けない（#1584）。
 /// ブラウザーは [FakeBrowserHistory] で、アプリが報告した項目を積み・置き換え、「戻る」で 1 つ前の項目をアプリに渡す
 void main() {
   Future<(FakeBrowserHistory, FakeStudentApi)> openApp(
@@ -73,24 +74,98 @@ void main() {
   ) async {
     final (history, _) = await openApp(tester);
     expect(find.text('アカウント登録'), findsOneWidget);
-    expect(history.current.uri, '/register');
+    // アプリを開いたページの項目（URL はホーム）の上に積む
+    expect(history.entries.map((e) => e.uri), ['/home', '/register']);
 
     await register(tester);
-    expect(history.entries.map((e) => e.uri), ['/home']);
+    expect(history.entries.map((e) => e.uri), ['/home', '/home']);
 
     await tapText(tester, 'スロットを探して予約する');
     expect(find.text('スロットを探す'), findsOneWidget);
-    expect(history.entries.map((e) => e.uri), ['/home', '/slot-search']);
+    expect(history.entries.map((e) => e.uri), [
+      '/home',
+      '/home',
+      '/slot-search',
+    ]);
 
     await history.back();
     expect(history.leftApp, isFalse);
     expect(find.text('ホーム'), findsOneWidget);
     expect(find.text('スロットを探す'), findsNothing);
 
-    // ホームより前は、アプリを開く前のページ（登録の画面は残っていない）
-    await history.back();
-    expect(history.leftApp, isTrue);
+    // ホームの「戻る」はアプリを開いたページの項目に移るが、ホームのままホームの項目を積み直す（登録の画面は残っていない）
+    for (var i = 0; i < 3; i++) {
+      await history.back();
+      expect(history.leftApp, isFalse);
+      expect(find.text('ホーム'), findsOneWidget);
+      expect(find.text('アカウント登録'), findsNothing);
+      expect(history.current.uri, '/home');
+    }
     expect(history.entries.map((e) => e.uri), isNot(contains('/register')));
+  });
+
+  testWidgets('プロフィールから開いた月額契約の「戻る」はプロフィールに戻り、続けての「戻る」でホームへ。ホームでは抜けない（#1584）', (
+    tester,
+  ) async {
+    final (history, api) = await openApp(tester);
+    await register(tester);
+    await tester.tap(find.byTooltip('プロフィール'));
+    await tester.pumpAndSettle();
+    await tapText(tester, '月額契約へ進む');
+    expect(find.text('月額契約を始める'), findsOneWidget);
+    expect(history.current.uri, '/subscription');
+    api.calls.clear();
+
+    await history.back();
+    expect(history.leftApp, isFalse);
+    expect(find.byTooltip('プロフィールを閉じる'), findsOneWidget);
+    expect(find.text('まだ月額契約はありません'), findsOneWidget);
+    expect(history.current.uri, '/profile');
+    // 月額契約の欄は受講権を読み直して出す
+    expect(api.calls, contains('getMyEntitlement'));
+
+    await history.back();
+    expect(history.leftApp, isFalse);
+    expect(find.text('ホーム'), findsOneWidget);
+    expect(find.byTooltip('プロフィールを閉じる'), findsNothing);
+
+    await history.back();
+    expect(history.leftApp, isFalse);
+    expect(find.text('ホーム'), findsOneWidget);
+  });
+
+  testWidgets('プロフィールから月額契約を始めたあとの「戻る」もプロフィールに戻り、月額契約の欄に始めたプランを出す', (
+    tester,
+  ) async {
+    final (history, _) = await openApp(tester);
+    await register(tester);
+    await tester.tap(find.byTooltip('プロフィール'));
+    await tester.pumpAndSettle();
+    await tapText(tester, '月額契約へ進む');
+    await tapText(tester, '月額契約を始める');
+    expect(find.text('月額契約を開始しました'), findsOneWidget);
+
+    await history.back();
+    expect(history.leftApp, isFalse);
+    expect(find.byTooltip('プロフィールを閉じる'), findsOneWidget);
+    expect(find.text('月額契約へ進む'), findsNothing);
+  });
+
+  testWidgets('ホームから開いた自分の予約を「戻る」で閉じたあとも、ホームの「戻る」でアプリから抜けない', (tester) async {
+    final (history, _) = await openApp(tester);
+    await register(tester);
+    await tester.tap(find.byTooltip('自分の予約'));
+    await tester.pumpAndSettle();
+    expect(history.current.uri, '/my-bookings');
+
+    await history.back();
+    expect(find.text('ホーム'), findsOneWidget);
+    expect(find.byTooltip('自分の予約を閉じる'), findsNothing);
+
+    await history.back();
+    expect(history.leftApp, isFalse);
+    expect(find.text('ホーム'), findsOneWidget);
+    expect(history.current.uri, '/home');
   });
 
   testWidgets('脇の画面の「戻る」は閉じるボタンと同じく開いた段に戻り、もう一度の「戻る」でホームへ', (tester) async {
@@ -119,9 +194,11 @@ void main() {
     await tester.tap(find.byTooltip('ホーム'));
     await tester.pumpAndSettle();
 
-    await history.back();
-    expect(history.leftApp, isFalse);
-    expect(find.text('ホーム'), findsOneWidget);
+    for (var i = 0; i < 3; i++) {
+      await history.back();
+      expect(history.leftApp, isFalse);
+      expect(find.text('ホーム'), findsOneWidget);
+    }
   });
 
   testWidgets('確定待ちの画面の「戻る」はホームへ戻り、確定待ちの予約は「次にやること」に残る', (tester) async {
@@ -232,6 +309,13 @@ void main() {
     expect(find.text('ホーム'), findsOneWidget);
     expect(find.text('スロットを探す'), findsNothing);
     expect(history.current.uri, '/home');
+
+    // 開き直したホームの「戻る」でもアプリから抜けない
+    for (var i = 0; i < 3; i++) {
+      await history.back();
+      expect(history.leftApp, isFalse);
+      expect(find.text('ホーム'), findsOneWidget);
+    }
   });
 
   testWidgets('端末の「戻る」（Android の戻るボタンなど）も同じ行き先に移し、ホームでだけアプリを抜ける', (

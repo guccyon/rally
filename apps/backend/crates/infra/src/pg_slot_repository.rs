@@ -9,8 +9,8 @@ use application::{
 use domain::{
     identity::AccountId,
     scheduling::{
-        CoachAcceptanceStatus, CoachCalendar, SchedulingError, Slot, SlotCapacity, SlotId,
-        SlotSeats, SlotStatus,
+        BookingStatus, CoachAcceptanceStatus, CoachCalendar, SchedulingError, Slot, SlotCapacity,
+        SlotId, SlotSeats, SlotStatus,
     },
 };
 use sqlx::{
@@ -22,7 +22,10 @@ use sqlx::{
 use crate::{
     identity_values::{sport_from_value, sport_value},
     pg_support::{lock, timestamp},
-    scheduling_values::{coach_acceptance_status_value, slot_status_from_value, slot_status_value},
+    scheduling_values::{
+        booking_status_value, coach_acceptance_status_value, slot_status_from_value,
+        slot_status_value,
+    },
 };
 
 /// [`SlotRepository`] の Postgres 実装。
@@ -32,7 +35,8 @@ use crate::{
 /// はトランザクションの中でコーチごとの advisory lock を取ってから、カレンダーの読み取りと保存を行う。
 /// 枠の変更（[`SlotRepository::update`]）は、予約の保存先（[`crate::PgBookingRepository`]）と同じくスロットの行を
 /// `FOR UPDATE` でロックしてから席を数えるので、同じ枠への予約の作成・確定・キャンセルと直列になる。
-/// 検索（[`SlotRepository::search`]）は、受付を止めているコーチ（`scheduling.coach_acceptances` が停止中）の枠を除く。
+/// 検索（[`SlotRepository::search`]）は、受付を止めているコーチ（`scheduling.coach_acceptances` が停止中）の枠と、
+/// 残りの席がない枠と、[`SlotCriteria::held_by`] の生徒が有効な予約を持つ枠を、`LIMIT` の前に除く。
 #[derive(Debug, Clone)]
 pub struct PgSlotRepository {
     pool: PgPool,
@@ -227,6 +231,14 @@ impl SlotRepository for PgSlotRepository {
                    SELECT 1 FROM scheduling.coach_acceptances ca
                    WHERE ca.coach_id = s.coach_id AND ca.status = $9
                )
+               AND s.capacity > (
+                   SELECT count(*) FROM scheduling.bookings sb
+                   WHERE sb.slot_id = s.slot_id AND sb.status = ANY($10)
+               )
+               AND ($11::uuid IS NULL OR NOT EXISTS (
+                   SELECT 1 FROM scheduling.bookings sb
+                   WHERE sb.slot_id = s.slot_id AND sb.student_id = $11 AND sb.status = ANY($10)
+               ))
              ORDER BY s.starts_at, s.slot_id
              LIMIT $8"
         ))
@@ -241,6 +253,8 @@ impl SlotRepository for PgSlotRepository {
         .bind(coach_acceptance_status_value(
             CoachAcceptanceStatus::Suspended,
         ))
+        .bind(active_booking_status_values())
+        .bind(criteria.held_by.map(account_id_uuid::to_uuid))
         .fetch_all(&self.pool)
         .await
         .map_err(Unavailable::new)?;
@@ -259,6 +273,15 @@ impl SlotRepository for PgSlotRepository {
         .map_err(Unavailable::new)?;
         rows.into_iter().map(slot_from_row).collect()
     }
+}
+
+/// 有効な予約（未確定か確定。[`BookingStatus::is_active`]）の状態の保存値。
+fn active_booking_status_values() -> Vec<&'static str> {
+    BookingStatus::ALL
+        .into_iter()
+        .filter(|status| status.is_active())
+        .map(booking_status_value)
+        .collect()
 }
 
 fn unavailable(error: sqlx::Error) -> AddToCalendarError {
@@ -302,9 +325,7 @@ pub(crate) fn slot_from_row(
 
 #[cfg(test)]
 mod tests {
-    use domain::scheduling::BookingStatus;
-
-    use crate::scheduling_values::booking_status_value;
+    use super::*;
 
     #[test]
     fn slot_columns_count_bookings_by_the_stored_status_values() {

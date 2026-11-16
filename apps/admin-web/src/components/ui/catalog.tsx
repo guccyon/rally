@@ -5,7 +5,7 @@ import { Button, type ButtonVariant } from "./Button";
 import { CameraPreview, type CameraPreviewState } from "./CameraPreview";
 import { Card } from "./Card";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { DataTable, type DataTableColumn } from "./DataTable";
+import { DataTable, TABLE_SORT_FAILED, type DataTableColumn, type TableSort } from "./DataTable";
 import { DateField, DateRangeField } from "./DateField";
 import { dateRangeError, type DateRange } from "./dateRange";
 import { DescriptionList, type DescriptionItem } from "./DescriptionList";
@@ -21,7 +21,8 @@ import { Select, selectNotSelected } from "./Select";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
 import { Timeline, type TimelineEvent } from "./Timeline";
-import { SLOT_STATE_STATUS, type Status } from "./status";
+import { ValueNote } from "./ValueNote";
+import { CALL_QUALITY_STATE_STATUS, SLOT_STATE_STATUS, type Status } from "./status";
 
 /**
  * カタログの 1 枠。component・variant・state は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
@@ -46,12 +47,20 @@ export const NOT_IN_ADMIN_WEB: {
     reason: "components.yaml の not_for に admin-web とある（見出しと「本部の画面へ戻る」）",
   },
   {
+    component: "navigation_bar",
+    reason: "components.yaml の not_for に admin-web とある（student-app の下のタブ）",
+  },
+  {
     component: "chip",
     reason: "components.yaml の not_for に admin-web とある（select を使う）",
   },
   {
     component: "score_panel",
     reason: "components.yaml の not_for に admin-web とある",
+  },
+  {
+    component: "navigation_bar",
+    reason: "components.yaml の not_for に admin-web とある（student-app の下のタブ）",
   },
   {
     component: "button",
@@ -101,6 +110,16 @@ const SLOT_STATE_EXAMPLES: {
   { state: "booked", label: "予約済み" },
   { state: "closed", label: "終了" },
 ];
+
+/** 通話品質の状態（glossary の call_quality_score.states）の呼び名。色は components.yaml の status_tag.call_quality_state。 */
+type CallQualityState = keyof typeof CALL_QUALITY_STATE_STATUS;
+
+const CALL_QUALITY_LABELS: Record<CallQualityState, string> = {
+  low: "低品質",
+  fair: "やや低い",
+  ok: "問題なし",
+  no_data: "指標なし",
+};
 
 /** 期間の見本（日付の欄と誤りの型）。上限は契約の 31 日。 */
 const MAX_DAYS = 31;
@@ -247,6 +266,73 @@ const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
     variant: "numeric",
     cell: (row) => `${Math.round((row.booked / row.published) * 100)}%`,
   },
+];
+
+/** 並べ替えの見本（table_sort）。開始と予約された枠だけ API に並べ方の引数がある想定で、コーチは素の見出し。 */
+type SortRow = { id: string; start: string; coach: string; booked: number };
+
+const SORT_ROWS: SortRow[] = [
+  { id: "s1", start: "10/28（水）12:00", coach: "山田 花子", booked: 9 },
+  { id: "s2", start: "10/28（水）9:00", coach: "佐藤 健", booked: 4 },
+];
+
+const SORT_COLUMNS: DataTableColumn<SortRow>[] = [
+  { header: "開始", cell: (row) => row.start, sort: { key: "start", kind: "datetime" } },
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "予約された枠", variant: "numeric", cell: (row) => `${row.booked} 件`, sort: { key: "booked", kind: "count" } },
+];
+
+const START_NEWEST: TableSort = { key: "start", direction: "descending" };
+
+/** 値の注記の見本（value_note）。「（参考）」は API が印を返した値だけ（ここでは公開した枠が 5 件未満）。 */
+type NotedSupplyRow = { coach: string; published: number; rate: number; reference: boolean };
+
+const NOTED_SUPPLY_ROWS: NotedSupplyRow[] = [
+  { coach: "山田 花子", published: 12, rate: 75, reference: false },
+  { coach: "佐藤 健", published: 3, rate: 67, reference: true },
+];
+
+const REFERENCE_NOTE = "（参考）は、公開した枠が 5 件未満で、割合が動きやすい値です。";
+
+const NOTED_SUPPLY_COLUMNS: DataTableColumn<NotedSupplyRow>[] = [
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "公開した枠", variant: "numeric", cell: (row) => `${row.published} 件` },
+  {
+    header: "埋まった割合",
+    variant: "numeric",
+    cell: (row) =>
+      row.reference ? (
+        <ValueNote note="（参考）" numeric>
+          {row.rate}%
+        </ValueNote>
+      ) : (
+        `${row.rate}%`
+      ),
+  },
+];
+
+/** 行を選ぶ表の見本（data_table の selectable）。低品質を先に並べるのは API（ここでは渡した順のまま）。 */
+type CallQualityRow = {
+  coach: string;
+  score: number | null;
+  state: CallQualityState;
+  calls: number;
+};
+
+const CALL_QUALITY_ROWS: CallQualityRow[] = [
+  { coach: "佐藤 健", score: 62, state: "low", calls: 14 },
+  { coach: "山田 花子", score: 74, state: "fair", calls: 9 },
+  { coach: "鈴木 一郎", score: null, state: "no_data", calls: 0 },
+];
+
+const CALL_QUALITY_COLUMNS: DataTableColumn<CallQualityRow>[] = [
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "品質スコア", variant: "numeric", cell: (row) => (row.score === null ? "—" : row.score) },
+  {
+    header: "通話品質",
+    cell: (row) => <StatusTag label={CALL_QUALITY_LABELS[row.state]} status={CALL_QUALITY_STATE_STATUS[row.state]} />,
+  },
+  { header: "ビデオ通話", variant: "numeric", cell: (row) => `${row.calls} 回` },
 ];
 
 /** 表の見本の枠。Section と同じく面で囲わない（0.5.0）。narrow は幅 360px。 */
@@ -585,6 +671,12 @@ export const CATALOG: CatalogEntry[] = [
     example: `slot_state ${state}`,
     render: () => <StatusTag label={label} status={SLOT_STATE_STATUS[state]} />,
   })),
+  ...(Object.keys(CALL_QUALITY_LABELS) as CallQualityState[]).map((state) => ({
+    component: "status_tag",
+    variant: "default",
+    example: `call_quality_state ${state}`,
+    render: () => <StatusTag label={CALL_QUALITY_LABELS[state]} status={CALL_QUALITY_STATE_STATUS[state]} />,
+  })),
   {
     component: "status_tag",
     variant: "urgent",
@@ -700,6 +792,104 @@ export const CATALOG: CatalogEntry[] = [
           highlightRow={(row) => row.urgent === true}
         />
       </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "numeric",
+    state: "selected",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="コーチごとの通話品質（直近 30 日）"
+          columns={CALL_QUALITY_COLUMNS}
+          rows={CALL_QUALITY_ROWS}
+          rowKey={(row) => row.coach}
+          selection={{
+            selected: "山田 花子",
+            onSelect: noop,
+            name: (row) => row.coach,
+            canSelect: (row) => row.calls > 0,
+          }}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "table_sort",
+    state: "default",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="予約"
+          columns={SORT_COLUMNS}
+          rows={SORT_ROWS}
+          rowKey={(row) => row.id}
+          sort={{ current: START_NEWEST, onSort: noop, count: "12 件" }}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "table_sort",
+    state: "loading",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="予約"
+          columns={SORT_COLUMNS}
+          rows={SORT_ROWS}
+          rowKey={(row) => row.id}
+          sort={{ current: { key: "start", direction: "ascending" }, onSort: noop, count: "12 件", loading: true }}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "table_sort",
+    state: "failed",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="予約"
+          columns={SORT_COLUMNS}
+          rows={SORT_ROWS}
+          rowKey={(row) => row.id}
+          sort={{ current: START_NEWEST, onSort: noop, count: "12 件", error: TABLE_SORT_FAILED }}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "value_note",
+    state: "default",
+    render: () => (
+      <TableFrame narrow>
+        <DataTable
+          label="コーチごとの予約枠の需給"
+          columns={NOTED_SUPPLY_COLUMNS}
+          rows={NOTED_SUPPLY_ROWS}
+          rowKey={(row) => row.coach}
+          notes={[REFERENCE_NOTE]}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "value_note",
+    state: "default",
+    example: "ラベルと値の並び",
+    render: () => (
+      <div>
+        <DescriptionList
+          label="コーチの様子"
+          items={[
+            { term: "公開した枠", value: "3 件" },
+            { term: "埋まった割合", value: <ValueNote note="（参考）">67%</ValueNote> },
+          ]}
+        />
+        <p className="mt-2 text-sm text-text-muted">{REFERENCE_NOTE}</p>
+      </div>
     ),
   },
   {

@@ -105,7 +105,7 @@ pub use lesson_menu_publications::lesson_menu_publication_router;
 pub use lesson_menus::catalog_router;
 pub use lesson_stats::lesson_stats_router;
 pub use lessons::lessons_router;
-pub use live_lesson_sessions::live_lesson_sessions_router;
+pub use live_lesson_sessions::{live_lesson_session_reads_router, live_lesson_sessions_router};
 pub use low_rated_review_handlings::low_rated_review_handlings_router;
 pub use low_rated_reviews::low_rated_reviews_router;
 pub use me::me_router;

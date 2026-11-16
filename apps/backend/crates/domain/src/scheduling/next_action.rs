@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn cancelled_bookings_are_not_listed() {
         let (mut booked, mut slot) = booking(1, STUDENT, 100, false);
-        booked.cancel(STUDENT, &mut slot, at(1)).unwrap();
+        booked.cancel(STUDENT, &mut slot, at(1), true).unwrap();
         assert!(decide(&[(booked, slot)], &[], &[], &[], false, 10).is_empty());
     }
 

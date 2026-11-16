@@ -2,7 +2,10 @@ use domain::{
     DomainError, identity::AccountId, live_lesson::LiveLessonSession, scheduling::BookingId,
 };
 
-use super::{BookingLookup, InsertSessionError, LiveLessonSessionRepository, VideoCallProvider};
+use super::{
+    BookingLookup, InsertSessionError, LiveLessonSessionRepository, UpdateSessionError,
+    VideoCallProvider,
+};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
@@ -42,9 +45,13 @@ pub enum StartLiveLessonSessionError {
 /// 通話基盤にルームを作らせ（[`VideoCallProvider`]）、セッションを保存する。保存したら行動イベント
 /// `call.started` を 1 回発火する。拒否・失敗では発火しない。
 ///
+/// 開始したアカウントは開始の時刻に入室したものとして、セッションとともに保存する。
+///
 /// 予約がすでにセッションに結び付いていれば、新しく開始せず、[`LiveLessonSession::ensure_can_join`] が通れば
-/// （通話中のセッション。マンツーマンで相手が先に入室したときも。Issue #1471）同じセッションと、そのアカウントの
-/// 参加のトークンを返す（保存も `call.started` の発火もしない）。終了したセッションへの開始は今までどおり拒否する。
+/// （通話中のセッション。マンツーマンで相手が先に入室したときも。Issue #1471）そのアカウントの参加のトークンを
+/// 通話基盤から受け取ってから、入室を [`LiveLessonSession::join`] で記録して保存し（入り直しは最初の時刻のまま。
+/// Issue #1654）、入室を記録したセッションとトークンを返す。`call.started` は発火しない（通話の開始は 1 回。
+/// 枠の消費の規則も変えない。ADR 0005）。終了したセッションへの開始は今までどおり拒否する。
 ///
 /// 同じ予約の開始が並行して両方 domain の判定を通っても、保存先が後の方を拒む（そのとき作ったルームは閉じる）。
 pub struct StartLiveLessonSession<S, B, V, A, C> {
@@ -98,6 +105,24 @@ where
                 .create_room(session.id(), command.account_id)
                 .await
                 .map_err(StartLiveLessonSessionError::Unavailable)?;
+            // 判定から保存までの間に終了されたら、保存先の中の判定（join）が拒む
+            let session = self
+                .sessions
+                .update(session.id(), |session| {
+                    session.join(command.account_id, &booking, now)
+                })
+                .await
+                .map_err(|error| match error {
+                    UpdateSessionError::Rejected(error) => {
+                        StartLiveLessonSessionError::Invalid(error)
+                    }
+                    UpdateSessionError::NotFound => StartLiveLessonSessionError::Unavailable(
+                        Unavailable::new("読んだセッションが保存先から消えた"),
+                    ),
+                    UpdateSessionError::Unavailable(error) => {
+                        StartLiveLessonSessionError::Unavailable(error)
+                    }
+                })?;
             return Ok(StartedLiveLessonSession {
                 session,
                 room_token,
@@ -181,17 +206,18 @@ mod tests {
     use crate::{
         in_memory::{
             FixedClock, FixedVideoCallProvider, InMemoryBookingRepository,
-            InMemoryLiveLessonSessionRepository, InMemorySlotRepository, RecordingAnalyticsSink,
+            InMemoryLiveLessonSessionRepository, InMemorySlotRepository, ManualClock,
+            RecordingAnalyticsSink,
         },
         scheduling::{BookingRepository, SchedulingBookingLookup},
     };
 
-    type UseCase = StartLiveLessonSession<
+    type UseCase<C = FixedClock> = StartLiveLessonSession<
         InMemoryLiveLessonSessionRepository,
         SchedulingBookingLookup<InMemoryBookingRepository>,
         FixedVideoCallProvider,
         RecordingAnalyticsSink,
-        FixedClock,
+        C,
     >;
 
     const STUDENT: AccountId = AccountId::from_u128(1);
@@ -205,6 +231,11 @@ mod tests {
 
     /// スロット 10（公開中）を生徒が予約した状態から始める。`confirm` なら確定まで進める。
     async fn use_case(confirm: bool) -> (UseCase, Booking) {
+        use_case_with(confirm, FixedClock(now())).await
+    }
+
+    /// [`use_case`] の時計を `clock` にしたもの。
+    async fn use_case_with<C: Clock>(confirm: bool, clock: C) -> (UseCase<C>, Booking) {
         let slots = InMemorySlotRepository::with_slots([Slot::restore(
             SlotId::from_u128(10),
             COACH,
@@ -242,7 +273,7 @@ mod tests {
             SchedulingBookingLookup::new(bookings),
             FixedVideoCallProvider::default(),
             RecordingAnalyticsSink::default(),
-            FixedClock(now()),
+            clock,
         );
         (use_case, booking)
     }
@@ -348,18 +379,25 @@ mod tests {
             .execute(command(STUDENT, booking.id()))
             .await
             .unwrap();
-        // あとから入るコーチは同じセッションに入る。保存もイベントも増えない（Issue #1471）
+        assert_eq!(
+            started.session.coach_joined_at(),
+            None,
+            "コーチはまだ入室していない"
+        );
+        // あとから入るコーチは同じセッションに入り、入室を記録する。セッションもイベントも増えない（Issue #1471・#1654）
         let joined = use_case
             .execute(command(COACH, booking.id()))
             .await
             .unwrap();
-        assert_eq!(joined.session, started.session);
+        assert_eq!(joined.session.id(), started.session.id());
+        assert_eq!(joined.session.coach_joined_at(), Some(now()));
+        assert_eq!(joined.session.joined_at(STUDENT), Some(now()));
         assert!(
             joined
                 .room_token
                 .ends_with(&crate::identity::account_id_uuid::format(COACH))
         );
-        assert_eq!(use_case.sessions().all(), vec![started.session.clone()]);
+        assert_eq!(use_case.sessions().all(), vec![joined.session.clone()]);
         assert_eq!(use_case.video().open_rooms(), vec![started.session.id()]);
         assert_eq!(use_case.analytics().events().len(), 1);
         // 予約の参加者でなければ入れない
@@ -479,14 +517,18 @@ mod tests {
                 .execute(command(account, booking.id()))
                 .await
                 .unwrap();
-            assert_eq!(joined.session, started.session);
+            assert_eq!(joined.session.id(), started.session.id());
+            assert_eq!(joined.session.joined_at(account), Some(now()));
             assert!(
                 joined
                     .room_token
                     .ends_with(&crate::identity::account_id_uuid::format(account))
             );
         }
-        assert_eq!(use_case.sessions().all(), vec![started.session.clone()]);
+        let saved = use_case.sessions().all();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].id(), started.session.id());
+        assert_eq!(saved[0].joins().len(), 4, "コーチと生徒 3 人の入室");
         assert_eq!(
             use_case.video().open_rooms(),
             vec![started.session.id()],
@@ -527,5 +569,55 @@ mod tests {
             ),
             "{result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn rejoining_keeps_the_first_join_time_and_does_not_emit_call_started() {
+        let clock = ManualClock::new(now());
+        let (use_case, booking) = use_case_with(true, clock.clone()).await;
+        let started = use_case
+            .execute(command(STUDENT, booking.id()))
+            .await
+            .unwrap();
+        assert_eq!(started.session.joined_at(STUDENT), Some(now()));
+        assert_eq!(started.session.coach_joined_at(), None);
+
+        clock.set(now() + Duration::from_secs(120));
+        let joined = use_case
+            .execute(command(COACH, booking.id()))
+            .await
+            .unwrap();
+        assert_eq!(
+            joined.session.coach_joined_at(),
+            Some(now() + Duration::from_secs(120))
+        );
+
+        // 生徒・コーチが入り直しても最初の時刻のまま
+        clock.set(now() + Duration::from_secs(300));
+        for account in [STUDENT, COACH] {
+            let rejoined = use_case
+                .execute(command(account, booking.id()))
+                .await
+                .unwrap();
+            assert_eq!(rejoined.session, joined.session);
+        }
+        assert_eq!(use_case.sessions().all(), vec![joined.session.clone()]);
+        assert_eq!(
+            use_case.analytics().events().len(),
+            1,
+            "call.started は開始の 1 回だけ"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_coach_who_starts_joins_at_the_start() {
+        let (use_case, booking) = use_case(true).await;
+        let started = use_case
+            .execute(command(COACH, booking.id()))
+            .await
+            .unwrap();
+        assert_eq!(started.session.coach_joined_at(), Some(now()));
+        assert_eq!(started.session.joined_at(STUDENT), None);
+        assert_eq!(use_case.sessions().all(), vec![started.session]);
     }
 }

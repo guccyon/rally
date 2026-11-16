@@ -9,6 +9,8 @@ import { BookingDetailHome, bookingDetailPath } from "@/components/headquarters/
 import { BookingList } from "@/components/headquarters/BookingList";
 import { saveSession } from "@/session/session";
 
+const noStudents = vi.fn<HeadquartersApi["listStudents"]>(async () => ({ ok: true, data: { students: [] } }));
+
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace }) }));
 
@@ -136,13 +138,32 @@ function cardNamed(name: string) {
 }
 
 describe("本部の予約の詳細", () => {
-  test("読み込み中を出し、読めたら生徒・コーチ・メニュー・枠の時刻・種類・今の状態と、状態が変わった記録を API の順で出す", async () => {
+  test("読み込みが 300ms より速く終わるときは、読み込み中の文を出さない", async () => {
+    render(<BookingDetail api={{ getBooking: detailOf(DETAIL) }} bookingId={BOOKING_ID} />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await screen.findAllByRole("article");
+    expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument();
+  });
+
+  test("読み込みが 300ms を超えて続くときは、遅らせた後に role=status で読み込み中を出し、読めたら消す", async () => {
+    let resolve: (value: Awaited<ReturnType<HeadquartersApi["getBooking"]>>) => void = () => {};
+    const getBooking = vi.fn<HeadquartersApi["getBooking"]>(() => new Promise((done) => (resolve = done)));
+    render(<BookingDetail api={{ getBooking }} bookingId={BOOKING_ID} />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("予約の詳細を読み込んでいます…");
+
+    resolve({ ok: true, data: DETAIL });
+    await screen.findAllByRole("article");
+    expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument();
+  });
+
+  test("読めたら生徒・コーチ・メニュー・枠の時刻・種類・今の状態と、状態が変わった記録を API の順で出す", async () => {
     const getBooking = detailOf(DETAIL);
     render(<BookingDetail api={{ getBooking }} bookingId={BOOKING_ID} />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("予約の詳細を読み込んでいます…");
     await screen.findAllByRole("article");
-    expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument();
     expect(getBooking).toHaveBeenCalledWith(BOOKING_ID);
     expect(getBooking).toHaveBeenCalledTimes(1);
 
@@ -260,6 +281,31 @@ describe("本部の予約の詳細", () => {
     ]);
   });
 
+  test("枠の判定を残し始める前のお休みのキャンセルは、枠だけ「記録がありません」にし、理由とお休みの記録は出して、古いキャンセルの知らせは出さない", async () => {
+    const change = {
+      ...LEAVE_CANCEL,
+      consumes_quota: null,
+      coach_leave: { ...COACH_LEAVE, created_by_display_name: undefined },
+    };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [CONFIRMED, change] }) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "11/5（木）10:32 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "本部（コーチのお休み）"],
+      ["開始まで", "開始の 175 時間前（7 日 7 時間前）"],
+      ["ビデオ通話の枠", "記録がありません"],
+      ["理由", "コーチのお休み"],
+    ]);
+    expect(listOf(card, "もとになったコーチのお休み")).toEqual([
+      ["お休みの期間", "11/10（火）〜11/16（月）"],
+      ["生徒への一言", COACH_LEAVE.note],
+      ["お休みにした本部", "（名前を表示できません）・11/5（木）10:32"],
+    ]);
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument();
+    expect(card).not.toHaveTextContent(/headquarters|coach_leave|null|true|false/);
+    expect(card).not.toHaveTextContent(COACH_LEAVE.created_by);
+  });
+
   test("理由がお休みなのにお休みの記録がないときは、理由だけ出し、お休みの区切りの代わりに 1 行の注意を出す", async () => {
     const change = { ...LEAVE_CANCEL, coach_leave: null };
     render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);
@@ -351,7 +397,7 @@ describe("本部の予約の詳細", () => {
       />,
     );
 
-    await screen.findByText("まだ確定もキャンセルもしていない予約です。コーチが確定すると、ここに記録が出ます。");
+    await screen.findByText("まだ確定もキャンセルもしていない予約です。確定するのは生徒です。生徒がアプリで確定すると、ここに記録が出ます。");
     expect(termsOf()).toEqual([
       ["生徒", "（名前を表示できません）"],
       ["コーチ", "（名前を表示できません）"],
@@ -411,11 +457,11 @@ describe("画面への配置", () => {
         bookings: [{ booking: BOOKING, coach_display_name: "鈴木 コーチ", student_display_name: "山田 花子" }],
       },
     }));
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
 
     expect(await screen.findByRole("link", { name: "10:00" })).toHaveAttribute(
       "href",
-      `/headquarters/bookings/detail?booking_id=${BOOKING_ID}`,
+      `/headquarters/bookings/detail?booking_id=${BOOKING_ID}&from=2026-10-26&to=2026-11-01`,
     );
     expect(bookingDetailPath(BOOKING_ID)).toBe(`/headquarters/bookings/detail?booking_id=${BOOKING_ID}`);
   });
@@ -431,7 +477,25 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "予約の一覧へ戻る" })).toHaveAttribute("href", "/headquarters/bookings");
   });
 
-  test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
+  test("絞り込みと期間を持って開いた予約の詳細からは、同じ絞り込みと期間の一覧へ戻れる", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    const list = { studentId: "student-1", period: { from: "2026-11-10", to: "2026-11-16" } };
+    expect(bookingDetailPath(BOOKING_ID, list)).toBe(
+      `/headquarters/bookings/detail?booking_id=${BOOKING_ID}&student_id=student-1&from=2026-11-10&to=2026-11-16`,
+    );
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <BookingDetailHome token={session.token} bookingId={BOOKING_ID} list={list} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "予約の一覧へ戻る" })).toHaveAttribute(
+      "href",
+      "/headquarters/bookings?student_id=student-1&from=2026-11-10&to=2026-11-16",
+    );
+  });
+
+  test("本部以外のロールでは画面に入れず、ログインしたまま理由と戻り道を出す", () => {
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
       <RoleGate role="headquarters">
@@ -440,6 +504,7 @@ describe("画面への配置", () => {
     );
 
     expect(screen.queryByRole("region", { name: "予約の詳細" })).not.toBeInTheDocument();
-    expect(replace).toHaveBeenCalledWith("/");
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "コーチの画面へ戻る" })).toHaveAttribute("href", "/coach");
   });
 });

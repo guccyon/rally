@@ -228,11 +228,14 @@ terms:
     ja: "通話セッション"
     definition: "同期レッスンの 1 回の通話で、開始したときに確定していた同じスロットの予約をすべて結び付け（マンツーマンの枠では 1 つ、グループレッスンの枠では人数分）、参加者はコーチと結び付いた予約の生徒たちで、終了すると接続品質の指標を記録し、終了の記録がないまま残ったものは本部が終わったことにでき、そのときは指標を持たずに終わらせた本部のアカウントを残し、完了したレッスンとして数えない（完了を記録できない）。"
     context: live-lesson
-    code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended, LiveLessonSession::end_by_headquarters, endLiveLessonSessionByHeadquarters, live_lesson.session_headquarters_ends]
+    code: [LiveLessonSession, SessionId, SessionBooking, SessionStatus, startLiveLessonSession, call.started, call.ended, LiveLessonSession::end_by_headquarters, endLiveLessonSessionByHeadquarters, live_lesson.session_headquarters_ends, getLiveLessonSession, coach_joined_at, student_joined_at]
     note: >-
       開始・終了できるのは参加者だけで、確定した予約にしか開始できず、予約したスロットの開始時刻より前には開始できず（開始時刻ちょうどから。
       完了はセッションの終了の後にしか記録できないので、枠の開始より前に完了したレッスンはできない。#899）、同じ予約のセッションは 1 つ。通話中のセッションには、
       あとから入る参加者が同じセッションに入る（マンツーマンでは先に入室した相手のあとのコーチ・生徒。#1471。グループレッスンでは結び付いた予約の生徒）。完了したレッスン（lesson_completion）は結び付いた予約の生徒ごとに 1 つで、終了したセッションにだけ記録できる。
+      参加者ごとに最初の入室の時刻を残す（コーチは coach_joined_at、生徒は予約ごとの student_joined_at。入り直しても最初の時刻のまま。#1654）。
+      生徒アプリは、通話中で coach_joined_at が null のあいだをコーチの入室待ちとして「コーチを待っています」と出し、そのあいだだけ一定の間隔
+      （1 か所の定数 liveLessonAwaitingCoachRefetchInterval）で getLiveLessonSession を取り直して、コーチが入室したら「コーチと通話中です」に変える（ADR 0015）。
       admin-web の本部の画面での呼び名は「ビデオ通話」（例: 「ビデオ通話の記録」「終わっていないビデオ通話」）で、「ライブレッスン」「通話」と言い換えない（specs/design/content.yaml の glossary_mapping。#898）。
   - id: prejoin_check
     ja: "入室前チェック"
@@ -282,3 +285,18 @@ terms:
       listCancelledBookings の cancel_reason。getBooking はそのお休みの記録 CoachLeave も載せる。#1029）で、予約の scheduling.bookings.cancel_reason に残す（#1031）。境界間イベント BookingCancelled には
       理由を足さない（cancelled_by が headquarters なのはお休みだけ）。コーチの受付の停止（coach_acceptance）とは別で、お休みは受付を変えない。
       コーチ自身が申し出る操作・お休みの記録の一覧はまだない（specs/ux/issue-455.yaml）。
+  - id: call_quality_score
+    ja: "通話品質スコア"
+    definition: "終わった通話セッション 1 回ごとに接続品質の生の指標 4 つ（call.ended の属性）から減点式で出す 0〜100 の点を、期間の通話で平均した値で、式はセマンティック層の 1 か所だけに置き、バックエンドと API は計算も保存もしない。"
+    context: analytics
+    code: [call_quality_score, call.ended]
+    states:
+      low: "低品質"
+      fair: "やや低い"
+      ok: "問題なし"
+      no_data: "指標なし"
+    note: >-
+      式は specs/analytics/kpi.yaml の call_quality_score（docs/adr/0002 Q1）。admin-web の表の見出しでは「品質スコア」と縮めてよい（specs/design/content.yaml の glossary_mapping）。
+      states は本部の画面（#1465）の 4 つの値の呼び名で、色は specs/design/components.yaml の status_tag の call_quality_state（low だけ danger）。
+      ok は 80 以上、no_data は指標を持つ通話がない（点数は「—」。本部が終わったことにした通話は指標を持たない）。low と fair の境の点と契約の enum のキーは
+      まだ決めておらず（仮）、#1465 の契約で決めたら合わせる（specs/design/governance.yaml の requests の glossary-call-quality）。

@@ -94,6 +94,11 @@ class FakeStudentApi implements StudentApi {
   /// true にすると、`listMyBookings` の応答に `trial_available` を載せない（古いサーバーの応答）
   bool omitTrialAvailable = false;
 
+  /// 通話セッションの今の状態（`startLiveLessonSession` と `getLiveLessonSession` が返す）。既定はコーチが入室済みの通話中。
+  /// コーチの入室待ちから始めるなら [Fixtures.sessionAwaitingCoach] を入れ、あとで [Fixtures.sessionInProgress] に替えると
+  /// 取り直しでコーチの入室を知る
+  LiveLessonSession liveSession = Fixtures.sessionInProgress;
+
   /// 自分が送った動画（`listMyVideos` が返す）
   final List<MyVideo> myVideos;
 
@@ -308,8 +313,11 @@ class FakeStudentApi implements StudentApi {
   @override
   Future<LiveLessonSession> startLiveLessonSession(
     StartLiveLessonSessionRequest body,
-  ) =>
-      _answer('startLiveLessonSession', () => Fixtures.sessionInProgress, body);
+  ) => _answer('startLiveLessonSession', () => liveSession, body);
+
+  @override
+  Future<LiveLessonSession> getLiveLessonSession(String sessionId) =>
+      _answer('getLiveLessonSession', () => liveSession, sessionId);
 
   @override
   Future<LiveLessonSession> endLiveLessonSession(String sessionId) =>
@@ -758,6 +766,9 @@ abstract final class Fixtures {
     status: BookingStatus.pending,
     startsAt: slot.startsAt,
     createdAt: now,
+    endsAt: slot.endsAt,
+    sport: Sport.tennis,
+    coachDisplayName: '山田 花子',
   );
 
   static final bookingConfirmed = Booking(
@@ -789,6 +800,9 @@ abstract final class Fixtures {
     confirmedAt: booking.confirmedAt,
     cancelledAt: cancelledAt ?? booking.cancelledAt,
     lessonMenu: booking.lessonMenu,
+    endsAt: booking.endsAt,
+    sport: booking.sport,
+    coachDisplayName: booking.coachDisplayName,
   );
 
   /// [booking] に予約した時点のレッスンメニューの写しを載せたもの（[lessonMenu] が null ならメニューなし）
@@ -807,6 +821,9 @@ abstract final class Fixtures {
     confirmedAt: booking.confirmedAt,
     cancelledAt: booking.cancelledAt,
     lessonMenu: lessonMenu,
+    endsAt: booking.endsAt,
+    sport: booking.sport,
+    coachDisplayName: booking.coachDisplayName,
   );
 
   /// 自分の予約の一覧の 1 件。スロットは [now] から [startsIn] 後に始まる 1 時間（過去なら負の値）。
@@ -843,6 +860,9 @@ abstract final class Fixtures {
         confirmedAt: status == BookingStatus.pending ? null : now,
         cancelledAt: status == BookingStatus.cancelled ? now : null,
         lessonMenu: lessonMenu,
+        endsAt: startsAt.add(const Duration(hours: 1)),
+        sport: sport,
+        coachDisplayName: coachDisplayName,
       ),
       slot: Slot(
         slotId: 'slot-$bookingId',
@@ -963,6 +983,7 @@ abstract final class Fixtures {
     kind: NextActionKind.startSubscription,
   );
 
+  /// 通話中で、コーチが入室済み（コーチが先に入室して始めたセッション）
   static final sessionInProgress = LiveLessonSession(
     sessionId: sessionId,
     bookingId: bookingId,
@@ -971,6 +992,32 @@ abstract final class Fixtures {
     status: LiveLessonSessionStatus.inProgress,
     startedAt: now,
     roomToken: 'mock-room-token',
+    coachJoinedAt: now,
+    bookings: [
+      LiveLessonSessionBooking(
+        bookingId: bookingId,
+        studentId: studentId,
+        studentJoinedAt: now,
+      ),
+    ],
+  );
+
+  /// 通話中で、生徒が先に入室してコーチの入室を待っている
+  static final sessionAwaitingCoach = LiveLessonSession(
+    sessionId: sessionId,
+    bookingId: bookingId,
+    studentId: studentId,
+    coachId: coachId,
+    status: LiveLessonSessionStatus.inProgress,
+    startedAt: now,
+    roomToken: 'mock-room-token',
+    bookings: [
+      LiveLessonSessionBooking(
+        bookingId: bookingId,
+        studentId: studentId,
+        studentJoinedAt: now,
+      ),
+    ],
   );
 
   static final sessionEnded = LiveLessonSession(

@@ -160,6 +160,7 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         ),
         CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,

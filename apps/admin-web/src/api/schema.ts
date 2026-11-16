@@ -422,7 +422,27 @@ export interface paths {
          */
         get: operations["listCoaches"];
         put?: never;
-        post?: never;
+        /**
+         * コーチの登録（本部）
+         * @description 本部がメールアドレス・表示名・提供スポーツ（1 つ以上）を送って、コーチの役割のアカウントを 1 つ作り、作ったコーチを
+         *     `listCoaches` の 1 件と同じ形で返す。本番の空の DB から事業を始めるとき、本部がコーチを画面から登録するのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403。docs/adr/0008-backoffice-separation.md）。
+         *
+         *     - `email`: メールアドレス。すでにどれかのアカウント（生徒・コーチ・本部を問わない）のメールアドレスとして登録されて
+         *       いれば 409 `email_already_registered`（何も作らない）。比べるときは大文字・小文字を区別しない
+         *     - `display_name`: 表示名（1〜50 文字。文字数は Unicode のコードポイントで数える）
+         *     - `sports`: 提供スポーツ（`Sport` の値を 1 つ以上。同じ値を重ねない）。ゴルフも選べる
+         *     - 必須の項目がない・`email` がメールアドレスの形でない・`display_name` が 0 文字か 51 文字以上・`sports` が空の配列か
+         *       同じ値を含むか `Sport` の値でないものを含む・JSON でない本文は 422 `validation_failed`（何も作らない）
+         *     - 登録したコーチの受付の状態 `acceptance_status` は受付中 `accepting`、`recent_lesson_count` は 0。以後
+         *       `listCoaches` に載る
+         *     - 招待のメールは送らない。コーチは登録したメールアドレスでログインする（ログインの方式は変えない）
+         *
+         *     アカウントは identity の持ち物で、提供スポーツもアカウント（コーチ）に添えて identity が持つ。
+         *     本部の運営の操作で、KPI の入力でもないので行動イベントは発火しない（生徒の `registerAccount` の
+         *     `account.registered` は生徒の登録だけ）。
+         */
+        post: operations["registerCoach"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2375,6 +2395,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/business-kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 事業の KPI の今の期間と前の期間（本部）
+         * @description 事業の KPI（`specs/analytics/kpi.yaml` の `kpis` の 6 つ。北極星 1 つと補助の 5 つ）を、kpi.yaml の順に、今の期間
+         *     （`current`）と 1 つ前の期間（`previous`）の値で 1 回の照会で返す。本部が事業の調子を 1 枚で確かめるのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。クエリはとらない。照会だけで、何も保存しない。
+         *
+         *     - 式は kpi.yaml の `formula` の 1 か所に従ってサーバーが数える。画面やクライアントで数え直さない。名前（`name`）は
+         *       kpi.yaml の `ja`、良い向き（`direction`）は kpi.yaml の `direction` のまま返す
+         *     - 期間は指標ごとに kpi.yaml の `window`（30 日）を `window_on` の時刻に当てる。`current` は集計した時刻
+         *       （`computed_at`）に終わる 1 つの期間（`first_lesson_retention_1m` は note のとおり、60 日目を観測し終えた生徒だけを
+         *       数えるため、集計した時刻の 60 日前に終わる期間）、`previous` はその直前の同じ長さの期間。範囲は値ごとに
+         *       `window_start`（含む）〜`window_end`（含まない）で返す
+         *     - 値が出せないときは `value` を null にし、`reason` に理由の種類（`code`）と、画面にそのまま出せる文（`message`）を
+         *       付ける。値が出せたときの `reason` は null
+         *     - **1 つの指標の集計が失敗しても 200 で返す。** 失敗した指標の値（`current` と `previous` の両方、または失敗した方）
+         *       だけを `value: null`・`reason.code: unavailable` にし、ほかの指標はそのまま返す（画面全体を壊さないため）。
+         *       5xx は、指標を 1 つも返せないとき（認証の確かめや応答そのものが組み立てられないとき）だけ
+         *     - 合成シードがなく母集団が空なら、6 つとも `value: null`・`reason.code: no_population` で返す（`kpis` は空にしない）
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getBusinessKpis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2742,6 +2799,18 @@ export interface components {
              *     数え方は `listCoaches` の説明）
              */
             recent_lesson_count: number;
+        };
+        /** @description 本部によるコーチの登録（`registerCoach`） */
+        RegisterCoachRequest: {
+            /**
+             * Format: email
+             * @description コーチのメールアドレス（どのアカウントのメールアドレスとも重ならないこと。大文字・小文字は区別しない）
+             */
+            email: string;
+            /** @description アカウントの表示名 */
+            display_name: string;
+            /** @description 提供スポーツ（1 つ以上。同じ値を重ねない） */
+            sports: components["schemas"]["Sport"][];
         };
         /**
          * @description glossary の coach_acceptance（コーチの受付）の状態。accepting: 受付中（新しい予約を受け付ける。一度も止めていない
@@ -3387,6 +3456,13 @@ export interface components {
             /** @description 通話に参加するためのトークン（Twilio Video 相当。Gen1 はモック）。終了後は null */
             room_token?: string | null;
             /**
+             * Format: date-time
+             * @description コーチが最初にこのセッションに入室した時刻（コーチが `startLiveLessonSession` を呼んで通話に入った最初の時刻。
+             *     コーチが開始したセッションでは `started_at` と同じ）。入り直しても最初の時刻のまま変わらない。
+             *     コーチがまだ入室していないときと、入室を記録する前に始まったセッションは null か載らない。Issue #1654
+             */
+            coach_joined_at?: string | null;
+            /**
              * @description セッションに結び付いた予約の一覧。先頭は開始した予約（`booking_id` / `student_id` と同じ）。
              *     マンツーマンの枠では 1 件、グループレッスンの枠では通話を始めたときに確定していた予約の数だけ。
              *     完了したレッスン（`recordLessonCompletion`）は、この予約（生徒）ごとに 1 つ
@@ -3399,6 +3475,13 @@ export interface components {
             booking_id: string;
             /** Format: uuid */
             student_id: string;
+            /**
+             * Format: date-time
+             * @description この予約の生徒が最初にこのセッションに入室した時刻（生徒が `startLiveLessonSession` を呼んで通話に入った最初の時刻）。
+             *     入り直しても最初の時刻のまま変わらない。生徒がまだ入室していないときと、入室を記録する前に始まったセッションは
+             *     null か載らない。Issue #1654
+             */
+            student_joined_at?: string | null;
         };
         /** @description 本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧（対象・並べ方は `listOverdueLiveLessonSessions` の説明） */
         OverdueLiveLessonSessionList: {
@@ -4091,11 +4174,78 @@ export interface components {
             /** @description 取り下げた枠の数（予約のあった枠を含む） */
             withdrawn_slot_count: number;
         };
+        /** @description 本部が見る事業の KPI（`getBusinessKpis`）。`specs/analytics/kpi.yaml` の 6 つを kpi.yaml の順に並べる */
+        BusinessKpis: {
+            /**
+             * Format: date-time
+             * @description 集計した時刻（`current` の期間の終わりの基準）
+             */
+            computed_at: string;
+            /** @description 指標（kpi.yaml の `kpis` の順。北極星は 1 つだけで、`north_star: true`）。値が出せない指標も省かずに載せる */
+            kpis: components["schemas"]["BusinessKpi"][];
+        };
+        /** @description 事業の KPI 1 つ。定義（式・期間・向き）は `specs/analytics/kpi.yaml` の同じ `id` の項目で、ここでは写さない */
+        BusinessKpi: {
+            /** @description kpi.yaml の `id`（例 `first_lesson_retention_1m`） */
+            id: string;
+            /** @description KPI の名前（kpi.yaml の `ja` のまま。例「初回レッスン後の 1 ヶ月継続率」） */
+            name: string;
+            /** @description 北極星か（kpi.yaml の `north_star`。6 つのうち 1 つだけ true） */
+            north_star: boolean;
+            /**
+             * @description 良い向き（kpi.yaml の `direction`。up_is_good は高いほど良い、down_is_good は低いほど良い）
+             * @enum {string}
+             */
+            direction: "up_is_good" | "down_is_good";
+            /**
+             * @description 値の単位。`ratio` は 0〜1 の割合、`variance` は割合の分散、`score` は 0〜100 の点、`hours` は時間、`days` は日（どれも小数）
+             * @enum {string}
+             */
+            unit: "ratio" | "variance" | "score" | "hours" | "days";
+            /** @description 何を数えたかの名詞（母集団の 1 行。例 予約枠充足率の「枠」、初回レッスン後の 1 ヶ月継続率の「生徒」） */
+            population_label: string;
+            /** @description 指標の見方の 1 文（任意。北極星にだけ付ければ足りる） */
+            description?: string;
+            current: components["schemas"]["BusinessKpiValue"];
+            previous: components["schemas"]["BusinessKpiValue"];
+        };
+        /** @description 事業の KPI 1 つの、1 つの期間の値。値が出せないときは `value` が null で、`reason` に理由がある */
+        BusinessKpiValue: {
+            /**
+             * Format: date-time
+             * @description 数えた範囲の始まり（含む）。kpi.yaml の `window_on` の時刻で当てる
+             */
+            window_start: string;
+            /**
+             * Format: date-time
+             * @description 数えた範囲の終わり（含まない）
+             */
+            window_end: string;
+            /** @description 値（単位は `BusinessKpi.unit`。丸めない）。出せないときは null */
+            value: number | null;
+            /** @description 値が出せない理由。`value` が null のときだけ付き、値があるときは null */
+            reason: components["schemas"]["BusinessKpiValueReason"] | null;
+        };
+        /** @description 事業の KPI の値が出せない理由 */
+        BusinessKpiValueReason: {
+            /**
+             * @description 理由の種類。
+             *     - `no_population`: 期間に母集団が 1 行もない（例 期間に終わったビデオ通話がない）
+             *     - `below_group_minimum`: 群ごとに数える指標で、件数の下限（kpi.yaml の `having count >= n`）を満たす群がない
+             *       （例 初回レッスンが 5 件以上のコーチがいない）
+             *     - `not_observable_yet`: 期間の母集団の観測がまだ終わっていない（例 60 日目まで見終えた生徒がまだいない）
+             *     - `unavailable`: 集計に失敗した（ほかの指標は返す）
+             * @enum {string}
+             */
+            code: "no_population" | "below_group_minimum" | "not_observable_yet" | "unavailable";
+            /** @description 画面にそのまま出せる理由の文（例「初回レッスンが 5 件以上のコーチがいないため、出せません。」） */
+            message: string;
+        };
         /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "slot_not_started" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn" | "leave_preview_outdated" | "coach_leave_overlaps";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "slot_not_started" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn" | "leave_preview_outdated" | "coach_leave_overlaps" | "email_already_registered";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -4130,7 +4280,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、通話セッションが終了済み、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でないなど） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、通話セッションが終了済み、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でない、登録するコーチのメールアドレスがすでに登録されているなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -4460,6 +4610,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    registerCoach: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterCoachRequest"];
+            };
+        };
+        responses: {
+            /** @description 登録したコーチ */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Coach"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };
@@ -5972,6 +6150,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getBusinessKpis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 事業の KPI（kpi.yaml の順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessKpis"];
                 };
             };
             401: components["responses"]["Unauthorized"];

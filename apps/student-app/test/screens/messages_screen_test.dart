@@ -145,6 +145,26 @@ void main() {
     );
   });
 
+  testWidgets('メッセージ欄の文字数の残りは、表示は 0/2000 のまま、読み上げは日本語（#1521）', (tester) async {
+    await pumpScreen(
+      tester,
+      const MessagesScreen(),
+      api: FakeStudentApi(),
+      initial: threadOpened(),
+      chat: threadChat(),
+    );
+
+    expect(find.text('0/2000'), findsOneWidget);
+    expect(find.bySemanticsLabel('残り 2000 文字'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('characters remaining')), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'こんにちは');
+    await tester.pump();
+
+    expect(find.text('5/2000'), findsOneWidget);
+    expect(find.bySemanticsLabel('残り 1995 文字'), findsOneWidget);
+  });
+
   testWidgets('月額契約の前の生徒が送ると 403 chat_not_entitled の文言を出し、入力は残す', (
     tester,
   ) async {
@@ -417,6 +437,11 @@ void main() {
       expect(state.step, FlowStep.subscription);
       // 契約を始めたあとに、開いていたスレッドへ戻れる
       expect(state.subscriptionFromChat, isTrue);
+
+      // ブラウザーの「戻る」（[StudentFlowNotifier.closeSubscription]）も開いていたスレッドへ戻る（#1584）
+      await container.read(studentFlowProvider.notifier).closeSubscription();
+      await tester.pumpAndSettle();
+      expect(container.read(studentFlowProvider).step, FlowStep.messages);
     });
 
     testWidgets('ホームの「添削を依頼する」から（スレッドを開いてすぐに依頼を出す）', (tester) async {

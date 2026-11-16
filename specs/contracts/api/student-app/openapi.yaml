@@ -167,7 +167,8 @@ paths:
         受付を止めているコーチ（admin-web の `suspendCoach`。glossary の coach_acceptance が停止中）の枠は返さない
         （`coach_id` でそのコーチを指定しても返さない。`limit` は除いた後の件数）。
         各枠には定員 `capacity`（1 はマンツーマン、2 以上はグループレッスン）と残りの席 `remaining_seats` を載せる。
-        未確定の予約で席が埋まった枠（`remaining_seats` が 0）も、確定するまでは返す（定員 1 の枠の今までの振る舞いと同じ）。
+        `remaining_seats` が 0 の枠（未確定の予約で席が埋まった枠を含む）と、呼んだ生徒が有効な予約（未確定か確定）を持つ枠は返さない
+        （どちらも予約できない枠。`limit` は除いた後の件数）。返す枠の `remaining_seats` はいつも 1 以上。
         各枠には、そのコーチの表示名 `coach_display_name` と自己紹介文 `coach_bio` を任意の項目として添える（自己紹介文を書いていないコーチは `coach_bio` を載せない）。
         各枠には、結びついたコーチのレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`SlotLessonMenu`）を必ず載せる。
         メニューのない枠と、結びついたメニューが公開中でなくなった枠は null。
@@ -523,6 +524,39 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
+
+  /live-lesson-sessions/{session_id}:
+    get:
+      operationId: getLiveLessonSession
+      summary: 通話セッションの取得
+      description: |
+        通話セッション（glossary の live_lesson_session）の今の状態を返す。入室した参加者が、相手の入室
+        （`coach_joined_at`・`bookings` の `student_joined_at`）や終了を取り直して知るのに使う（Issue #1654）。
+        読むだけで、入室の記録・`call.started` の発火・通話への参加はしない（入室は `startLiveLessonSession`）。
+        そのため `room_token` は通話中でも null（参加のトークンは `startLiveLessonSession` が返す）。
+        呼べるのは参加者（セッションに結び付いた予約の生徒と、そのコーチ）だけで、それ以外のアカウントと
+        UUID でない ID には、セッションがないのと同じ 404（`endLiveLessonSession` と同じ）。
+      tags: [live-lesson]
+      x-context: live-lesson
+      x-analytics-events: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 通話セッション
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveLessonSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /live-lesson-sessions/{session_id}/end:
     post:
@@ -1660,7 +1694,9 @@ components:
           type: integer
           minimum: 0
           maximum: 6
-          description: 残りの席（定員 − 有効な予約（未確定か確定）の数）。0 なら予約すると 409 `slot_already_booked`
+          description: |
+            残りの席（定員 − 有効な予約（未確定か確定）の数）。0 なら予約すると 409 `slot_already_booked`。
+            `searchSlots` は 0 の枠を返さないので、検索の結果ではいつも 1 以上
         coach_display_name:
           type: string
           minLength: 1
@@ -2028,6 +2064,13 @@ components:
         room_token:
           type: [string, "null"]
           description: 通話に参加するためのトークン（Twilio Video 相当。Gen1 はモック）。終了後は null
+        coach_joined_at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            コーチが最初にこのセッションに入室した時刻（コーチが `startLiveLessonSession` を呼んで通話に入った最初の時刻。
+            コーチが開始したセッションでは `started_at` と同じ）。入り直しても最初の時刻のまま変わらない。
+            コーチがまだ入室していないときと、入室を記録する前に始まったセッションは null か載らない。Issue #1654
         bookings:
           type: array
           description: |
@@ -2048,6 +2091,13 @@ components:
         student_id:
           type: string
           format: uuid
+        student_joined_at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            この予約の生徒が最初にこのセッションに入室した時刻（生徒が `startLiveLessonSession` を呼んで通話に入った最初の時刻）。
+            入り直しても最初の時刻のまま変わらない。生徒がまだ入室していないときと、入室を記録する前に始まったセッションは
+            null か載らない。Issue #1654
 
     StartLiveLessonSessionRequest:
       type: object

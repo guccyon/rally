@@ -93,7 +93,7 @@ pub fn router_with<
     search_slots: SearchSlots<S, J, I, C>,
     create_booking: CreateBooking<B, J, Tu, G, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
-    cancel_booking: CancelBooking<B, A, P, C>,
+    cancel_booking: CancelBooking<B, G, A, P, C>,
     describe_booking: DescribeBooking<B, Bk>,
     get_slot_supply: GetSlotSupply<B, Sc, C>,
     list_my_bookings: ListMyBookings<B, I, G, Tu, C>,

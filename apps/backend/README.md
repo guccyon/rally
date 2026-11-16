@@ -52,7 +52,10 @@ cargo test -p infra -- --include-ignored
 
 ## 起動
 
+アクセストークンの署名の鍵（`ACCESS_TOKEN_SIGNING_KEY`）がないと起動しない。ローカルでは署名なしのモックを明示して選ぶ（`ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1`）か、使い捨ての鍵を渡す（下の「認証と認可」）。以下の例はシェルで `export ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1` してある前提。
+
 ```sh
+export ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1   # ローカルだけ。署名なしのモックのトークンで動かす
 cargo run -p server               # 127.0.0.1:8080 で待ち受ける
 BIND_ADDR=0.0.0.0:3000 cargo run -p server
 curl -i http://127.0.0.1:8080/healthz   # 200 ok
@@ -68,7 +71,8 @@ curl -i http://127.0.0.1:8080/version   # 200 {"app_version":"0.1.0"}
 |---|---|
 | `DATABASE_URL` | あれば保存先をすべて Postgres にし（`server::app_with_postgres_and_access_tokens`）、待ち受ける前に `infra::run_migrations` で `infra::MIGRATOR` を当てる。DB に当たっていて自分の知らないマイグレーション（新しい版が当てたもの）は飛ばして起動する（前の版のイメージに戻す Rollback のため。[ADR 0004](../../docs/adr/0004-schema-expand-contract.md) の 1）。DB につなげない・マイグレーションを当てられない（当て済みのものが書き換えられていたなど）ときは、原因を標準エラー出力に書いて 0 以外で終わる。なければ保存先は `application::in_memory` のインメモリ実装で、登録したアカウントや公開した枠はプロセスを止めると消える |
 | `CLOCK_OFFSET_SECONDS` | サーバーの時計を実際より進める秒数（0 以上の整数。ないか空なら 0）。ユースケースが読む時刻（`application::clock::Clock`。レッスンのリマインドの定期の処理の窓も）だけが進み、DB の `now()` の既定値は進まない。触れる環境（staging）で QA が「翌日」「暦月の境」をまたぐ流れを確かめるためのもので、工場の shipper が `.factory-config/ship.yaml` の `touch.clock_env` で渡す（factory-engine の ADR 0028 の scenario_time）。本番には渡さない。整数でない値では起動しない |
-| `ACCESS_TOKEN_SIGNING_KEY` | アクセストークンの署名の鍵（秘密情報。32 バイト以上）。あれば本部・コーチ・生徒のトークンを署名付き（`infra::SignedTokenService`）で発行・検証し、手で作った `mock.` のトークンや改ざんしたトークンは 401。ないか空なら署名なしのモック（`infra::MockTokenService`）で、起動時に `access tokens are unsigned mock tokens` と標準エラー出力に書く。32 バイトより短いと起動しない（鍵の値はどこにも書き出さない）。下の「認証と認可」 |
+| `ACCESS_TOKEN_SIGNING_KEY` | アクセストークンの署名の鍵（秘密情報。32 バイト以上）。**必須**。本部・コーチ・生徒のトークンを署名付き（`infra::SignedTokenService`）で発行・検証し、手で作った `mock.` のトークンや改ざんしたトークンは 401。ないか空で、下の `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1` もなければ、原因を標準エラー出力に書いて 0 以外で終わる（起動しない。Issue #1785・[ADR 0016](../../docs/adr/0016-require-access-token-signing-key.md)）。32 バイトより短いと起動しない（鍵の値はどこにも書き出さない）。下の「認証と認可」 |
+| `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK` | `1` のときだけ、鍵がなければ署名なしのモック（`infra::MockTokenService`）で動く（ローカルの起動とテストだけ。起動時に `access tokens are unsigned mock tokens` と標準エラー出力に書く）。鍵があれば読まず、鍵で署名する。`1` 以外の値では起動しない。`deploy/compose.yaml` は渡さない |
 | `APP_VERSION` | `GET /version`（認証なし）が `{"app_version": "..."}` で返す版。ないか空なら `"unknown"`。出荷した版を確かめる運用の口で、`/healthz` と同じく生徒・本部の API の契約（`specs/contracts`）には載せない |
 
 起動の試験（バイナリを起動して HTTP で確かめる）は `crates/server/tests/it/startup.rs`。Postgres を使うものは `DATABASE_URL` を設定して `cargo test -p server --test it startup:: -- --include-ignored` で走らせる。
@@ -202,7 +206,7 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 登録の有無と役割を明かさない: 生徒のアカウントのないメールアドレス（登録がない・コーチや本部のもの）にも、送らないコードを `account_id` なしで同じように保存する。送り直しの 429・期限切れの 401・5 回の間違いの 429 が登録の有無で変わらず、`createSession` はコードが何でも `login_code_invalid`
 - ユースケースは `application::identity::RequestLoginCode`（コードは `rand` の乱数で作る）と `CreateSession`。保存先のポートは `LoginCodeRepository`（アカウントの保存先が兼ねる。Postgres は `PgAccountRepository`（`pg_login_code_repository.rs`）、インメモリは `InMemoryAccountRepository`）。間違いの数え上げ（`failed_attempts + 1`）と使い終わり（行を消す）は、読んだときと同じコード（メールアドレス・コード・送った時刻が同じ行）にだけ効かせ、同じコードで 2 回ログインさせない。メールアドレスでのアカウントの読み取りは `AccountRepository::find_by_email`（`lower(email)`）
 - メールの送信はポート `LoginCodeSender`。実装はモックの `infra::MockLoginCodeMailer`（送らずに `login_code <メールアドレス> <コード>` を標準出力に書く。触れる環境でコードを確かめるのはこの行）。組み立ては `Ports::login_code_mailer`、テストで送ったコードを読むのは `server::router_with_login_code_mailer`
-- Postgres は `identity.login_codes`（マイグレーション `20261116000001_expand_login_codes.sql`。主キーは `lower(email)`、`account_id` は生徒のアカウントだけを指す役割つきの外部キーで、なければ NULL）
+- Postgres は `identity.login_codes`（マイグレーション `20261116000002_expand_login_codes.sql`。主キーは `lower(email)`、`account_id` は生徒のアカウントだけを指す役割つきの外部キーで、なければ NULL）
 - 429 は `Retry-After`（秒。端数は切り上げ）を付ける（`interface::ApiError::too_many_requests`）。5 回間違えたコードの 429 の `Retry-After` は、新しいコードを送れるまでの秒数（もう送れるなら 0）
 - `registerAccount` の 409 `email_already_registered` には、リクエストのメールアドレスと `requestLoginCode` のパスを `login_guidance` に載せる（`ApiError::with_login_guidance`）
 - coach-app の契約も同じパス（`POST /login-codes`・`POST /sessions`）でコーチのログイン（`requestCoachLoginCode`・`verifyCoachLoginCode`）を持つが、backend にはまだない（#1416）。同じサーバーで両方を出すときは、パスの出し分けか応答の形の揃え方を決める必要がある
@@ -210,20 +214,23 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 
 ## 認証と認可
 
-- アクセストークンはアカウント ID と役割を載せた不透明な文字列で、`Authorization: Bearer <access_token>` で送る（契約の `bearerAuth`）。発行・検証は application のポート `identity::TokenIssuer` / `TokenVerifier`。実装は `server` の起動時に環境変数 `ACCESS_TOKEN_SIGNING_KEY` で選ぶ（`infra::AccessTokenBackend`。Issue #1593）。本部・コーチ・生徒のどの機能も、組み立て（`server` の `Ports::tokens`）から同じ実装を受け取る。確認コードでのログイン（coach-app の `/login-codes`・`/sessions`、#1416）と admin-web の本部のログイン（#1418）を足すときも、発行は同じ `Ports::tokens` を使う
+- アクセストークンはアカウント ID と役割を載せた不透明な文字列で、`Authorization: Bearer <access_token>` で送る（契約の `bearerAuth`）。発行・検証は application のポート `identity::TokenIssuer` / `TokenVerifier`。実装は `server` の起動時に環境変数 `ACCESS_TOKEN_SIGNING_KEY` と `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK` で選ぶ（`infra::AccessTokenBackend`。Issue #1593・#1785）。本部・コーチ・生徒のどの機能も、組み立て（`server` の `Ports::tokens`）から同じ実装を受け取る。確認コードでのログイン（coach-app の `/login-codes`・`/sessions`、#1416）と admin-web の本部のログイン（#1418）を足すときも、発行は同じ `Ports::tokens` を使う
 
-  | `ACCESS_TOKEN_SIGNING_KEY` | 実装 | 形 |
-  |---|---|---|
-  | なし・空 | `infra::MockTokenService`（**署名なし**。ローカルの起動とテスト用） | `mock.<役割>.<アカウント ID>`。誰でも任意の役割のトークンを作れる |
-  | 32 バイト以上の値 | `infra::SignedTokenService`（HMAC-SHA256） | `v1.<役割>.<アカウント ID>.<署名>`。署名は `v1.<役割>.<アカウント ID>` の HMAC-SHA256 を base64url（パディングなし）にしたもの。鍵を知らなければ作れず、役割・ID を書き換えると通らない。`mock.` のトークンは通らない |
+  | `ACCESS_TOKEN_SIGNING_KEY` | `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK` | 実装 | 形 |
+  |---|---|---|---|
+  | 32 バイト以上の値 | 何でも（読まない） | `infra::SignedTokenService`（HMAC-SHA256） | `v1.<役割>.<アカウント ID>.<署名>`。署名は `v1.<役割>.<アカウント ID>` の HMAC-SHA256 を base64url（パディングなし）にしたもの。鍵を知らなければ作れず、役割・ID を書き換えると通らない。`mock.` のトークンは通らない |
+  | なし・空 | `1` | `infra::MockTokenService`（**署名なし**。ローカルの起動とテスト用） | `mock.<役割>.<アカウント ID>`。誰でも任意の役割のトークンを作れる |
+  | なし・空 | なし・空 | 起動しない（`infra::AccessTokenConfigError`。原因を標準エラー出力に書いて 0 以外で終わる） | — |
 
-- 本番と staging は署名付きにする。鍵は秘密情報で、工場は作らず、リポジトリに置かない。値は環境ごとに人（提供元）が用意した置き場から、shipper が `deploy/compose.yaml` の `ACCESS_TOKEN_SIGNING_KEY` に渡す（渡さなければモックのまま動く）。本番と staging は別の鍵にする（staging のトークンで本番に入れないように）
+- 鍵がなければ既定で起動しない（fail-closed。[ADR 0016](../../docs/adr/0016-require-access-token-signing-key.md)。ADR 0013 の「鍵がなければモック」を改めた）。staging で生徒が見えるコーチの ID から `mock.coach.<ID>` を作り、ほかの生徒の予約・動画・チャットを見られた（#1785）ため
+
+- 本番と staging は署名付きにする。鍵は秘密情報で、工場は作らず、リポジトリに置かない。値は環境ごとに人（提供元）が用意した置き場から、shipper が `deploy/compose.yaml` の `ACCESS_TOKEN_SIGNING_KEY` に渡す（渡さなければ compose が起動を止める。`ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK` は渡さない）。本番と staging は別の鍵にする（staging のトークンで本番に入れないように）
 - 署名付きのトークンにも期限と失効はない。鍵を替えると、それまでに発行したトークンはすべて 401 になる（生徒は登録し直せないので、ログイン（ADR 0012）ができるまでは鍵を替えると入り直せない）。パスワード・外部 IdP は扱わない
-- テスト: `crates/infra/src/signed_token_service.rs`（発行と検証・`mock.` の拒否・改ざん・別の鍵・短い鍵）、`crates/infra/tests/it/access_token_backend.rs`（環境変数での選び方）、`crates/server/tests/it/signed_access_tokens.rs`（鍵ありの設定で組み立てたルーターで、本部・コーチ・生徒の操作が署名付きのトークンで通り、手で作った `mock.` のトークンと改ざんしたトークンはどの役割でも 401）
+- テスト: `crates/infra/src/signed_token_service.rs`（発行と検証・`mock.` の拒否・改ざん・別の鍵・短い鍵）、`crates/infra/tests/it/access_token_backend.rs`（環境変数での選び方。鍵も opt-in もなければ失敗・opt-in の `1` でだけモック・鍵が opt-in より優先）、`crates/server/tests/it/startup.rs`（鍵も opt-in もなければバイナリが起動しない・鍵と opt-in があれば署名付きで、`mock.coach.<ID>` で `GET /coaches/me/bookings` が 401・`deploy/compose.yaml` が鍵を必須にし opt-in を渡さない）、`crates/seed/tests/it/access_token_command.rs`（`access-token` も鍵も opt-in もなければ失敗）、`crates/server/tests/it/signed_access_tokens.rs`（鍵ありの設定で組み立てたルーターで、本部・コーチ・生徒の操作が署名付きのトークンで通り、手で作った `mock.` のトークンと改ざんしたトークンはどの役割でも 401）
 
 ### staging でトークンを作る（runbook）
 
-触れる環境（staging）の QA・合成の利用者でのテストは、サーバーと同じ鍵で発行したトークンを使う。鍵は backend のコンテナにだけあるので、トークンは backend のコンテナの中で `access-token`（`crates/seed/src/bin/access-token.rs`。同じイメージに入っている）で作る。DB からアカウントの役割を読み、サーバーと同じ実装（鍵があれば署名付き、なければモック）で発行する。DB には書かない。
+触れる環境（staging）の QA・合成の利用者でのテストは、サーバーと同じ鍵で発行したトークンを使う。鍵は backend のコンテナにだけあるので、トークンは backend のコンテナの中で `access-token`（`crates/seed/src/bin/access-token.rs`。同じイメージに入っている）で作る。DB からアカウントの役割を読み、サーバーと同じ実装（鍵で署名付き）で発行する。鍵がなく opt-in もなければ、サーバーと同じく失敗する（0 以外で終わり、トークンを出さない）。DB には書かない。
 
 ```sh
 # 本部 1 人とコーチ 3 人の手がかり（[{"label": ..., "value": <トークン>}]）。shipper の touch.accounts と同じもの
@@ -232,9 +239,11 @@ docker compose -p rally-staging -f deploy/compose.yaml exec backend access-token
 docker compose -p rally-staging -f deploy/compose.yaml exec backend access-token --account <アカウント ID>
 ```
 
+- `--hints` は本部 1 人とコーチ 3 人がそろっていないと、足りない役割と件数を標準エラーに書いて失敗する（終了コード 1。本部のない手がかりを出荷しない）。直し方は staging の DB をシードから入れ直すこと
 - 生徒は今までどおり、生徒アプリで登録（`POST /accounts`）すれば署名付きのトークンを受け取る。合成シードの生徒になるときは、`identity.accounts` で ID を引いて `--account` で作る
 - 合成シード（`seed`）はユースケースを直接呼び、トークンを使わないので、鍵があってもなくても今までどおり書ける
-- ローカル（`cargo run -p server`）で鍵を試すときは、自分で作った使い捨ての値（例: `openssl rand -base64 48`）を `ACCESS_TOKEN_SIGNING_KEY` に渡し、`cargo run -p seed --bin access-token -- --hints` にも同じ値を渡す。その値を staging・本番に使い回さない
+- 鍵が配られていない環境は backend が起動しない（compose の段で止まる）。そのときは鍵の置き場を用意して shipper に渡すまで出荷できない（人の作業。工場は鍵を作らない）。署名なしのモックで staging を立てて回避しない
+- ローカル（`cargo run -p server`）では `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1` で署名なしのモックにできる（`cargo run -p seed --bin access-token` にも同じものを渡す）。鍵を試すときは、自分で作った使い捨ての値（例: `openssl rand -base64 48`）を `ACCESS_TOKEN_SIGNING_KEY` に渡し、`cargo run -p seed --bin access-token -- --hints` にも同じ値を渡す。その値を staging・本番に使い回さない
 - `POST /accounts`・`POST /login-codes`・`POST /sessions` と `GET /healthz` 以外のエンドポイントは認証必須にする。ハンドラーの引数に `interface::AuthenticatedAccount` を取れば、トークンがない・無効なら 401 `unauthorized`（`WWW-Authenticate: Bearer`）。役割で絞るルートは `route_layer(interface::require_role(&[Role::Coach]))` を重ね、役割が合わなければ 403 `forbidden`（admin-web の本部とコーチの同居。ADR 0002 Q3）
 - モックのトークンはどの ID でも通るが、本部の操作の記録（コーチのお休みの `scheduling.coach_leaves.created_by` など）は実在の本部のアカウントへの外部キーを持つので、登録のない ID の本部のトークンではその操作は保存できずに 500 になる（Issue #1480。`crates/server/tests/it/coach_leaves.rs`）。触れる環境の本部のログインの手がかりは、下の「合成シード」が登録した本部を指す
 - 401 / 403 / 200 の統合テストは `crates/server/tests/it/auth.rs`（infra のモックで発行したトークンと、`POST /accounts` が返したトークンを使う）
@@ -371,6 +380,8 @@ docker compose -p rally-staging -f deploy/compose.yaml exec backend access-token
 ## live-lesson: 通話セッションの開始・終了
 
 - `POST /live-lesson-sessions`（student-app の `startLiveLessonSession`）: 予約の参加者（生徒・コーチ）だけが呼べる（役割では絞らない。参加者でないアカウントには予約がないのと同じ 404）。予約は scheduling の保存先から読み（ポート `live_lesson::BookingLookup`、実装は `scheduling::SchedulingBookingLookup`）、通話基盤にルームを作らせて参加用の `room_token` を返す。開始すると行動イベント `call.started` を 1 回発火する。その予約の通話中のセッションがすでにあれば（相手が先に入室した。マンツーマンでもグループレッスンでも）、新しく開始せずに同じセッションと呼んだアカウントの `room_token` を 201 で返し、`call.started` は発火しない（判定は `LiveLessonSession::ensure_can_join`。#1471）。終了したセッションの予約は 409 `invalid_session_state`
+- `GET /live-lesson-sessions/{session_id}`（student-app の `getLiveLessonSession`。#1654）: セッションの参加者（コーチと、結び付いた予約の生徒）だけが読める（役割では絞らない。それ以外のアカウントと UUID でない ID には、セッションがないのと同じ 404）。入室した参加者が相手の入室や終了を取り直して知るのに使う。読むだけで、入室の記録・`call.started` の発火・通話への参加はせず、`room_token` は通話中でも null（ユースケースは `live_lesson::GetLiveLessonSession`、ルーターは開始・終了と別の `interface::live_lesson_session_reads_router`）
+- `LiveLessonSession` のレスポンス（開始・取得・終了）の `coach_joined_at`・`bookings` の各項目の `student_joined_at` は、その参加者が最初に入室した時刻（入り直しても変わらない。`LiveLessonSession::coach_joined_at`・`joined_at`）。まだ入室していない・入室を記録する前に始まったセッションでは null
 - `POST /live-lesson-sessions/{session_id}/end`（`endLiveLessonSession`）: 参加者が終了する。通話基盤がルームを閉じて接続品質の生の指標（`packet_loss_rate`（百分率 0〜100）・`jitter_ms`・`round_trip_ms`・`disconnect_count`）を返し、セッションに記録して行動イベント `call.ended`（4 属性と `duration_sec`）を 1 回発火する。指標と通話品質スコアはレスポンスに載せない。スコアの式はセマンティック層の 1 か所で、バックエンドには置かない（ADR 0002 Q1）
 - `GET /live-lesson-sessions/overdue`（admin-web の `listOverdueLiveLessonSessions`。D150）: 本部だけが呼べる（`interface::overdue_live_lesson_sessions_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。終了の記録がなく、照会した時刻に開始から `older_than_hours` 時間（省けば 3。1〜168 の外・整数でなければ 422）以上たったセッションを、開始の古い順（同じ時刻は `session_id` の順）に返す。任意の `coach_id`（D226）でそのコーチのセッションだけに絞れ、時間と組み合わせられる（UUID でなければ 422、ない ID・コーチでない ID は空の配列。`listLiveLessonSessions` の `coach_id` と同じ扱い）。各行はセッションの ID・開始した予約の ID・コーチと開始した予約の生徒の ID と表示名（引けなければ表示名の項目を載せない。ポート `live_lesson::SessionCoachDisplayNameLookup` / `SessionStudentDisplayNameLookup`、実装は profile）・開始の時刻・経過時間 `elapsed_sec`。既定・範囲・境界は domain の `live_lesson::OverdueSessionCriteria` の 1 か所で、保存先は `LiveLessonSessionRepository::find_in_progress_started_at_or_before`（`ended_at IS NULL AND started_at <= $1 AND ($2::uuid IS NULL OR coach_id = $2)`）。照会だけで、セッションを終了させない。DB の変更はない
 - 不変条件は `domain::live_lesson::LiveLessonSession` が持つ: 確定した予約にしか開始できない（確定前・キャンセル済みは 409 `invalid_booking_state`）、同じ予約のセッションは 1 つ（2 回目の開始は、通話中なら新しく開始せずに同じセッションに入り、終了済みなら 409 `invalid_session_state`。#1471）、終了は開始の後（同じ時刻は許す）、終了は 1 回（409 `invalid_session_state`）。並行な開始は保存先が予約ごとに 1 つに絞る（DB では `sessions_booking_id_key`）
@@ -388,7 +399,7 @@ docker compose -p rally-staging -f deploy/compose.yaml exec backend access-token
 
   組み立ては `server::router_with_video_call`（`main` はアクセストークンも選ぶ `server::router_with_access_tokens`）。`router_at` / `router_with_analytics` / `router_with_push_sender` / `router_with_postgres` は `twilio` のまま
 - 保存先はポート `LiveLessonSessionRepository`。`server` は当面インメモリ（`InMemoryLiveLessonSessionRepository`）。Postgres のテーブル `live_lesson.sessions`（expand）は置いたが、実装は予約の保存先を Postgres にするときに足す。予約は scheduling の持ち物なので外部キーは張らない（ADR 0004 の 3）
-- 統合テスト: `crates/interface/tests/it/live_lesson_sessions.rs`（契約の形・確定前の予約の 409・終了で 4 属性が `call.ended` に載ること・参加者以外の 404・422 / 401）、`crates/server/tests/it/live_lesson_sessions.rs`（モックのトークンと通話基盤のモックで一周）、`crates/infra/tests/it/mock_video_call_provider.rs`（低品質が 15% 前後。種ごとに ±0.03 の幅で見る）、`crates/infra/tests/it/mock_alt_video_call_provider.rs`（別の基盤の生の値からの換算を境界の値で・範囲外は障害・分布）、`crates/infra/tests/it/video_call_provider_contract.rs`（ポートの契約を両方のモックと `VideoCallBackend` が満たすこと）、`crates/server/tests/it/video_call_backend.rs`（環境変数での切り替えと、選んだ基盤で組み立てたルーターで通話を一周。`room_token` の形で基盤を見分ける）、`crates/infra/tests/it/schema.rs`（`live_lesson.sessions` の制約。`--include-ignored`）
+- 統合テスト: `crates/interface/tests/it/live_lesson_sessions.rs`（契約の形・確定前の予約の 409・終了で 4 属性が `call.ended` に載ること・取得で最初の入室時刻が読めること・参加者以外の 404・422 / 401）、`crates/server/tests/it/live_lesson_sessions.rs`（モックのトークンと通話基盤のモックで一周。コーチの入室前後の取得）、`crates/infra/tests/it/mock_video_call_provider.rs`（低品質が 15% 前後。種ごとに ±0.03 の幅で見る）、`crates/infra/tests/it/mock_alt_video_call_provider.rs`（別の基盤の生の値からの換算を境界の値で・範囲外は障害・分布）、`crates/infra/tests/it/video_call_provider_contract.rs`（ポートの契約を両方のモックと `VideoCallBackend` が満たすこと）、`crates/server/tests/it/video_call_backend.rs`（環境変数での切り替えと、選んだ基盤で組み立てたルーターで通話を一周。`room_token` の形で基盤を見分ける）、`crates/infra/tests/it/schema.rs`（`live_lesson.sessions` の制約。`--include-ignored`）
 
 | 何の文字列か | 置き場所 |
 |---|---|
@@ -536,7 +547,7 @@ curl -s 'http://127.0.0.1:9090/rally-analytics?list-type=2'   # 書かれたオ�
 cargo run -p seed -- --seed 42
 ```
 
-- 本部のアカウント `本部 01`（`headquarters.seed<種>@example.com`）を、コーチと同じ時刻に登録する。触れる環境のログインの手がかり（`ship.yaml` の `touch.accounts`）は、backend のコンテナの `access-token --hints`（`seed::LoginHint`）が、本部・コーチとも DB に登録したアカウントのトークンをサーバーと同じ実装で出す（鍵がなければ `mock.<役割>.<アカウント ID>`。上の「staging でトークンを作る」）
+- 本部のアカウント `本部 01`（`headquarters.seed<種>@example.com`）を、コーチと同じ時刻に登録する。触れる環境のログインの手がかり（`ship.yaml` の `touch.accounts`）は、backend のコンテナの `access-token --hints`（`seed::LoginHint`）が、本部・コーチとも DB に登録したアカウントのトークンをサーバーと同じ実装で出す（鍵で署名付き。ローカルで `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1` なら `mock.<役割>.<アカウント ID>`。上の「staging でトークンを作る」）
 - テスト（Postgres。`cargo test -p seed -- --include-ignored`）: `tests/it/slot_supply.rs`（需給の足りていないスポーツ）、`tests/it/touch_accounts.rs`（`ship.yaml` の手がかりが backend のコンテナの `access-token --hints` であること、その手がかりを種 42 の DB で作り、すべて実在のアカウントをその役割で指すこと、署名付きの手がかりが署名付きの検証に通り、同じアカウントの `mock.` のトークンは通らないこと、本部の手がかりで確定した予約を持つコーチをお休みにでき、予約の詳細にお休みの経緯が出ること。Issue #1480）
 
 ## 一周シナリオの E2E（API レベル）

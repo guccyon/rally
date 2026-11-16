@@ -10,6 +10,7 @@ class FakeLocalMedia implements LocalMedia {
     this.camera = MediaDeviceStatus.ready,
     this.mic = MediaDeviceStatus.ready,
     this.toneFails = false,
+    this.canPlayTestTone = true,
     this.canOpenSettings = false,
   });
 
@@ -21,6 +22,9 @@ class FakeLocalMedia implements LocalMedia {
 
   /// 試し音を鳴らせない端末
   bool toneFails;
+
+  @override
+  bool canPlayTestTone;
 
   @override
   bool canOpenSettings;

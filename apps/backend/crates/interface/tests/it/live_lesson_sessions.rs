@@ -1,7 +1,8 @@
 //! `/live-lesson-sessions` の統合テスト。student-app の `POST /live-lesson-sessions`（`startLiveLessonSession`）と
+//! `GET /live-lesson-sessions/{session_id}`（`getLiveLessonSession`）と
 //! `POST /live-lesson-sessions/{session_id}/end`（`endLiveLessonSession`）のレスポンスの形を OpenAPI のスキーマで
 //! 検査し、確定前の予約では開始できないこと・同じ予約のセッションは 1 つ・終了で接続品質の 4 属性が
-//! 行動イベント `call.ended` に記録されること・参加者以外の 404 を確かめる。
+//! 行動イベント `call.ended` に記録されること・取得で参加者の最初の入室時刻が読めること・参加者以外の 404 を確かめる。
 
 use std::time::{Duration, SystemTime};
 
@@ -21,7 +22,9 @@ use application::{
         RecordingDomainEventPublisher,
     },
     lesson::RecordLessonCompletion,
-    live_lesson::{EndLiveLessonSession, StartLiveLessonSession, session_id_uuid},
+    live_lesson::{
+        EndLiveLessonSession, GetLiveLessonSession, StartLiveLessonSession, session_id_uuid,
+    },
     scheduling::{
         CancelBooking, ConfirmBooking, CreateBooking, GetSlotSupply, PublishSlot,
         SchedulingBookingLookup, SearchSlots, booking_id_uuid, slot_id_uuid,
@@ -160,6 +163,7 @@ fn app() -> App {
         ),
         CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             events.clone(),
             clock.clone(),
@@ -216,7 +220,7 @@ fn app() -> App {
             analytics.clone(),
             clock.clone(),
         ),
-        EndLiveLessonSession::new(sessions, video, analytics.clone(), clock.clone()),
+        EndLiveLessonSession::new(sessions.clone(), video, analytics.clone(), clock.clone()),
         SubmitVideo::new(
             InMemoryVideoRepository::default(),
             application::catalog::CatalogLessonMenuLookup::new(
@@ -301,7 +305,11 @@ fn app() -> App {
             application::in_memory::InMemoryNotificationSettingsRepository::default(),
         ),
         FakeTokens,
-    );
+    )
+    .merge(interface::live_lesson_session_reads_router(
+        GetLiveLessonSession::new(sessions),
+        FakeTokens,
+    ));
     App {
         router,
         clock,
@@ -388,6 +396,21 @@ impl App {
         support::Contract::load("student-app").assert_response(
             "post",
             "/live-lesson-sessions/{session_id}/end",
+            status,
+            &body,
+        );
+        (status, body)
+    }
+
+    async fn get(&self, token: Option<&str>, session_id: &str) -> (StatusCode, Value) {
+        let mut request = Request::get(format!("/live-lesson-sessions/{session_id}"));
+        if let Some(token) = token {
+            request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        let (status, body) = send(&self.router, request.body(Body::empty()).unwrap()).await;
+        support::Contract::load("student-app").assert_response(
+            "get",
+            "/live-lesson-sessions/{session_id}",
             status,
             &body,
         );
@@ -594,4 +617,96 @@ async fn malformed_requests_and_missing_tokens_are_rejected() {
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}: {body}");
     }
+}
+
+#[tokio::test]
+async fn participants_read_the_session_with_the_first_join_times() {
+    let app = app();
+    let booking_id = app.confirmed_booking().await;
+    app.clock.set(nov1_10());
+
+    // 生徒が先に入室した。コーチはまだ入っていない（Issue #1654）
+    let (status, started) = app.start(STUDENT, &booking_id).await;
+    assert_eq!(status, StatusCode::CREATED, "{started}");
+    assert_eq!(started["coach_joined_at"], Value::Null);
+    assert_eq!(
+        started["bookings"][0]["student_joined_at"],
+        "2026-11-01T10:00:00Z"
+    );
+    let session_id = started["session_id"].as_str().unwrap().to_string();
+
+    for token in [STUDENT, COACH] {
+        let (status, session) = app.get(Some(token), &session_id).await;
+        assert_eq!(status, StatusCode::OK, "{token}: {session}");
+        assert_eq!(session["session_id"], session_id.as_str());
+        assert_eq!(session["status"], "in_progress");
+        assert_eq!(session["coach_joined_at"], Value::Null);
+        assert_eq!(
+            session["bookings"][0]["student_joined_at"],
+            "2026-11-01T10:00:00Z"
+        );
+        assert_eq!(
+            session["room_token"],
+            Value::Null,
+            "取得は通話に参加しないのでトークンを返さない"
+        );
+    }
+    assert_eq!(
+        app.call_events().len(),
+        1,
+        "取得では call.started を発火しない"
+    );
+
+    // 取得はコーチの入室を記録しない
+    let (_, session) = app.get(Some(COACH), &session_id).await;
+    assert_eq!(session["coach_joined_at"], Value::Null);
+
+    // コーチが 90 秒後に入室すると、生徒の取り直しで分かる。生徒が入り直しても最初の時刻のまま
+    app.clock.set(nov1_10() + Duration::from_secs(90));
+    let (status, joined) = app.start(COACH, &booking_id).await;
+    assert_eq!(status, StatusCode::CREATED, "{joined}");
+    assert_eq!(joined["coach_joined_at"], "2026-11-01T10:01:30Z");
+    app.clock.set(nov1_10() + Duration::from_secs(120));
+    let (status, _) = app.start(STUDENT, &booking_id).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, session) = app.get(Some(STUDENT), &session_id).await;
+    assert_eq!(status, StatusCode::OK, "{session}");
+    assert_eq!(session["coach_joined_at"], "2026-11-01T10:01:30Z");
+    assert_eq!(
+        session["bookings"][0]["student_joined_at"],
+        "2026-11-01T10:00:00Z"
+    );
+
+    // 終了したセッションも参加者は読める
+    app.clock.set(nov1_10() + Duration::from_secs(600));
+    let (status, _) = app.end(COACH, &session_id).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, session) = app.get(Some(STUDENT), &session_id).await;
+    assert_eq!(status, StatusCode::OK, "{session}");
+    assert_eq!(session["status"], "ended");
+    assert_eq!(session["ended_at"], "2026-11-01T10:10:00Z");
+    assert_eq!(session["coach_joined_at"], "2026-11-01T10:01:30Z");
+}
+
+#[tokio::test]
+async fn non_participants_cannot_read_a_session() {
+    let app = app();
+    let booking_id = app.confirmed_booking().await;
+    app.clock.set(nov1_10());
+    let (_, started) = app.start(STUDENT, &booking_id).await;
+    let session_id = started["session_id"].as_str().unwrap();
+
+    // 参加者でなければ、セッションがあることも知らせない（役割を問わない）
+    for token in [OTHER_STUDENT, OTHER_COACH, HEADQUARTERS] {
+        let (status, body) = app.get(Some(token), session_id).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{token}: {body}");
+    }
+    let unknown_session = session_id_uuid::format(SessionId::from_u128(99));
+    for id in [unknown_session.as_str(), "not-a-uuid"] {
+        let (status, _) = app.get(Some(STUDENT), id).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{id}");
+    }
+
+    let (status, body) = app.get(None, session_id).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
 }

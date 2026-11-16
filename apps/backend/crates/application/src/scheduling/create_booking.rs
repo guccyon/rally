@@ -575,7 +575,7 @@ mod tests {
         use_case
             .bookings()
             .update(booking.id(), |booking, slot| {
-                booking.cancel(STUDENT, slot, NOW).map(|_| ())
+                booking.cancel(STUDENT, slot, NOW, true).map(|_| ())
             })
             .await
             .unwrap();

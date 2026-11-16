@@ -170,7 +170,7 @@ screens:
   - name: 記録がないときの表示
     note: 今の「状態が変わった記録はありません」を、何を意味するかが分かる文に変える。画面に次の操作がないので action は置かない
     source: status_changes が空
-    content: 「まだ確定もキャンセルもしていない予約です。コーチが確定すると、ここに記録が出ます。」
+    content: 「まだ確定もキャンセルもしていない予約です。確定するのは生徒です。生徒がアプリで確定すると、ここに記録が出ます。」
     required: false
     component: empty_state（section。ボタンなし）
   behaviors:

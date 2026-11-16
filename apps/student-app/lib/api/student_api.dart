@@ -32,6 +32,9 @@ abstract interface class StudentApi {
     StartLiveLessonSessionRequest body,
   );
 
+  /// `getLiveLessonSession`（GET /live-lesson-sessions/{session_id}）。コーチの入室や終了を取り直して知る
+  Future<LiveLessonSession> getLiveLessonSession(String sessionId);
+
   /// `endLiveLessonSession`（POST /live-lesson-sessions/{session_id}/end）
   Future<LiveLessonSession> endLiveLessonSession(String sessionId);
 

@@ -1,4 +1,5 @@
 //! `/live-lesson-sessions`。student-app の `POST /live-lesson-sessions`（`startLiveLessonSession`）と
+//! `GET /live-lesson-sessions/{session_id}`（`getLiveLessonSession`）と
 //! `POST /live-lesson-sessions/{session_id}/end`（`endLiveLessonSession`）。予約の参加者（生徒・コーチ）だけが
 //! 扱え、それ以外のアカウントには予約・セッションがあることも知らせない（404）。
 
@@ -10,7 +11,8 @@ use application::{
     identity::{TokenVerifier, account_id_uuid},
     live_lesson::{
         BookingLookup, EndLiveLessonSession, EndLiveLessonSessionCommand,
-        EndLiveLessonSessionError, LiveLessonSessionRepository, StartLiveLessonSession,
+        EndLiveLessonSessionError, GetLiveLessonSession, GetLiveLessonSessionError,
+        GetLiveLessonSessionQuery, LiveLessonSessionRepository, StartLiveLessonSession,
         StartLiveLessonSessionCommand, StartLiveLessonSessionError, VideoCallProvider,
         session_id_uuid,
     },
@@ -20,7 +22,7 @@ use axum::{
     Json, Router,
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
-    routing::post,
+    routing::{get, post},
 };
 use domain::{DomainError, live_lesson::LiveLessonSession};
 use serde::{Deserialize, Serialize};
@@ -49,7 +51,8 @@ pub struct StartLiveLessonSessionRequest {
 
 /// student-app の `LiveLessonSession`。接続品質の指標と通話品質スコアは返さない（指標は行動イベント
 /// `call.ended` に載せる）。`booking_id` / `student_id` は開始した予約、`bookings` は結び付いた予約の一覧
-/// （グループレッスンでは人数分。先頭は開始した予約）。
+/// （グループレッスンでは人数分。先頭は開始した予約）。`coach_joined_at`・`bookings` の `student_joined_at` は
+/// 最初の入室時刻で、まだ入室していない・入室を記録する前に始まったセッションでは null（Issue #1654）。
 #[derive(Serialize)]
 pub struct LiveLessonSessionBody {
     session_id: String,
@@ -61,6 +64,7 @@ pub struct LiveLessonSessionBody {
     ended_at: Option<String>,
     duration_sec: Option<u64>,
     room_token: Option<String>,
+    coach_joined_at: Option<String>,
     bookings: Vec<LiveLessonSessionBookingBody>,
 }
 
@@ -69,6 +73,7 @@ pub struct LiveLessonSessionBody {
 pub struct LiveLessonSessionBookingBody {
     booking_id: String,
     student_id: String,
+    student_joined_at: Option<String>,
 }
 
 /// `POST /live-lesson-sessions`。確定した予約の参加者（生徒・コーチ）が通話を始める。グループレッスンの通話中の
@@ -119,6 +124,33 @@ where
         StatusCode::CREATED,
         Json(session_body(&started.session, Some(started.room_token))?),
     ))
+}
+
+/// `GET /live-lesson-sessions/{session_id}`。参加者が通話セッションの今の状態（相手の入室・終了）を取り直す。
+/// 読むだけで入室は記録せず、`room_token` は通話中でも返さない（参加のトークンは開始が返す）。
+pub async fn get_live_lesson_session<L>(
+    State(get_live_lesson_session): State<Arc<GetLiveLessonSession<L>>>,
+    account: AuthenticatedAccount,
+    Path(session_id): Path<String>,
+) -> Result<Json<LiveLessonSessionBody>, ApiError>
+where
+    L: LiveLessonSessionRepository,
+{
+    // 契約の getLiveLessonSession に 422 はないので、UUID でない ID はないセッションとして扱う
+    let session_id = session_id_uuid::parse(&session_id).map_err(|_| session_not_found())?;
+
+    let session = get_live_lesson_session
+        .execute(GetLiveLessonSessionQuery {
+            account_id: account.account_id(),
+            session_id,
+        })
+        .await
+        .map_err(|error| match error {
+            // 参加者でないセッションは、あることも知らせない
+            GetLiveLessonSessionError::SessionNotFound => session_not_found(),
+            GetLiveLessonSessionError::Unavailable(error) => ApiError::internal(error),
+        })?;
+    Ok(Json(session_body(&session, None)?))
 }
 
 /// `POST /live-lesson-sessions/{session_id}/end`。参加者が通話を終える。接続品質の指標は通話基盤（モック）が
@@ -179,14 +211,24 @@ fn session_body(
         ended_at: session.ended_at().map(date_time_to_contract).transpose()?,
         duration_sec: session.duration().map(|duration| duration.as_secs()),
         room_token,
+        coach_joined_at: session
+            .coach_joined_at()
+            .map(date_time_to_contract)
+            .transpose()?,
         bookings: session
             .bookings()
             .iter()
-            .map(|booking| LiveLessonSessionBookingBody {
-                booking_id: booking_id_uuid::format(booking.booking_id()),
-                student_id: account_id_uuid::format(booking.student_id()),
+            .map(|booking| {
+                Ok(LiveLessonSessionBookingBody {
+                    booking_id: booking_id_uuid::format(booking.booking_id()),
+                    student_id: account_id_uuid::format(booking.student_id()),
+                    student_joined_at: session
+                        .joined_at(booking.student_id())
+                        .map(date_time_to_contract)
+                        .transpose()?,
+                })
             })
-            .collect(),
+            .collect::<Result<_, ApiError>>()?,
     })
 }
 
@@ -221,5 +263,28 @@ where
             start_live_lesson_session,
             end_live_lesson_session,
         }))
+        .layer(TokenVerification::layer(tokens))
+}
+
+/// 通話セッションの取得（`GET /live-lesson-sessions/{session_id}`）のルーター。開始・終了の
+/// [`live_lesson_sessions_router`] とは別にし（[`crate::router_with`] の引数の並びを変えないため）、組み立て用の
+/// クレートは `merge` する（同じ検証器を渡す）。
+///
+/// 役割で絞らず、セッションの参加者（コーチと、結び付いた予約の生徒）かをユースケースが確かめる（契約に 403 がない）。
+pub fn live_lesson_session_reads_router<L, T>(
+    get_live_lesson_session: GetLiveLessonSession<L>,
+    tokens: T,
+) -> Router
+where
+    L: LiveLessonSessionRepository + 'static,
+    T: TokenVerifier + 'static,
+{
+    let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
+    Router::new()
+        .route(
+            "/live-lesson-sessions/{session_id}",
+            get(self::get_live_lesson_session::<L>),
+        )
+        .with_state(Arc::new(get_live_lesson_session))
         .layer(TokenVerification::layer(tokens))
 }

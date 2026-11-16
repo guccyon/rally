@@ -33,6 +33,8 @@ must_not:
   - "返事をしたスレッドに未返信の印が残る、または既読にしただけで未返信の印が消える"
   - "他のコーチが担当するスレッドがスレッドの一覧に出る"
   - "スレッドを選んでも、会話と返事の欄が長い一覧の下に残ったまま画面が動かない（選んだら会話と返事の欄が見える位置まで送る）"
+  - "生徒アプリのメッセージ欄の文字数の残りが、読み上げで英語のまま（「2000 characters remaining」）。画面の表示は 0/2000 のまま、読み上げは「残り 2000 文字」"
+  - "コーチがログインしたまま画面を移ってからブラウザーの戻るを押す、または管理画面の入口の URL を開き直すと、「Rally 管理画面にログイン」の画面が出る（ログインのあとログインの画面は履歴に残さず、ログインしたまま入口を開いたらコーチの画面へ移る）"
 touches:
   apps: [student-app, admin-web]
   contexts: [messaging]
@@ -46,6 +48,6 @@ touches:
     - admin-web.markMessageThreadRead
   events: [message.sent]
 origin:
-  issues: ["guccyon/rally#895", "guccyon/rally#1048"]
+  issues: ["guccyon/rally#895", "guccyon/rally#1048", "guccyon/rally#1521", "guccyon/rally#1555"]
   retro: true
 status: active

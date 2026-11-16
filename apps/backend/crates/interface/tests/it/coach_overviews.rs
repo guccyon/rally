@@ -233,7 +233,7 @@ async fn cancelled_bookings(cancelled_at: &[SystemTime]) -> InMemoryBookingRepos
             .unwrap();
         bookings
             .update(booking.id(), |booking, slot| {
-                booking.cancel(STUDENT, slot, at).map(|_| ())
+                booking.cancel(STUDENT, slot, at, true).map(|_| ())
             })
             .await
             .unwrap();

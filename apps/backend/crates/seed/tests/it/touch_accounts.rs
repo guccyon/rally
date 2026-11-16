@@ -230,3 +230,25 @@ async fn the_login_hints_point_at_seeded_accounts_and_the_headquarters_can_put_a
     );
     assert_eq!(detail.coach_leave, Some(leave));
 }
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn the_login_hints_are_incomplete_without_a_headquarters(pool: PgPool) {
+    let now = SystemTime::UNIX_EPOCH + NOW;
+    Seeder::new(pool.clone(), RecordingAnalyticsSink::default())
+        .run(&SeedPlan::generate(42, now))
+        .await
+        .unwrap();
+    let tokens = AccessTokenBackend::default();
+    let hints = LoginHint::load(&pool, &tokens).await.unwrap();
+    assert_eq!(LoginHint::check_complete(&hints), Ok(()));
+
+    // コーチだけを登録した DB（本部がいない）
+    sqlx::query("DELETE FROM identity.accounts WHERE role = 'headquarters'")
+        .execute(&pool)
+        .await
+        .ok();
+    let hints = LoginHint::load(&pool, &tokens).await.unwrap();
+    let err = LoginHint::check_complete(&hints).unwrap_err();
+    assert_eq!(err.shortfalls, vec![(Role::Headquarters, 1, 0)]);
+}

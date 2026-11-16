@@ -22,7 +22,12 @@ import { ReturnVideoReviewForm } from "./ReturnVideoReviewForm";
 type Tab = "tasks" | "slots" | "menus" | "videos" | "chat" | "live" | "reviews" | "profile";
 
 /** タブのほかに開ける画面（見出しの「お知らせ」から開く。メニューのタブには並べない）。 */
-type View = Tab | "notifications";
+export type View = Tab | "notifications";
+
+/** URL に開いている画面を残すクエリの名前（`/coach?tab=slots`）。値は画面の id。 */
+const TAB_QUERY = "tab";
+
+const COACH_PATH = "/coach";
 
 const TABS: { id: Tab; title: string }[] = [
   { id: "tasks", title: "対応待ち" },
@@ -37,7 +42,7 @@ const TABS: { id: Tab; title: string }[] = [
 
 /**
  * お知らせの種類 → 行を押したときに移るタブ（お知らせは行き先の ID を持たないので、その種類の一覧の画面）。
- * 新しい予約とレッスンのリマインドは「通話への参加」（自分の予約の一覧）、添削の依頼は「動画の添削」、メッセージは「チャット」。
+ * 新しい予約とレッスンのリマインドは「通話への参加」（自分の予約の一覧。booking_id があればその予約の行を開く）、添削の依頼は「動画の添削」、メッセージは「チャット」。
  */
 const NOTIFICATION_TABS: Record<Schemas["NotificationKind"], Tab> = {
   booking_confirmed: "live",
@@ -50,8 +55,20 @@ const NOTIFICATION_DESTINATIONS: Record<string, string> = Object.fromEntries(
   Object.entries(NOTIFICATION_TABS).map(([kind, tab]) => [kind, TABS.find((item) => item.id === tab)!.title]),
 );
 
-/** 対応待ちから移るときに、移った先の画面で開いておくもの（添削する動画・チャットのスレッド）。 */
-type Focus = { videoId?: string; threadId?: string };
+/** その画面を開いた状態のコーチの画面の URL。開いたときの画面（対応待ち）ならクエリを付けない。 */
+export function coachPath(view: View): string {
+  return view === "tasks" ? COACH_PATH : `${COACH_PATH}?${new URLSearchParams({ [TAB_QUERY]: view })}`;
+}
+
+/** URL のクエリから開く画面を読む。メニューのタブかお知らせの id でなければ、開いたときの画面（対応待ち）にする。 */
+export function initialViewFrom(params: Pick<URLSearchParams, "get">): View {
+  const value = params.get(TAB_QUERY);
+  if (value === "notifications") return value;
+  return TABS.find((item) => item.id === value)?.id ?? "tasks";
+}
+
+/** 対応待ちから移るときに、移った先の画面で開いておくもの（添削する動画・チャットのスレッド・予約）。 */
+type Focus = { videoId?: string; threadId?: string; bookingId?: string };
 
 /**
  * コーチの画面: メニュー（タブ）で、対応待ち・枠の公開・レッスンメニューの登録と編集・添削の返却・
@@ -60,10 +77,19 @@ type Focus = { videoId?: string; threadId?: string };
  * メニューの「対応待ち」には未対応の件数のバッジを出し（0 件なら出さない）、タブを切り替えるたびに数え直す。
  * メニューの上の「お知らせ」には未読のお知らせの数のバッジを出し（0 件なら出さない）、押すとお知らせの一覧を開いて
  * すべて既読にする。未読の数も開いたときとタブを切り替えるたびに数え直す。
+ * 開いている画面は `initialView`（URL の `?tab=`）で開き、切り替えるたびに `onViewChange` で知らせる（ページが URL に残し、再読み込み・共有で同じ画面を開く）。
  */
-export function CoachHome({ token }: { token: string }) {
+export function CoachHome({
+  token,
+  initialView = "tasks",
+  onViewChange,
+}: {
+  token: string;
+  initialView?: View;
+  onViewChange?: (view: View) => void;
+}) {
   const api = useMemo(() => coachApi(createApiClient(token)), [token]);
-  const [tab, setTab] = useState<View>("tasks");
+  const [tab, setTab] = useState<View>(initialView);
   const [focus, setFocus] = useState<Focus>({});
   const [tasks, setTasks] = useState<PendingTasks | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -96,6 +122,7 @@ export function CoachHome({ token }: { token: string }) {
   function open(next: View, nextFocus: Focus = {}) {
     setTab(next);
     setFocus(nextFocus);
+    onViewChange?.(next);
   }
 
   const pendingCount = tasks ? countPendingTasks(tasks) : 0;
@@ -150,7 +177,13 @@ export function CoachHome({ token }: { token: string }) {
             api={api}
             destinations={NOTIFICATION_DESTINATIONS}
             onLoaded={(notifications) => setUnreadNotifications(countUnreadNotifications(notifications))}
-            onOpen={(kind) => open(NOTIFICATION_TABS[kind])}
+            onOpen={(notification) =>
+              open(
+                NOTIFICATION_TABS[notification.kind],
+                // リマインドなど予約を持つお知らせは、その予約を開く
+                notification.booking_id ? { bookingId: notification.booking_id } : {},
+              )
+            }
           />
         </Section>
       )}
@@ -172,7 +205,7 @@ export function CoachHome({ token }: { token: string }) {
             {tab === "menus" && <LessonMenus api={api} />}
             {tab === "videos" && <ReturnVideoReviewForm api={api} initialVideoId={focus.videoId} />}
             {tab === "chat" && <CoachChat api={api} initialThreadId={focus.threadId} />}
-            {tab === "live" && <LiveSessionPanel api={api} />}
+            {tab === "live" && <LiveSessionPanel api={api} initialBookingId={focus.bookingId} />}
             {tab === "reviews" && <MyCoachReviews api={api} />}
             {tab === "profile" && <CoachProfileForm api={api} />}
           </Section>

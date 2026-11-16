@@ -446,6 +446,24 @@ void main() {
     expect(() => list.videos.add(video), throwsUnsupportedError);
   });
 
+  test('LiveLessonSession の予約の一覧は、コンストラクタで直接作っても渡した元を変えても変わらず、書き換えられない', () {
+    const booking = LiveLessonSessionBooking(bookingId: 'b1', studentId: 's1');
+    final source = [booking];
+    final session = LiveLessonSession(
+      sessionId: 'ls1',
+      bookingId: 'b1',
+      studentId: 's1',
+      coachId: 'c1',
+      status: LiveLessonSessionStatus.inProgress,
+      startedAt: DateTime.utc(2026, 10, 28, 3),
+      bookings: source,
+    );
+    source.clear();
+    expect(session.bookings, [booking]);
+    expect(() => session.bookings.clear(), throwsUnsupportedError);
+    expect(() => session.bookings.add(booking), throwsUnsupportedError);
+  });
+
   test('MyVideoList.fromJson は添削の状態と任意の項目を読み、一覧は書き換えられない', () {
     final list = MyVideoList.fromJson({
       'videos': [

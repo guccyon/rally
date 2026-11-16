@@ -43,6 +43,24 @@ void main() {
     expect(find.text('動画を送って添削を受ける'), findsOneWidget);
   });
 
+  testWidgets('確定待ちの画面に、日時（開始と終わり）・スポーツ・コーチを出し、確定できる', (tester) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const BookingPendingScreen(),
+      api: api,
+      initial: pending(),
+    );
+
+    expect(
+      find.text(formatTimeRange(Fixtures.slot.startsAt, Fixtures.slot.endsAt)),
+      findsOneWidget,
+    );
+    expect(find.textContaining(sportLabel(Sport.tennis)), findsOneWidget);
+    expect(find.textContaining('コーチ: 山田 花子'), findsOneWidget);
+    expect(find.text('予約を確定する'), findsOneWidget);
+  });
+
   testWidgets('plus（上限 4 回）の枠を使い切って確定を断られたら、固定の回数を出さずに枠を使い切ったと出す', (
     tester,
   ) async {
@@ -100,17 +118,13 @@ void main() {
     );
 
     const label = 'メニュー: フォアハンドの基礎（1 回 60 分）';
-    expect(find.text(label), findsOneWidget);
+    expect(find.textContaining(label), findsOneWidget);
     expect(find.textContaining('フォアハンドの応用'), findsNothing);
-    expect(
-      tester.getTopLeft(find.text(label)).dy,
-      greaterThan(tester.getTopLeft(find.textContaining('開始: ')).dy),
-    );
 
     await tapText(tester, '予約を確定する');
 
     expect(find.text('予約が確定しました'), findsOneWidget);
-    expect(find.text(label), findsOneWidget);
+    expect(find.textContaining(label), findsOneWidget);
   });
 
   testWidgets('予約にメニューの写しがなければ、枠にメニューがあっても出さない', (tester) async {
@@ -250,6 +264,9 @@ void main() {
       expect(find.text('状態: 確定待ち'), findsOneWidget);
       expect(find.text('予約を確定する'), findsOneWidget);
       expect(find.text('この予約をキャンセルする'), findsOneWidget);
+      // ホームからの経路（予約の ID で読み直し）でも日時・スポーツ・コーチが出る
+      expect(find.textContaining('コーチ: 山田 花子'), findsOneWidget);
+      expect(find.textContaining(sportLabel(Sport.tennis)), findsOneWidget);
       expect(
         container.read(studentFlowProvider).bookedSlot?.slotId,
         'slot-${Fixtures.bookingId}',
@@ -537,7 +554,7 @@ void main() {
         BookingLookup.notFound,
       );
       expect(find.text(goneNotice), findsOneWidget);
-      expect(find.textContaining('開始: '), findsNothing);
+      expect(find.textContaining('コーチ: '), findsNothing);
       expect(find.text('予約を確定する'), findsNothing);
       expect(find.text('ビデオ通話で受ける'), findsNothing);
       expect(find.text('ホームに戻る'), findsOneWidget);

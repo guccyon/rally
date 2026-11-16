@@ -111,6 +111,7 @@ const reachStartTime = async (page: Page) => {
 
 export const SCREENS: Screen[] = [
   { id: "login", title: "ログイン", path: "/" },
+  { id: "not-found", title: "見つからないページ", path: "/coach/login" },
   // デザインシステムの部品のカタログ（本番のメニューには出さない）。部品が変わるとここに出る
   { id: "design-catalog", title: "デザインシステム: 部品のカタログ", path: "/design" },
   { id: "coach-tasks", title: "コーチ: 対応待ち", role: "coach", path: "/coach" },
@@ -250,6 +251,17 @@ export const SCREENS: Screen[] = [
     path: "/coach",
     open: async (page) => {
       await page.getByRole("button", { name: /^お知らせ/ }).click();
+    },
+  },
+  {
+    id: "coach-notification-reminder",
+    title: "コーチ: お知らせのリマインドから予約を開く",
+    role: "coach",
+    path: "/coach",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^お知らせ/ }).click();
+      await page.getByRole("button", { name: /レッスンの開始 1 時間前です/ }).click();
+      await page.getByRole("table", { name: "これからの予約" }).waitFor();
     },
   },
   { id: "hq-home", title: "本部: ホーム", role: "headquarters", path: "/headquarters" },
@@ -855,18 +867,11 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/bookings/detail?booking_id=44440010-0000-4000-8000-000000000000",
     open: bookingDetailLoaded,
   },
-  ...(
-    [
-      ["confirmed", "確定だけ"],
-      ["student", "生徒のキャンセル"],
-      ["coach-leave", "コーチのお休みのキャンセル"],
-      ["legacy", "記録のない古いキャンセル"],
-    ] as const
-  ).map(([state, label], index) => ({
+  ...HQ_BOOKING_DETAIL_STATES.map(({ state, label, bookingId }) => ({
     id: `hq-booking-detail-${state}`,
     title: `本部: 予約の詳細（${label}）`,
     role: "headquarters" as const,
-    path: `/headquarters/bookings/detail?booking_id=${HQ_BOOKING_DETAIL_STATES[index]!.bookingId}`,
+    path: `/headquarters/bookings/detail?booking_id=${bookingId}`,
     open: bookingDetailLoaded,
   })),
   {

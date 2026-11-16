@@ -285,6 +285,21 @@ final screens = <Screen>[
     ),
   ),
   Screen('live-lesson', 'ビデオ通話', _toLiveLesson),
+  Screen(
+    'live-lesson-awaiting-coach',
+    'ビデオ通話: コーチの入室を待っている',
+    _toLiveLesson,
+    api: () => _api()..liveSession = Fixtures.sessionAwaitingCoach,
+  ),
+  Screen('live-lesson-coach-joined', 'ビデオ通話: 待っているあいだにコーチが入室した', (t) async {
+    await _toLiveLesson(t);
+    // 待機のあいだの取り直し（getLiveLessonSession）でコーチの入室を知る
+    final api = ProviderScope.containerOf(
+      t.element(find.byType(StudentApp)),
+    ).read(studentApiProvider) as FakeStudentApi;
+    api.liveSession = Fixtures.sessionInProgress;
+    await t.pump(liveLessonAwaitingCoachRefetchInterval);
+  }, api: () => _api()..liveSession = Fixtures.sessionAwaitingCoach),
   Screen('live-lesson-back-confirm', 'ビデオ通話: 「戻る」で出す終了の確認', (t) async {
     await _toLiveLesson(t);
     // ブラウザー・端末の「戻る」（通話の画面にとどまり、通話を終えるかを確かめる。#1519）
@@ -317,12 +332,16 @@ final screens = <Screen>[
       await _register(t);
       await tapText(t, 'コーチを探す');
     }, width: width),
-    Screen('subscription-w${width.round()}', '月額契約（幅 ${width.round()}）', (
-      t,
-    ) async {
-      await _toReview(t);
-      await tapText(t, '月額契約へ進む');
-    }, width: width, api: () => _api(subscribed: false)),
+    Screen(
+      'subscription-w${width.round()}',
+      '月額契約（幅 ${width.round()}）',
+      (t) async {
+        await _toReview(t);
+        await tapText(t, '月額契約へ進む');
+      },
+      width: width,
+      api: () => _api(subscribed: false),
+    ),
   ],
   Screen('message-threads', 'チャット: スレッドの一覧', (t) async {
     await _register(t);

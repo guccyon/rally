@@ -124,6 +124,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "live_lesson.lesson_completions",
             "live_lesson.session_bookings",
             "live_lesson.session_headquarters_ends",
+            "live_lesson.session_participants",
             "live_lesson.sessions",
             "matching.favorite_coaches",
             "messaging.messages",

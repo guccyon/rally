@@ -289,6 +289,27 @@ describe("本部のキャンセルされた予約", () => {
     expect(screen.getByLabelText("開始日")).toHaveValue("2026-10-20");
   });
 
+  test("URL の coach_id がコーチの選択肢に無ければ「すべて」に戻し、コーチを付けずに読み直して URL からも外す", async () => {
+    const listCancelledBookings = listOf(BOOKINGS);
+    const onFilterChange = vi.fn();
+    const stale = "22222222-2222-4222-8222-0000000000ff";
+    render(
+      <CancelledBookingList
+        api={{ listCancelledBookings, ...choicesOf() }}
+        initialCoachId={stale}
+        onFilterChange={onFilterChange}
+      />,
+    );
+
+    await waitFor(() => expect(onFilterChange).toHaveBeenCalledTimes(1));
+    expect(onFilterChange).toHaveBeenCalledWith(expect.objectContaining({ coachId: "" }));
+    await waitFor(() => expect(listCancelledBookings).toHaveBeenLastCalledWith({}));
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "コーチ" })).toHaveValue("");
+    await userEvent.setup().click(screen.getByRole("button", { name: "この条件で見る" }));
+    expect(listCancelledBookings.mock.calls.at(-1)![0]).not.toHaveProperty("coach_id");
+  });
+
   test("コーチで絞って 0 件なら「この期間にこのコーチの枠でキャンセルされた予約はありません」と出す", async () => {
     render(
       <CancelledBookingList
@@ -825,7 +846,7 @@ describe("画面への配置", () => {
     expect(replace).toHaveBeenLastCalledWith("/headquarters/cancelled-bookings", { scroll: false });
   });
 
-  test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
+  test("本部以外のロールでは画面に入れず、ログインしたまま理由と戻り道を出す", () => {
     headquartersApiMock.mockReturnValue({
       listCancelledBookings: listOf(BOOKINGS),
       listCoaches: coachesOf(),
@@ -839,6 +860,7 @@ describe("画面への配置", () => {
     );
 
     expect(screen.queryByRole("region", { name: "キャンセルされた予約" })).not.toBeInTheDocument();
-    expect(replace).toHaveBeenCalledWith("/");
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "コーチの画面へ戻る" })).toHaveAttribute("href", "/coach");
   });
 });

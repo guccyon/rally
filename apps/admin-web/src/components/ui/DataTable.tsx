@@ -1,15 +1,77 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+
+import { Icon } from "./Icon";
+import { Notice } from "./Notice";
 
 /** 列の種類（specs/design/components.yaml の data_table.variants）。 */
 export type DataTableVariant = "text" | "numeric" | "long_text";
+
+/**
+ * 並べ方の値の種類（specs/design/components.yaml の table_sort.directions・wording）。
+ * datetime は「新しい順・古い順」、count は「多い順・少ない順」。どちらも最初に押すと descending（新しい順・多い順）。
+ */
+export type TableSortKind = "datetime" | "count";
+
+export type TableSortDirection = "ascending" | "descending";
+
+/** 今の並び。key は API の並べ方の引数に渡す値（画面の中で行を並べ替えない）。 */
+export type TableSort = { key: string; direction: TableSortDirection };
 
 export type DataTableColumn<Row> = {
   header: string;
   variant?: DataTableVariant;
   cell: (row: Row) => ReactNode;
+  /** API に並べ方の引数がある列だけ付ける（table_sort）。ない列は素の見出し。 */
+  sort?: { key: string; kind: TableSortKind };
 };
+
+/**
+ * 見出しで並べ替える表の並び（table_sort）。並べ替えは onSort で API から読み直す。
+ * 読み直すあいだは current を押した列の新しい向きにして loading、失敗したら current を前の並びに戻して error を渡す。
+ */
+export type DataTableSortProps = {
+  current: TableSort;
+  onSort: (next: TableSort) => void;
+  /** 表の上の order_text の前に置く件数の文（「12 件」）。 */
+  count?: string;
+  loading?: boolean;
+  error?: string;
+};
+
+/**
+ * 行を 1 つ選び、詳細を表の横か下に出す表（data_table の selectable）。先頭の列（名前の列）のセルを select_cell の
+ * button にし、選んだ行を primary_container の面と先頭の 4px の線と aria-selected で示す。詳細の読み込み・失敗は詳細の欄で出す。
+ */
+export type DataTableSelection<Row> = {
+  /** 選んだ行の rowKey。選んでいなければ undefined。 */
+  selected?: string;
+  onSelect: (row: Row) => void;
+  /** 読み上げの名前（「山田 花子」→「山田 花子を選ぶ」）。 */
+  name: (row: Row) => string;
+  /** 選べない行は select_cell を出さず名前の字だけにする（行は無効にしない）。既定はすべて選べる。 */
+  canSelect?: (row: Row) => boolean;
+};
+
+/** table_sort.errors.sort_failed の文言。 */
+export const TABLE_SORT_FAILED = "並べ替えられませんでした。もう一度見出しを押すと、読み直します。";
+
+const SORT_WORDS: Record<TableSortKind, Record<TableSortDirection, string>> = {
+  datetime: { descending: "新しい順", ascending: "古い順" },
+  count: { descending: "多い順", ascending: "少ない順" },
+};
+
+/** 並びの言い方（「開始の新しい順」）。「昇順」「降順」「ソート」を使わない。 */
+export function tableSortLabel(header: string, kind: TableSortKind, direction: TableSortDirection): string {
+  return `${header}の${SORT_WORDS[kind][direction]}`;
+}
+
+/** 見出しを押したときの次の並び。同じ列なら逆、ほかの列なら descending（並べない 3 つ目の状態は作らない）。 */
+export function nextTableSort(current: TableSort, key: string): TableSort {
+  if (current.key !== key) return { key, direction: "descending" };
+  return { key, direction: current.direction === "descending" ? "ascending" : "descending" };
+}
 
 /** 見出しとセルに共通の余白。左右 sm 8px で列のあいだは md 16px、先頭の左と最後の右は 0（Section の見出しと左をそろえる）。 */
 const EDGE_CLASSES = "px-2 py-2 first:pl-0 last:pr-0";
@@ -27,6 +89,11 @@ const VARIANT_CLASSES: Record<DataTableVariant, string> = {
  * aria-label と tabindex="0" を付け、キーボードの矢印でも動かせるようにする。
  * 行全体は押せるようにしない（詳細へは cell にリンクを置く）。急ぎの行は highlightRow で danger.container の面にする
  * （色だけで伝えないよう、状態のセルに文字のしるしを置く）。
+ * sort を渡すと、sort の付いた列の見出しを押して並べ替えられる（table_sort）。今の並びは矢印と aria-sort と表の上の order_text で示す。
+ * notes は値の注記（value_note）の語の意味を 1 語 1 文で表の下に出し、table に aria-describedby で結ぶ。
+ * 注記の付いた値（ValueNote）があるときだけ渡す。
+ * selection を渡すと行を 1 つ選べる（selectable）。選んだ行は highlightRow より優先する。
+ * highlightRow は確定待ちのまま 24 時間以内に始まる予約の行だけに使い、低品質などは並び順・列・status_tag で示す（0.13.0）。
  */
 export function DataTable<Row>({
   label,
@@ -34,15 +101,26 @@ export function DataTable<Row>({
   rows,
   rowKey,
   highlightRow,
+  sort,
+  notes,
+  selection,
 }: {
   label: string;
   columns: DataTableColumn<Row>[];
   rows: Row[];
   rowKey: (row: Row) => string;
   highlightRow?: (row: Row) => boolean;
+  sort?: DataTableSortProps;
+  notes?: string[];
+  selection?: DataTableSelection<Row>;
 }) {
   const wrapper = useRef<HTMLDivElement>(null);
   const [scrollable, setScrollable] = useState(false);
+  const noteId = useId();
+  const sorted = sort ? columns.find((column) => column.sort?.key === sort.current.key) : undefined;
+  const sortedLabel =
+    sort && sorted?.sort ? tableSortLabel(sorted.header, sorted.sort.kind, sort.current.direction) : undefined;
+  const announcement = useSortAnnouncement(sort, sortedLabel);
 
   useEffect(() => {
     const element = wrapper.current;
@@ -55,43 +133,162 @@ export function DataTable<Row>({
     return () => observer.disconnect();
   }, []);
 
-  return (
+  const table = (
     <div
       ref={wrapper}
       className="max-w-full overflow-x-auto"
       {...(scrollable ? { role: "region", "aria-label": label, tabIndex: 0 } : {})}
     >
-      <table aria-label={label} className="w-full min-w-max border-collapse text-left text-sm">
+      <table
+        aria-label={label}
+        aria-busy={sort?.loading || undefined}
+        aria-describedby={notes?.length ? noteId : undefined}
+        className="w-full min-w-max border-collapse text-left text-sm"
+      >
         <thead>
           <tr>
-            {columns.map((column) => (
-              <th
-                key={column.header}
-                scope="col"
-                className={`${EDGE_CLASSES} whitespace-nowrap border-b-2 border-b-primary align-bottom font-bold text-text-muted ${
-                  column.variant === "numeric" ? "text-right" : ""
-                }`}
-              >
-                {column.header}
-              </th>
-            ))}
+            {columns.map((column) =>
+              sort && column.sort ? (
+                <SortHeader key={column.header} column={column} sort={sort} />
+              ) : (
+                <th
+                  key={column.header}
+                  scope="col"
+                  className={`${EDGE_CLASSES} ${HEADER_CLASSES} text-text-muted ${
+                    column.variant === "numeric" ? "text-right" : ""
+                  }`}
+                >
+                  {column.header}
+                </th>
+              ),
+            )}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={rowKey(row)} className={highlightRow?.(row) ? "bg-danger-container" : undefined}>
-              {columns.map((column) => (
-                <td
-                  key={column.header}
-                  className={`${EDGE_CLASSES} h-12 border-t align-middle ${VARIANT_CLASSES[column.variant ?? "text"]}`}
-                >
-                  {column.cell(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const selected = selection !== undefined && selection.selected === rowKey(row);
+            return (
+              <tr
+                key={rowKey(row)}
+                aria-selected={selected || undefined}
+                className={selected ? "bg-primary-container" : highlightRow?.(row) ? "bg-danger-container" : undefined}
+              >
+                {columns.map((column, index) => (
+                  <td
+                    key={column.header}
+                    className={`${
+                      selection && index === 0 ? (selected ? SELECTED_FIRST_CELL : SELECTABLE_FIRST_CELL) : EDGE_CLASSES
+                    } h-12 border-t align-middle ${VARIANT_CLASSES[column.variant ?? "text"]}`}
+                  >
+                    {selection && index === 0 ? (
+                      <SelectCell row={row} selection={selection} cell={column.cell(row)} />
+                    ) : (
+                      column.cell(row)
+                    )}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
+
+  if (!sort && !notes?.length) return table;
+  return (
+    <div>
+      {sort?.error && (
+        <div className="mb-2">
+          <Notice message={sort.error} status="danger" />
+        </div>
+      )}
+      {sort && sortedLabel && (
+        <p role="status" className="mb-2 text-sm text-text-muted">
+          {sort.loading
+            ? `${sortedLabel}に並べ替えています…`
+            : [sort.count, sortedLabel].filter(Boolean).join("・")}
+          {announcement && <span className="sr-only">{announcement}</span>}
+        </p>
+      )}
+      {table}
+      {notes && notes.length > 0 && (
+        <div id={noteId} className="mt-2 text-sm text-text-muted">
+          {notes.map((note) => (
+            <p key={note}>{note}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** selectable の表の先頭のセルは左 sm 8px。選んだ行は primary の 4px の線と左 xs 4px（字の位置は変わらない）。 */
+const SELECTABLE_FIRST_CELL = "py-2 pr-2 pl-2 last:pr-0";
+const SELECTED_FIRST_CELL = "py-2 pr-2 pl-1 last:pr-0 border-l-4 border-l-primary";
+
+/**
+ * select_cell（名前の列の button の text）。押下は primary_container の面、読み上げは「山田 花子を選ぶ」。
+ * 選べない行は名前の字だけ。
+ */
+function SelectCell<Row>({ row, selection, cell }: { row: Row; selection: DataTableSelection<Row>; cell: ReactNode }) {
+  if (selection.canSelect && !selection.canSelect(row)) return cell;
+  return (
+    <button
+      type="button"
+      aria-label={`${selection.name(row)}を選ぶ`}
+      onClick={() => selection.onSelect(row)}
+      className="inline-flex min-h-12 items-center rounded-md font-bold text-primary underline decoration-2 underline-offset-4 active:bg-primary-container"
+    >
+      {cell}
+    </button>
+  );
+}
+
+/** 見出しのセルの字（small 700）。並べ替えの見出しも余白と字は同じ。 */
+const HEADER_CLASSES = "whitespace-nowrap border-b-2 border-b-primary align-bottom font-bold";
+
+/**
+ * 並べ替えの見出し（table_sort）。th の中の button の名前は見出しの字、印は読み上げない。
+ * 押下は th の面を primary_container、フォーカスは focus_ring 2px を th の内側に。読み直すあいだは全部を押せなくする。
+ */
+function SortHeader<Row>({ column, sort }: { column: DataTableColumn<Row>; sort: DataTableSortProps }) {
+  const key = column.sort?.key ?? "";
+  const current = sort.current.key === key;
+  const disabled = sort.loading === true;
+  const icon = !current ? "unfold_more" : sort.current.direction === "descending" ? "arrow_downward" : "arrow_upward";
+  return (
+    <th
+      scope="col"
+      aria-sort={current ? sort.current.direction : undefined}
+      className={`${EDGE_CLASSES} ${HEADER_CLASSES} has-[button:active]:bg-primary-container has-[button:focus-visible]:outline-2 has-[button:focus-visible]:-outline-offset-2 has-[button:focus-visible]:outline-focus-ring ${
+        current && !disabled ? "text-text" : "text-text-muted"
+      } ${column.variant === "numeric" ? "text-right" : ""}`}
+    >
+      <button
+        type="button"
+        aria-disabled={disabled || undefined}
+        onClick={() => {
+          if (!disabled) sort.onSort(nextTableSort(sort.current, key));
+        }}
+        className="inline-flex min-h-12 items-center gap-1 font-bold focus-visible:outline-none"
+      >
+        {column.header}
+        <Icon name={icon} size={16} className={current && !disabled ? "text-text" : "text-text-muted"} />
+      </button>
+    </th>
+  );
+}
+
+/** 読み直しが終わって失敗でなければ、「開始の古い順に並べ替えました」を 1 回読む（role=status の中の見えない字）。 */
+function useSortAnnouncement(sort: DataTableSortProps | undefined, sortedLabel: string | undefined): string {
+  const loading = sort?.loading === true;
+  const failed = sort?.error !== undefined;
+  const [wasLoading, setWasLoading] = useState(loading);
+  const [announcement, setAnnouncement] = useState("");
+  if (wasLoading !== loading) {
+    setWasLoading(loading);
+    setAnnouncement(!loading && !failed && sortedLabel ? `${sortedLabel}に並べ替えました` : "");
+  }
+  return announcement;
 }

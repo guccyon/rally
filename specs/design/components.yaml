@@ -51,7 +51,7 @@ components:
     ja: ボタン
     lifecycle: trial
     use: 画面の操作を 1 つ実行する（予約する・送る・保存する）
-    not_for: 画面の移動だけ → list_row か文字のリンク。並ぶ選択肢から 1 つ → chip。マイク・カメラの入と切 → media_toggle
+    not_for: 画面の移動だけ → list_row か文字のリンク。行き先の切り替え → navigation_bar。並ぶ選択肢から 1 つ → chip。マイク・カメラの入と切 → media_toggle
     parts: [container, label, leading_icon（任意）, spinner]
     variants:
       primary:   {container: primary, label: on_primary, radius: md, note: 1 画面に 1 つ}
@@ -298,12 +298,12 @@ components:
   - id: data_table
     ja: 表
     lifecycle: trial
-    use: admin-web で、同じ項目を持つものを列で見比べる（本部の一覧）
+    use: admin-web で、同じ項目を持つものを列で見比べる（本部の予約・生徒・コーチ・レッスンメニュー・通話品質の一覧など）
     not_for: student-app と、項目が 3 つまで → list_row。操作が 2 つ以上 → card。詳細 → detail の型
-    parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）]
+    parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）, select_cell（selectable だけ）, sort（table_sort。任意）, note（value_note。任意）]
     variants:
       text: {align: left, wrap: しない, note: 日時・名前・状態・種類など短い値}
-      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）。指標の値は kpi_figure の cell（0.9.0）}
+      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合・品質スコア。単位も同じセルに 1 行（「12 件」）。指標の値は kpi_figure の cell（0.9.0）}
       long_text: {align: left, wrap: 文節で折る（word-break auto-phrase）, min_width: 12em, max_width: 40em, note: 一言・題など文の列だけ}
     style:
       wrapper: {overflow_x: auto, max_width: 100%, container: background}
@@ -311,16 +311,23 @@ components:
       header_cell: {type: small 700, color: text_muted, divider: primary の 2px（下）}
       cell: {type: small, color: text, padding: sm 8px（列のあいだ md 16px）, min_height_px: 48, vertical_align: middle, divider: border の 1px（上）}
       edge: 先頭のセルの左と最後のセルの右の padding は 0
-      row_highlight: {container: danger.container, note: 確定待ちのまま 24 時間以内に始まる予約。status_tag の urgent と一緒に}
+      row_highlight: {container: danger.container, note: 確定待ちのまま 24 時間以内に始まる予約だけ。status_tag の urgent と一緒に}
+      selectable: {note: 行を 1 つ選び詳細を表の横か下に出す表（0.13.0）, select_cell: 名前の列の button の text, first_cell: 左 sm 8px}
+      selected: {container: primary_container, mark: 先頭のセルの左に primary の 4px の線（左 xs 4px）, note: 1 つだけ。row_highlight より優先}
+      selected_contrast: "primary_container の上で text 15.15・text_muted 5.12・danger.fg 4.89・warning.fg と success.fg 4.31（点だけ）・border_strong 3.26・focus_ring 3.63"
       link: primary の文字と下線（開始の日時など 1 列だけ）
     states:
+      default: 上の style
+      pressed: link と select_cell は button の text の押下（primary_container の面）
+      disabled: 行は無効にしない。選べない行は select_cell を出さず名前の字だけ
+      selected: selectable の表で選んだ行（上の style）。aria-selected="true"
       narrow: 幅に収まらないときは wrapper だけが横に動く。列は細くせず、セルは折り返さない
-      loading: 表を出さず、loading の section_text
+      loading: 表を出さず、loading の section_text。選んだ行の詳細を読むあいだは詳細の欄に section_text
       empty: 表を出さず、empty_state（section）
-      error: 表を出さず、notice の inline（danger）
-    behavior: 並べ方は API が返した順のまま。行全体を押せるようにはしない（詳細へは link のセルから）
-    wording: 見出しは名詞で短く（「開始」「状態」「コーチ」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」
-    a11y: table に aria-label、th に scope="col"。横に動く wrapper は role="region"・aria-label・tabindex="0" と focus_ring 2px
+      error: 表を出さず、notice の inline（danger）。詳細だけ読めないときは詳細の欄に notice
+    behavior: 並べ方は API が返した順のまま（低品質を先に並べるのも API で。見出しで変えるときは table_sort で API から読み直す）。行全体を押せるようにはしない（link か select_cell から）
+    wording: 見出しは名詞で短く（「開始」「状態」「コーチ」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」、値の注記は value_note
+    a11y: table に aria-label、th に scope="col"。select_cell は「山田 花子を選ぶ」と読む。横に動く wrapper は role="region"・aria-label・tabindex="0" と focus_ring 2px
     rules:
       - level: should
         statement: セルは単語の途中で折り返さない。折り返してよいのは long_text の列だけ
@@ -338,6 +345,14 @@ components:
         statement: 本部の一覧の画面は content_width_px の wide に置き、表を reading の枠に押し込まない
         why: 表が縮むと列が折り返して読めない（#896）
         check: design_inspector
+      - level: should
+        statement: row_highlight は急ぎの予約の行だけに使い、低品質などほかの行は並び順と列と status_tag で示す
+        why: 赤い面が増えると、本部がすぐ動くべき予約を見落とす（#1465）
+        check: deterministic
+      - level: should
+        statement: 選んだ行は面の色だけでなく先頭の 4px の線と aria-selected で示す
+        why: 色の見分けが難しい人も読み上げでも、どの行の詳細かが分かる
+        check: design_inspector
       - level: may
         statement: 横に動くとき、先頭の列を左に固定してよい（面は background）
         why: どの行かが分かる
@@ -348,6 +363,78 @@ components:
     preview:
       - label: "PC 幅（wide）と急ぎの行"
         html: '<div class="pv tblw"><div class="tbl-wrap"><table class="tbl type-small" aria-label="10/28（水）の予約"><thead><tr><th scope="col">開始</th><th scope="col">状態</th><th scope="col">コーチ</th><th scope="col">レッスンメニュー</th></tr></thead><tbody><tr class="hl"><td><span class="lnk">9:00</span></td><td><span class="tag"><i class="d d-warning"></i>確定待ち</span> <span class="tag tag-urgent"><i class="d d-danger"></i>開始まで 24 時間以内</span></td><td>佐藤 健</td><td>バッティングの基本（30 分）</td></tr></tbody></table></div></div>'
+      - label: "selectable（選んだ行・数字の列）"
+        html: '<div class="pv dlw"><div class="tbl-wrap"><table class="tbl sel type-small" aria-label="コーチごとの通話品質（直近 30 日）"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">品質スコア</th><th scope="col">通話品質</th><th scope="col" class="num">ビデオ通話</th></tr></thead><tbody><tr><td><span class="pick">佐藤 健</span></td><td class="num">62</td><td><span class="tag"><i class="d d-danger"></i>低品質</span></td><td class="num">14 回</td></tr><tr class="on" aria-selected="true"><td><span class="pick">山田 花子</span></td><td class="num">74</td><td><span class="tag"><i class="d d-warning"></i>やや低い</span></td><td class="num">9 回</td></tr></tbody></table></div></div>'
+
+  - id: table_sort
+    ja: 表の並べ替え
+    lifecycle: trial
+    use: admin-web の data_table で、見出しを押して並べ方を変える。API の並べ方の引数で読み直す
+    not_for: API に並べ方の引数がない列 → 素の見出し。student-app と list_row の一覧 → select の「並べ方」。並べ方が 1 つの表 → 使わない
+    parts: [header_cell（th）, sort_button, sort_mark, order_text]
+    style:
+      sort_button: th の中の button。高さ 48px 以上、余白と字は header_cell のまま
+      sort_mark: 字の右 xs 4px に 16px の印。今の並びの列は arrow_downward・arrow_upward（text）、ほかの押せる列は unfold_more（text_muted）
+      current: 今の並びの列は見出しの字を text に
+      order_text: 表の上 sm 8px に small text_muted で「12 件・開始の新しい順」
+    directions: 最初に押すと日時は新しい順、数は多い順。同じ列をもう一度押すと逆。並べない（3 つ目）の状態は作らない
+    states:
+      default: 押せる列に unfold_more。今の並びの列は字 text・矢印・aria-sort
+      pressed: th の面 primary_container。focus は focus_ring 2px を th の内側に
+      disabled: 読み直すあいだは全部の見出しを押せなくする（aria-disabled・字 text_muted）
+      loading: 押した列の印を新しい向きにし、行は前のまま table に aria-busy。order_text を「〜に並べ替えています…」（role=status）
+      failed: 印と order_text を前の並びに戻し、表の上に notice の inline（danger）。行は消さない
+    errors:
+      sort_failed: {text: 並べ替えられませんでした。もう一度見出しを押すと、読み直します。}
+    behavior: 先頭から読み直し、絞り込みは残す。並びは URL の引数に残す。select の「並べ方」と両方は置かない
+    wording: 日時は「新しい順・古い順」、数は「多い順・少ない順」。「昇順」「降順」「ソート」を使わない
+    a11y: aria-sort（ascending・descending）は今の並びの th にだけ。印は aria-hidden、button の名前は見出しの字。読めたら role=status で「開始の古い順に並べ替えました」
+    rules:
+      - level: should
+        statement: 並べ替えは API の並べ方の引数で読み直してする。画面の中で行を並べ替えない
+        why: 読み込んだ一部だけが並ぶと、本部が件数の文やほかの人の画面と違う順で読み違える
+        check: design_inspector
+      - level: should
+        statement: 今の並びは矢印だけでなく、order_text の字と aria-sort でも示す
+        why: 矢印の向きだけでは新しい順か古い順かを読み違える。読み上げでも並びが分かる
+        check: deterministic
+    examples: {good: 見出し「開始 ↓」と表の上の「12 件・開始の新しい順」, bad: 押せない列にも印を付け、読み込んだ 50 件だけを画面の中で並べ替える}
+    preview:
+      - label: "通常（新しい順）・押下"
+        html: '<div class="pv w"><p class="ord type-small">12 件・開始の新しい順</p><table class="tbl type-small" aria-label="予約"><thead><tr><th scope="col" class="cur" aria-sort="descending"><span class="srt">開始<i aria-hidden="true">↓</i></span></th><th scope="col">コーチ</th><th scope="col" class="num prs"><span class="srt">予約された枠<i aria-hidden="true">↕</i></span></th></tr></thead><tbody><tr><td>10/28（水）12:00</td><td>山田 花子</td><td class="num">9 件</td></tr><tr><td>10/28（水）9:00</td><td>佐藤 健</td><td class="num">4 件</td></tr></tbody></table></div>'
+      - label: "読み込み中・無効"
+        html: '<div class="pv w"><p class="ord type-small" role="status">開始の古い順に並べ替えています…</p><table class="tbl type-small off" aria-busy="true"><thead><tr><th scope="col" aria-sort="ascending" aria-disabled="true"><span class="srt">開始<i aria-hidden="true">↑</i></span></th><th scope="col" class="num" aria-disabled="true"><span class="srt">予約された枠<i aria-hidden="true">↕</i></span></th></tr></thead><tbody><tr><td>10/28（水）12:00</td><td class="num">9 件</td></tr></tbody></table></div>'
+      - label: "失敗"
+        html: '<div class="pv w"><div class="notice n-danger type-small" role="alert"><i class="ic">!</i><p>並べ替えられませんでした。もう一度見出しを押すと、読み直します。</p></div><p class="ord type-small">開始の新しい順</p><table class="tbl type-small"><thead><tr><th scope="col" class="cur" aria-sort="descending"><span class="srt">開始<i aria-hidden="true">↓</i></span></th><th scope="col" class="num"><span class="srt">予約された枠<i aria-hidden="true">↕</i></span></th></tr></thead><tbody><tr><td>10/28（水）12:00</td><td class="num">9 件</td></tr></tbody></table></div>'
+
+  - id: value_note
+    ja: 値の注記
+    lifecycle: trial
+    use: data_table のセルと description_list の value に、そのまま読むと誤る事情を短い語で添える（「（参考）」は件数が少なく動きやすい値）。語の意味は table_note に書く
+    not_for: 値がない → 「—」。読めなかった → error_text か notice。状態 → status_tag。表全体の条件（期間・対象）→ 表の上の件数の文
+    parts: [value, note_label, table_note]
+    style:
+      note_label: small text_muted の「（参考）」。値とのあいだ xs 4px。numeric の列は値の左に置いて数字の右端をそろえ、ほかは値の右
+      value: 色と太さを変えない
+      table_note: 表の下 sm 8px に small text_muted。語ごとに 1 文
+    states:
+      default: API が印を返した値にだけ note_label。1 つの表で語は 2 つまで
+      pressed: 押せない部品。tooltip に隠さない
+      disabled: 使わない
+      loading: 表の loading のまま。注記だけを後から出さない
+      failed: 印を読めない行は note_label なしで値を出し、画面で数えて付けない。表ごと読めないときは data_table の error
+    behavior: 注記はしきい値を画面で計算せず API の印で付ける。table_note は note_label があるときだけ出す
+    wording: 語は 2〜4 字の名詞（「（参考）」）。table_note は何が少ないかとなぜ注意かを 1 文で。「標本」「n」「*」「※」を使わない
+    a11y: note_label は見える字のまま値と読む。table に aria-describedby で table_note を結ぶ
+    rules:
+      - level: should
+        statement: 値の注記は字の語で出し、色・記号・tooltip だけで示さない。語の意味は表の下に 1 文で書く
+        why: 読み上げでも、表を資料に写しても、どの値がなぜ参考かが分かり、本部が判断に使ってよいか決められる
+        check: design_inspector
+    examples: {good: 「（参考） 67%」と表の下の「（参考）は、公開した枠が 5 件未満で、割合が動きやすい値です。」, bad: 「67%*」で説明がない。値を薄い灰にして注記の代わりにする}
+    preview:
+      - label: "通常（狭い幅。数の列は値の左）と表の下の説明"
+        html: '<div class="pv w"><div class="tbl-wrap" role="region" aria-label="コーチごとの予約枠の需給" tabindex="0"><table class="tbl type-small" aria-describedby="vn1"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">公開した枠</th><th scope="col" class="num">埋まった割合</th></tr></thead><tbody><tr><td>山田 花子</td><td class="num">12 件</td><td class="num">75%</td></tr><tr><td>佐藤 健</td><td class="num">3 件</td><td class="num"><span class="nl">（参考）</span>67%</td></tr></tbody></table></div><p id="vn1" class="tnote type-small">（参考）は、公開した枠が 5 件未満で、割合が動きやすい値です。</p></div>'
 
   - id: description_list
     ja: ラベルと値の並び
@@ -423,7 +510,7 @@ components:
     use: 未読の数・未読の小さな印
     parts: [container, label]
     variants:
-      count: {container: danger.fg, label: on_primary, radius: sm, min_size_px: 20}
+      count: {container: danger.fg, label: on_primary, radius: sm, min_size_px: 20, max_label: 99+}
       dot: {container: danger.fg, size_px: 8}
       on_dark: {container: secondary, label: on_secondary, radius: sm}
     a11y: 入口のラベルに数を足す（「チャット、未読 3 件」）
@@ -434,11 +521,19 @@ components:
   - id: status_tag
     ja: 状態のタグ
     lifecycle: trial
-    use: 予約・動画添削・スロットの状態を出す（呼び名は glossary の states）
-    colors: 予約は booking_state、スロットは slot_state の対応で色を選ぶ
+    use: 予約・動画添削・スロット・通話品質の状態を出す（呼び名は glossary の states）
+    colors: 予約は booking_state、スロットは slot_state（tokens.yaml）、通話品質は下の call_quality_state の対応で色を選ぶ
+    call_quality_state:   # 通話品質の 4 つの値と色（0.13.0。#1465）。キー・境の点は契約で決まるまで仮
+      low: danger         # 低品質
+      fair: warning       # low と ok のあいだ（「やや低い」）
+      ok: neutral         # 80 以上（「問題なし」）
+      no_data: neutral    # 指標がない（「指標なし」）。点数は「—」
+    call_quality_rule: danger は low だけ。値を足すときは warning か neutral にし、新しい色を足さない
     parts: [dot, label]
     style: {container: なし（0.5.0）, dot: "8px。status.*.fg（neutral は border_strong）", label: "small 700。text（neutral は text_muted）", gap: xs}
     variants: {default: 点と字, urgent: data_table の急ぎの行だけ。字も danger.fg}
+    states: {default: 点と字, pressed: 押せない, disabled: 使わない, loading: 置き場の loading に任せる, error: 置かず「—」}
+    call_quality: 低品質も default。urgent にしない。品質スコアは別の列か字で添える
     rules:
       - level: must
         statement: 状態は色だけでなく、glossary の呼び名の文字を出す
@@ -454,6 +549,8 @@ components:
     preview:
       - label: "スロットの状態（slot_state: open・booked・closed）"
         html: '<div class="pv tags"><span class="tag type-small"><i class="d d-info"></i>公開中</span><span class="tag type-small"><i class="d d-success"></i>予約済み</span><span class="tag type-small muted"><i class="d d-neutral"></i>終了</span></div>'
+      - label: "通話品質（call_quality_state）"
+        html: '<div class="pv w tags"><span class="tag type-small"><i class="d d-danger"></i>低品質</span><span class="tag type-small"><i class="d d-warning"></i>やや低い</span><span class="tag type-small muted"><i class="d d-neutral"></i>問題なし</span><span class="tag type-small muted"><i class="d d-neutral"></i>指標なし</span></div>'
 
   - id: score_panel
     ja: スコアの面
@@ -536,7 +633,7 @@ components:
     variants:
       inline: {container: background, border: "border 1px と左に status.*.fg の 4px", text: text, icon: "status.*.fg", note: 失敗・注意・情報。消えない}
       success: {container: inverse_surface, text: on_inverse_surface, mark: 完了の印（secondary の丸にチェック）, note: 成功だけ。inverse_surface の 1 か所に数えない}
-      toast: {container: inverse_surface, mark: 完了の印, duration_ms: 4000, note: 成功だけ。画面の下、安全領域の上}
+      toast: {container: inverse_surface, mark: 完了の印, duration_ms: 4000, note: 成功だけ。画面の下、安全領域の上（navigation_bar があればその上）}
     states: [info, success, warning, danger]
     behavior: 失敗は inline で、直すか閉じるまで残す。toast は失敗に使わない
     wording: 失敗は「何が起きたか」と「どうすればよいか」の 2 文（content.yaml）
@@ -714,7 +811,7 @@ components:
       disabled: 開始時刻の前。action を無効にし、reason「開始時刻になると入室できます」と countdown
       loading: 入室を始めているあいだ。action を loading
       error: 入室に失敗した。action の上に notice の inline（danger）でサーバーの文言。action は押せるまま
-    behavior: 開始時刻になったらその場で押せるようにし、「入室できます」を role=status で 1 回読む。本文の下に帯の高さの余白をとる
+    behavior: 開始時刻になったらその場で押せるようにし、「入室できます」を role=status で 1 回読む。本文の下に帯の高さの余白をとる。navigation_bar と並べない
     a11y: role=region・aria-label「入室」。フォーカスは本文のあと
     rules:
       - level: should
@@ -729,6 +826,48 @@ components:
     preview:
       - label: "無効（開始時刻の前）"
         html: '<div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="cd"><span class="type-small b">あと</span> <span class="type-figure-sm">2:48</span></span></div><p class="type-small muted">開始時刻になると入室できます</p><span class="btn btn-disabled" aria-disabled="true">入室する</span></div>'
+
+  - id: navigation_bar
+    ja: 下のタブ
+    lifecycle: trial
+    use: student-app の登録後の 5 つの行き先を、画面の下にアイコンとラベルで並べる
+    not_for: admin-web。画面の中の操作 → button。6 つ目の行き先 → マイページの list_row
+    parts: [container, item, indicator, icon, label, badge（任意）]
+    destinations:
+      - {id: home, label: ホーム, icon: home}
+      - {id: bookings, label: 予約, icon: event_note, opens: 自分の予約}
+      - {id: chat, label: チャット, icon: chat_bubble, opens: スレッドの一覧, badge: count（未読の合計）}
+      - {id: notifications, label: お知らせ, icon: notifications, badge: dot（未読がある）}
+      - {id: my_page, label: マイページ, icon: person, opens: プロフィール・自分の動画・受けたレッスン・通知の受け取り設定の list_row}
+    style:
+      container: {color: background, border_top: border 1px, height_px: 72, elevation: 0, safe_area: 下の安全領域の分だけ下に伸ばす}
+      item: {width: 5 等分（360px で 72px）, touch_target: item 全体（72×72px）, layout: 上 sm・indicator・xs・label}
+      indicator: {size_px: 56×32, radius: md, selected: primary_container}
+      icon: {size_px: 24, default: text_muted の線の形, selected: text の塗りの形}
+      label: {type: caption の段（12px）。短い名詞の札, default: 700 text_muted, selected: 900 text, wrap: 1 行で切らない}
+      badge: {count: badge の count を icon の右上に、background の 2px のふち。100 以上は「99+」, dot: badge の dot}
+    states:
+      default: 線のアイコンと text_muted の 700 のラベル
+      selected: indicator・塗りのアイコン・text の 900。深い画面では開いた元のタブ
+      pressed: indicator を primary_container_pressed で
+      focus: item の内側に focus_ring 2px
+      disabled: 使わない。押せないときはバーごと出さない
+      loading: 押したらすぐ選択中を移し、読み込みは移った先で
+      error: 未読の数を読めないときは badge を出さない（0 や前の数を出さない）
+    behavior: 選択中のタブを押すと上端へ戻る。切り替えは fast 120ms の透明度だけ（reduced_motion では instant）。キーボードが出ているあいだは隠す
+    wording: ラベルは行き先の名詞（自分の予約 → 予約）。開いた画面の題は glossary の語のまま。マイページは行き先の束の名
+    a11y: 「チャット、未読 3 件、タブ、5 個中 3 個目、選択中」と 1 つの文で読む（badge は aria-hidden）。選択は色に加えて塗りと太さで示す。ラベルの拡大は 14px で止め、長押しで tooltip（requests の a11y-nav-label）
+    flutter: NavigationBar を lib/ui/components の部品で包む（height 72・elevation 0・alwaysShow）
+    rules:
+      - {level: should, check: deterministic, statement: 下のタブはアイコンとラベルをいつも両方出す, why: アイコンだけだと予約やお知らせの場所を覚え直す。読み上げも見た目と同じ名前になる}
+      - {level: should, check: design_inspector, statement: 行き先は 5 つまで。増やすときはマイページの list_row かホームの欄に置く, why: 360px で 6 つ並べると 1 つが 60px になり、ラベルが切れる}
+      - {level: should, check: design_inspector, statement: 選択中は indicator と塗りのアイコンと太さで示し、ライムと濃い面を使わない, why: タブが目立つと score_panel が主役でなくなる（one-hot-spot）}
+    examples: {good: 「ホーム」が選択中、チャットに「3」、お知らせに点。どれもラベルつき, bad: アプリバーの右にラベルのないアイコンが 7 つ}
+    preview:
+      - label: 通常（ホームが選択中・未読の数と点）
+        html: '<nav class="pv w nb type-caption" aria-label="メインの行き先"><span class="ni on"><span class="ind"><i class="g g-home"></i></span>ホーム</span><span class="ni"><span class="ind"><i class="g g-cal"></i></span>予約</span><span class="ni" aria-label="チャット、未読 3 件"><span class="ind"><i class="g g-chat"></i><b class="badge" aria-hidden="true">3</b></span>チャット</span><span class="ni" aria-label="お知らせ、未読あり"><span class="ind"><i class="g g-bell"></i><b class="dot" aria-hidden="true"></b></span>お知らせ</span><span class="ni"><span class="ind"><i class="g g-me"></i></span>マイページ</span></nav>'
+      - label: 押下（予約）・選択中（チャット・99+）・フォーカス（マイページ）
+        html: '<nav class="pv w nb type-caption"><span class="ni"><span class="ind"><i class="g g-home"></i></span>ホーム</span><span class="ni is-pressed"><span class="ind"><i class="g g-cal"></i></span>予約</span><span class="ni on"><span class="ind"><i class="g g-chat"></i><b class="badge">99+</b></span>チャット</span><span class="ni"><span class="ind"><i class="g g-bell"></i></span>お知らせ</span><span class="ni is-focus"><span class="ind"><i class="g g-me"></i></span>マイページ</span></nav>'
 
 preview_css: |
   .pv,.pv *{box-sizing:border-box}
@@ -859,3 +998,15 @@ preview_css: |
   .ck{width:12px;height:7px;margin-top:-4px;border:solid;border-width:0 0 2px 2px;transform:rotate(-45deg)}
   .kf .vr{display:flex;align-items:baseline;gap:var(--space-md);flex-wrap:wrap}.kf .v{display:flex;align-items:baseline;gap:var(--space-xs)}
   .pv.kfs{width:360px;display:flex;flex-direction:column;gap:var(--space-md)}.pv.kt{width:640px}
+  .tbl .num{text-align:right;font-variant-numeric:tabular-nums}.tbl-wrap:focus-visible{outline:2px solid var(--color-focus-ring);outline-offset:2px}.pv .ord{margin:0 0 var(--space-sm);color:var(--color-text-muted)}.pv .tnote{margin-top:var(--space-sm);color:var(--color-text-muted)}
+  .srt{display:inline-flex;align-items:center;gap:var(--space-xs);min-height:48px}.srt i{font-style:normal;width:16px;text-align:center;color:var(--color-text-muted)}.tbl th.cur,.tbl th.cur .srt i{color:var(--color-text)}.tbl th.prs{background:var(--color-primary-container)}.tbl.off th{color:var(--color-text-muted)}.nl{color:var(--color-text-muted);margin-right:var(--space-xs)}
+  .notice+.ord{margin-top:var(--space-sm)}
+  .nb{display:flex;border-top:1px solid var(--color-border);background:var(--color-background)}
+  .ni{flex:1;min-width:0;height:72px;display:flex;flex-direction:column;align-items:center;gap:var(--space-xs);padding-top:var(--space-sm);color:var(--color-text-muted);white-space:nowrap}.nb.type-caption{font-weight:700}
+  .ni.on{color:var(--color-text);font-weight:900}.ind{position:relative;width:56px;height:32px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center}.on .ind{background:var(--color-primary-container)}
+  .is-pressed .ind{background:var(--color-primary-container-pressed)}.ni.is-focus{outline-offset:-2px;border-radius:var(--radius-md)}
+  .ind .badge,.ind .dot{position:absolute;left:calc(50% + var(--space-xs));top:calc(-1 * var(--space-xs));outline:2px solid var(--color-background)}.ind .dot{top:var(--space-xs)}
+  .g{width:20px;height:18px;border:2px solid currentColor;border-radius:var(--radius-sm)}.on .g{background:currentColor}.g-cal{border-top-width:6px}.g-chat{border-bottom-left-radius:0}
+  .g-bell{border-radius:var(--radius-pill) var(--radius-pill) var(--radius-sm) var(--radius-sm)}.g-me{width:18px;border-radius:var(--radius-pill)}.g-home{border-top-width:5px;border-radius:0}
+  .tbl.sel td:first-child{padding-left:var(--space-sm)}.tbl .pick{color:var(--color-primary);font-weight:700;text-decoration:underline 2px;text-underline-offset:4px}
+  .tbl tr.on td{background:var(--color-primary-container)}.tbl tr.on td:first-child{border-left:4px solid var(--color-primary);padding-left:var(--space-xs)}

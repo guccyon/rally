@@ -269,11 +269,14 @@ impl Clock for FixedClock {
 ///
 /// カレンダーの読み取りから保存までは 1 つのロックの中で行うので、同じコーチへの公開は直列になる。枠の変更
 /// （[`SlotRepository::update`]）も同じロックの中で行うので、[`InMemoryBookingRepository`] の予約と直列になる。
-/// 検索から除く受付を止めているコーチは、[`Self::coach_acceptances`] の保存先と共有する。
+/// 検索から除く受付を止めているコーチは、[`Self::coach_acceptances`] の保存先と共有する。検索から除く生徒の
+/// 有効な予約は、この保存先から作った [`InMemoryBookingRepository`] の予約と共有する。
 #[derive(Debug, Clone, Default)]
 pub struct InMemorySlotRepository {
     slots: Arc<Mutex<Vec<Slot>>>,
     acceptances: InMemoryCoachAcceptanceRepository,
+    /// [`InMemoryBookingRepository`] が保存する予約（ロックは常に `slots` の後に取る）
+    bookings: Arc<Mutex<Vec<Booking>>>,
 }
 
 impl InMemorySlotRepository {
@@ -282,6 +285,7 @@ impl InMemorySlotRepository {
         Self {
             slots: Arc::new(Mutex::new(slots.into_iter().collect())),
             acceptances: InMemoryCoachAcceptanceRepository::default(),
+            bookings: Arc::default(),
         }
     }
 
@@ -338,12 +342,13 @@ impl SlotRepository for InMemorySlotRepository {
 
     async fn search(&self, criteria: &SlotCriteria) -> Result<Vec<Slot>, Unavailable> {
         let suspended = self.acceptances.suspended();
-        let mut found: Vec<Slot> = self
-            .slots
-            .lock()
-            .unwrap()
+        let slots = self.slots.lock().unwrap();
+        let bookings = self.bookings.lock().unwrap();
+        let mut found: Vec<Slot> = slots
             .iter()
-            .filter(|slot| criteria.matches(slot) && !suspended.contains(&slot.coach_id()))
+            .filter(|slot| {
+                criteria.matches(slot, &bookings) && !suspended.contains(&slot.coach_id())
+            })
             .cloned()
             .collect();
         found.sort_by_key(|slot| (slot.starts_at(), slot.id()));
@@ -365,7 +370,8 @@ impl SlotRepository for InMemorySlotRepository {
 
 /// [`BookingRepository`] と [`CoachLeaveRepository`] のインメモリ実装。ID は UUID v4。複製は同じ中身を共有する。
 ///
-/// スロットは渡した [`InMemorySlotRepository`] と共有する（確定でスロットが埋まる）。読み取りから保存までは
+/// スロットは渡した [`InMemorySlotRepository`] と共有する（確定でスロットが埋まる）。予約もその保存先と共有する
+/// （生徒が押さえた枠を検索から除くため。同じスロットの保存先から作った複製でない保存先どうしも予約を共有する）。読み取りから保存までは
 /// スロット → 予約（→ お休みの記録）の順にロックを取った中で行うので、予約の作成・確定・キャンセルとスロットの公開と
 /// コーチのお休みは直列になる。
 #[derive(Debug, Clone)]
@@ -378,8 +384,8 @@ pub struct InMemoryBookingRepository {
 impl InMemoryBookingRepository {
     pub fn new(slots: InMemorySlotRepository) -> Self {
         Self {
+            bookings: slots.bookings.clone(),
             slots,
-            bookings: Arc::default(),
             leaves: Arc::default(),
         }
     }

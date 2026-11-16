@@ -277,3 +277,6 @@ String coachReviewRatingLabel(int rating) => '$rating 点（5 点満点）';
 
 /// コーチが受けた評価 1 件の下に出す、評価されたコーチの返信（`CoachReview.reply`）の見出し
 const coachReviewReplyHeading = 'コーチからの返信';
+
+/// 文字数の上限がある入力欄の、読み上げの文字数の残り。例: `残り 2000 文字`
+String remainingCharactersLabel(int remaining) => '残り $remaining 文字';

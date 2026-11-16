@@ -103,6 +103,7 @@ fn query(limit: usize) -> SearchSlotsQuery {
         starts_before: None,
         limit: NonZeroUsize::new(limit).unwrap(),
         cursor: None,
+        student_id: None,
     }
 }
 
@@ -198,7 +199,7 @@ async fn capacity_and_remaining_seats_round_trip(pool: PgPool) {
 
     bookings
         .update(confirmed.id(), |booking, slot| {
-            booking.cancel(first, slot, at(1)).map(|_| ())
+            booking.cancel(first, slot, at(1), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -453,6 +454,88 @@ async fn search_by_coach_combines_with_the_sport_period_and_paging(pool: PgPool)
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn search_excludes_full_slots_and_slots_held_by_the_student_before_the_limit(pool: PgPool) {
+    let coach_id = coach(&pool).await;
+    let (student, other) = (support::student(&pool).await, support::student(&pool).await);
+    let use_case = publish_slot(&pool);
+    let publish = async |hour, capacity| {
+        use_case
+            .execute(PublishSlotCommand {
+                capacity: SlotCapacity::new(capacity).unwrap(),
+                ..command(coach_id, Sport::Tennis, hour, hour + 1)
+            })
+            .await
+            .unwrap()
+    };
+    // 11 時: ほかの生徒の未確定の予約で埋まった枠。12 時: 生徒が未確定の予約で押さえたグループの枠。
+    // 13 時: 生徒が確定した予約を持つグループの枠。14 時・15 時: 空いている枠
+    let full = publish(11, 1).await;
+    let held = publish(12, 3).await;
+    let confirmed = publish(13, 3).await;
+    let free14 = publish(14, 1).await;
+    let free15 = publish(15, 2).await;
+    let bookings = PgBookingRepository::new(pool.clone());
+    let reserve = async |student: AccountId, slot: &Slot| {
+        let id = bookings.next_id();
+        bookings
+            .reserve(slot.id(), student, move |slot, existing| {
+                Booking::reserve(id, student, false, slot, existing, at(0))
+            })
+            .await
+            .unwrap()
+    };
+    reserve(other, &full).await;
+    let held_booking = reserve(student, &held).await;
+    support::confirmed_booking(&pool, student, &confirmed).await;
+
+    let search = SearchSlots::new(
+        PgSlotRepository::new(pool.clone()),
+        lesson_menus(&pool),
+        ProfileCoachIntroductionLookup::new(PgAccountRepository::new(pool.clone())),
+        FixedClock(at(10)),
+    );
+    let ids = |slots: &[Slot]| slots.iter().map(Slot::id).collect::<Vec<_>>();
+    let as_student = |limit| SearchSlotsQuery {
+        student_id: Some(student),
+        ..query(limit)
+    };
+
+    // 満席の枠と自分が押さえた枠は出ない。件数とカーソルは除いた後で数える
+    let page1 = search.execute(as_student(1)).await.unwrap();
+    assert_eq!(ids(&page1.items), [free14.id()]);
+    let page2 = search
+        .execute(SearchSlotsQuery {
+            cursor: page1.next_cursor,
+            ..as_student(1)
+        })
+        .await
+        .unwrap();
+    assert_eq!(ids(&page2.items), [free15.id()]);
+    assert_eq!(page2.next_cursor, None);
+
+    // 生徒を渡さなければ自分の予約では絞らない（満席の枠は出ない）
+    let all = search.execute(query(20)).await.unwrap();
+    assert_eq!(
+        ids(&all.items),
+        [held.id(), confirmed.id(), free14.id(), free15.id()]
+    );
+
+    // キャンセルすると再び出る
+    bookings
+        .update(held_booking.id(), |booking, slot| {
+            booking.cancel(student, slot, at(1), true).map(|_| ())
+        })
+        .await
+        .unwrap();
+    let after_cancel = search.execute(as_student(20)).await.unwrap();
+    assert_eq!(
+        ids(&after_cancel.items),
+        [held.id(), free14.id(), free15.id()]
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn search_of_the_repository_respects_the_limit(pool: PgPool) {
     let coach_id = coach(&pool).await;
     let use_case = publish_slot(&pool);
@@ -469,6 +552,7 @@ async fn search_of_the_repository_respects_the_limit(pool: PgPool) {
             starts_after: at(0),
             starts_before: None,
             after: None,
+            held_by: None,
             limit: 2,
         })
         .await
@@ -511,7 +595,7 @@ async fn slots_of_coach_reads_own_slots_of_any_status(pool: PgPool) {
     let to_cancel = reserve(&cancelled).await.unwrap();
     bookings
         .update(to_cancel.id(), |booking, slot| {
-            booking.cancel(student, slot, at(1)).map(|_| ())
+            booking.cancel(student, slot, at(1), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -654,18 +738,6 @@ async fn lesson_menu_of_the_slot_round_trips_and_is_added_to_search_and_list(poo
     assert_eq!(found, vec![bound.clone(), plain.clone()]);
     assert_eq!(found[1].lesson_menu_id(), None);
 
-    // 予約の保存先が読むスロットにも戻る（予約が写すメニューは tests/pg_booking_repository.rs）
-    let bookings = PgBookingRepository::new(pool.clone());
-    let id = bookings.next_id();
-    bookings
-        .reserve(bound.id(), student, move |slot, existing| {
-            Booking::reserve(id, student, false, slot, existing, at(0))
-        })
-        .await
-        .unwrap();
-    let of_student = bookings.bookings_of_student(student).await.unwrap();
-    assert_eq!(of_student[0].1.lesson_menu_id(), Some(sixty.id()));
-
     // 検索と自分の枠の一覧に、結びついたメニューが添わる
     let search = SearchSlots::new(
         PgSlotRepository::new(pool.clone()),
@@ -716,6 +788,19 @@ async fn lesson_menu_of_the_slot_round_trips_and_is_added_to_search_and_list(poo
         .await
         .unwrap();
     assert_eq!(list.lesson_menus[&sixty.id()], unpublished);
+
+    // 予約の保存先が読むスロットにも戻る（予約が写すメニューは tests/pg_booking_repository.rs）。予約で枠が埋まると
+    // 検索に出ないので、検索を確かめた後で予約する
+    let bookings = PgBookingRepository::new(pool.clone());
+    let id = bookings.next_id();
+    bookings
+        .reserve(bound.id(), student, move |slot, existing| {
+            Booking::reserve(id, student, false, slot, existing, at(0))
+        })
+        .await
+        .unwrap();
+    let of_student = bookings.bookings_of_student(student).await.unwrap();
+    assert_eq!(of_student[0].1.lesson_menu_id(), Some(sixty.id()));
 }
 
 fn withdraw_slot(
@@ -802,7 +887,7 @@ async fn withdrawn_slot_is_closed_and_frees_the_time(pool: PgPool) {
             (pending.id(), SlotStatus::Open, 1),
         ]
     );
-    // 閉じた枠は生徒の検索に出ず、同じ時間に新しい枠を公開できる
+    // 閉じた枠と未確定の予約で埋まった枠は生徒の検索に出ず、閉じた枠と同じ時間に新しい枠を公開できる
     let searched = SearchSlots::new(
         slots.clone(),
         lesson_menus(&pool),
@@ -812,10 +897,7 @@ async fn withdrawn_slot_is_closed_and_frees_the_time(pool: PgPool) {
     .execute(query(20))
     .await
     .unwrap();
-    assert_eq!(
-        searched.items.iter().map(Slot::id).collect::<Vec<_>>(),
-        [pending.id()]
-    );
+    assert!(searched.items.is_empty());
     publish
         .execute(command(coach_id, Sport::Tennis, 10, 11))
         .await

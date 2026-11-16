@@ -7,7 +7,7 @@ pub use infra::AnalyticsDestination;
 // 通話基盤の選択は配信先の選択と同じく infra に置き、ここでも公開する
 pub use infra::{UnknownVideoCallProvider, VideoCallBackend};
 // アクセストークンの選択も infra に置き（staging でトークンを作る seed の `access-token` と共有）、ここでも公開する
-pub use infra::{AccessTokenBackend, InvalidSigningKey};
+pub use infra::{AccessTokenBackend, AccessTokenConfigError, InvalidSigningKey};
 
 mod app;
 mod assembly;
@@ -339,7 +339,7 @@ where
 }
 
 /// [`router_with_postgres_and_video_call`] のアクセストークンを `tokens` に替えたルーター（[`AccessTokenBackend`] で選ぶ。
-/// `ACCESS_TOKEN_SIGNING_KEY` があれば署名付き）。
+/// `ACCESS_TOKEN_SIGNING_KEY` の鍵で署名付き）。
 pub fn router_with_postgres_and_access_tokens<C, A, V, T>(
     pool: PgPool,
     clock: C,

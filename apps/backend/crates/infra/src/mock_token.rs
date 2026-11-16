@@ -13,7 +13,8 @@ const PREFIX: &str = "mock";
 /// **署名なし**の固定形式 `mock.<役割>.<アカウント ID>`（例:
 /// `mock.student.01234567-89ab-4def-8123-456789abcdef`）で、誰でも任意のアカウント・役割の
 /// トークンを作れる。Gen1 のローカル起動とテストのためだけのもので、**本番と staging では署名付きの
-/// [`crate::SignedTokenService`] を使う**（`ACCESS_TOKEN_SIGNING_KEY`。[`crate::AccessTokenBackend`]）。
+/// [`crate::SignedTokenService`] を使う**（`ACCESS_TOKEN_SIGNING_KEY`。[`crate::AccessTokenBackend`]）。サーバーの起動で
+/// これを選ぶには `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1` の明示が要る（Issue #1785）。
 /// 状態を持たないので、別のインスタンスが発行したトークンも検証に通る。
 /// 役割は [`crate::identity_values`]、アカウント ID は [`account_id_uuid`] の形。
 #[derive(Debug, Clone, Copy, Default)]
