@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>rally デザインシステム 0.12.0 部品のカタログ</title>
+<title>rally デザインシステム 0.13.0 部品のカタログ</title>
 <style>
 :root{--color-primary:#0E1013;--color-on-primary:#FFFFFF;--color-primary-pressed:#33372F;--color-primary-container:#E4E6E0;--color-primary-container-pressed:#D6D9D0;--color-on-primary-container:#0E1013;--color-secondary:#D4F53C;--color-on-secondary:#0E1013;--color-text:#0E1013;--color-text-muted:#5B6058;--color-background:#FFFFFF;--color-surface:#F2F3EE;--color-inverse-surface:#0E1013;--color-on-inverse-surface:#FFFFFF;--color-on-inverse-surface-muted:#B9BDB3;--color-border:#E4E6E0;--color-border-strong:#7A7F74;--color-focus-ring:#667F00;--color-scrim:rgba(14,16,19,0.56);--color-info-fg:#0E1013;--color-info-container:#F2F3EE;--color-info-on-container:#0E1013;--color-success-fg:#0E7A3E;--color-success-container:#E2F6EA;--color-success-on-container:#0A4F28;--color-warning-fg:#9A5B00;--color-warning-container:#FFF1D6;--color-warning-on-container:#5A3500;--color-danger-fg:#C0182F;--color-danger-container:#FDE8EB;--color-danger-on-container:#7A0F1E;--space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:40px;--radius-sm:6px;--radius-md:12px;--radius-pill:999px;--font-sans:'Noto Sans CJK JP', 'Noto Sans JP', sans-serif;--font-numeric:'Barlow Condensed', 'Noto Sans CJK JP', sans-serif;}
 .type-display{font-family:var(--font-numeric);font-size:64px;font-weight:800;line-height:1;letter-spacing:0em}
@@ -172,6 +172,13 @@ body{margin:0;background:var(--color-background);color:var(--color-text);font-fa
 .tbl .num{text-align:right;font-variant-numeric:tabular-nums}.tbl-wrap:focus-visible{outline:2px solid var(--color-focus-ring);outline-offset:2px}.pv .ord{margin:0 0 var(--space-sm);color:var(--color-text-muted)}.pv .tnote{margin-top:var(--space-sm);color:var(--color-text-muted)}
 .srt{display:inline-flex;align-items:center;gap:var(--space-xs);min-height:48px}.srt i{font-style:normal;width:16px;text-align:center;color:var(--color-text-muted)}.tbl th.cur,.tbl th.cur .srt i{color:var(--color-text)}.tbl th.prs{background:var(--color-primary-container)}.tbl.off th{color:var(--color-text-muted)}.nl{color:var(--color-text-muted);margin-right:var(--space-xs)}
 .notice+.ord{margin-top:var(--space-sm)}
+.nb{display:flex;border-top:1px solid var(--color-border);background:var(--color-background)}
+.ni{flex:1;min-width:0;height:72px;display:flex;flex-direction:column;align-items:center;gap:var(--space-xs);padding-top:var(--space-sm);color:var(--color-text-muted);white-space:nowrap}.nb.type-caption{font-weight:700}
+.ni.on{color:var(--color-text);font-weight:900}.ind{position:relative;width:56px;height:32px;border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center}.on .ind{background:var(--color-primary-container)}
+.is-pressed .ind{background:var(--color-primary-container-pressed)}.ni.is-focus{outline-offset:-2px;border-radius:var(--radius-md)}
+.ind .badge,.ind .dot{position:absolute;left:calc(50% + var(--space-xs));top:calc(-1 * var(--space-xs));outline:2px solid var(--color-background)}.ind .dot{top:var(--space-xs)}
+.g{width:20px;height:18px;border:2px solid currentColor;border-radius:var(--radius-sm)}.on .g{background:currentColor}.g-cal{border-top-width:6px}.g-chat{border-bottom-left-radius:0}
+.g-bell{border-radius:var(--radius-pill) var(--radius-pill) var(--radius-sm) var(--radius-sm)}.g-me{width:18px;border-radius:var(--radius-pill)}.g-home{border-top-width:5px;border-radius:0}
 .tbl.sel td:first-child{padding-left:var(--space-sm)}.tbl .pick{color:var(--color-primary);font-weight:700;text-decoration:underline 2px;text-underline-offset:4px}
 .tbl tr.on td{background:var(--color-primary-container)}.tbl tr.on td:first-child{border-left:4px solid var(--color-primary);padding-left:var(--space-xs)}
 </style>
@@ -179,7 +186,7 @@ body{margin:0;background:var(--color-background);color:var(--color-text);font-fa
 <body>
 <main class="cat">
 <header class="cat-hero"><i class="cat-band"></i>
-<div class="cat-eb type-small">rally デザインシステム 0.12.0・コンセプト rally-court</div>
+<div class="cat-eb type-small">rally デザインシステム 0.13.0・コンセプト rally-court</div>
 <h1 class="type-headline cat-line">コートの熱。次の練習へ、前のめりに。</h1>
 <div class="cat-eb type-small">コートの熱（躍動して前へ）</div>
 </header>
@@ -242,7 +249,9 @@ body{margin:0;background:var(--color-background);color:var(--color-text);font-fa
 <article class="cat-component" aria-labelledby="c-level_meter"><h3 id="c-level_meter" class="type-title">音の大きさの表示 <span class="type-small cat-muted">level_meter・trial</span></h3>
 <p class="type-small cat-muted">入室前チェックで、マイクに届いた声の大きさを見せる</p><div class="cat-previews"><figure class="cat-preview" style="margin:0"><figcaption class="type-small cat-muted">通常（届いている）</figcaption><div class="pv lmw"><p class="type-small" role="status">音が届いています</p><div class="lm l6" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></figure></div></article>
 <article class="cat-component" aria-labelledby="c-join_bar"><h3 id="c-join_bar" class="type-title">入室の帯 <span class="type-small cat-muted">join_bar・trial</span></h3>
-<p class="type-small cat-muted">入室前チェックで、開始時刻・残り時間・入室の条件と「入室する」を画面の下に固定する（patterns の detail）</p><div class="cat-previews"><figure class="cat-preview" style="margin:0"><figcaption class="type-small cat-muted">無効（開始時刻の前）</figcaption><div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="cd"><span class="type-small b">あと</span> <span class="type-figure-sm">2:48</span></span></div><p class="type-small muted">開始時刻になると入室できます</p><span class="btn btn-disabled" aria-disabled="true">入室する</span></div></figure></div></article></section>
+<p class="type-small cat-muted">入室前チェックで、開始時刻・残り時間・入室の条件と「入室する」を画面の下に固定する（patterns の detail）</p><div class="cat-previews"><figure class="cat-preview" style="margin:0"><figcaption class="type-small cat-muted">無効（開始時刻の前）</figcaption><div class="pv jb"><div class="tr"><span class="type-small b">開始</span><span class="type-figure-sm">12:00</span><span class="cd"><span class="type-small b">あと</span> <span class="type-figure-sm">2:48</span></span></div><p class="type-small muted">開始時刻になると入室できます</p><span class="btn btn-disabled" aria-disabled="true">入室する</span></div></figure></div></article>
+<article class="cat-component" aria-labelledby="c-navigation_bar"><h3 id="c-navigation_bar" class="type-title">下のタブ <span class="type-small cat-muted">navigation_bar・trial</span></h3>
+<p class="type-small cat-muted">student-app の登録後の 5 つの行き先を、画面の下にアイコンとラベルで並べる</p><div class="cat-previews"><figure class="cat-preview" style="margin:0"><figcaption class="type-small cat-muted">通常（ホームが選択中・未読の数と点）</figcaption><nav class="pv w nb type-caption" aria-label="メインの行き先"><span class="ni on"><span class="ind"><i class="g g-home"></i></span>ホーム</span><span class="ni"><span class="ind"><i class="g g-cal"></i></span>予約</span><span class="ni" aria-label="チャット、未読 3 件"><span class="ind"><i class="g g-chat"></i><b class="badge" aria-hidden="true">3</b></span>チャット</span><span class="ni" aria-label="お知らせ、未読あり"><span class="ind"><i class="g g-bell"></i><b class="dot" aria-hidden="true"></b></span>お知らせ</span><span class="ni"><span class="ind"><i class="g g-me"></i></span>マイページ</span></nav></figure><figure class="cat-preview" style="margin:0"><figcaption class="type-small cat-muted">押下（予約）・選択中（チャット・99+）・フォーカス（マイページ）</figcaption><nav class="pv w nb type-caption"><span class="ni"><span class="ind"><i class="g g-home"></i></span>ホーム</span><span class="ni is-pressed"><span class="ind"><i class="g g-cal"></i></span>予約</span><span class="ni on"><span class="ind"><i class="g g-chat"></i><b class="badge">99+</b></span>チャット</span><span class="ni"><span class="ind"><i class="g g-bell"></i></span>お知らせ</span><span class="ni is-focus"><span class="ind"><i class="g g-me"></i></span>マイページ</span></nav></figure></div></article></section>
 </main>
 </body>
 </html>

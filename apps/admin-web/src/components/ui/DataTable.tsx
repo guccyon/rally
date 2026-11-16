@@ -93,7 +93,7 @@ const VARIANT_CLASSES: Record<DataTableVariant, string> = {
  * notes は値の注記（value_note）の語の意味を 1 語 1 文で表の下に出し、table に aria-describedby で結ぶ。
  * 注記の付いた値（ValueNote）があるときだけ渡す。
  * selection を渡すと行を 1 つ選べる（selectable）。選んだ行は highlightRow より優先する。
- * highlightRow は確定待ちのまま 24 時間以内に始まる予約の行だけに使い、低品質などは並び順・列・status_tag で示す（0.12.0）。
+ * highlightRow は確定待ちのまま 24 時間以内に始まる予約の行だけに使い、低品質などは並び順・列・status_tag で示す（0.13.0）。
  */
 export function DataTable<Row>({
   label,

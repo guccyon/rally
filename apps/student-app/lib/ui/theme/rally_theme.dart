@@ -253,6 +253,39 @@ ThemeData buildRallyTheme() {
       smallSize: 8,
       largeSize: 20,
     ),
+    // 下のタブ（components.yaml の navigation_bar）。選択中は indicator（primary_container）・塗りのアイコン・900 の text で示し、
+    // ライムと濃い面は使わない。押下は indicator の形に primary_container_pressed。フォーカスの輪は部品（RallyNavigationBar）が描く
+    navigationBarTheme: NavigationBarThemeData(
+      height: 72,
+      elevation: 0,
+      backgroundColor: RallyColors.background,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      indicatorColor: RallyColors.primaryContainer,
+      indicatorShape: md,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? RallyTypography.caption.copyWith(
+                fontWeight: FontWeight.w900,
+                color: RallyColors.text,
+              )
+            : RallyTypography.caption.copyWith(color: RallyColors.textMuted),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          size: 24,
+          color: states.contains(WidgetState.selected)
+              ? RallyColors.text
+              : RallyColors.textMuted,
+        ),
+      ),
+      overlayColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.pressed)
+            ? RallyColors.primaryContainerPressed
+            : Colors.transparent,
+      ),
+    ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
       color: RallyColors.primary,
       linearTrackColor: RallyColors.primaryContainer,

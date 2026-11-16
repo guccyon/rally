@@ -55,6 +55,10 @@ export const NOT_IN_ADMIN_WEB: {
     reason: "components.yaml の not_for に admin-web とある",
   },
   {
+    component: "navigation_bar",
+    reason: "components.yaml の not_for に admin-web とある（student-app の下のタブ）",
+  },
+  {
     component: "button",
     variant: "on_dark",
     reason: "admin-web は濃い面（inverse_surface）を使わない",
