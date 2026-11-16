@@ -503,6 +503,25 @@ def is_workflow(path: str) -> bool:
     return re.fullmatch(rf"{re.escape(WORKFLOWS)}/[^/]+\.ya?ml", path) is not None
 
 
+def load_wired(w, repo: Path, read, check_runs: bool = False) -> tuple[dict | None, str | None]:
+    """wired_by の項目を検証して配線先のワークフローを読む。(読んだ文書, 誤りの文) を返し、どちらかは None。
+    check_runs が真なら runs の先がリポジトリにあることも照らす（check_wiring。check_schedule は呼ぶ側が runs を絞る）"""
+    if not valid_wired_by(w):
+        return None, f"workflow・job・runs を文字列で書く（{w!r}）"
+    wf = w["workflow"]
+    if not is_workflow(wf):
+        return None, f"workflow は {WORKFLOWS}/ の直下のファイル（{wf}。ひな形の ci/*.yml は配線ではない）"
+    if read(wf) is None:
+        return None, f"{wf} がない"
+    target = norm("", w["runs"])
+    if check_runs and (not target or read(target) is None):
+        return None, f"runs の {w['runs']} がない"
+    try:
+        return load_yaml(repo / wf), None
+    except Exception as x:  # noqa: BLE001
+        return None, f"{wf} が読めない（{x}）"
+
+
 def check_wiring(k: dict, repo: Path) -> list[str]:
     """wired が true の解決策の wired_by を照らす（議決 D-0021、Issue #986）"""
     f, e = k.get("_file", str(k.get("id"))), []
@@ -518,24 +537,11 @@ def check_wiring(k: dict, repo: Path) -> list[str]:
             continue
         for j, w in enumerate(wb):
             at = f"{where}: wired_by[{j}]"
-            if not valid_wired_by(w):
-                e.append(f"{at}: workflow・job・runs を文字列で書く（{w!r}）")
+            doc, err = load_wired(w, repo, read, check_runs=True)
+            if err:
+                e.append(f"{at}: {err}")
                 continue
             wf, job, target = w["workflow"], w["job"], norm("", w["runs"])
-            if not is_workflow(wf):
-                e.append(f"{at}: workflow は {WORKFLOWS}/ の直下のファイル（{wf}。ひな形の ci/*.yml は配線ではない）")
-                continue
-            if read(wf) is None:
-                e.append(f"{at}: {wf} がない")
-                continue
-            if not target or read(target) is None:
-                e.append(f"{at}: runs の {w['runs']} がない")
-                continue
-            try:
-                doc = load_yaml(repo / wf)
-            except Exception as x:  # noqa: BLE001
-                e.append(f"{at}: {wf} が読めない（{x}）")
-                continue
             if not isinstance(doc, dict) or not isinstance((doc.get("jobs") or {}).get(job), dict):
                 e.append(f"{at}: {wf} に job {job} がない")
             elif not job_calls(doc, job, target, read):
@@ -650,13 +656,12 @@ def schedule_errors(f: str, i: int, s: dict, target: str, workflow: str | None, 
     ジョブか呼ぶ手順に continue-on-error が真で書かれた項目は、schedule で落ちても失敗が伝わらないので数えない（議決 D-0087、Issue #1248）"""
     swallowed = False
     for w in s.get("wired_by") if isinstance(s.get("wired_by"), list) else []:
-        if not valid_wired_by(w) or norm("", w["runs"]) != target or not is_workflow(w["workflow"]) or read(w["workflow"]) is None:
+        if not valid_wired_by(w) or norm("", w["runs"]) != target:
             continue
         if workflow is not None and norm("", w["workflow"]) != workflow:
             continue
-        try:
-            doc = load_yaml(repo / w["workflow"])
-        except Exception:  # noqa: BLE001  読めないことは check_wiring が落とす
+        doc, err = load_wired(w, repo, read)  # 読めないことは check_wiring が落とす
+        if err:
             continue
         if isinstance(doc, dict) and has_schedule(doc) and job_calls(doc, w["job"], target, read, off_schedule):
             if not swallows_failure(doc, w["job"], target, read):
