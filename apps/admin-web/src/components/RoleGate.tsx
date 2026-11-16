@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { ROLE_ENTRY_PATHS, ROLE_HOME_PATHS } from "@/session/rolePaths";
 import { clearSession, ROLE_LABELS, type Role, type Session } from "@/session/session";
 import { useSession } from "@/session/useSession";
 
@@ -17,12 +18,6 @@ export type ContentWidth = "reading" | "wide";
 const WIDTH_CLASSES: Record<ContentWidth, string> = {
   reading: "max-w-[768px]",
   wide: "max-w-[1280px] [&_p]:max-w-[40em]",
-};
-
-/** ロールごとの画面の入口。ロール違いで開いたときの戻り道に使う。 */
-const ROLE_HOME_PATHS: Record<Role, string> = {
-  coach: "/coach",
-  headquarters: "/headquarters",
 };
 
 /**
@@ -44,8 +39,8 @@ export function RoleGate({
   const allowed = session?.role === role;
 
   useEffect(() => {
-    if (session === null) router.replace("/");
-  }, [session, router]);
+    if (session === null) router.replace(ROLE_ENTRY_PATHS[role]);
+  }, [session, router, role]);
 
   if (session && !allowed) {
     return (
@@ -71,7 +66,7 @@ export function RoleGate({
           variant="secondary"
           onClick={() => {
             clearSession();
-            router.replace("/");
+            router.replace(ROLE_ENTRY_PATHS[role]);
           }}
         >
           ログアウト
