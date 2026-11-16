@@ -923,7 +923,7 @@ describe("画面への配置", () => {
     expect(screen.queryByText(/^生徒で絞っています:/)).not.toBeInTheDocument();
   });
 
-  test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
+  test("本部以外のロールでは画面に入れず、ログインしたまま理由と戻り道を出す", () => {
     headquartersApiMock.mockReturnValue({
       listReturnedVideoReviews: listOf(REVIEWS),
       listCoaches: coachesOf(),
@@ -937,6 +937,7 @@ describe("画面への配置", () => {
     );
 
     expect(screen.queryByRole("region", { name: "返した動画添削" })).not.toBeInTheDocument();
-    expect(replace).toHaveBeenCalledWith("/");
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "コーチの画面へ戻る" })).toHaveAttribute("href", "/coach");
   });
 });

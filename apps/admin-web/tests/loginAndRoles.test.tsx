@@ -153,8 +153,18 @@ describe("ロールでの出し分け", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  test("ロールが違えば中身を出さずログイン画面へ戻す", () => {
-    saveSession({ role: "headquarters", token: "t" });
+  test("ロールが違えば中身を出さず、ログインしたまま理由と戻り道を出す", () => {
+    saveSession({ role: "coach", token: "t" });
+    render(<RoleGate role="headquarters">{() => <p>本部の中身</p>}</RoleGate>);
+
+    expect(screen.queryByText("本部の中身")).not.toBeInTheDocument();
+    expect(screen.getByText("この画面は本部のロールで開けます")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "コーチの画面へ戻る" })).toHaveAttribute("href", "/coach");
+    expect(replace).not.toHaveBeenCalled();
+    expect(readSession()).not.toBeNull();
+  });
+
+  test("ログインしていなければ中身を出さずログイン画面へ戻す", () => {
     render(<RoleGate role="coach">{() => <p>コーチの中身</p>}</RoleGate>);
 
     expect(screen.queryByText("コーチの中身")).not.toBeInTheDocument();
