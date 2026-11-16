@@ -14,8 +14,8 @@ use application::{
         StartSubscription,
     },
     identity::{
-        AccessToken, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer, TokenVerifier,
-        account_id_uuid,
+        AccessToken, AccountRepository, InvalidToken, RegisterAccount, TokenClaims, TokenIssuer,
+        TokenVerifier, account_id_uuid,
     },
     in_memory::{
         FixedAiFeedbackGenerator, FixedVideoCallProvider, FixedVideoStorage,
@@ -46,11 +46,12 @@ use domain::{
     entitlement::{
         Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan, YearMonth,
     },
-    identity::{AccountId, Role},
+    identity::{Account, AccountId, Email, Role},
     messaging::{
         Message, MessageAuthor, MessageBody, MessageContent, MessageId, MessageSender,
         MessageThread, MessageThreadId,
     },
+    profile::DisplayName,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -168,9 +169,31 @@ struct App {
     entitlements: InMemoryEntitlementRepository,
 }
 
+/// 表示名を引けるアカウント（生徒 1「あおき」・生徒 3「みどり」）。生徒 2 のアカウントはない。
+async fn student_accounts() -> InMemoryAccountRepository {
+    let accounts = InMemoryAccountRepository::default();
+    for (id, name) in [(1, "あおき"), (3, "みどり")] {
+        accounts
+            .insert(
+                Account::new(
+                    AccountId::from_u128(id),
+                    Email::new(format!("student{id}@example.com")).unwrap(),
+                    DisplayName::new(name).unwrap(),
+                    Role::Student,
+                    vec![Sport::Tennis],
+                    SystemTime::UNIX_EPOCH,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+    accounts
+}
+
 /// 生徒 1（月額）とコーチ 9 のスレッド 100、生徒 2（受講権なし）とコーチ 9 のスレッド 101、生徒 3 とコーチ 7 の
 /// スレッド 102（[`review_thread`]）を置く。現在時刻はスレッドを開いた 2026-10-26 10:00 の 1 分後。
-fn app() -> App {
+async fn app() -> App {
     let analytics = RecordingAnalyticsSink::default();
     let events = RecordingDomainEventPublisher::default();
     let clock = ManualClock::new(minutes(1));
@@ -342,7 +365,10 @@ fn app() -> App {
             events.clone(),
             clock.clone(),
         ),
-        ListMessageThreads::new(threads.clone()),
+        ListMessageThreads::new(
+            threads.clone(),
+            application::profile::ProfileStudentDisplayNameLookup::new(student_accounts().await),
+        ),
         ListMessages::new(threads.clone()),
         SendMessage::new(
             threads.clone(),
@@ -526,7 +552,7 @@ impl App {
 
 #[tokio::test]
 async fn the_student_and_the_coach_exchange_messages_and_read_them() {
-    let app = app();
+    let app = app().await;
     let thread = thread_path(THREAD);
 
     // 開いた直後はメッセージがない
@@ -662,7 +688,7 @@ async fn the_student_and_the_coach_exchange_messages_and_read_them() {
 
 #[tokio::test]
 async fn the_video_review_request_and_return_are_listed_with_their_kinds() {
-    let app = app();
+    let app = app().await;
     let thread = thread_path(REVIEW_THREAD);
     let video_id = "00000000-0000-0000-0000-000000000032";
     let review_id = "00000000-0000-0000-0000-00000000003c";
@@ -738,7 +764,7 @@ async fn the_video_review_request_and_return_are_listed_with_their_kinds() {
 
 #[tokio::test]
 async fn monthly_students_send_as_many_messages_as_they_like_without_consuming_the_entitlement() {
-    let app = app();
+    let app = app().await;
     let before = app.entitlements.all();
     for i in 0..10 {
         app.sent(STUDENT, THREAD, &format!("質問 {i}")).await;
@@ -751,7 +777,7 @@ async fn monthly_students_send_as_many_messages_as_they_like_without_consuming_t
 
 #[tokio::test]
 async fn students_without_monthly_cannot_send_but_their_coach_can() {
-    let app = app();
+    let app = app().await;
     let (status, body) = app
         .send_message(
             Some(TRIAL_STUDENT),
@@ -774,7 +800,7 @@ async fn students_without_monthly_cannot_send_but_their_coach_can() {
 
 #[tokio::test]
 async fn the_coach_sees_unanswered_threads_first_until_replying() {
-    let app = app();
+    let app = app().await;
     let thread = thread_path(THREAD);
     let trial = thread_path(TRIAL_THREAD);
     let flags = |body: &Value| -> Vec<(Value, Value)> {
@@ -837,8 +863,44 @@ async fn the_coach_sees_unanswered_threads_first_until_replying() {
 }
 
 #[tokio::test]
+async fn the_coach_sees_the_student_display_names_and_the_student_does_not() {
+    let app = app().await;
+    let thread = thread_path(THREAD);
+    let trial = thread_path(TRIAL_THREAD);
+
+    // 生徒のアカウントが引けるスレッドには表示名が入り、引けない生徒（アカウントがない）のスレッドには載せない
+    let (status, body) = app.list_threads(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let names: Vec<(Value, Option<Value>)> = body["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            (
+                t["thread_id"].clone(),
+                t.get("student_display_name").cloned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [(json!(thread), Some(json!("あおき"))), (json!(trial), None)]
+    );
+
+    let (_, body) = app.list_threads(Some(REVIEW_COACH)).await;
+    assert_eq!(body["threads"][0]["student_display_name"], "みどり");
+
+    // 生徒の一覧の応答は変わらない（表示名の項目を足さない）
+    let (_, body) = app.list_threads(Some(STUDENT)).await;
+    assert!(
+        body["threads"][0].get("student_display_name").is_none(),
+        "{body}"
+    );
+}
+
+#[tokio::test]
 async fn others_see_no_thread() {
-    let app = app();
+    let app = app().await;
     let thread = thread_path(THREAD);
     for token in [TRIAL_STUDENT, OTHER_COACH, HEADQUARTERS] {
         let (status, body) = app.list_messages(Some(token), &thread).await;
@@ -875,7 +937,7 @@ async fn others_see_no_thread() {
 
 #[tokio::test]
 async fn the_participants_send_stamps_with_a_body_for_old_clients() {
-    let app = app();
+    let app = app().await;
     let thread = thread_path(THREAD);
     let (status, sent) = app
         .send_message(Some(STUDENT), &thread, json!({ "stamp_id": "thanks" }))
@@ -948,7 +1010,7 @@ async fn the_participants_send_stamps_with_a_body_for_old_clients() {
 
 #[tokio::test]
 async fn stamps_need_the_same_entitlement_as_text() {
-    let app = app();
+    let app = app().await;
     let (status, body) = app
         .send_message(
             Some(TRIAL_STUDENT),
@@ -979,7 +1041,7 @@ async fn stamps_need_the_same_entitlement_as_text() {
 
 #[tokio::test]
 async fn invalid_bodies_are_422() {
-    let app = app();
+    let app = app().await;
     let thread = thread_path(THREAD);
     for body in [
         json!({ "body": "" }),
@@ -1008,7 +1070,7 @@ async fn invalid_bodies_are_422() {
 
 #[tokio::test]
 async fn requests_without_a_token_are_401() {
-    let app = app();
+    let app = app().await;
     let thread = thread_path(THREAD);
     assert_eq!(app.list_threads(None).await.0, StatusCode::UNAUTHORIZED);
     assert_eq!(

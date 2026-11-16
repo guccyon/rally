@@ -4,6 +4,7 @@
 use application::{
     entitlement::EntitlementChatGate,
     messaging::{ListMessageThreads, ListMessages, MarkMessageThreadRead, SendMessage},
+    profile::ProfileStudentDisplayNameLookup,
 };
 use axum::Router;
 
@@ -11,7 +12,10 @@ use crate::ports::Ports;
 
 pub(super) fn router<P: Ports>(ports: &P) -> Router {
     interface::messaging_router(
-        ListMessageThreads::new(ports.threads()),
+        ListMessageThreads::new(
+            ports.threads(),
+            ProfileStudentDisplayNameLookup::new(ports.accounts()),
+        ),
         ListMessages::new(ports.threads()),
         SendMessage::new(
             ports.threads(),

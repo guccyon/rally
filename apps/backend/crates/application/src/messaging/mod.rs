@@ -7,6 +7,7 @@ mod list_unanswered_message_threads;
 mod mark_message_thread_read;
 pub mod message_id_uuid;
 pub mod message_thread_id_uuid;
+mod message_thread_list;
 mod message_thread_subscriber;
 mod message_thread_subscriber_error;
 mod messaging_coach_unanswered_message_thread_count_lookup;
@@ -28,6 +29,7 @@ pub use list_unanswered_message_threads::ListUnansweredMessageThreads;
 pub use mark_message_thread_read::{
     MarkMessageThreadRead, MarkMessageThreadReadCommand, MarkMessageThreadReadError,
 };
+pub use message_thread_list::MessageThreadList;
 pub use message_thread_subscriber::MessageThreadSubscriber;
 pub use message_thread_subscriber_error::MessageThreadSubscriberError;
 pub use messaging_coach_unanswered_message_thread_count_lookup::MessagingCoachUnansweredMessageThreadCountLookup;
