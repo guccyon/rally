@@ -531,33 +531,44 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ホームの欄を読み直す
   Future<void> refreshHome() => run(_loadHome);
 
-  /// アプリやタブが前面に戻ったときに、月額契約への入口を出す元を読み直す（別のタブや端末で契約したかもしれない。ADR 0010）。
-  /// 受講権（`getMyEntitlement`）と「次にやること」（[NextActionsNotifier.load]。「月額契約へ進む」も出す）を並べて読む。
-  /// busy にせず、失敗の文言も出さない。ホームでは、受講権を読めなければ今月のビデオ通話の欄にだけ旨を出し（[StudentFlowState.homeFailures]）、
-  /// 読めたら下ろす。ほかの段では [SubscriptionNotifier.refreshEntitlement]。登録の前は何もしない
+  /// アプリやタブが前面に戻ったときに、月額契約への入口を出す元と、ホームでは「これからの予約」を読み直す
+  /// （別のタブや端末で契約・予約の確定・キャンセルをしたかもしれない。ADR 0010。#1729）。
+  /// 受講権（`getMyEntitlement`）と「次にやること」（[NextActionsNotifier.load]。「月額契約へ進む」も出す）を並べて読み、
+  /// ホームでは自分の予約（`listMyBookings`）も並べて読む（「次にやること」「今月のビデオ通話」「これからの予約」を同じ記録に揃える）。
+  /// busy にせず、失敗の文言も出さない。ホームでは、読めなかった欄（今月のビデオ通話・これからの予約）にだけ旨を出し（[StudentFlowState.homeFailures]）、
+  /// 読めたら下ろす。ほかの段では [SubscriptionNotifier.refreshEntitlement] だけ。登録の前は何もしない
   Future<void> refreshOnResume() async {
     if (state.student == null) return;
     await Future.wait([
-      _refreshEntitlementOnResume(),
+      _refreshHomeOnResume(),
       ref.read(nextActionsProvider.notifier).load(),
     ]);
   }
 
-  Future<void> _refreshEntitlementOnResume() async {
+  Future<void> _refreshHomeOnResume() async {
     final subscription = ref.read(subscriptionProvider.notifier);
     if (state.step != FlowStep.home) return subscription.refreshEntitlement();
-    var failed = false;
-    try {
-      await subscription.loadEntitlement();
-    } on StudentApiException {
-      failed = true;
+    final failures = <HomeSection>{};
+    Future<void> load(HomeSection section, Future<void> Function() read) async {
+      try {
+        await read();
+      } on StudentApiException {
+        failures.add(section);
+      }
     }
+
+    await Future.wait([
+      load(HomeSection.entitlement, subscription.loadEntitlement),
+      load(HomeSection.bookings, _loadMyBookings),
+    ]);
     if (!ref.mounted) return;
     state = state.copyWith(
       homeFailures: Set.unmodifiable({
         for (final section in state.homeFailures)
-          if (section != HomeSection.entitlement) section,
-        if (failed) HomeSection.entitlement,
+          if (section != HomeSection.entitlement &&
+              section != HomeSection.bookings)
+            section,
+        ...failures,
       }),
     );
   }

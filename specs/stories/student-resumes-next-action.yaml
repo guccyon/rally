@@ -52,6 +52,7 @@ must_not:
   - "ビデオ通話の最中にブラウザーの「戻る」を押したとき、確かめずに通話の画面を離れる（#1519）"
   - "再読み込みしたときや URL を開いたときに、URL に出ている段から画面を復元する（段はサーバーの記録から読み直す。ADR 0010）"
   - "予約の確定待ちの画面に「内容を確かめて確定」と促しながら、コーチ・スポーツ・終わりの時刻を出さない（何を確かめればよいか分からない。#1560）"
+  - "同じブラウザーの別のタブで予約を確定・キャンセルしてからホームのタブに戻ったとき、「次にやること」と今月のビデオ通話は今の記録なのに、「これからの予約」が前のまま（キャンセルした予約が確定済みで残る・確定した予約が出ない）になる（タブが前面に戻ったら、ホームでは自分の予約も読み直す。#1729）"
   - "ほかの生徒の予約・動画・通話の次の操作が見える"
   - "「次にやること」を読めないときに、ホームのほかの欄の表示を止める"
 touches:
@@ -71,7 +72,7 @@ touches:
     - student-app.getMyEntitlement
   events: [booking.confirmed, call.started, lesson.completed, subscription.started]
 origin:
-  issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431", "guccyon/rally#1514", "guccyon/rally#1364", "guccyon/rally#1519", "guccyon/rally#1560", "guccyon/rally#1597"]
+  issues: ["guccyon/rally#1436", "guccyon/rally#1425", "guccyon/rally#1430", "guccyon/rally#1424", "guccyon/rally#1429", "guccyon/rally#1423", "guccyon/rally#1431", "guccyon/rally#1514", "guccyon/rally#1364", "guccyon/rally#1519", "guccyon/rally#1560", "guccyon/rally#1597", "guccyon/rally#1729"]
   note: "生徒アプリで「次の操作がその直後の画面にしかなく、一度離れると戻れない」不具合がまとまって見つかり、1 件ずつ当て布をせずサーバーの状態から次の操作を出すことにした（ADR 0010。画面は specs/ux/issue-1436.yaml）"
   retro: false
 status: active

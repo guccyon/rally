@@ -207,7 +207,11 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
 
-      expect(api.calls, ['getMyEntitlement', 'getMyNextActions']);
+      expect(api.calls, [
+        'getMyEntitlement',
+        'listMyBookings',
+        'getMyNextActions',
+      ]);
       expect(find.text('月額契約で、続けて教わりましょう'), findsNothing);
       expect(
         find.text('まだ月額契約はありません。月額契約を始めると、毎月のビデオ通話の残りの回数がここに出ます。'),
