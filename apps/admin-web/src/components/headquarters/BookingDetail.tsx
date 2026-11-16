@@ -144,7 +144,6 @@ export function BookingDetail({
   useEffect(() => {
     if (!bookingId) return;
     let active = true;
-    setSlow(false);
     const timer = setTimeout(() => {
       if (active) setSlow(true);
     }, FEEDBACK_DELAY_MS);
