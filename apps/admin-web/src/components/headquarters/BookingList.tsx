@@ -119,7 +119,7 @@ export function BookingList({
   const [state, setState] = useState<State>({ kind: "loading" });
   // 期間を続けて変えたときに、前の期間の遅れて返った結果で上書きしないための番号。
   const latestRequest = useRef(0);
-  const initialPeriod = useRef(draft);
+  const firstPeriod = useRef(draft);
 
   const fetchBookings = useCallback(
     async ({ trialOnly, sport, studentId, ...period }: Filter): Promise<State> => {
@@ -155,7 +155,7 @@ export function BookingList({
   useEffect(() => {
     let active = true;
     const request = ++latestRequest.current;
-    void fetchBookings({ ...initialPeriod.current, trialOnly: false, sport: "", studentId }).then((next) => {
+    void fetchBookings({ ...firstPeriod.current, trialOnly: false, sport: "", studentId }).then((next) => {
       if (active && request === latestRequest.current) setState(next);
     });
     return () => {

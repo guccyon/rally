@@ -461,7 +461,7 @@ describe("画面への配置", () => {
 
     expect(await screen.findByRole("link", { name: "10:00" })).toHaveAttribute(
       "href",
-      `/headquarters/bookings/detail?booking_id=${BOOKING_ID}`,
+      `/headquarters/bookings/detail?booking_id=${BOOKING_ID}&from=2026-10-26&to=2026-11-01`,
     );
     expect(bookingDetailPath(BOOKING_ID)).toBe(`/headquarters/bookings/detail?booking_id=${BOOKING_ID}`);
   });
