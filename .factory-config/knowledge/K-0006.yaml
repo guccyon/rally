@@ -12,7 +12,7 @@ scope:
   request_form: [ticket]
   roles: [judge, body_fix, implement]
 acts_on: context
-confidence: hypothesis
+confidence: confirmed
 evidence:
   - case: C-0003
   - pr: "396"
@@ -21,8 +21,8 @@ evidence:
   - pr: 659
   - event: "case.analyzed:274379"
 status: active
-verified_at: 2026-11-11
-review_by: 2026-12-11
+verified_at: 2026-11-16
+review_by: 2027-02-14
 confidentiality: product
 related: [K-0001, K-0005, K-0009, K-0012]
 decided_by: committee:D-0006

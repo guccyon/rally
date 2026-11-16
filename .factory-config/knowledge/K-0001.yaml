@@ -12,7 +12,7 @@ scope:
   request_form: [ticket]
   roles: [implement, inspect, body_fix]
 acts_on: context
-confidence: hypothesis
+confidence: confirmed
 evidence:
   - case: C-0001
   - pr: 546
@@ -29,14 +29,17 @@ evidence:
   - case: C-0007
   - pr: 290
   - event: "case.analyzed:370939"
+  - case: C-0014
+  - pr: 301
+  - event: "case.analyzed:775818"
 status: active
-verified_at: 2026-11-11
-review_by: 2026-12-11
+verified_at: 2026-11-16
+review_by: 2027-02-14
 confidentiality: product
 invalidate_when:
   - "続きのジョブへの指示が、報告を既存の PR 本文への追記（### の小見出しの下）として書くよう求めるようになった"
   - "Engine が続きのジョブの報告を本文に組み込むときに見出しの階層を下げるか、本文の見出しの重なりを機械で検査するようになった"
-related: [K-0003, K-0004, K-0006, K-0009, K-0010, K-0014]
+related: [K-0003, K-0004, K-0006, K-0009, K-0010, K-0014, K-0030]
 enforcement:
   level: deterministic
   solutions:

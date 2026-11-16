@@ -13,7 +13,7 @@ scope:
   artifacts: [PR.body]
   roles: [supervisor, body_fix]
 acts_on: engine
-confidence: hypothesis
+confidence: confirmed
 evidence:
   - case: C-0006
   - pr: 821
@@ -25,8 +25,8 @@ evidence:
   - pr: "396"
   - event: "case.analyzed:40381"
 status: active
-verified_at: 2026-11-11
-review_by: 2026-12-11
+verified_at: 2026-11-16
+review_by: 2027-02-14
 confidentiality: product
 related: [K-0004, K-0006]
 invalidate_when:

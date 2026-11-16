@@ -11,7 +11,7 @@ scope:
   artifacts: [PR.body]
   roles: [implement, inspect, judge]
 acts_on: process
-confidence: hypothesis
+confidence: confirmed
 evidence:
   - case: C-0003
   - case: C-0001
@@ -24,8 +24,8 @@ evidence:
   - pr: 821
   - event: "case.analyzed:370935"
 status: active
-verified_at: 2026-11-11
-review_by: 2026-12-11
+verified_at: 2026-11-16
+review_by: 2027-02-14
 confidentiality: product
 related: [K-0001, K-0006, K-0011]
 invalidate_when:
