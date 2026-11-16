@@ -12,7 +12,7 @@ preconditions:
   - "お休みの分岐では、本部が admin-web の「コーチのお休み」で、確定した予約を持つコーチをお休みにしている（触れる環境では、ログインの手がかりの本部＝合成シードが登録した本部のアカウントで操作する。#1480）"
 steps:
   - where: "admin-web 本部の画面"
-    do: "予約の一覧を開き、問い合わせの日付のあたりの期間と生徒で絞り込む"
+    do: "予約の一覧を開き、問い合わせの日付のあたりの期間を入れ、生徒の名前の一部を入れて候補（登録日つき）から生徒を選んで絞り込む"
     sees: "その生徒の予約が、キャンセルしたものも含めて、枠の時刻・コーチ・今の状態つきで並ぶ"
   - where: "admin-web 本部の予約の一覧"
     do: "問い合わせの日時に近い予約を開く"
@@ -32,12 +32,13 @@ touches:
   operations:
     - student-app.cancelBooking
     - admin-web.listBookings
+    - admin-web.listStudents
     - admin-web.listCancelledBookings
     - admin-web.getBooking
     - admin-web.startCoachLeave
   events: [booking.created, booking.confirmed, booking.cancelled]
 origin:
-  issues: []
+  issues: [1481]
   note: "本部の画面に絞り込みが増える一方で、CS の流れが書かれていなかった（factory-engine の ADR 0028 の検討）"
   retro: true
 known_gaps:
