@@ -78,3 +78,10 @@
 - 理由: #1404 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025。#1454）。今の `FlowScaffold`（Material の AppBar と `rally_theme.dart` の `appBarTheme`）と `SportSelector`（ピルの選択）を写して正本にした。トークンと既存の名前・値は変えていない。must の追加はない
 - 効く画面: 正本の上では student-app の全画面のアプリバー（`FlowScaffold`）、登録とスロットを探す画面のスポーツ（`SportSelector`）、#1404 の studentLaunch・studentLogin・studentLoginCode と `design-catalog`。この版で画面が変わるのは student-app の `design-catalog` だけ。`FlowScaffold` と `SportSelector` の部品への置き換えは別のタスク
 - 承認: 工場（部品・should・lint の追加。must はない）
+
+## 0.11.0（2026-11-16）
+
+- 変えたもの: `components.yaml` に `table_sort`（表の並べ替え。見出しの button と印（今の並びは `arrow_downward`・`arrow_upward`、ほかの押せる列は `unfold_more`）、表の上の order_text「12 件・開始の新しい順」。状態は通常・押下・無効（読み直すあいだ）・読み込み中・失敗（文言の型 `sort_failed`）。日時は新しい順・古い順、数は多い順・少ない順で、並べない 3 つ目の状態は作らない）と `value_note`（値の注記。「（参考）」の語を small text_muted で値に添え、数の列は値の左、語の意味は表の下に 1 文（table_note）。状態は通常・押下（押せない）・無効（使わない）・読み込み中（表のまま）・失敗（印を読めない行は注記なし））と `preview_css` を足し、`data_table` の parts・behavior・wording から両方を指した。`governance.yaml` の lint に `table-sort-aria` を足し、`requests` の `patterns-detail-items` に patterns の list へ書き足すことを足した。admin-web の `DataTable` に `sort`（列の `sort` の key と kind、今の並び・件数・読み込み中・失敗）と `notes`（表の下の説明と aria-describedby）、部品 `ValueNote`（`src/components/ui/ValueNote.tsx`）、アイコン `arrow_downward`・`arrow_upward`・`unfold_more` を足し、`tests/designShapeLint.test.ts` に `table-sort-aria` の検査を足した。admin-web のカタログ（`/design`）に見本を置き、student-app のカタログからは理由付きで除いた。`catalog/catalog.html` を組み立て直した
+- 理由: #1466 の画面の設計で部品が足りなかった（プロダクトデザイナー役、ADR 0025。#1493）。並べ替えは patterns の list の「画面の中で並べ替えない」を守るため API で読み直す形にした。デザイナー役の正本は 0.9.0 として書かれていたが、0.9.0 は kpi_figure（#1462）、0.10.0 は app_bar と chip（#1404）で使っていたので、2 つの部品と data_table の書き足しだけを今の正本に足して 0.11.0 にした（正本の他の部品の見本の絞り込みは、今の正本と食い違うので写していない）。トークンと既存の名前・値は変えていない。must の追加はない
+- 効く画面: 正本の上では admin-web の #1466 の画面と、API に並べ方の引数がある本部の一覧と `design-catalog`。この版で画面が変わるのは admin-web の `design-catalog` だけ。student-app は変わらない
+- 承認: 工場（部品・should・lint の追加。must はない）

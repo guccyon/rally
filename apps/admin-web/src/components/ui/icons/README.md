@@ -15,6 +15,7 @@
 | `error.svg` | 状態 danger と、入力欄の誤り（TextField） |
 | `do_not_disturb_on.svg` | 状態 neutral（キャンセル済みなど） |
 | `chevron_right.svg` | 一覧の行の詳細へ（ListRow） |
+| `arrow_downward.svg`・`arrow_upward.svg`・`unfold_more.svg` | 表の並べ替えの印（DataTable の table_sort。今の並びの列は矢印、ほかの押せる列は unfold_more。取得 2026-11-16） |
 | `expand_more.svg` | 選択欄の chevron（Select。取得 2026-11-07） |
 | `mic.svg`・`mic_off.svg` | マイクの入・切の切り替え（MediaToggle。取得 2026-11-08） |
 | `videocam.svg`・`videocam_off.svg` | カメラの入・切の切り替えと、カメラの映りの枠の切・使えない・ない（MediaToggle・CameraPreview。取得 2026-11-08） |

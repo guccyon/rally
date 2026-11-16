@@ -1,5 +1,5 @@
 // @vitest-environment node
-// governance.yaml の lint の button-shape と status-tag-shape を、画面のソースに当てる（#998）。
+// governance.yaml の lint の button-shape・status-tag-shape・media-no-record・table-sort-aria を、画面のソースに当てる（#998・#1493）。
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,6 +49,14 @@ test("状態の container の面（bg-success-container など）は data_table 
 test("カメラとマイクを録画・静止画・録音にせず、外へ送る口に渡さない（media-no-record）", () => {
   const offenders = files
     .filter(({ source }) => /\b(MediaRecorder|captureStream|toBlob|toDataURL|RTCPeerConnection)\b/.test(source))
+    .map(({ name }) => name);
+  expect(offenders).toEqual([]);
+});
+
+test("並べ替えの見出しは DataTable の sort で描き、画面に th の中の button や aria-sort を直に書かない（table-sort-aria）", () => {
+  const offenders = files
+    .filter(({ name }) => name !== "components/ui/DataTable.tsx")
+    .filter(({ source }) => /<th\b(?:=>|[^>])*>\s*<button\b/.test(source) || /\baria-sort\b/.test(source))
     .map(({ name }) => name);
   expect(offenders).toEqual([]);
 });

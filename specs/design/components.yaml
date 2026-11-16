@@ -300,7 +300,7 @@ components:
     lifecycle: trial
     use: admin-web で、同じ項目を持つものを列で見比べる（本部の一覧）
     not_for: student-app と、項目が 3 つまで → list_row。操作が 2 つ以上 → card。詳細 → detail の型
-    parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）]
+    parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）, sort（table_sort。任意）, note（value_note。任意）]
     variants:
       text: {align: left, wrap: しない, note: 日時・名前・状態・種類など短い値}
       numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）。指標の値は kpi_figure の cell（0.9.0）}
@@ -318,8 +318,8 @@ components:
       loading: 表を出さず、loading の section_text
       empty: 表を出さず、empty_state（section）
       error: 表を出さず、notice の inline（danger）
-    behavior: 並べ方は API が返した順のまま。行全体を押せるようにはしない（詳細へは link のセルから）
-    wording: 見出しは名詞で短く（「開始」「状態」「コーチ」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」
+    behavior: 並べ方は API が返した順のまま（見出しで変えるときは table_sort で API から読み直す）。行全体を押せるようにはしない（詳細へは link のセルから）
+    wording: 見出しは名詞で短く（「開始」「状態」「コーチ」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」、値の注記は value_note
     a11y: table に aria-label、th に scope="col"。横に動く wrapper は role="region"・aria-label・tabindex="0" と focus_ring 2px
     rules:
       - level: should
@@ -348,6 +348,76 @@ components:
     preview:
       - label: "PC 幅（wide）と急ぎの行"
         html: '<div class="pv tblw"><div class="tbl-wrap"><table class="tbl type-small" aria-label="10/28（水）の予約"><thead><tr><th scope="col">開始</th><th scope="col">状態</th><th scope="col">コーチ</th><th scope="col">レッスンメニュー</th></tr></thead><tbody><tr class="hl"><td><span class="lnk">9:00</span></td><td><span class="tag"><i class="d d-warning"></i>確定待ち</span> <span class="tag tag-urgent"><i class="d d-danger"></i>開始まで 24 時間以内</span></td><td>佐藤 健</td><td>バッティングの基本（30 分）</td></tr></tbody></table></div></div>'
+
+  - id: table_sort
+    ja: 表の並べ替え
+    lifecycle: trial
+    use: admin-web の data_table で、見出しを押して並べ方を変える。API の並べ方の引数で読み直す
+    not_for: API に並べ方の引数がない列 → 素の見出し。student-app と list_row の一覧 → select の「並べ方」。並べ方が 1 つの表 → 使わない
+    parts: [header_cell（th）, sort_button, sort_mark, order_text]
+    style:
+      sort_button: th の中の button。高さ 48px 以上、余白と字は header_cell のまま
+      sort_mark: 字の右 xs 4px に 16px の印。今の並びの列は arrow_downward・arrow_upward（text）、ほかの押せる列は unfold_more（text_muted）
+      current: 今の並びの列は見出しの字を text に
+      order_text: 表の上 sm 8px に small text_muted で「12 件・開始の新しい順」
+    directions: 最初に押すと日時は新しい順、数は多い順。同じ列をもう一度押すと逆。並べない（3 つ目）の状態は作らない
+    states:
+      default: 押せる列に unfold_more。今の並びの列は字 text・矢印・aria-sort
+      pressed: th の面 primary_container。focus は focus_ring 2px を th の内側に
+      disabled: 読み直すあいだは全部の見出しを押せなくする（aria-disabled・字 text_muted）
+      loading: 押した列の印を新しい向きにし、行は前のまま table に aria-busy。order_text を「〜に並べ替えています…」（role=status）
+      failed: 印と order_text を前の並びに戻し、表の上に notice の inline（danger）。行は消さない
+    errors:
+      sort_failed: {text: 並べ替えられませんでした。もう一度見出しを押すと、読み直します。}
+    behavior: 先頭から読み直し、絞り込みは残す。並びは URL の引数に残す。select の「並べ方」と両方は置かない
+    wording: 日時は「新しい順・古い順」、数は「多い順・少ない順」。「昇順」「降順」「ソート」を使わない
+    a11y: aria-sort（ascending・descending）は今の並びの th にだけ。印は aria-hidden、button の名前は見出しの字。読めたら role=status で「開始の古い順に並べ替えました」
+    rules:
+      - level: should
+        statement: 並べ替えは API の並べ方の引数で読み直してする。画面の中で行を並べ替えない
+        why: 読み込んだ一部だけが並ぶと、本部が件数の文やほかの人の画面と違う順で読み違える
+        check: design_inspector
+      - level: should
+        statement: 今の並びは矢印だけでなく、order_text の字と aria-sort でも示す
+        why: 矢印の向きだけでは新しい順か古い順かを読み違える。読み上げでも並びが分かる
+        check: deterministic
+    examples: {good: 見出し「開始 ↓」と表の上の「12 件・開始の新しい順」, bad: 押せない列にも印を付け、読み込んだ 50 件だけを画面の中で並べ替える}
+    preview:
+      - label: "通常（新しい順）・押下"
+        html: '<div class="pv w"><p class="ord type-small">12 件・開始の新しい順</p><table class="tbl type-small" aria-label="予約"><thead><tr><th scope="col" class="cur" aria-sort="descending"><span class="srt">開始<i aria-hidden="true">↓</i></span></th><th scope="col">コーチ</th><th scope="col" class="num prs"><span class="srt">予約された枠<i aria-hidden="true">↕</i></span></th></tr></thead><tbody><tr><td>10/28（水）12:00</td><td>山田 花子</td><td class="num">9 件</td></tr><tr><td>10/28（水）9:00</td><td>佐藤 健</td><td class="num">4 件</td></tr></tbody></table></div>'
+      - label: "読み込み中・無効"
+        html: '<div class="pv w"><p class="ord type-small" role="status">開始の古い順に並べ替えています…</p><table class="tbl type-small off" aria-busy="true"><thead><tr><th scope="col" aria-sort="ascending" aria-disabled="true"><span class="srt">開始<i aria-hidden="true">↑</i></span></th><th scope="col" class="num" aria-disabled="true"><span class="srt">予約された枠<i aria-hidden="true">↕</i></span></th></tr></thead><tbody><tr><td>10/28（水）12:00</td><td class="num">9 件</td></tr></tbody></table></div>'
+      - label: "失敗"
+        html: '<div class="pv w"><div class="notice n-danger type-small" role="alert"><i class="ic">!</i><p>並べ替えられませんでした。もう一度見出しを押すと、読み直します。</p></div><p class="ord type-small">開始の新しい順</p><table class="tbl type-small"><thead><tr><th scope="col" class="cur" aria-sort="descending"><span class="srt">開始<i aria-hidden="true">↓</i></span></th><th scope="col" class="num"><span class="srt">予約された枠<i aria-hidden="true">↕</i></span></th></tr></thead><tbody><tr><td>10/28（水）12:00</td><td class="num">9 件</td></tr></tbody></table></div>'
+
+  - id: value_note
+    ja: 値の注記
+    lifecycle: trial
+    use: data_table のセルと description_list の value に、そのまま読むと誤る事情を短い語で添える（「（参考）」は件数が少なく動きやすい値）。語の意味は table_note に書く
+    not_for: 値がない → 「—」。読めなかった → error_text か notice。状態 → status_tag。表全体の条件（期間・対象）→ 表の上の件数の文
+    parts: [value, note_label, table_note]
+    style:
+      note_label: small text_muted の「（参考）」。値とのあいだ xs 4px。numeric の列は値の左に置いて数字の右端をそろえ、ほかは値の右
+      value: 色と太さを変えない
+      table_note: 表の下 sm 8px に small text_muted。語ごとに 1 文
+    states:
+      default: API が印を返した値にだけ note_label。1 つの表で語は 2 つまで
+      pressed: 押せない部品。tooltip に隠さない
+      disabled: 使わない
+      loading: 表の loading のまま。注記だけを後から出さない
+      failed: 印を読めない行は note_label なしで値を出し、画面で数えて付けない。表ごと読めないときは data_table の error
+    behavior: 注記はしきい値を画面で計算せず API の印で付ける。table_note は note_label があるときだけ出す
+    wording: 語は 2〜4 字の名詞（「（参考）」）。table_note は何が少ないかとなぜ注意かを 1 文で。「標本」「n」「*」「※」を使わない
+    a11y: note_label は見える字のまま値と読む。table に aria-describedby で table_note を結ぶ
+    rules:
+      - level: should
+        statement: 値の注記は字の語で出し、色・記号・tooltip だけで示さない。語の意味は表の下に 1 文で書く
+        why: 読み上げでも、表を資料に写しても、どの値がなぜ参考かが分かり、本部が判断に使ってよいか決められる
+        check: design_inspector
+    examples: {good: 「（参考） 67%」と表の下の「（参考）は、公開した枠が 5 件未満で、割合が動きやすい値です。」, bad: 「67%*」で説明がない。値を薄い灰にして注記の代わりにする}
+    preview:
+      - label: "通常（狭い幅。数の列は値の左）と表の下の説明"
+        html: '<div class="pv w"><div class="tbl-wrap" role="region" aria-label="コーチごとの予約枠の需給" tabindex="0"><table class="tbl type-small" aria-describedby="vn1"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">公開した枠</th><th scope="col" class="num">埋まった割合</th></tr></thead><tbody><tr><td>山田 花子</td><td class="num">12 件</td><td class="num">75%</td></tr><tr><td>佐藤 健</td><td class="num">3 件</td><td class="num"><span class="nl">（参考）</span>67%</td></tr></tbody></table></div><p id="vn1" class="tnote type-small">（参考）は、公開した枠が 5 件未満で、割合が動きやすい値です。</p></div>'
 
   - id: description_list
     ja: ラベルと値の並び
@@ -859,3 +929,6 @@ preview_css: |
   .ck{width:12px;height:7px;margin-top:-4px;border:solid;border-width:0 0 2px 2px;transform:rotate(-45deg)}
   .kf .vr{display:flex;align-items:baseline;gap:var(--space-md);flex-wrap:wrap}.kf .v{display:flex;align-items:baseline;gap:var(--space-xs)}
   .pv.kfs{width:360px;display:flex;flex-direction:column;gap:var(--space-md)}.pv.kt{width:640px}
+  .tbl .num{text-align:right;font-variant-numeric:tabular-nums}.tbl-wrap:focus-visible{outline:2px solid var(--color-focus-ring);outline-offset:2px}.pv .ord{margin:0 0 var(--space-sm);color:var(--color-text-muted)}.pv .tnote{margin-top:var(--space-sm);color:var(--color-text-muted)}
+  .srt{display:inline-flex;align-items:center;gap:var(--space-xs);min-height:48px}.srt i{font-style:normal;width:16px;text-align:center;color:var(--color-text-muted)}.tbl th.cur,.tbl th.cur .srt i{color:var(--color-text)}.tbl th.prs{background:var(--color-primary-container)}.tbl.off th{color:var(--color-text-muted)}.nl{color:var(--color-text-muted);margin-right:var(--space-xs)}
+  .notice+.ord{margin-top:var(--space-sm)}

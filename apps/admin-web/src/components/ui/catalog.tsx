@@ -5,7 +5,7 @@ import { Button, type ButtonVariant } from "./Button";
 import { CameraPreview, type CameraPreviewState } from "./CameraPreview";
 import { Card } from "./Card";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { DataTable, type DataTableColumn } from "./DataTable";
+import { DataTable, TABLE_SORT_FAILED, type DataTableColumn, type TableSort } from "./DataTable";
 import { DateField, DateRangeField } from "./DateField";
 import { dateRangeError, type DateRange } from "./dateRange";
 import { DescriptionList, type DescriptionItem } from "./DescriptionList";
@@ -21,6 +21,7 @@ import { Select, selectNotSelected } from "./Select";
 import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
 import { Timeline, type TimelineEvent } from "./Timeline";
+import { ValueNote } from "./ValueNote";
 import { SLOT_STATE_STATUS, type Status } from "./status";
 
 /**
@@ -246,6 +247,49 @@ const SUPPLY_COLUMNS: DataTableColumn<SupplyRow>[] = [
     header: "埋まった割合",
     variant: "numeric",
     cell: (row) => `${Math.round((row.booked / row.published) * 100)}%`,
+  },
+];
+
+/** 並べ替えの見本（table_sort）。開始と予約された枠だけ API に並べ方の引数がある想定で、コーチは素の見出し。 */
+type SortRow = { id: string; start: string; coach: string; booked: number };
+
+const SORT_ROWS: SortRow[] = [
+  { id: "s1", start: "10/28（水）12:00", coach: "山田 花子", booked: 9 },
+  { id: "s2", start: "10/28（水）9:00", coach: "佐藤 健", booked: 4 },
+];
+
+const SORT_COLUMNS: DataTableColumn<SortRow>[] = [
+  { header: "開始", cell: (row) => row.start, sort: { key: "start", kind: "datetime" } },
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "予約された枠", variant: "numeric", cell: (row) => `${row.booked} 件`, sort: { key: "booked", kind: "count" } },
+];
+
+const START_NEWEST: TableSort = { key: "start", direction: "descending" };
+
+/** 値の注記の見本（value_note）。「（参考）」は API が印を返した値だけ（ここでは公開した枠が 5 件未満）。 */
+type NotedSupplyRow = { coach: string; published: number; rate: number; reference: boolean };
+
+const NOTED_SUPPLY_ROWS: NotedSupplyRow[] = [
+  { coach: "山田 花子", published: 12, rate: 75, reference: false },
+  { coach: "佐藤 健", published: 3, rate: 67, reference: true },
+];
+
+const REFERENCE_NOTE = "（参考）は、公開した枠が 5 件未満で、割合が動きやすい値です。";
+
+const NOTED_SUPPLY_COLUMNS: DataTableColumn<NotedSupplyRow>[] = [
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "公開した枠", variant: "numeric", cell: (row) => `${row.published} 件` },
+  {
+    header: "埋まった割合",
+    variant: "numeric",
+    cell: (row) =>
+      row.reference ? (
+        <ValueNote note="（参考）" numeric>
+          {row.rate}%
+        </ValueNote>
+      ) : (
+        `${row.rate}%`
+      ),
   },
 ];
 
@@ -700,6 +744,83 @@ export const CATALOG: CatalogEntry[] = [
           highlightRow={(row) => row.urgent === true}
         />
       </TableFrame>
+    ),
+  },
+  {
+    component: "table_sort",
+    state: "default",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="予約"
+          columns={SORT_COLUMNS}
+          rows={SORT_ROWS}
+          rowKey={(row) => row.id}
+          sort={{ current: START_NEWEST, onSort: noop, count: "12 件" }}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "table_sort",
+    state: "loading",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="予約"
+          columns={SORT_COLUMNS}
+          rows={SORT_ROWS}
+          rowKey={(row) => row.id}
+          sort={{ current: { key: "start", direction: "ascending" }, onSort: noop, count: "12 件", loading: true }}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "table_sort",
+    state: "failed",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="予約"
+          columns={SORT_COLUMNS}
+          rows={SORT_ROWS}
+          rowKey={(row) => row.id}
+          sort={{ current: START_NEWEST, onSort: noop, count: "12 件", error: TABLE_SORT_FAILED }}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "value_note",
+    state: "default",
+    render: () => (
+      <TableFrame narrow>
+        <DataTable
+          label="コーチごとの予約枠の需給"
+          columns={NOTED_SUPPLY_COLUMNS}
+          rows={NOTED_SUPPLY_ROWS}
+          rowKey={(row) => row.coach}
+          notes={[REFERENCE_NOTE]}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "value_note",
+    state: "default",
+    example: "ラベルと値の並び",
+    render: () => (
+      <div>
+        <DescriptionList
+          label="コーチの様子"
+          items={[
+            { term: "公開した枠", value: "3 件" },
+            { term: "埋まった割合", value: <ValueNote note="（参考）">67%</ValueNote> },
+          ]}
+        />
+        <p className="mt-2 text-sm text-text-muted">{REFERENCE_NOTE}</p>
+      </div>
     ),
   },
   {

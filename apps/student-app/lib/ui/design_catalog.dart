@@ -50,6 +50,10 @@ const notInStudentCatalog = <String, String>{
   'select': 'components.yaml の not_for に student-app では今は使わないとある（絞り込みは patterns の search_filter のチップ）',
   'data_table':
       'components.yaml の not_for にスマホの student-app とある（admin-web の一覧の表）',
+  'table_sort':
+      'components.yaml の not_for に student-app とある（並べ方は select の「並べ方」。表を使わない）',
+  'value_note':
+      '語の意味を表の下の説明（table_note）で書く部品で、student-app には API が注記の印を返す画面がまだない',
   'kpi_figure':
       'components.yaml の use に admin-web で事業の指標を出すとある（student-app の主役の数字は score_panel）',
   'notice / toast':
