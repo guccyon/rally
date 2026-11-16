@@ -76,6 +76,8 @@ const BOOKINGS: Schemas["HeadquartersBooking"][] = [
   booking(4, { status: "cancelled", starts_at: at(51) }),
 ];
 
+const noStudents = vi.fn<HeadquartersApi["listStudents"]>(async () => ({ ok: true, data: { students: [] } }));
+
 function listOf(bookings: Schemas["HeadquartersBooking"][], period = { from: "2026-10-26", to: "2026-11-01" }) {
   return vi.fn<HeadquartersApi["listBookings"]>(async () => ({
     ok: true,
@@ -92,9 +94,55 @@ function bodyRows(name: string) {
 }
 
 describe("本部の予約", () => {
+  test("生徒の名前の一部から候補を選ぶと、その生徒で絞って読み直し、ほかの絞り込みは残り、外すと全員に戻る", async () => {
+    const student = (id: string, name: string, registered: string) =>
+      ({ student_id: id, display_name: name, registered_at: registered }) as unknown as Schemas["Student"];
+    const listStudents = vi.fn<HeadquartersApi["listStudents"]>(async () => ({
+      ok: true,
+      data: {
+        students: [
+          student("11111111-1111-4111-8111-000000000001", "夜テスト", "2026-10-01T00:00:00Z"),
+          student("11111111-1111-4111-8111-000000000002", "夜テスト", "2026-10-20T00:00:00Z"),
+          student("11111111-1111-4111-8111-000000000003", "山田 花子", "2026-10-02T00:00:00Z"),
+        ],
+      },
+    }));
+    const listBookings = listOf(BOOKINGS);
+    render(<BookingList api={{ listBookings, listStudents }} />);
+    await screen.findByText(/4 件/);
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("体験予約だけ"));
+
+    await user.type(screen.getByLabelText("生徒の名前"), "夜テ");
+    const candidates = within(await screen.findByRole("list", { name: "生徒の候補" })).getAllByRole("button");
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]).toHaveTextContent("夜テスト（登録日 2026/10/1）");
+    expect(candidates[1]).not.toHaveTextContent("2026/10/1）");
+
+    await user.click(candidates[1]!);
+    expect(listBookings).toHaveBeenLastCalledWith({
+      from: "2026-10-26",
+      to: "2026-11-01",
+      trial: true,
+      student_id: "11111111-1111-4111-8111-000000000002",
+    });
+    expect(await screen.findByText(/生徒を選んでいます:/)).toHaveTextContent("夜テスト");
+
+    await user.click(screen.getByRole("button", { name: "生徒の絞り込みを外す" }));
+    expect(listBookings).toHaveBeenLastCalledWith({ from: "2026-10-26", to: "2026-11-01", trial: true });
+  });
+
+  test("名前に一致する生徒がいなければ、その旨を出す", async () => {
+    const listStudents = vi.fn<HeadquartersApi["listStudents"]>(async () => ({ ok: true, data: { students: [] } }));
+    render(<BookingList api={{ listBookings: listOf([]), listStudents }} />);
+    await userEvent.setup().type(screen.getByLabelText("生徒の名前"), "存在しない");
+    expect(await screen.findByText("「存在しない」に一致する生徒はいません")).toBeInTheDocument();
+    expect(listStudents).toHaveBeenCalledTimes(1);
+  });
+
   test("既定は今日から 7 日（日本時間）で読み、期間の欄にも出す", async () => {
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
 
     expect(screen.getByText("読み込み中…")).toBeInTheDocument();
     expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01" });
@@ -107,14 +155,14 @@ describe("本部の予約", () => {
     // UTC では 10/25 だが日本時間では 10/26 0:30
     vi.setSystemTime(new Date("2026-10-25T15:30:00Z"));
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
 
     expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01" });
     await screen.findByText("この期間の予約はありません");
   });
 
   test("開始する日付ごとに分け、各行に開始・状態・コーチ・生徒・メニュー・種類を API の順で出す", async () => {
-    render(<BookingList api={{ listBookings: listOf(BOOKINGS) }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings: listOf(BOOKINGS) }} />);
 
     await screen.findByRole("table", { name: "2026年10月26日（月） の予約" });
     expect(screen.queryByText("読み込み中…")).not.toBeInTheDocument();
@@ -133,7 +181,7 @@ describe("本部の予約", () => {
   });
 
   test("状態で色分けし、確定待ちのまま 24 時間以内に始まる予約だけを目立たせて件数を出す", async () => {
-    render(<BookingList api={{ listBookings: listOf(BOOKINGS) }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings: listOf(BOOKINGS) }} />);
     await screen.findByRole("table", { name: "2026年10月26日（月） の予約" });
 
     expect(screen.getByText("確定待ちのまま 24 時間以内に始まる予約が 1 件あります。")).toBeInTheDocument();
@@ -158,7 +206,7 @@ describe("本部の予約", () => {
       booking(2, { status: "confirmed", starts_at: at(1) }),
       booking(3, { status: "pending", starts_at: at(24) }),
     ];
-    render(<BookingList api={{ listBookings: listOf(bookings) }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings: listOf(bookings) }} />);
     await screen.findAllByRole("table");
 
     // ちょうど 24 時間後は含める
@@ -167,7 +215,7 @@ describe("本部の予約", () => {
   });
 
   test("0 件なら「この期間の予約はありません」と出し、表と注意は出さない", async () => {
-    render(<BookingList api={{ listBookings: listOf([]) }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings: listOf([]) }} />);
 
     expect(await screen.findByText("この期間の予約はありません")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -177,7 +225,7 @@ describe("本部の予約", () => {
   test("期間を選び直して「この期間で見る」で読み直し、応答の期間を出す", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     listBookings.mockResolvedValueOnce({
@@ -198,7 +246,7 @@ describe("本部の予約", () => {
   test("終了日が開始日より前・31 日を超える期間は送らずに理由を出す", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     await user.clear(screen.getByLabelText("終了日"));
@@ -230,7 +278,7 @@ describe("本部の予約", () => {
       .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
       .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-27", to: "2026-10-27", bookings: [] } });
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     await user.click(screen.getByRole("button", { name: "この期間で見る" }));
@@ -249,7 +297,7 @@ describe("本部の予約", () => {
   test("「体験予約だけ」を入れると選んでいる期間で trial=true を付けて読み直し、絞った件数を出す", async () => {
     const listBookings = listOf(BOOKINGS);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件");
     expect(screen.getByRole("checkbox", { name: "体験予約だけ" })).not.toBeChecked();
 
@@ -272,7 +320,7 @@ describe("本部の予約", () => {
   test("「体験予約だけ」のまま期間を変えて「この期間で見る」でも trial=true を付ける", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
@@ -290,7 +338,7 @@ describe("本部の予約", () => {
       .mockResolvedValueOnce({ ok: true, data: { from: "2026-10-26", to: "2026-11-01", bookings: BOOKINGS } })
       .mockImplementationOnce(() => new Promise((resolve) => (resolveTrial = resolve)));
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findAllByRole("table");
 
     await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
@@ -306,7 +354,7 @@ describe("本部の予約", () => {
   test("「体験予約だけ」で読めなければその文言を出し、期間が正しくなければ送らずに理由を出す", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     listBookings.mockResolvedValueOnce({ ok: false, message: "通信できませんでした。" });
@@ -326,7 +374,7 @@ describe("本部の予約", () => {
       ok: false,
       message: "権限がないためアクセスできません。",
     }));
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
@@ -366,7 +414,7 @@ describe("本部の予約（コーチで絞る）", () => {
   test("coachId があれば listBookings に coach_id を付けて読み、期間を変えても絞り込みは残る", async () => {
     const user = userEvent.setup();
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} coachId={COACH_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} coachId={COACH_ID} />);
 
     expect(screen.getByText(/^このコーチの枠への予約を/)).toBeInTheDocument();
     expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01", coach_id: COACH_ID });
@@ -384,7 +432,7 @@ describe("本部の予約（コーチで絞る）", () => {
   test("コーチで絞ったまま「体験予約だけ」を入れると coach_id と trial=true の両方を付ける", async () => {
     const user = userEvent.setup();
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} coachId={COACH_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} coachId={COACH_ID} />);
     await screen.findByText("この期間の予約はありません");
 
     await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
@@ -400,7 +448,7 @@ describe("本部の予約（コーチで絞る）", () => {
 
   test("coachId がなければ coach_id を付けない", () => {
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
 
     expect(screen.getByText(/^すべてのコーチの枠への予約を/)).toBeInTheDocument();
     expect(listBookings.mock.calls[0]![0]).not.toHaveProperty("coach_id");
@@ -412,7 +460,7 @@ describe("本部の予約（コーチで絞る）", () => {
       code: "validation_failed",
       message: "入力の内容が正しくありません。",
     }));
-    render(<BookingList api={{ listBookings }} coachId="not-a-uuid" />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} coachId="not-a-uuid" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("入力の内容が正しくありません。");
   });
@@ -459,7 +507,7 @@ describe("本部の予約（生徒で絞る）", () => {
   test("studentId があれば listBookings に student_id を付けて読み、期間を変えても絞り込みは残る", async () => {
     const user = userEvent.setup();
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} studentId={STUDENT_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} studentId={STUDENT_ID} />);
 
     expect(screen.getByText(/^この生徒の予約を/)).toBeInTheDocument();
     expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01", student_id: STUDENT_ID });
@@ -477,7 +525,7 @@ describe("本部の予約（生徒で絞る）", () => {
 
   test("コーチと生徒の両方があれば両方で絞る", () => {
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} />);
 
     expect(screen.getByText(/^このコーチの枠への、この生徒の予約を/)).toBeInTheDocument();
     expect(listBookings).toHaveBeenCalledWith({
@@ -491,7 +539,7 @@ describe("本部の予約（生徒で絞る）", () => {
   test("生徒で絞ったまま「体験予約だけ」を入れると student_id と trial=true を両方付ける", async () => {
     const user = userEvent.setup();
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} studentId={STUDENT_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} studentId={STUDENT_ID} />);
     await screen.findByText("この期間の予約はありません");
 
     await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
@@ -583,7 +631,7 @@ describe("本部の予約（レッスンメニューで絞る）", () => {
   test("lessonMenuId があれば listBookings に lesson_menu_id を付けて読み、期間を変えても絞り込みは残る", async () => {
     const user = userEvent.setup();
     const listBookings = listOf([BOOKINGS[0]!]);
-    render(<BookingList api={{ listBookings }} lessonMenuId={MENU_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} lessonMenuId={MENU_ID} />);
 
     expect(screen.getByText(/^このレッスンメニューの予約を/)).toBeInTheDocument();
     expect(listBookings).toHaveBeenCalledWith({ from: "2026-10-26", to: "2026-11-01", lesson_menu_id: MENU_ID });
@@ -602,7 +650,7 @@ describe("本部の予約（レッスンメニューで絞る）", () => {
   test("コーチ・生徒・「体験予約だけ」と組み合わせると、すべてを付けて読む", async () => {
     const user = userEvent.setup();
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} lessonMenuId={MENU_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} lessonMenuId={MENU_ID} />);
 
     expect(screen.getByText(/^このコーチの枠への、この生徒の、このレッスンメニューの予約を/)).toBeInTheDocument();
     expect(listBookings).toHaveBeenCalledWith({
@@ -627,7 +675,7 @@ describe("本部の予約（レッスンメニューで絞る）", () => {
   });
 
   test("0 件なら「この期間に、このレッスンメニューの予約はありません」と出し、表は出さない", async () => {
-    render(<BookingList api={{ listBookings: listOf([]) }} lessonMenuId={MENU_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings: listOf([]) }} lessonMenuId={MENU_ID} />);
 
     expect(await screen.findByText("この期間に、このレッスンメニューの予約はありません")).toBeInTheDocument();
     expect(screen.getByText("2026年10月26日（月） 〜 2026年11月1日（日）・0 件")).toBeInTheDocument();
@@ -637,7 +685,7 @@ describe("本部の予約（レッスンメニューで絞る）", () => {
 
   test("lessonMenuId がなければ lesson_menu_id を付けない", () => {
     const listBookings = listOf([]);
-    render(<BookingList api={{ listBookings }} coachId={COACH_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} coachId={COACH_ID} />);
 
     expect(listBookings.mock.calls[0]![0]).not.toHaveProperty("lesson_menu_id");
   });
@@ -648,7 +696,7 @@ describe("本部の予約（レッスンメニューで絞る）", () => {
       code: "validation_failed",
       message: "入力の内容が正しくありません。",
     }));
-    render(<BookingList api={{ listBookings }} lessonMenuId="not-a-uuid" />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} lessonMenuId="not-a-uuid" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "絞り込みの指定が正しくありません。レッスンメニューの一覧の「直近 30 日の予約」から開き直してください。",
@@ -663,7 +711,7 @@ describe("本部の予約（レッスンメニューで絞る）", () => {
       code: "forbidden",
       message: "権限がないためアクセスできません。",
     }));
-    render(<BookingList api={{ listBookings }} lessonMenuId={MENU_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} lessonMenuId={MENU_ID} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("権限がないためアクセスできません。");
   });
@@ -743,7 +791,7 @@ describe("本部の予約（スポーツで絞る）", () => {
 
   test("選択肢は「すべて」と各スポーツで、既定は「すべて」（sport を付けない）", async () => {
     const listBookings = listOf(BOOKINGS);
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findAllByRole("table");
 
     const select = screen.getByRole("combobox", { name: "スポーツ" });
@@ -763,7 +811,7 @@ describe("本部の予約（スポーツで絞る）", () => {
   test("スポーツを選ぶと選んでいる期間で sport を付けて読み直し、「すべて」に戻すと外す", async () => {
     const listBookings = listOf(BOOKINGS);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("2026年10月26日（月） 〜 2026年11月1日（日）・4 件");
 
     listBookings.mockResolvedValueOnce({
@@ -783,7 +831,7 @@ describe("本部の予約（スポーツで絞る）", () => {
   test("スポーツを選んだまま期間を変えて「この期間で見る」でも sport を付ける", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "ゴルフ");
@@ -797,7 +845,7 @@ describe("本部の予約（スポーツで絞る）", () => {
   test("0 件なら「この期間に、そのスポーツの予約はありません」と出す", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     await user.selectOptions(screen.getByRole("combobox", { name: "スポーツ" }), "水泳");
@@ -809,7 +857,7 @@ describe("本部の予約（スポーツで絞る）", () => {
   test("コーチ・生徒・レッスンメニュー・「体験予約だけ」と組み合わせると、すべてを付けて読む", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} lessonMenuId={MENU_ID} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} coachId={COACH_ID} studentId={STUDENT_ID} lessonMenuId={MENU_ID} />);
     await screen.findByText("この期間に、このレッスンメニューの予約はありません");
 
     await user.click(screen.getByRole("checkbox", { name: "体験予約だけ" }));
@@ -843,7 +891,7 @@ describe("本部の予約（スポーツで絞る）", () => {
   test("スポーツを選んで読めなければその文言を出し、期間が正しくなければ送らずに理由を出す", async () => {
     const listBookings = listOf([]);
     const user = userEvent.setup();
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
     await screen.findByText("この期間の予約はありません");
 
     listBookings.mockResolvedValueOnce({ ok: false, message: "通信できませんでした。" });
