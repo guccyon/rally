@@ -18,16 +18,24 @@ impl CancellationPolicy {
     ///
     /// `has_live_lesson_quota` は生徒がビデオ通話の暦月の枠を持つか（[`Self::preview`] と同じ）。持たない生徒は
     /// entitlement が回数を数えない（docs/adr/0005 の 6）ので、いつキャンセルしても `consumes_quota: false`。
-    /// 持つ生徒は、開始時刻の 24 時間前ちょうど、またはそれより後（開始後を含む）なら `consumes_quota: true`。
-    /// 24 時間前より前なら `false`。予約の状態（確定前か確定済みか）・体験予約かは見ない。
+    /// 体験予約（[`Booking::is_trial`]）も、月額の受講権のない間に作った無料の予約で月額の回数を使って取ったものでは
+    /// ないので、あとで月額契約してもいつキャンセルしても `consumes_quota: false`（#1798）。
+    /// それ以外で枠を持つ生徒は、開始時刻の 24 時間前ちょうど、またはそれより後（開始後を含む）なら
+    /// `consumes_quota: true`。24 時間前より前なら `false`。予約の状態（確定前か確定済みか）は見ない。
     pub fn decide(
         booking: &Booking,
         cancelled_at: SystemTime,
         has_live_lesson_quota: bool,
     ) -> CancellationDecision {
-        let consumes_quota = has_live_lesson_quota
+        let consumes_quota = Self::counts_quota(booking, has_live_lesson_quota)
             && Self::free_cancel_until(booking).is_none_or(|until| cancelled_at >= until);
         CancellationDecision { consumes_quota }
+    }
+
+    /// 予約 `booking` のキャンセルが暦月の回数に関わるか。生徒が枠を持ち、体験予約でないときだけ。体験予約は
+    /// 受講権のない間にしか作れない（`entitlement::TrialUsage`。docs/adr/0014）ので、作った時点で枠を持たない。
+    fn counts_quota(booking: &Booking, has_live_lesson_quota: bool) -> bool {
+        has_live_lesson_quota && !booking.is_trial()
     }
 
     /// 本部が予約 `booking` をキャンセルしたとき（コーチのお休み。[`super::Booking::cancel_by_headquarters`]）の判定。
@@ -59,8 +67,9 @@ impl CancellationPolicy {
     ///
     /// キャンセルできない予約（キャンセル済み）は `None`。`has_live_lesson_quota` は生徒がビデオ通話の暦月の枠を
     /// 持つか（entitlement が答える。月額の受講権があるときだけ `true`）で、持たない生徒（受講権がない・ワンショット）は
-    /// キャンセルしても entitlement が回数を数えない（docs/adr/0005 の 6）ので、回数を使わず境目もない。持つ生徒は
-    /// [`Self::decide`] と同じ判定と、[`Self::free_cancel_until`] の境目。
+    /// キャンセルしても entitlement が回数を数えない（docs/adr/0005 の 6）ので、回数を使わず境目もない。体験予約も
+    /// （[`Self::decide`] と同じく）回数を使わず境目もない。それ以外で枠を持つ生徒は [`Self::decide`] と同じ判定と、
+    /// [`Self::free_cancel_until`] の境目。
     pub fn preview(
         booking: &Booking,
         now: SystemTime,
@@ -69,7 +78,7 @@ impl CancellationPolicy {
         if !booking.status().is_active() {
             return None;
         }
-        Some(if has_live_lesson_quota {
+        Some(if Self::counts_quota(booking, has_live_lesson_quota) {
             CancellationPreview::with_boundary(
                 Self::decide(booking, now, true).consumes_quota,
                 Self::preview_boundary(booking),
@@ -97,6 +106,15 @@ mod tests {
     }
 
     fn booking() -> Booking {
+        reserve(false)
+    }
+
+    /// 体験予約（月額契約の前に作った無料の予約）
+    fn trial_booking() -> Booking {
+        reserve(true)
+    }
+
+    fn reserve(is_trial: bool) -> Booking {
         let mut slot = Slot::publish(
             SlotId::from_u128(10),
             AccountId::from_u128(3),
@@ -109,7 +127,7 @@ mod tests {
         Booking::reserve(
             BookingId::from_u128(1),
             AccountId::from_u128(1),
-            false,
+            is_trial,
             &mut slot,
             &[],
             SystemTime::UNIX_EPOCH,
@@ -155,6 +173,37 @@ mod tests {
                     .unwrap()
                     .consumes_quota()
             );
+        }
+    }
+
+    #[test]
+    fn a_trial_booking_never_consumes_quota_even_after_subscribing() {
+        // 体験予約は月額の回数を使って取った予約でないので、あとで月額契約して枠を持っても、開始の直前・開始後の
+        // キャンセルで回数を使わない。見込みも同じで境目はない（#1798）
+        for has_live_lesson_quota in [true, false] {
+            for cancelled_at in [
+                starts_at() - 25 * HOUR,
+                starts_at() - 24 * HOUR,
+                starts_at() - HOUR,
+                starts_at() + HOUR,
+            ] {
+                assert!(
+                    !CancellationPolicy::decide(
+                        &trial_booking(),
+                        cancelled_at,
+                        has_live_lesson_quota
+                    )
+                    .consumes_quota
+                );
+                assert_eq!(
+                    CancellationPolicy::preview(
+                        &trial_booking(),
+                        cancelled_at,
+                        has_live_lesson_quota
+                    ),
+                    Some(CancellationPreview::without_quota())
+                );
+            }
         }
     }
 

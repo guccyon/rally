@@ -361,7 +361,9 @@ paths:
         回数を消費するかはキャンセル規定（glossary の cancellation_policy）に従って scheduling が判定し、境界間イベント
         `BookingCancelled` の `consumes_quota` で entitlement に渡す（docs/adr/0002 Q2）。このレスポンスには含めない。
         月額契約の生徒なら、開始 24 時間前以降のキャンセルはその予約で枠を使ったことになり（確定前の予約でも `used` が増える）、
-        それより前のキャンセルは確定で使った枠が戻る（docs/adr/0005）。
+        それより前のキャンセルは確定で使った枠が戻る（docs/adr/0005）。ただし体験予約（`is_trial`）は月額の受講権のない間に
+        作った無料の予約で、月額の回数を使って取った予約でないので、あとで月額契約してもいつキャンセルしても回数を消費しない
+        （確定で使った枠があれば戻る。#1798）。
         別の生徒の予約は 404、キャンセル済みの予約は 409 `invalid_booking_state`。生徒だけが呼べる（それ以外の役割は 403）。
         本文の `reason` は任意で、Gen1 では保存しない。返す予約には `createBooking` と同じく `ends_at`・`sport`・`coach_display_name` を載せる。
       tags: [scheduling]
@@ -1846,14 +1848,15 @@ components:
           description: |
             今（一覧を返した時刻に）`cancelBooking` したら、ビデオ通話の暦月の枠を使うか。開始の 24 時間前ちょうど以降なら true
             （開始後も true）。月額の受講権のない生徒（月額契約の前の体験予約など・ワンショット）の予約は、いつキャンセルしても枠を
-            使わないので false。キャンセルできない予約（`status` が `cancelled`）は null。同じ時刻のキャンセルの判定
+            使わないので false。受講権のない間に作った体験予約（`booking.is_trial`）は、あとで月額契約しても回数を消費しないので
+            いつでも false（#1798）。キャンセルできない予約（`status` が `cancelled`）は null。同じ時刻のキャンセルの判定
             （`BookingCancelled` の `consumes_quota`）と同じ規則から出す
         free_cancel_until:
           type: [string, "null"]
           format: date-time
           description: |
             この時刻より前にキャンセルすれば枠を使わない境目（予約の開始の 24 時間前。この時刻ちょうど以降のキャンセルは枠を使う）。
-            境目のない予約（キャンセルできない予約と、月額の受講権のない生徒の予約。`cancel_consumes_quota` が null か、いつでも false）は null
+            境目のない予約（キャンセルできない予約と、月額の受講権のない生徒の予約と、体験予約。`cancel_consumes_quota` が null か、いつでも false）は null
 
     MyBookingList:
       type: object

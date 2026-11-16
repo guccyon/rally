@@ -162,7 +162,8 @@ components:
           description: |
             このキャンセルで回数を消費するか（scheduling のキャンセル規定による判定）。開始の 24 時間前ちょうど以降の生徒の
             キャンセルなら true。ただし月額の受講権のない生徒（月額契約の前の体験予約など・ワンショット）は entitlement が
-            回数を数えないので、いつキャンセルしても false（student-app の listMyBookings の cancel_consumes_quota と同じ判定。#1605）
+            回数を数えないので、いつキャンセルしても false（student-app の listMyBookings の cancel_consumes_quota と同じ判定。#1605）。
+            受講権のない間に作った体験予約も、あとで月額契約してからのキャンセルでいつでも false（#1798）
         cancelled_at:
           type: string
           format: date-time

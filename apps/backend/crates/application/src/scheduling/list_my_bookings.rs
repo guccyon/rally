@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn trial_booking_after_subscribing_follows_the_policy() {
+    async fn trial_booking_after_subscribing_never_consumes_the_quota() {
         let slots = InMemorySlotRepository::with_slots([slot(1, COACH, 100)]);
         let bookings = InMemoryBookingRepository::new(slots);
         let trial = book_as(&bookings, STUDENT, 1, 0, true).await;
@@ -580,8 +580,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             previews(&list),
-            BTreeMap::from([(trial.id(), preview(true, Some(76)))]),
-            "月額契約の後の体験予約は他の予約と同じに数える（docs/adr/0005 の 6）"
+            BTreeMap::from([(trial.id(), preview(false, None))]),
+            "月額契約の前に作った体験予約は、月額契約の後でも境目を過ぎても回数を使わず、境目もない（#1798）"
         );
     }
 }
