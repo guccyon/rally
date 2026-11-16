@@ -105,6 +105,7 @@ glossary_mapping:   # 画面の語は specs/glossary.yaml の ja を使う。言
     coach_acceptance: コーチの受付（受付中・停止中）
     slot_capacity: 定員（残りは「席」）
     prejoin_check: 入室前チェック
+    call_quality_score: 通話品質スコア（admin-web の表の見出しは「品質スコア」。状態は 低品質・やや低い・問題なし・指標なし。low と fair の境は仮）
   rules:
     - level: should
       statement: 画面の語は glossary の ja を使い、同じものを別の語で呼ばない

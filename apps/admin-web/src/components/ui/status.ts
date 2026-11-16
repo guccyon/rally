@@ -47,3 +47,15 @@ export const SLOT_STATE_STATUS: Record<"open" | "booked" | "closed", Status> = {
   booked: "success",
   closed: "neutral",
 };
+
+/**
+ * 通話品質の状態と色の対応（specs/design/components.yaml の status_tag.call_quality_state）。呼び名は glossary の
+ * call_quality_score.states。danger は low だけで、値を足すときは warning か neutral にする（call_quality_rule）。
+ * キーは #1465 の契約で決まるまで仮。
+ */
+export const CALL_QUALITY_STATE_STATUS: Record<"low" | "fair" | "ok" | "no_data", Status> = {
+  low: "danger",
+  fair: "warning",
+  ok: "neutral",
+  no_data: "neutral",
+};

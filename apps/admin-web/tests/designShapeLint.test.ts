@@ -1,5 +1,5 @@
 // @vitest-environment node
-// governance.yaml の lint の button-shape・status-tag-shape・media-no-record・table-sort-aria を、画面のソースに当てる（#998・#1493）。
+// governance.yaml の lint の button-shape・status-tag-shape・media-no-record・table-sort-aria・row-highlight-only を、画面のソースに当てる（#998・#1493・#1527）。
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,14 @@ test("並べ替えの見出しは DataTable の sort で描き、画面に th �
   const offenders = files
     .filter(({ name }) => name !== "components/ui/DataTable.tsx")
     .filter(({ source }) => /<th\b(?:=>|[^>])*>\s*<button\b/.test(source) || /\baria-sort\b/.test(source))
+    .map(({ name }) => name);
+  expect(offenders).toEqual([]);
+});
+
+test("表の行・セルに danger.container の面を直に付けず、急ぎの行は DataTable の highlightRow だけで付ける（row-highlight-only）", () => {
+  const offenders = files
+    .filter(({ name }) => name !== "components/ui/DataTable.tsx")
+    .filter(({ source }) => /\bdanger-container\b/.test(source))
     .map(({ name }) => name);
   expect(offenders).toEqual([]);
 });
