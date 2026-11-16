@@ -1089,6 +1089,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coaches/me/slot-supply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 自分の提供スポーツの来週の需給と、自分の枠の埋まった割合（コーチ）
+         * @description トークンが示す本人（コーチ）の提供スポーツごとに、来週の予約枠が予約しようとした生徒の数に対して足りているかと、
+         *     自分が公開した枠の埋まった割合（来週・今週）を返す。管理画面で、枠が足りない競技のコーチに枠の公開を促すのに使う。
+         *     コーチの役割のトークンだけが呼べる（本部・生徒は 403。本部は `getSlotSupply` を使う。docs/adr/0008-backoffice-separation.md）。
+         *
+         *     - 今週・来週: 日本時間（UTC+9）の月曜から日曜までの 7 日。今週は呼んだ時刻（サーバーの現在時刻）の日本時間の日付を含む週、
+         *       来週はその次の週。`current_week` / `next_week` の `from` / `to` に実際に使った日付を載せる
+         *     - 需給（`sports`）: 来週（`next_week` の `from` から `to` まで）の需給。判定の式・数え方・期間の扱いの正本は `getSlotSupply` の
+         *       説明で、ここでは定義し直さない（実装も backend の domain `SlotSupply` の 1 か所を使う）。各行は `getSlotSupply` に
+         *       `from` / `to` を来週の月曜・日曜にして呼んだ（`coach_id`・`sport`・`lesson_menu_id` は付けない）ときの、同じスポーツの行と
+         *       同じ `status`・`published_slots`・`booking_students` になる
+         *     - 行は自分の提供スポーツ（`registerCoach` の `sports`）だけを、`Sport` の enum の順で返す。ゴルフを提供していればゴルフの行も
+         *       返す（`getSlotSupply` と同じく `not_applicable`）
+         *     - 他のコーチの個別の数字は載せない: `sports` の数はスポーツ全体（そのスポーツの枠を出したすべてのコーチ）の合計だけで、
+         *       コーチごとの内訳・他のコーチの ID や名前・他のコーチの枠の埋まり方は返さない
+         *     - 埋まった割合（`current_week` / `next_week`）: 自分の枠だけを数える。`published_slots` はその週に開始する自分の枠のうち
+         *       `open` か `booked` のもの（閉じた枠・取り下げた枠 `closed` は数えない。`getSlotSupply` の `published_slots` と同じ決め方を
+         *       自分の枠に当てはめたもの）、`filled_slots` はそのうち確定した予約が定員に達して埋まった `booked` の枠。`fill_rate` は
+         *       `filled_slots ÷ published_slots` を小数第 3 位で四捨五入した小数第 2 位まで（0〜1）で、`published_slots` が 0 なら null。
+         *       今週は開始時刻を過ぎた枠も含める
+         *     - 枠も予約もなければ、`sports` は `no_activity`（ゴルフは `not_applicable`）の行で数が 0、`current_week` / `next_week` は
+         *       数が 0 で `fill_rate` が null
+         *     - 照会だけで、何も保存しない
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getMySlotSupply"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/coaches/me/videos": {
         parameters: {
             query?: never;
@@ -2760,6 +2803,37 @@ export interface components {
             to?: string;
             /** @description スポーツ 6 種類すべて（`Sport` の enum の順） */
             sports: components["schemas"]["SlotSupply"][];
+        };
+        /**
+         * @description コーチ 1 人の、提供スポーツごとの来週の需給と、自分の枠の埋まった割合（今週・来週）。数え方は `getMySlotSupply` の説明
+         *     （需給の式の正本は `getSlotSupply`）。他のコーチの個別の数字は持たない
+         */
+        CoachSlotSupply: {
+            /** Format: uuid */
+            coach_id: string;
+            /** @description 自分の提供スポーツの来週（`next_week` の `from` から `to` まで）の需給（`Sport` の enum の順）。数はスポーツ全体の合計 */
+            sports: components["schemas"]["SlotSupply"][];
+            current_week: components["schemas"]["CoachSlotFillRate"];
+            next_week: components["schemas"]["CoachSlotFillRate"];
+        };
+        /** @description 1 週（日本時間の月曜から日曜まで）の、コーチ本人が公開した枠の埋まった割合（数え方は `getMySlotSupply` の説明） */
+        CoachSlotFillRate: {
+            /**
+             * Format: date
+             * @description 週の始まりの月曜（日本時間。含む）
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description 週の終わりの日曜（日本時間。含む）
+             */
+            to: string;
+            /** @description その週に開始する自分の枠（open / booked）の数 */
+            published_slots: number;
+            /** @description そのうち、確定した予約が定員に達して埋まった（booked）枠の数 */
+            filled_slots: number;
+            /** @description `filled_slots ÷ published_slots`。小数第 3 位で四捨五入した小数第 2 位まで。`published_slots` が 0 なら null */
+            fill_rate: number | null;
         };
         /**
          * @description アカウントの役割。student: 生徒 / coach: コーチ / headquarters: 本部（admin-web の画面を使うのはコーチと本部）
@@ -5088,6 +5162,28 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getMySlotSupply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 自分の提供スポーツの来週の需給と、自分の枠の埋まった割合 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachSlotSupply"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMyCoachVideos: {
