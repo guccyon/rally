@@ -260,6 +260,31 @@ describe("本部の予約の詳細", () => {
     ]);
   });
 
+  test("枠の判定を残し始める前のお休みのキャンセルは、枠だけ「記録がありません」にし、理由とお休みの記録は出して、古いキャンセルの知らせは出さない", async () => {
+    const change = {
+      ...LEAVE_CANCEL,
+      consumes_quota: null,
+      coach_leave: { ...COACH_LEAVE, created_by_display_name: undefined },
+    };
+    render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [CONFIRMED, change] }) }} bookingId={BOOKING_ID} />);
+
+    const card = await screen.findByRole("article", { name: "11/5（木）10:32 キャンセル済み" });
+    expect(listOf(card, "キャンセルの経緯")).toEqual([
+      ["キャンセルした人", "本部（コーチのお休み）"],
+      ["開始まで", "開始の 175 時間前（7 日 7 時間前）"],
+      ["ビデオ通話の枠", "記録がありません"],
+      ["理由", "コーチのお休み"],
+    ]);
+    expect(listOf(card, "もとになったコーチのお休み")).toEqual([
+      ["お休みの期間", "11/10（火）〜11/16（月）"],
+      ["生徒への一言", COACH_LEAVE.note],
+      ["お休みにした本部", "（名前を表示できません）・11/5（木）10:32"],
+    ]);
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument();
+    expect(card).not.toHaveTextContent(/headquarters|coach_leave|null|true|false/);
+    expect(card).not.toHaveTextContent(COACH_LEAVE.created_by);
+  });
+
   test("理由がお休みなのにお休みの記録がないときは、理由だけ出し、お休みの区切りの代わりに 1 行の注意を出す", async () => {
     const change = { ...LEAVE_CANCEL, coach_leave: null };
     render(<BookingDetail api={{ getBooking: detailOf({ ...DETAIL, status_changes: [change] }) }} bookingId={BOOKING_ID} />);

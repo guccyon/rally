@@ -182,17 +182,33 @@ const HQ_BOOKINGS: Schemas["HeadquartersBooking"][] = [
   },
 ];
 
+/** 本部が 7 日のお休みにした記録（予約の詳細のお休みのキャンセルが指す）。 */
+const HQ_COACH_LEAVE: Schemas["CoachLeave"] = {
+  coach_leave_id: id("7777", 1),
+  coach_id: COACH_ID,
+  from: "2026-10-28",
+  to: "2026-11-03",
+  note: "体調を崩したため、この期間のレッスンをお休みします。ほかのコーチでの予約をお願いします。",
+  created_by: HEADQUARTERS_ID,
+  created_by_display_name: "佐々木 陽子",
+  created_at: at(-2),
+};
+
 /**
  * 本部の予約の詳細の状態ごとの記録（確定のあとに続く記録）。枠の開始は startsAt（なければ at(48)）。
- * 確定だけ・生徒のキャンセル（枠を使った）・コーチのお休みのキャンセル・記録のない古いキャンセル。
+ * state と label は撮る画面の ID（hq-booking-detail-<state>）と見出しの添え書き。
  */
 export const HQ_BOOKING_DETAIL_STATES: {
+  state: string;
+  label: string;
   bookingId: string;
   startsAt?: string;
   statusChanges: Schemas["BookingStatusChange"][];
 }[] = [
-  { bookingId: id("4444", 30), statusChanges: [] },
+  { state: "confirmed", label: "確定だけ", bookingId: id("4444", 30), statusChanges: [] },
   {
+    state: "student",
+    label: "生徒のキャンセル",
     bookingId: id("4444", 31),
     startsAt: at(15),
     statusChanges: [
@@ -208,6 +224,8 @@ export const HQ_BOOKING_DETAIL_STATES: {
     ],
   },
   {
+    state: "coach-leave",
+    label: "コーチのお休みのキャンセル",
     bookingId: id("4444", 32),
     statusChanges: [
       {
@@ -217,20 +235,13 @@ export const HQ_BOOKING_DETAIL_STATES: {
         consumes_quota: false,
         hours_before_start: 50,
         cancel_reason: "coach_leave",
-        coach_leave: {
-          coach_leave_id: id("7777", 1),
-          coach_id: COACH_ID,
-          from: "2026-10-28",
-          to: "2026-11-03",
-          note: "体調を崩したため、この期間のレッスンをお休みします。ほかのコーチでの予約をお願いします。",
-          created_by: HEADQUARTERS_ID,
-          created_by_display_name: "佐々木 陽子",
-          created_at: at(-2),
-        },
+        coach_leave: HQ_COACH_LEAVE,
       },
     ],
   },
   {
+    state: "legacy",
+    label: "記録のない古いキャンセル",
     bookingId: id("4444", 33),
     statusChanges: [
       {
@@ -241,6 +252,55 @@ export const HQ_BOOKING_DETAIL_STATES: {
         hours_before_start: 50,
         cancel_reason: null,
         coach_leave: null,
+      },
+    ],
+  },
+  {
+    state: "student-free",
+    label: "生徒の 24 時間前より前のキャンセル",
+    bookingId: id("4444", 34),
+    statusChanges: [
+      {
+        status: "cancelled",
+        changed_at: at(-2),
+        cancelled_by: "student",
+        consumes_quota: false,
+        hours_before_start: 50,
+        cancel_reason: null,
+        coach_leave: null,
+      },
+    ],
+  },
+  {
+    state: "hq-no-reason",
+    label: "本部の理由のないキャンセル",
+    bookingId: id("4444", 35),
+    statusChanges: [
+      {
+        status: "cancelled",
+        changed_at: at(-2),
+        cancelled_by: "headquarters",
+        consumes_quota: false,
+        hours_before_start: 50,
+        cancel_reason: null,
+        coach_leave: null,
+      },
+    ],
+  },
+  {
+    // 枠の判定を残し始める前（#1031 より前）のお休みのキャンセル。お休みにした本部の表示名もまだ載らない（今のバックエンドの形）。
+    state: "coach-leave-partial",
+    label: "コーチのお休みのキャンセル（枠の判定と本部の名前の記録なし）",
+    bookingId: id("4444", 36),
+    statusChanges: [
+      {
+        status: "cancelled",
+        changed_at: at(-2),
+        cancelled_by: "headquarters",
+        consumes_quota: null,
+        hours_before_start: 50,
+        cancel_reason: "coach_leave",
+        coach_leave: { ...HQ_COACH_LEAVE, coach_leave_id: id("7777", 2), created_by_display_name: undefined },
       },
     ],
   },
