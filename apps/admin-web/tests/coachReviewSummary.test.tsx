@@ -552,7 +552,7 @@ describe("画面への配置", () => {
     );
   });
 
-  test("本部以外のロールでは本部のコーチの評価の画面に入れず、ログイン画面へ戻す", () => {
+  test("本部以外のロールでは本部のコーチの評価の画面に入れず、ログインしたまま理由と戻り道を出す", () => {
     headquartersApiMock.mockReturnValue(mockApi());
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
@@ -562,6 +562,7 @@ describe("画面への配置", () => {
     );
 
     expect(screen.queryByRole("region", { name: "コーチの評価" })).not.toBeInTheDocument();
-    expect(replace).toHaveBeenCalledWith("/");
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "コーチの画面へ戻る" })).toHaveAttribute("href", "/coach");
   });
 });

@@ -456,7 +456,7 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "予約の一覧へ戻る" })).toHaveAttribute("href", "/headquarters/bookings");
   });
 
-  test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
+  test("本部以外のロールでは画面に入れず、ログインしたまま理由と戻り道を出す", () => {
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
       <RoleGate role="headquarters">
@@ -465,6 +465,7 @@ describe("画面への配置", () => {
     );
 
     expect(screen.queryByRole("region", { name: "予約の詳細" })).not.toBeInTheDocument();
-    expect(replace).toHaveBeenCalledWith("/");
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "コーチの画面へ戻る" })).toHaveAttribute("href", "/coach");
   });
 });

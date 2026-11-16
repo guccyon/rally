@@ -586,13 +586,14 @@ describe("スポーツ別の予約枠の需給", () => {
     expect(screen.getByRole("combobox", { name: "コーチ" })).toBeDisabled();
   });
 
-  test("本部以外のロールでは画面に入れず、ログイン画面へ戻す", () => {
+  test("本部以外のロールでは画面に入れず、ログインしたまま理由と戻り道を出す", () => {
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
       <RoleGate role="headquarters">{(session) => <SlotSupplyHome token={session.token} />}</RoleGate>,
     );
 
     expect(screen.queryByRole("region", { name: "スポーツ別の予約枠の需給" })).not.toBeInTheDocument();
-    expect(replace).toHaveBeenCalledWith("/");
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "コーチの画面へ戻る" })).toHaveAttribute("href", "/coach");
   });
 });
