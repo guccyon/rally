@@ -285,3 +285,18 @@ terms:
       listCancelledBookings の cancel_reason。getBooking はそのお休みの記録 CoachLeave も載せる。#1029）で、予約の scheduling.bookings.cancel_reason に残す（#1031）。境界間イベント BookingCancelled には
       理由を足さない（cancelled_by が headquarters なのはお休みだけ）。コーチの受付の停止（coach_acceptance）とは別で、お休みは受付を変えない。
       コーチ自身が申し出る操作・お休みの記録の一覧はまだない（specs/ux/issue-455.yaml）。
+  - id: call_quality_score
+    ja: "通話品質スコア"
+    definition: "終わった通話セッション 1 回ごとに接続品質の生の指標 4 つ（call.ended の属性）から減点式で出す 0〜100 の点を、期間の通話で平均した値で、式はセマンティック層の 1 か所だけに置き、バックエンドと API は計算も保存もしない。"
+    context: analytics
+    code: [call_quality_score, call.ended]
+    states:
+      low: "低品質"
+      fair: "やや低い"
+      ok: "問題なし"
+      no_data: "指標なし"
+    note: >-
+      式は specs/analytics/kpi.yaml の call_quality_score（docs/adr/0002 Q1）。admin-web の表の見出しでは「品質スコア」と縮めてよい（specs/design/content.yaml の glossary_mapping）。
+      states は本部の画面（#1465）の 4 つの値の呼び名で、色は specs/design/components.yaml の status_tag の call_quality_state（low だけ danger）。
+      ok は 80 以上、no_data は指標を持つ通話がない（点数は「—」。本部が終わったことにした通話は指標を持たない）。low と fair の境の点と契約の enum のキーは
+      まだ決めておらず（仮）、#1465 の契約で決めたら合わせる（specs/design/governance.yaml の requests の glossary-call-quality）。
