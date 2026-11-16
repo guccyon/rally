@@ -1,0 +1,31 @@
+id: K-0034
+theme: 6
+kind: causal
+statement: >-
+  head が更新された（push で head_sha が変わった）あとも、supervisor が古い head を対象にした判定（judge）を積んで走らせ、
+  古い head の判定を取り消して新しい head の検査を待つ仕組みがなく、head を押したジョブの開始・終了・push も記録に残らないと、
+  判定が無駄になり、検査と判定の往復が増える。C-0015 では、head が 7535fd から 277231 に変わった 10:59:30 の 16 秒後（10:59:46）に
+  積まれた判定（job 5486）が古い head 7535fd を対象に走り、新しい head の検査の指摘を reject した。head を動かしたのは
+  committee（job 5483）と推測されるが、5483 の開始・終了のイベントがなく、確かめられない。提案の向きは、judge を積むときに最新の
+  head_sha と照らし、古ければ積まずに新しい head の inspect を待つこと、head を押すジョブの job.started・job.finished・push を
+  イベントに残す改善のチケットを起こすこと。head が変わるたびに検査・判定が回り直すこと自体は K-0029 の主張で、この知見は
+  古い head への判定が走ることと、head を動かした主体の記録がないことに絞る。根拠はこの事例 1 件。
+  scope の軸は分析役が書かなかったので、事例の業務から決めた。
+scope:
+  work: [dev.review.inspect, dev.review.judge]
+  artifacts: [PR.code]
+  roles: [supervisor, judge, inspect]
+acts_on: engine
+confidence: hypothesis
+evidence:
+  - case: C-0015
+  - event: "case.analyzed:1004155"
+status: draft
+verified_at: 2026-11-13
+review_by: 2026-12-13
+confidentiality: product
+related: [K-0029, K-0007]
+invalidate_when:
+  - "supervisor が judge を積むとき、最新の head_sha と照らし、古ければ積まずに新しい head の inspect を待つようになった"
+  - "head を押すジョブの job.started・job.finished・push がイベントに残るようになった"
+  - "古い head を対象にした判定が走らなかったあとも、検査と判定の往復が減らなかった（原因は古い head への判定ではなかった）"
