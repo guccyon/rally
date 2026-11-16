@@ -15,6 +15,7 @@ import 'components/rally_button.dart';
 import 'components/rally_camera_preview.dart';
 import 'components/rally_card.dart';
 import 'components/rally_choice_chips.dart';
+import 'components/rally_navigation_bar.dart';
 import 'components/score_panel.dart';
 import 'components/section_loading.dart';
 import 'components/status_tag.dart';
@@ -266,6 +267,28 @@ Widget _chips(String state) => RallyChoiceChips<Sport>(
     _ => null,
   },
 );
+
+/// 下のタブの見本。default はホームが選択中でチャットに 3・お知らせに点、selected はチャットが選択中で 100 件以上（「99+」）、
+/// error は未読の数を読めない（しるしを出さない）
+final _navigationBarExamples = {
+  'default': const RallyNavigationBar(
+    selected: RallyNavDestination.home,
+    onSelected: _noopDestination,
+    chatUnreadCount: 3,
+    hasUnreadNotifications: true,
+  ),
+  'selected': const RallyNavigationBar(
+    selected: RallyNavDestination.chat,
+    onSelected: _noopDestination,
+    chatUnreadCount: 120,
+  ),
+  'error': const RallyNavigationBar(
+    selected: RallyNavDestination.home,
+    onSelected: _noopDestination,
+  ),
+};
+
+void _noopDestination(RallyNavDestination _) {}
 
 /// 部品 × 種類 × 状態の見本。components.yaml に部品や種類を足したら、ここにも足す。
 final designCatalog = <CatalogEntry>[
@@ -705,4 +728,6 @@ final designCatalog = <CatalogEntry>[
       ),
       state: state,
     ),
+  for (final MapEntry(key: state, value: bar) in _navigationBarExamples.entries)
+    CatalogEntry('navigation_bar', (_) => bar, state: state),
 ];

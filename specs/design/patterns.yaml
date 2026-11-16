@@ -5,8 +5,8 @@ section: patterns
 
 common_layout:
   student_app: >-
-    アプリバー（題と入口のアイコン）→ 主役（score_panel か画面の見出し headline 32px）→ 欄（title 17px 900 の見出しと中身）を xl 40px あけて縦に並べる。
-    欄は面で囲まず background のまま、中のカードだけを border の 1px で囲う（0.5.0）
+    アプリバー（左に戻る先と題）→ 主役（score_panel か画面の見出し headline 32px）→ 欄（title 17px 900 の見出しと中身）を xl 40px あけて縦に並べる。
+    欄は面で囲まず background のまま、中のカードだけを border の 1px で囲う（0.5.0）。下のタブを出す画面は下に navigation_bar
   admin_web: >-
     見出し（headline 28px）→ Section（background のまま面で囲わない。title の見出しの下に中身。0.5.0 で surface の面・md の角丸・padding 16px をやめた）を xl 40px あけて 1 段で並べる。score_panel は使わない。
     1 段の幅は tokens.yaml の content_width_px で、本部の一覧の画面（data_table が主役）は wide 1280px、そのほかは reading 768px（0.3.0）
@@ -33,7 +33,7 @@ patterns:
   - id: detail
     ja: 詳細
     examples_in_app: コーチの紹介・添削結果・予約の確定待ち
-    structure: [主役（名前か日時。headline か score_panel）, 状態の status_tag, 中身の欄, 主な操作（button primary を 1 つ。下に固定してよい）]
+    structure: [主役（名前か日時。headline か score_panel）, 状態の status_tag, 中身の欄（項目は description_list、経緯は timeline）, 主な操作（button primary を 1 つ。下に固定してよい）]
     rules:
       - level: should
         statement: 主な操作は画面に 1 つ、下に固定するときは安全領域の上に置く
@@ -126,10 +126,23 @@ patterns:
 
   - id: navigation
     ja: ナビゲーション
-    student_app: 今はアプリバーの右にアイコンの入口（ホーム・自分の予約・自分の動画・チャット・お知らせ・通知の設定・プロフィール）。入口が 5 つを超えるので、下のタブ（ホーム・予約・チャット・お知らせ・プロフィール）へ移す案を proposed にする
+    student_app:   # 0.12.0（#1441）
+      bar: 登録後の行き先は navigation_bar の 5 つ（ホーム・予約・チャット・お知らせ・マイページ）
+      app_bar: 左に戻る先（深い画面だけ）と題
+      show: 5 つの行き先の画面と、そこから開く一覧と詳細。選択中は開いた元のタブ
+      hide: 登録の前、スロットの検索、添削の依頼、入室前チェック、同期レッスン、評価の入力、月額契約
+      unread: チャットの数とお知らせの点はどの画面でも出す
     admin_web: 本部のホームの Section から各画面へ。各画面の上に「本部の画面へ戻る」
     rules:
       - level: should
         statement: 戻る先はいつも 1 つで、アプリバーの左に置く
         why: どこに戻るかが迷わない
+        check: design_inspector
+      - level: should
+        statement: student-app の行き先の入口は navigation_bar にし、アプリバーの右にアイコンだけの入口を並べない
+        why: ラベルのないアイコンが 7 つ並ぶと、どれが予約か分からない。下なら片手の親指が届く
+        check: deterministic
+      - level: should
+        statement: 下のタブを隠すのは、送るか戻るまで続く流れの画面だけにする。隠す画面ではアプリバーの左に戻る先を置く
+        why: 予約や入室の途中でタブを押して、入れた値や入室の機会を失わない
         check: design_inspector
