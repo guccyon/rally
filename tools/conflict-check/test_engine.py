@@ -9,7 +9,7 @@ LEGACY_* と todo_while_legacy の呼び出しを消してよい（README の「
 todo で飛ばしたテストは todo で数え、終わりに件数と中身を標準エラーに出す（GitHub Actions では ::warning の注記も。議決 D-0043・Issue #1104）。
 
 PatchedEngineTest は、Engine が線（continuation.yaml の conflict）を読む差分 engine/continuation-config.patch を Engine の写しに当てて
-（もう入っていればそのまま）同じテストを todo なしで走らせる。差分が当たらなければ落ちる（知見 K-0010・K-0015・K-0014 の担保。Issue #1663）。
+（もう入っていればそのまま）同じテストを todo なしで走らせる。差分の土台（Engine の main）より前の版（今の ENGINE_REF）では todo にし、K-0010 の review_by を過ぎたら落とす。土台の版で当たらなければ落ちる（知見 K-0010・K-0015・K-0014 の担保。Issue #1663）。
 """
 from __future__ import annotations
 
@@ -209,7 +209,13 @@ class EngineTest(unittest.TestCase):
 
 @unittest.skipIf(SKIP, SKIP)
 class PatchedEngineTest(EngineTest):
-    """engine/continuation-config.patch を Engine の写しに当てて、同じテストを todo なしで走らせる（今の形に戻っていれば落ちる）"""
+    """engine/continuation-config.patch を Engine の写しに当てて、同じテストを todo なしで走らせる（今の形に戻っていれば落ちる）。
+    差分の土台は Engine の main（workflow_guard.py のある版）。ENGINE_DIR がそれより前の版（今の ENGINE_REF の ad5c659 など、
+    workflow_guard.py がない版）で差分が当たらないあいだだけ、test_engine.todo で飛ばして数え、K-0010 の review_by を過ぎたら落とす
+    （test_events.py の EngineFinishedTest と同じ。議決 D-0043）。土台の版なのに当たらなければ落ちる"""
+
+    BASE_MARK = "orchestrator/dispatcher/workflow_guard.py"   # 差分の土台（Engine の main）にあって、今の ENGINE_REF にないファイル
+    before_base: str | None = None
 
     @classmethod
     def setUpClass(cls):
@@ -220,15 +226,26 @@ class PatchedEngineTest(EngineTest):
         if subprocess.run(["git", "apply", "--reverse", "--check", str(PATCH)], cwd=cls.engine, capture_output=True).returncode != 0:
             p = subprocess.run(["git", "apply", str(PATCH)], cwd=cls.engine, capture_output=True, text=True)
             if p.returncode != 0:
-                raise AssertionError(f"engine/continuation-config.patch が Engine（ENGINE_DIR={ENGINE_DIR}）に当たらない: {p.stderr}")
+                if not (ENGINE_DIR / cls.BASE_MARK).is_file():
+                    cls.before_base = (f"ENGINE_DIR={ENGINE_DIR} は engine/continuation-config.patch の土台（Engine の main。{cls.BASE_MARK} のある版）より前の版で、"
+                                       "差分が当たらない（建設者が差分を Engine に当てて ENGINE_REF を上げたら消える）")
+                else:
+                    raise AssertionError(f"engine/continuation-config.patch が Engine（ENGINE_DIR={ENGINE_DIR}）に当たらない: {p.stderr}")
 
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
+    def setUp(self):
+        if self.before_base:
+            import test_events   # test_events が test_engine を読み込むので、ここで読む
+            deadline = test_events.review_by()
+            self.assertFalse(test_events.overdue(test_events.today(), deadline),
+                             f"知見 K-0010 の review_by（{deadline}）を過ぎても、{self.before_base}。差分を Engine に当てて ENGINE_REF を上げる")
+            todo(self, f"{self.before_base}（K-0010 の review_by {deadline} を過ぎたら落とす）")
+
     def todo_while_legacy(self, is_legacy: bool, what: str):
         self.assertFalse(is_legacy, f"差分を当てた Engine が今の形のまま: {what}")
-
 
 if __name__ == "__main__":
     unittest.main()
