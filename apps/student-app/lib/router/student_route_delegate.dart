@@ -12,7 +12,8 @@ import '../state/notifications.dart';
 import '../state/student_flow.dart';
 
 /// 段（[FlowStep]）を写したブラウザーの履歴の 1 項目。
-/// 履歴はホームを底にした 2 段（[depth] はホームと登録が 0、ほかの段は 1）で、ホームから進むときだけ積み、段から段へは今の項目を置き換える。
+/// 履歴はアプリを開いたページの項目（深さ 0）の上に、ホーム（または登録）の項目（[depth] が 1）と、ほかの段の項目（2）を積む。
+/// ホームから進むときだけ積み、段から段へは今の項目を置き換える。
 /// [step] は URL に出すだけで、開き直したときの画面の復元には使わない（ADR 0010。開き直したらホームを開く）
 class StudentRoutePath {
   const StudentRoutePath(this.step, {this.depth});
@@ -54,10 +55,13 @@ class StudentRouteInformationParser
       '/${step.name.replaceAllMapped(RegExp('[A-Z]'), (m) => '-${m[0]!.toLowerCase()}')}';
 }
 
-/// 段の移動をブラウザーの履歴に写す。ホームより上の段へ進んだら項目を積み、段から段への移動・登録からホームへは
-/// 今の項目を置き換える（ホームを履歴の底にし、登録の画面を履歴に残さない）。
+/// 段の移動をブラウザーの履歴に写す。開いたらアプリを開いたページの項目の上にホーム（または登録）の項目を積み、
+/// ホームより上の段へ進んだら項目を積み、段から段への移動・登録からホームへは今の項目を置き換える
+/// （ホームを履歴の底にし、登録の画面を履歴に残さない）。
 /// アプリが報告した項目は [StudentRoutePath.depth] を持つので、深さが下がった項目が来たら「戻る」と読み、
-/// アプリの閉じる・戻るのボタンと同じ行き先へ移す（[_back]）。それ以外の項目（再読み込み・「進む」・URL を開いた）では段を変えない
+/// アプリの閉じる・戻るのボタンと同じ行き先へ移す（[_back]）。ホームで「戻る」を押してアプリを開いたページの項目に来たら、
+/// ホームのままホームの項目を積み直す（アプリから抜けない。#1584）。
+/// それ以外の項目（再読み込み・「進む」・URL を開いた）では段を変えない
 class StudentRouterDelegate extends RouterDelegate<StudentRoutePath>
     with ChangeNotifier {
   StudentRouterDelegate(this._container, {required this.home}) {
@@ -77,14 +81,15 @@ class StudentRouterDelegate extends RouterDelegate<StudentRoutePath>
 
   late final ProviderSubscription<FlowStep> _subscription;
 
-  /// ブラウザーの今の項目の深さ
+  /// ブラウザーの今の項目の深さ（0 はアプリを開いたページの項目）
   int _depth = 0;
 
   FlowStep get _step => _container.read(studentFlowProvider).step;
 
+  /// アプリを開いたページの項目（深さ 0）は、登録の画面のあいだに書いても URL をホームにする（登録の画面を履歴に残さない）
   @override
   StudentRoutePath get currentConfiguration =>
-      StudentRoutePath(_step, depth: _depth);
+      StudentRoutePath(_depth == 0 ? FlowStep.home : _step, depth: _depth);
 
   @override
   Widget build(BuildContext context) => Navigator(
@@ -101,7 +106,8 @@ class StudentRouterDelegate extends RouterDelegate<StudentRoutePath>
   }
 
   /// ブラウザーが履歴の項目を移った。深さが下がっていれば「戻る」として今の段を閉じ、移った項目を今の段で書き直す
-  /// （閉じても段がホームより上なら、もう一度積む）。URL の段では画面を変えない
+  /// （閉じても段が移った項目より上なら、もう一度積む。ホームからアプリを開いたページの項目に戻ったら、ホームの項目を積み直す）。
+  /// URL の段では画面を変えない
   @override
   Future<void> setNewRoutePath(StudentRoutePath configuration) async {
     final depth = configuration.depth ?? 0;
@@ -115,7 +121,7 @@ class StudentRouterDelegate extends RouterDelegate<StudentRoutePath>
   /// 端末の「戻る」（Android の戻るボタンなど）。ホームと登録では抜ける（false）
   @override
   Future<bool> popRoute() async {
-    if (_depthOf(_step) == 0 && !_hasDialog) return false;
+    if (_depthOf(_step) == _homeDepth && !_hasDialog) return false;
     _back();
     return true;
   }
@@ -129,6 +135,7 @@ class StudentRouterDelegate extends RouterDelegate<StudentRoutePath>
 
   /// 「戻る」。ダイアログが開いていれば閉じる（「やめる」と同じ）。API を呼んでいる間はボタンと同じく何もしない。
   /// それ以外は今の段の閉じる・戻るのボタンと同じ行き先へ移す（脇の画面は開いた段、一周の段はホーム）。
+  /// 月額契約は開いた脇の画面（プロフィール・チャット）へ、一周の段から開いたらホームへ。
   /// 入室前チェックと予約の確定待ちはホームへ（確定待ちの予約はホームの「次にやること」に残る）。
   /// ビデオ通話の最中は通話の画面にとどまり、通話を終えるかを確かめる
   void _back() {
@@ -166,6 +173,8 @@ class StudentRouterDelegate extends RouterDelegate<StudentRoutePath>
         notifier.closeMyVideoReview();
       case FlowStep.lessonCompletionReview:
         _container.read(lessonCompletionsProvider.notifier).backFromReview();
+      case FlowStep.subscription:
+        notifier.closeSubscription();
       case FlowStep.coachSearch ||
           FlowStep.slotSearch ||
           FlowStep.bookingPending ||
@@ -175,14 +184,18 @@ class StudentRouterDelegate extends RouterDelegate<StudentRoutePath>
           FlowStep.videoReview ||
           FlowStep.lessonCompletion ||
           FlowStep.lessonReview ||
-          FlowStep.subscription ||
           FlowStep.lessonCompletions:
         notifier.goHome();
     }
   }
 
+  /// ホームと登録の項目の深さ。その下（0）はアプリを開いたページの項目
+  static const _homeDepth = 1;
+
   static int _depthOf(FlowStep step) =>
-      step == FlowStep.home || step == FlowStep.register ? 0 : 1;
+      step == FlowStep.home || step == FlowStep.register
+      ? _homeDepth
+      : _homeDepth + 1;
 
   @override
   void dispose() {
