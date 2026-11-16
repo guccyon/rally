@@ -111,6 +111,7 @@ const reachStartTime = async (page: Page) => {
 
 export const SCREENS: Screen[] = [
   { id: "login", title: "ログイン", path: "/" },
+  { id: "not-found", title: "見つからないページ", path: "/coach/login" },
   // デザインシステムの部品のカタログ（本番のメニューには出さない）。部品が変わるとここに出る
   { id: "design-catalog", title: "デザインシステム: 部品のカタログ", path: "/design" },
   { id: "coach-tasks", title: "コーチ: 対応待ち", role: "coach", path: "/coach" },
