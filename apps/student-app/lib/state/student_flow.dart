@@ -170,6 +170,7 @@ class StudentFlowState {
     this.homeFailures = const {},
     this.settingsReturnStep,
     this.subscriptionFromChat = false,
+    this.subscriptionReturnStep = FlowStep.home,
     this.notificationSettings,
     this.profileReturnStep,
     this.bookingsReturnStep,
@@ -272,6 +273,10 @@ class StudentFlowState {
   /// true なら、契約を始めたあとに開いていたスレッドへ戻る入口を出す（[ChatNotifier.returnFromSubscription]）
   final bool subscriptionFromChat;
 
+  /// 月額契約の画面で「戻る」を押したときに戻る段。脇の画面（プロフィールなど）から開いたらその画面、
+  /// 一周の段（ホーム・レッスンの完了・スロットを探す画面など）から開いたらホーム（[StudentFlowNotifier.closeSubscription]）
+  final FlowStep subscriptionReturnStep;
+
   /// 通知の受け取り設定（`getMyNotificationSettings`。未取得なら null）。
   /// 切り替えたときは保存を待たずに変え、保存に失敗したら元に戻す
   final NotificationSettings? notificationSettings;
@@ -338,6 +343,7 @@ class StudentFlowState {
     Set<HomeSection>? homeFailures,
     FlowStep? settingsReturnStep,
     bool? subscriptionFromChat,
+    FlowStep? subscriptionReturnStep,
     NotificationSettings? notificationSettings,
     FlowStep? profileReturnStep,
     FlowStep? bookingsReturnStep,
@@ -377,6 +383,8 @@ class StudentFlowState {
     homeFailures: homeFailures ?? this.homeFailures,
     settingsReturnStep: settingsReturnStep ?? this.settingsReturnStep,
     subscriptionFromChat: subscriptionFromChat ?? this.subscriptionFromChat,
+    subscriptionReturnStep:
+        subscriptionReturnStep ?? this.subscriptionReturnStep,
     notificationSettings: notificationSettings ?? this.notificationSettings,
     profileReturnStep: profileReturnStep ?? this.profileReturnStep,
     bookingsReturnStep: bookingsReturnStep ?? this.bookingsReturnStep,
@@ -1107,11 +1115,26 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   void goToReview() => state = state.copyWith(step: FlowStep.lessonReview);
 
   /// 月額契約の画面へ（契約と受講権の操作は [SubscriptionNotifier]）。チャットから開くときは [fromChat] を true にする
-  /// （契約を始めたあとにチャットへ戻る入口を出す。ほかの入口から開いたら出さない）
+  /// （契約を始めたあとにチャットへ戻る入口を出す。ほかの入口から開いたら出さない）。
+  /// 「戻る」で戻る段（[StudentFlowState.subscriptionReturnStep]）は、脇の画面から開いたらその画面、ほかはホーム
   void goToSubscription({bool fromChat = false}) => state = state.copyWith(
     step: FlowStep.subscription,
     subscriptionFromChat: fromChat,
+    subscriptionReturnStep: state.step.isAside ? state.step : FlowStep.home,
   );
+
+  /// 月額契約の画面を閉じて、開いた脇の画面に戻る（一周の段から開いたらホームへ。ホームは欄を読み直す）。
+  /// 脇の画面に戻るときは、契約を始めていても月額契約の欄が合うよう受講権を読み直す（プロフィールを開いたときと同じ）。
+  /// チャットから開いたときは [ChatNotifier.returnFromSubscription]（スレッドを読み直して戻る）を使う
+  Future<void> closeSubscription() {
+    if (state.subscriptionFromChat) {
+      return ref.read(chatProvider.notifier).returnFromSubscription();
+    }
+    final step = state.subscriptionReturnStep;
+    if (step == FlowStep.home) return goHome();
+    returnTo(step);
+    return ref.read(subscriptionProvider.notifier).refreshEntitlement();
+  }
 
   /// 通知の受け取り設定を開く（`getMyNotificationSettings`）。閉じたら今の段に戻る。
   Future<void> openNotificationSettings() {
