@@ -288,6 +288,41 @@ void main() {
     expect(find.text('一覧を更新する'), findsOneWidget);
   });
 
+  testWidgets('「この予約をキャンセルする」をすばやく二度押ししても、確認は 1 枚だけで、1 回の「キャンセルする」でキャンセル済みになる（#1583）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi();
+    await pumpScreen(
+      tester,
+      const StudentFlowScreen(),
+      api: api,
+      initial: afterSubscription,
+      subscription: subscribed,
+    );
+    await openBookings(tester);
+    final later = bookingOf('booking-later');
+    final button = find.descendant(
+      of: cardOf(later),
+      matching: find.widgetWithText(OutlinedButton, cancelLabel),
+    );
+    await tester.ensureVisible(button);
+
+    await doubleTapInOneFrame(tester, button);
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text('${timeOf(later)} のテニスの予約をキャンセルします。'), findsOneWidget);
+
+    await tapText(tester, 'キャンセルする');
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(api.calls, ['listMyBookings', 'cancelBooking']);
+    expect(
+      find.descendant(of: cardOf(later), matching: find.text('状態: キャンセル済み')),
+      findsOneWidget,
+    );
+    expect(find.text('予約の状態が変わっています。予約を確かめてください。'), findsNothing);
+  });
+
   testWidgets('24 時間を切った予約は、確認に今月のビデオ通話の回数を 1 回使うことを添え、やめればキャンセルしない', (
     tester,
   ) async {
