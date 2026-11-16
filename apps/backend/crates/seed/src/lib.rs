@@ -6,10 +6,13 @@
 //! （`crates/architecture/tests/dependency_direction.rs`）。
 //!
 //! 触れる環境（staging）のログインの手がかりと、アカウントのアクセストークンを発行する `access-token`（[`LoginHint`]・
-//! [`AccessTokenArgs`]。Issue #1593）も同じイメージに入れるのでここに置く。
+//! [`AccessTokenArgs`]。Issue #1593）と、本部のアカウントを作る `headquarters-account`（[`HeadquartersAccount`]・
+//! [`HeadquartersAccountArgs`]。Issue #1579）も同じイメージに入れるのでここに置く。
 
 mod access_token_args;
 mod coach_plan;
+mod headquarters_account;
+mod headquarters_account_args;
 mod login_hint;
 mod retention;
 mod seed_args;
@@ -23,6 +26,8 @@ mod student_plan;
 
 pub use access_token_args::AccessTokenArgs;
 pub use coach_plan::CoachPlan;
+pub use headquarters_account::HeadquartersAccount;
+pub use headquarters_account_args::HeadquartersAccountArgs;
 pub use login_hint::LoginHint;
 pub use retention::Retention;
 pub use seed_args::SeedArgs;

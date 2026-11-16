@@ -113,6 +113,24 @@ domain は列挙型と値（`AccountId` は `u128`）だけを持ち、外部の
 - 並べ方の正本は契約（表示名の Unicode のコードポイントの順、同じ表示名は `coach_id` の順）。保存先のポート `AccountRepository::list_coaches` が並べて返す。Postgres は `ORDER BY display_name COLLATE "C", account_id`（DB の照合順序に依らない。UTF-8 のバイト順はコードポイントの順と同じ）、インメモリは `(表示名の文字列, AccountId)` の順で、両方が同じ並びになる。読んだ行は `Account`（提供スポーツを含む）に戻す
 - テスト: `application::profile::list_coaches`（コーチだけ・並べ方）、`crates/interface/tests/it/coaches.rs`（契約の形・並べ方・403 / 401）、`crates/infra/tests/it/pg_account_repository.rs`（Postgres。照合順序に依らない並びとスポーツの復元。`--include-ignored`）
 
+## identity: 本部によるコーチの登録（Issue #1579）
+
+- `POST /coaches`（admin-web の `registerCoach`）: 本部だけが呼べる（一覧と同じ `interface::coaches_router` の中で、登録のルートにだけ `require_role(&[Role::Headquarters])` を重ねてから一覧のルートと `merge` する。コーチ・生徒は 403）。生徒の登録（`POST /accounts`）と同じユースケース `RegisterAccount` を `Role::Coach` で呼び、エラーの対応も同じ（domain の不正は 422 `validation_failed`、同じメールアドレス（大文字・小文字を区別しない）は 409 `email_already_registered`）。`sports` の重なりだけは interface で 422 にする（domain の提供スポーツは集合で重なりを畳むが、契約では不正）。応答は `listCoaches` の 1 件と同じ `Coach`（受付中・`recent_lesson_count` 0）。招待のメールは送らず、行動イベントは発火しない。登録したコーチはそのまま一覧に載り、そのコーチのトークン（staging・本番は下の `access-token --account <ID>`）で提供スポーツのレッスンメニューを作れる
+- テスト: `crates/interface/tests/it/coaches.rs`（契約の形・一覧に載ること・409・422・403 / 401。どれも何も作らない）、`crates/server/tests/it/coaches.rs`（Postgres の組み立てで登録 → 一覧 → 提供スポーツのメニューの作成。`--include-ignored`）
+
+### 本部のアカウントを作る（runbook）
+
+本番の空の DB から事業を始めるときの最初の本部は、backend のコンテナの中で `headquarters-account`（`crates/seed/src/bin/headquarters-account.rs`。同じイメージに入っている）で作る。マイグレーションを当て、`RegisterAccount` を `Role::Headquarters` で呼んで、アカウント ID を標準出力に書く（経過は標準エラー）。同じメールアドレス（大文字・小文字を区別しない）の本部のアカウントがあれば何もせず、その ID を書いて成功する（何度実行してもよい。表示名が違っても書き換えない）。そのメールアドレスを本部以外が使っていれば、何もせず失敗する。
+
+```sh
+docker compose -f deploy/compose.yaml exec backend headquarters-account --email <メールアドレス> --display-name <表示名>
+# 作った本部のトークン（上の「staging でトークンを作る」と同じ）
+docker compose -f deploy/compose.yaml exec backend access-token --account <アカウント ID>
+```
+
+- 登録の判定は `seed::HeadquartersAccount::ensure`（重なりのときはポート `AccountRepository::find_by_email` で読み直す）。DB に直接 SQL を書かない
+- テスト: `seed::headquarters_account`・`seed::headquarters_account_args`（単体）、`crates/seed/tests/it/headquarters_account.rs`（実際の bin を 2 回動かして同じ ID を書くこと・本部以外のメールアドレスと不正な入力で失敗して何も書かないこと。Postgres。`cargo test -p seed -- --include-ignored`）、`crates/infra/tests/it/pg_account_repository.rs`（メールアドレスでの読み取り）
+
 ## identity: 本部が見る生徒の一覧（D118）
 
 - `GET /students`（admin-web の `listStudents`）: 本部だけが呼べる（`interface::students_router`。`require_role(&[Role::Headquarters])`。コーチ・生徒は 403）。生徒の役割のアカウントごとに `student_id`・表示名・スポーツ・受講権の契約種別 `contract_type` と契約プラン `plan`（受講権がなければどちらも null。ワンショットは `plan` が null）・最後に予約を作った時刻 `last_booked_at`（予約の状態を問わない。なければ null）・登録した時刻 `registered_at` を返す。メールアドレスは返さない。任意の条件で絞れる: 表示名の検索語 `q`・スポーツ `sport`・その日（`YYYY-MM-DD`。日本時間）の始まり以降に予約を作っていない（一度も予約していない生徒を含む）`not_booked_since`。付けた条件をすべて満たす生徒だけで、どれも付けなければすべての生徒。不正な値は 422 `validation_failed`。ページング・件数の上限はなく、行動イベントは発火しない（読み取りだけ）
@@ -535,7 +553,7 @@ Walking Skeleton の完了条件（段 7 の T19）。`crates/server/tests/it/wa
 3. 同じ生徒が月額契約 → 動画を送付 → コーチが添削を返す → 完了記録（`is_first_lesson=false`）
 4. 同じ暦月に上限を超える通話予約の確定が 409 `live_lesson_quota_exceeded`（上限は契約プランの `live_lessons_per_month`。この一周はプランを選ばない standard の契約なので、月額契約の前に確定した体験予約は枠を使わず、契約後の 2 回を確定してからの 3 回目）
 
-最後に、発火した行動イベントの名前の並びが期待した列（events.yaml の `name`）と一致することを確かめる。コーチの登録は契約に HTTP の操作がない（`POST /accounts` は生徒だけ）ので、同じ DB に `RegisterAccount` で登録してモックのトークンを発行する。
+最後に、発火した行動イベントの名前の並びが期待した列（events.yaml の `name`）と一致することを確かめる。コーチは同じ DB に `RegisterAccount` で登録してモックのトークンを発行する（本部の `POST /coaches` でも登録できるが、一周の前提を短く書くために直に呼ぶ）。
 
 Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` がなければ skip ではなく失敗する（テストごとに新しい DB を作ってマイグレーションを当てる）。CI に Postgres のサービスを足すまでは手元で走らせる。
 

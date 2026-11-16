@@ -341,6 +341,35 @@ async fn unknown_account_is_none(pool: PgPool) {
 
 #[ignore = "Postgres が要る（DATABASE_URL）"]
 #[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn accounts_are_found_by_email_case_insensitively(pool: PgPool) {
+    let use_case = register_account(&pool);
+    let coach = use_case
+        .execute(command(
+            "Coach@Example.com",
+            Role::Coach,
+            vec![Sport::Tennis, Sport::Golf],
+        ))
+        .await
+        .unwrap();
+    let headquarters = use_case
+        .execute(command("hq@example.com", Role::Headquarters, vec![]))
+        .await
+        .unwrap();
+
+    let accounts = PgAccountRepository::new(pool);
+    let find = async |email: &str| {
+        accounts
+            .find_by_email(&Email::new(email).unwrap())
+            .await
+            .unwrap()
+    };
+    assert_eq!(find("coach@example.com").await, Some(coach));
+    assert_eq!(find("HQ@EXAMPLE.COM").await, Some(headquarters));
+    assert_eq!(find("nobody@example.com").await, None);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
 async fn coach_bio_is_empty_at_first_and_replaced_by_update(pool: PgPool) {
     let use_case = register_account(&pool);
     let coach = use_case

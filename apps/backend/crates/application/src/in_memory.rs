@@ -14,7 +14,7 @@ use domain::{
     entitlement::{
         Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId, TrialUsage,
     },
-    identity::{Account, AccountId},
+    identity::{Account, AccountId, Email},
     lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     matching::FavoriteCoach,
@@ -117,6 +117,17 @@ impl AccountRepository for InMemoryAccountRepository {
             .unwrap()
             .iter()
             .find(|a| a.id() == id)
+            .cloned())
+    }
+
+    async fn find_by_email(&self, email: &Email) -> Result<Option<Account>, Unavailable> {
+        let email = email.normalized();
+        Ok(self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|a| a.email().normalized() == email)
             .cloned())
     }
 

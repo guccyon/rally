@@ -2,12 +2,16 @@
 //! `listCoachesForStudent` の形で返すことを、それぞれの OpenAPI のスキーマで検査する。本部には直近 30 日に終わった
 //! レッスンの数を、生徒にはその生徒のお気に入りかを添える。本部の一覧は未対応の低い評価のあるコーチと、返事のない
 //! メッセージのあるコーチと、返却の遅れている動画のあるコーチに絞れる。コーチは 403。
+//!
+//! `POST /coaches`（admin-web の `registerCoach`）は本部だけがコーチを登録でき、一覧の 1 件と同じ形で返し、以後の一覧に
+//! 載ることを確かめる（重複は 409、不正は 422、コーチ・生徒は 403、トークンなしは 401。どれも何も作らない）。
 
 use std::time::{Duration, SystemTime};
 
 use application::{
     async_lesson::AsyncLessonCoachPendingVideoReviewCountsLookup,
     catalog::CatalogPublishedLessonMenuCountLookup,
+    identity::RegisterAccount,
     identity::{
         AccessToken, AccountRepository, InvalidToken, TokenClaims, TokenIssuer, TokenVerifier,
         account_id_uuid,
@@ -16,7 +20,7 @@ use application::{
         FixedClock, InMemoryAccountRepository, InMemoryCoachAcceptanceRepository,
         InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
         InMemoryLessonMenuRepository, InMemoryLessonReviewRepository,
-        InMemoryMessageThreadRepository, InMemoryVideoRepository,
+        InMemoryMessageThreadRepository, InMemoryVideoRepository, RecordingAnalyticsSink,
     },
     lesson::LessonCoachRecentLessonCountLookup,
     matching::ListCoachesForStudent,
@@ -288,7 +292,7 @@ fn app_with(
         ),
         ListCoachesForStudent::new(
             ProfileStudentSportLookup::new(accounts.clone()),
-            ProfileCoachCandidateLookup::new(accounts),
+            ProfileCoachCandidateLookup::new(accounts.clone()),
             ReviewCoachReviewSummaryLookup::new(reviews),
             CatalogPublishedLessonMenuCountLookup::new(menus),
             InMemoryFavoriteCoachRepository::with_favorites([
@@ -304,6 +308,11 @@ fn app_with(
                 ),
             ]),
             acceptances,
+        ),
+        RegisterAccount::new(
+            accounts,
+            RecordingAnalyticsSink::default(),
+            FixedClock(now()),
         ),
         FakeTokens,
     )
@@ -944,4 +953,140 @@ async fn recent_lesson_count_is_kept_when_filtered_and_not_given_to_students() {
             "生徒の一覧（student-app の CoachListing）には載せない: {coach}"
         );
     }
+}
+
+/// `POST /coaches` に `body` を送る。レスポンスを admin-web の契約で検査する。
+async fn register_coach(router: &Router, body: &str, token: Option<&str>) -> (StatusCode, Value) {
+    let mut request = Request::post("/coaches").header(header::CONTENT_TYPE, "application/json");
+    if let Some(token) = token {
+        request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let response = router
+        .clone()
+        .oneshot(request.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+    let body = serde_json::from_slice(&bytes).unwrap();
+    support::Contract::load("admin-web").assert_response("post", "/coaches", status, &body);
+    (status, body)
+}
+
+#[tokio::test]
+async fn headquarters_registers_a_coach_who_is_then_listed() {
+    let accounts = accounts().await;
+    let router = app(accounts.clone());
+
+    let (status, body) = register_coach(
+        &router,
+        r#"{"email": "new.coach@example.com", "display_name": "あらい", "sports": ["swimming", "golf"]}"#,
+        Some(HEADQUARTERS),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let coach_id = body["coach_id"].as_str().unwrap().to_string();
+    assert_eq!(
+        body,
+        json!({
+            "coach_id": coach_id,
+            "display_name": "あらい",
+            "acceptance_status": "accepting",
+            "recent_lesson_count": 0,
+        })
+    );
+    let saved = accounts
+        .find(account_id_uuid::parse(&coach_id).unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.role(), Role::Coach);
+    assert_eq!(saved.email().as_str(), "new.coach@example.com");
+    assert_eq!(
+        saved
+            .as_coach()
+            .unwrap()
+            .sports()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [Sport::Golf, Sport::Swimming]
+    );
+
+    let (status, list) = list_coaches(&router, "admin-web", "", Some(HEADQUARTERS)).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(
+        list["coaches"][0], body,
+        "表示名の順で先頭に、登録の応答と同じ形で載る"
+    );
+}
+
+#[tokio::test]
+async fn registering_a_coach_with_a_registered_email_is_409_and_nothing_is_created() {
+    let accounts = accounts().await;
+    let router = app(accounts.clone());
+
+    // 生徒（3）のメールアドレスを大文字で
+    let (status, body) = register_coach(
+        &router,
+        r#"{"email": "USER3@example.com", "display_name": "あらい", "sports": ["tennis"]}"#,
+        Some(HEADQUARTERS),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "email_already_registered");
+    assert_eq!(accounts.all().len(), 6);
+}
+
+#[tokio::test]
+async fn invalid_coach_registration_is_422_and_nothing_is_created() {
+    let accounts = accounts().await;
+    let router = app(accounts.clone());
+    let long_name = "あ".repeat(51);
+    let bodies = [
+        "not json".to_string(),
+        r#"{"display_name": "あらい", "sports": ["tennis"]}"#.to_string(),
+        r#"{"email": "a@example.com", "sports": ["tennis"]}"#.to_string(),
+        r#"{"email": "a@example.com", "display_name": "あらい"}"#.to_string(),
+        r#"{"email": "not-an-email", "display_name": "あらい", "sports": ["tennis"]}"#.to_string(),
+        r#"{"email": "a@example.com", "display_name": "", "sports": ["tennis"]}"#.to_string(),
+        format!(
+            r#"{{"email": "a@example.com", "display_name": "{long_name}", "sports": ["tennis"]}}"#
+        ),
+        r#"{"email": "a@example.com", "display_name": "あらい", "sports": []}"#.to_string(),
+        r#"{"email": "a@example.com", "display_name": "あらい", "sports": ["tennis", "tennis"]}"#
+            .to_string(),
+        r#"{"email": "a@example.com", "display_name": "あらい", "sports": ["cricket"]}"#
+            .to_string(),
+    ];
+    for body in &bodies {
+        let (status, response) = register_coach(&router, body, Some(HEADQUARTERS)).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}: {response}"
+        );
+        assert_eq!(response["code"], "validation_failed", "{body}");
+    }
+    assert_eq!(accounts.all().len(), 6);
+}
+
+#[tokio::test]
+async fn only_headquarters_registers_coaches() {
+    let accounts = accounts().await;
+    let router = app(accounts.clone());
+    let body =
+        r#"{"email": "new.coach@example.com", "display_name": "あらい", "sports": ["tennis"]}"#;
+
+    for token in ["coach:2", STUDENT] {
+        let (status, response) = register_coach(&router, body, Some(token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{token}: {response}");
+        assert_eq!(response["code"], "forbidden");
+    }
+    let (status, response) = register_coach(&router, body, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{response}");
+    assert_eq!(response["code"], "unauthorized");
+    assert_eq!(accounts.all().len(), 6);
 }

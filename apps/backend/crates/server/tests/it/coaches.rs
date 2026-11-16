@@ -18,6 +18,9 @@
 //! たったものがあるコーチだけに絞れること（`getCoachOverview` の `overdue_pending_video_review_count` と揃うこと・添削を返した
 //! 動画は数えないこと・照会した時刻で変わること・ほかの絞り込みとの組み合わせを含む。経過時間の境界の細かい検査は domain の
 //! `PendingVideoReviewFilter`・`CoachPendingVideoReviewCount`）を確かめる。
+//! あわせて、本部が `POST /coaches`（`registerCoach`）で Postgres にコーチを登録でき（重複は大文字・小文字を問わず 409、
+//! 不正は 422、コーチは 403）、登録したコーチが本部の一覧に載り、そのコーチのトークンで提供スポーツのレッスンメニューを
+//! 作れる（提供していないスポーツは 422）ことを確かめる。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p server --test it coaches:: -- --include-ignored` で走らせる。
@@ -96,7 +99,8 @@ async fn post_ok(
     body
 }
 
-/// 役割 `role` のアカウントをユースケースを直に呼んで登録し（契約にコーチ・本部の登録の操作がない）、ID とトークンを返す。
+/// 役割 `role` のアカウントをユースケースを直に呼んで登録し（契約に本部の登録の操作がない。コーチは `registerCoach` でも
+/// 登録できるが、ここでは前提を短く書くために直に呼ぶ）、ID とトークンを返す。
 async fn register(
     pool: &PgPool,
     email: &str,
@@ -990,4 +994,129 @@ async fn headquarters_lists_only_coaches_with_overdue_videos(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "validation_failed");
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn headquarters_registers_a_coach_who_is_listed_and_creates_menus_of_offered_sports(
+    pool: PgPool,
+) {
+    let (_, headquarters) =
+        register(&pool, "hq@example.com", "本部", Role::Headquarters, vec![]).await;
+    let (_, coach) = register(
+        &pool,
+        "coach@example.com",
+        "たなか",
+        Role::Coach,
+        vec![Sport::Tennis],
+    )
+    .await;
+    let router = server::router_with_postgres(
+        pool,
+        ManualClock::new(at(0)),
+        RecordingAnalyticsSink::default(),
+    );
+    let request = json!({
+        "email": "new.coach@example.com",
+        "display_name": "あらい",
+        "sports": ["swimming", "golf"],
+    });
+
+    let registered = post_ok(
+        &router,
+        "/coaches",
+        &headquarters,
+        request.clone(),
+        StatusCode::CREATED,
+    )
+    .await;
+    let coach_id = registered["coach_id"].as_str().unwrap().to_string();
+    assert_eq!(
+        registered,
+        json!({
+            "coach_id": coach_id,
+            "display_name": "あらい",
+            "acceptance_status": "accepting",
+            "recent_lesson_count": 0,
+        })
+    );
+
+    // 同じメールアドレス（大文字）は 409、不正は 422、コーチは 403。どれも作らない
+    let (status, body) = send(
+        &router,
+        "POST",
+        "/coaches",
+        Some(&headquarters),
+        Some(json!({ "email": "NEW.COACH@example.com", "display_name": "あらい 2", "sports": ["tennis"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["code"], "email_already_registered");
+    let (status, body) = send(
+        &router,
+        "POST",
+        "/coaches",
+        Some(&headquarters),
+        Some(json!({ "email": "other@example.com", "display_name": "あらい", "sports": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "validation_failed");
+    let (status, body) = send(
+        &router,
+        "POST",
+        "/coaches",
+        Some(&coach),
+        Some(
+            json!({ "email": "other@example.com", "display_name": "あらい", "sports": ["tennis"] }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    let (status, list) = send(&router, "GET", "/coaches", Some(&headquarters), None).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let names: Vec<(&str, &str)> = list["coaches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["coach_id"].as_str().unwrap(),
+                c["display_name"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(names.len(), 2, "{list}");
+    assert!(names.contains(&(coach_id.as_str(), "あらい")), "{list}");
+
+    // 登録したコーチのトークン（ログインの方式は変えない。staging・本番は access-token で作る）で、提供スポーツのメニューを作る
+    let new_coach = MockTokenService
+        .issue(TokenClaims {
+            account_id: account_id_uuid::parse(&coach_id).unwrap(),
+            role: Role::Coach,
+        })
+        .into_string();
+    let menu = post_ok(
+        &router,
+        "/coaches/me/lesson-menus",
+        &new_coach,
+        json!({ "sport": "swimming", "lesson_type": "async_lesson", "name": "クロールの添削" }),
+        StatusCode::CREATED,
+    )
+    .await;
+    assert_eq!(menu["sport"], "swimming", "{menu}");
+    let (status, body) = send(
+        &router,
+        "POST",
+        "/coaches/me/lesson-menus",
+        Some(&new_coach),
+        Some(json!({ "sport": "tennis", "lesson_type": "async_lesson", "name": "フォアの添削" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "提供していないスポーツ: {body}"
+    );
 }

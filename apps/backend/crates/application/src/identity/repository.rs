@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use domain::{
-    identity::{Account, AccountId},
+    identity::{Account, AccountId, Email},
     profile::{DisplayName, DisplayNameQuery},
 };
 
@@ -25,6 +25,12 @@ pub trait AccountRepository: Send + Sync {
     fn find(
         &self,
         id: AccountId,
+    ) -> impl Future<Output = Result<Option<Account>, Unavailable>> + Send;
+
+    /// メールアドレスが `email` のアカウント（大文字小文字を区別しない。[`Email::normalized`]）。なければ `None`。
+    fn find_by_email(
+        &self,
+        email: &Email,
     ) -> impl Future<Output = Result<Option<Account>, Unavailable>> + Send;
 
     /// コーチのアカウントをすべて、表示名の順（Unicode のコードポイントの順。同じ表示名は ID の順）で返す。

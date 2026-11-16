@@ -77,14 +77,7 @@ where
             sports: vec![sport],
         })
         .await
-        .map_err(|error| match error {
-            RegisterAccountError::Invalid(error) => ApiError::from(error),
-            RegisterAccountError::EmailAlreadyRegistered => ApiError::conflict(
-                "email_already_registered",
-                "このメールアドレスはすでに登録されている",
-            ),
-            RegisterAccountError::Unavailable(error) => ApiError::internal(error),
-        })?;
+        .map_err(register_account_error)?;
 
     let student = student_body(&account)?;
     let access_token = state
@@ -101,6 +94,19 @@ where
             access_token,
         }),
     ))
+}
+
+/// アカウント登録の失敗の応答（生徒の `POST /accounts` と本部によるコーチの `POST /coaches` で共有する）。domain の不正は
+/// 422、同じメールアドレスは 409 `email_already_registered`。
+pub(crate) fn register_account_error(error: RegisterAccountError) -> ApiError {
+    match error {
+        RegisterAccountError::Invalid(error) => ApiError::from(error),
+        RegisterAccountError::EmailAlreadyRegistered => ApiError::conflict(
+            "email_already_registered",
+            "このメールアドレスはすでに登録されている",
+        ),
+        RegisterAccountError::Unavailable(error) => ApiError::internal(error),
+    }
 }
 
 pub(crate) fn student_body(account: &Account) -> Result<StudentBody, ApiError> {

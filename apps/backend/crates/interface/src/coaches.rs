@@ -5,11 +5,17 @@
 //! 評価の件数と平均と公開中のレッスンメニューの数と、生徒のお気に入りに入っているかを添えて返す（ゴルフは golf-app の範囲なので
 //! 載せない。受付を止めているコーチも載せない）。
 //! 同じパスなので、どちらの形で返すかはトークンの役割で決める。
+//! admin-web の `POST /coaches`（`registerCoach`）は本部だけで、コーチのアカウントを 1 つ登録し、一覧の 1 件と同じ形で返す
+//! （登録は生徒の `POST /accounts` と同じユースケース `RegisterAccount` を `Role::Coach` で呼ぶ）。
 
 use std::sync::Arc;
 
 use application::{
-    identity::{AccountRepository, TokenVerifier, account_id_uuid},
+    analytics::AnalyticsSink,
+    clock::Clock,
+    identity::{
+        AccountRepository, RegisterAccount, RegisterAccountCommand, TokenVerifier, account_id_uuid,
+    },
     matching::{
         CoachCandidateLookup, CoachListing, CoachReviewSummaryLookup, FavoriteCoachRepository,
         ListCoachesForStudent, ListCoachesForStudentCommand, ListCoachesForStudentError,
@@ -23,14 +29,23 @@ use application::{
 };
 use axum::{
     Json, Router,
-    extract::{Query, State, rejection::QueryRejection},
+    extract::{
+        Query, State,
+        rejection::{JsonRejection, QueryRejection},
+    },
+    http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
-use domain::{catalog::Sport, identity::Role};
+use domain::{
+    catalog::Sport,
+    identity::{Account, Role},
+    scheduling::CoachAcceptanceStatus,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    accounts::register_account_error,
     auth::{self, AuthenticatedAccount, TokenVerification, require_role},
     contract::{
         admin_web_sport, coach_acceptance_status_from_contract,
@@ -63,6 +78,15 @@ pub struct CoachBody {
     display_name: String,
     acceptance_status: &'static str,
     recent_lesson_count: u32,
+}
+
+/// admin-web の `RegisterCoachRequest`。値の検証は domain で行う（`sports` の重なりだけはここで弾く。domain の
+/// 提供スポーツは集合なので重なりを黙って畳むが、契約では 422）。
+#[derive(Deserialize)]
+pub struct RegisterCoachRequest {
+    email: String,
+    display_name: String,
+    sports: Vec<String>,
 }
 
 /// admin-web の `listCoaches` のクエリ。
@@ -185,6 +209,55 @@ where
     }
 }
 
+/// `POST /coaches`（admin-web の `registerCoach`）。本部だけが呼べる（役割は `require_role` の層が確かめる）。
+/// コーチのアカウントを 1 つ登録し、`listCoaches` の 1 件と同じ形（受付中・直近のレッスン 0）で 201 を返す。
+/// 同じメールアドレス（大文字・小文字を区別しない）のアカウントがあれば 409 `email_already_registered`、入力が不正
+/// （JSON でない・項目がない・メールアドレスの形でない・表示名が 1〜50 文字でない・`sports` が空か重なるか知らない値）
+/// なら 422（どちらも何も作らない）。エラーの対応は生徒の `POST /accounts` と同じ（`register_account_error`）。
+pub async fn register_coach<R, Y, K>(
+    State(register_account): State<Arc<RegisterAccount<R, Y, K>>>,
+    request: Result<Json<RegisterCoachRequest>, JsonRejection>,
+) -> Result<(StatusCode, Json<CoachBody>), ApiError>
+where
+    R: AccountRepository,
+    Y: AnalyticsSink,
+    K: Clock,
+{
+    let Json(request) =
+        request.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
+    let mut sports = Vec::with_capacity(request.sports.len());
+    for value in &request.sports {
+        let sport = admin_web_sport(value)?;
+        if sports.contains(&sport) {
+            return Err(ApiError::validation_failed(format!(
+                "提供スポーツが重なっている: {value}"
+            )));
+        }
+        sports.push(sport);
+    }
+
+    let account = register_account
+        .execute(RegisterAccountCommand {
+            email: request.email,
+            display_name: request.display_name,
+            role: Role::Coach,
+            sports,
+        })
+        .await
+        .map_err(register_account_error)?;
+    Ok((StatusCode::CREATED, Json(registered_coach_body(&account))))
+}
+
+/// 登録したばかりのコーチ。受付を止めた記録も終わったレッスンもまだないので、受付中で直近のレッスンは 0。
+fn registered_coach_body(account: &Account) -> CoachBody {
+    CoachBody {
+        coach_id: account_id_uuid::format(account.id()),
+        display_name: account.display_name().as_str().to_string(),
+        acceptance_status: coach_acceptance_status_to_contract(CoachAcceptanceStatus::Accepting),
+        recent_lesson_count: 0,
+    }
+}
+
 fn coach_body(coach: &ListedCoach) -> CoachBody {
     CoachBody {
         coach_id: account_id_uuid::format(coach.account.id()),
@@ -206,14 +279,16 @@ fn coach_listing_body(listing: &CoachListing) -> CoachListingBody {
     }
 }
 
-/// コーチの一覧（`GET /coaches`）のルーター。組み立て用のクレートは他の機能のルーターと `merge` する（同じ検証器を渡す）
-/// 。
+/// コーチの一覧（`GET /coaches`）と登録（`POST /coaches`）のルーター。組み立て用のクレートは他の機能のルーターと `merge`
+/// する（同じ検証器を渡す）。
 ///
 /// admin-web の `listCoaches`（本部）と student-app の `listCoachesForStudent`（生徒）が同じパスなので、1 つの
-/// ハンドラーがトークンの役割で返す形を決める。コーチは 403。
-pub fn coaches_router<R, A, L, N, W, P, S, C, V, M, F, U, T>(
+/// ハンドラーがトークンの役割で返す形を決める。コーチは 403。登録（admin-web の `registerCoach`）は本部だけで、
+/// コーチ・生徒は 403。
+pub fn coaches_router<R, A, L, N, W, P, S, C, V, M, F, U, Y, K, T>(
     list_coaches: ListCoaches<R, A, L, N, W, P>,
     list_coaches_for_student: ListCoachesForStudent<S, C, V, M, F, U>,
+    register_coach: RegisterAccount<R, Y, K>,
     tokens: T,
 ) -> Router
 where
@@ -229,10 +304,13 @@ where
     M: PublishedLessonMenuCountLookup + 'static,
     F: FavoriteCoachRepository + 'static,
     U: SuspendedCoachLookup + 'static,
+    Y: AnalyticsSink + 'static,
+    K: Clock + 'static,
     T: TokenVerifier + 'static,
 {
     let tokens: Arc<dyn TokenVerifier> = Arc::new(tokens);
-    Router::new()
+    // 同じパスでも、一覧と登録で呼べる役割が違うので、役割の層を別々に重ねてから merge する
+    let list = Router::new()
         .route(
             "/coaches",
             get(self::list_coaches::<R, A, L, N, W, P, S, C, V, M, F, U>),
@@ -241,6 +319,10 @@ where
         .with_state(Arc::new(CoachesState {
             list_coaches,
             list_coaches_for_student,
-        }))
-        .layer(TokenVerification::layer(tokens))
+        }));
+    let register = Router::new()
+        .route("/coaches", post(self::register_coach::<R, Y, K>))
+        .route_layer(require_role(&[Role::Headquarters]))
+        .with_state(Arc::new(register_coach));
+    list.merge(register).layer(TokenVerification::layer(tokens))
 }

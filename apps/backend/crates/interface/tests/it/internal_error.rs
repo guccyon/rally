@@ -50,6 +50,13 @@ impl AccountRepository for BrokenRepository {
         Err(Unavailable::new(REASON))
     }
 
+    async fn find_by_email(
+        &self,
+        _email: &domain::identity::Email,
+    ) -> Result<Option<Account>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
+
     async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
         Err(Unavailable::new(REASON))
     }

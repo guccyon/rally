@@ -1,4 +1,4 @@
-//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。ID でのアカウントとコーチ・生徒の一覧も読み、
+//! アカウントの保存先（Postgres の `identity.accounts`・`coaches`・`coach_sports`）。ID・メールアドレスでのアカウントとコーチ・生徒の一覧も読み、
 //! 生徒の表示名（`accounts.display_name`）を書き換える。profile のコーチの自己紹介文の保存先（[`CoachProfileRepository`]）も
 //! 兼ね、当面は identity の表の `coaches.bio` を読み書きする（表を分けるのは後の段。docs/adr/0009-subdomain-types.md）。
 
@@ -119,6 +119,23 @@ impl AccountRepository for PgAccountRepository {
                GROUP BY a.account_id"#,
         )
         .bind(account_id_uuid::to_uuid(id))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Unavailable::new)?;
+        row.map(account_from_row).transpose()
+    }
+
+    async fn find_by_email(&self, email: &Email) -> Result<Option<Account>, Unavailable> {
+        // 一意性と同じく lower(email) で比べる（accounts_email_key の索引が効く）
+        let row: Option<AccountRow> = sqlx::query_as(
+            r#"SELECT a.account_id, a.role, a.email, a.display_name, a.created_at, a.sport,
+                      COALESCE(array_agg(s.sport) FILTER (WHERE s.sport IS NOT NULL), '{}')
+               FROM identity.accounts a
+               LEFT JOIN identity.coach_sports s ON s.coach_id = a.account_id
+               WHERE lower(a.email) = lower($1)
+               GROUP BY a.account_id"#,
+        )
+        .bind(email.as_str())
         .fetch_optional(&self.pool)
         .await
         .map_err(Unavailable::new)?;
