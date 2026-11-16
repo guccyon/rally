@@ -1,8 +1,11 @@
-use std::cmp::Reverse;
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use domain::{identity::AccountId, messaging::MessageThread};
 
-use super::MessageThreadRepository;
+use super::{MessageThreadList, MessageThreadRepository, ThreadStudentDisplayNameLookup};
 use crate::Unavailable;
 
 /// スレッドの一覧の入力。`account_id` は認証したアカウント。
@@ -27,22 +30,30 @@ pub enum ListMessageThreadsError {
 /// 3. 同じならスレッド ID の順
 ///
 /// 生徒が呼んだとき（未返信はコーチから見たもの）と未返信のスレッドがないときは、最後の出来事の新しい順だけになる。
-pub struct ListMessageThreads<T> {
+///
+/// 担当コーチとして呼んだとき（コーチ側のスレッドがあるとき）だけ、そのスレッドの生徒の表示名
+/// （[`ThreadStudentDisplayNameLookup`]）を引いて添える。アカウントが引けない生徒は載せない。生徒が呼んだときは引かない。
+pub struct ListMessageThreads<T, S> {
     threads: T,
+    student_names: S,
 }
 
-impl<T> ListMessageThreads<T>
+impl<T, S> ListMessageThreads<T, S>
 where
     T: MessageThreadRepository,
+    S: ThreadStudentDisplayNameLookup,
 {
-    pub fn new(threads: T) -> Self {
-        Self { threads }
+    pub fn new(threads: T, student_names: S) -> Self {
+        Self {
+            threads,
+            student_names,
+        }
     }
 
     pub async fn execute(
         &self,
         query: ListMessageThreadsQuery,
-    ) -> Result<Vec<MessageThread>, ListMessageThreadsError> {
+    ) -> Result<MessageThreadList, ListMessageThreadsError> {
         let mut threads = self
             .threads
             .list_for(query.account_id)
@@ -60,7 +71,23 @@ where
                 thread.id(),
             )
         });
-        Ok(threads)
+        let student_ids: BTreeSet<AccountId> = threads
+            .iter()
+            .filter(|thread| thread.coach_id() == query.account_id)
+            .map(MessageThread::student_id)
+            .collect();
+        let student_display_names = if student_ids.is_empty() {
+            BTreeMap::new()
+        } else {
+            self.student_names
+                .find_student_display_names(&student_ids)
+                .await
+                .map_err(ListMessageThreadsError::Unavailable)?
+        };
+        Ok(MessageThreadList {
+            threads,
+            student_display_names,
+        })
     }
 }
 
@@ -68,7 +95,10 @@ where
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use domain::messaging::{MessageBody, MessageContent, MessageId, MessageThreadId};
+    use domain::{
+        messaging::{MessageBody, MessageContent, MessageId, MessageThreadId},
+        profile::DisplayName,
+    };
 
     use super::*;
     use crate::in_memory::InMemoryMessageThreadRepository;
@@ -77,6 +107,23 @@ mod tests {
     const OTHER_STUDENT: AccountId = AccountId::from_u128(2);
     const COACH: AccountId = AccountId::from_u128(7);
     const OTHER_COACH: AccountId = AccountId::from_u128(8);
+
+    /// `STUDENT` の表示名だけを知っている。
+    #[derive(Clone, Copy)]
+    struct Names;
+
+    impl ThreadStudentDisplayNameLookup for Names {
+        async fn find_student_display_names(
+            &self,
+            student_ids: &BTreeSet<AccountId>,
+        ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+            Ok(student_ids
+                .iter()
+                .filter(|id| **id == STUDENT)
+                .map(|id| (*id, DisplayName::new("あおき").unwrap()))
+                .collect())
+        }
+    }
 
     fn at(minute: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(minute * 60)
@@ -98,8 +145,8 @@ mod tests {
             .unwrap();
     }
 
-    fn ids(threads: &[MessageThread]) -> Vec<u128> {
-        threads.iter().map(|t| t.id().as_u128()).collect()
+    fn ids(list: &MessageThreadList) -> Vec<u128> {
+        list.threads.iter().map(|t| t.id().as_u128()).collect()
     }
 
     #[tokio::test]
@@ -114,18 +161,40 @@ mod tests {
                 at(30),
             )
             .unwrap();
-        let use_case = ListMessageThreads::new(InMemoryMessageThreadRepository::with_threads([
-            talked,
-            thread(11, STUDENT, OTHER_COACH, 20),
-            thread(12, OTHER_STUDENT, COACH, 20),
-            thread(13, OTHER_STUDENT, OTHER_COACH, 40),
-        ]));
+        let use_case = ListMessageThreads::new(
+            InMemoryMessageThreadRepository::with_threads([
+                talked,
+                thread(11, STUDENT, OTHER_COACH, 20),
+                thread(12, OTHER_STUDENT, COACH, 20),
+                thread(13, OTHER_STUDENT, OTHER_COACH, 40),
+            ]),
+            Names,
+        );
         let list = |account_id| use_case.execute(ListMessageThreadsQuery { account_id });
 
-        assert_eq!(ids(&list(STUDENT).await.unwrap()), [10, 11]);
+        let as_student = list(STUDENT).await.unwrap();
+        assert_eq!(ids(&as_student), [10, 11]);
+        // 生徒が呼んだときは表示名を引かない
+        assert!(as_student.student_display_names.is_empty());
         // 最後の出来事が同じなら ID の順
-        assert_eq!(ids(&list(COACH).await.unwrap()), [10, 12]);
-        assert!(list(AccountId::from_u128(99)).await.unwrap().is_empty());
+        let as_coach = list(COACH).await.unwrap();
+        assert_eq!(ids(&as_coach), [10, 12]);
+        // 引けない生徒（OTHER_STUDENT）は載せない
+        assert_eq!(
+            as_coach
+                .student_display_names
+                .iter()
+                .map(|(id, name)| (*id, name.as_str()))
+                .collect::<Vec<_>>(),
+            [(STUDENT, "あおき")]
+        );
+        assert!(
+            list(AccountId::from_u128(99))
+                .await
+                .unwrap()
+                .threads
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -153,13 +222,14 @@ mod tests {
             quiet,
             others,
         ]);
-        let use_case = ListMessageThreads::new(repository.clone());
+        let use_case = ListMessageThreads::new(repository.clone(), Names);
         let list = |account_id| use_case.execute(ListMessageThreadsQuery { account_id });
 
         let threads = list(COACH).await.unwrap();
         assert_eq!(ids(&threads), [11, 10, 12, 13]);
         assert_eq!(
             threads
+                .threads
                 .iter()
                 .map(MessageThread::is_unanswered)
                 .collect::<Vec<_>>(),
@@ -186,7 +256,7 @@ mod tests {
             .unwrap();
         let threads = list(COACH).await.unwrap();
         assert_eq!(ids(&threads), [11, 10, 12, 13]);
-        assert!(!threads[1].is_unanswered());
+        assert!(!threads.threads[1].is_unanswered());
         // 生徒がまた送ると上に戻る
         repository
             .update(MessageThreadId::from_u128(12), |thread| {

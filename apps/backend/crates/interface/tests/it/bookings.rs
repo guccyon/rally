@@ -344,6 +344,9 @@ fn app_with_entitlements(
         ),
         application::messaging::ListMessageThreads::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),
+            application::profile::ProfileStudentDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
         ),
         application::messaging::ListMessages::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),

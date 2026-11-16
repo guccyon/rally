@@ -28,7 +28,8 @@ use application::{
         ChatGate, ListMessageThreads, ListMessageThreadsError, ListMessageThreadsQuery,
         ListMessages, ListMessagesError, ListMessagesQuery, MarkMessageThreadRead,
         MarkMessageThreadReadCommand, MarkMessageThreadReadError, MessageThreadRepository,
-        SendMessage, SendMessageCommand, SendMessageError, message_id_uuid, message_thread_id_uuid,
+        SendMessage, SendMessageCommand, SendMessageError, ThreadStudentDisplayNameLookup,
+        message_id_uuid, message_thread_id_uuid,
     },
 };
 use axum::{
@@ -55,15 +56,15 @@ use crate::{
 };
 
 /// `/message-threads` のハンドラーが使うユースケース。
-pub struct MessagingState<T, G, A, P, C> {
-    pub list_message_threads: ListMessageThreads<T>,
+pub struct MessagingState<T, N, G, A, P, C> {
+    pub list_message_threads: ListMessageThreads<T, N>,
     pub list_messages: ListMessages<T>,
     pub send_message: SendMessage<T, G, A, P, C>,
     pub mark_message_thread_read: MarkMessageThreadRead<T, C>,
 }
 
 /// ハンドラーが共有する [`MessagingState`]。
-type Shared<T, G, A, P, C> = Arc<MessagingState<T, G, A, P, C>>;
+type Shared<T, N, G, A, P, C> = Arc<MessagingState<T, N, G, A, P, C>>;
 
 /// student-app・admin-web の `SendMessageRequest`。本文かスタンプのどちらか 1 つ（[`send_message_content`]）。
 #[derive(Deserialize)]
@@ -94,6 +95,7 @@ pub struct MessageJson {
 
 /// student-app・admin-web の `MessageThread`。`unread_count` は呼んだアカウントにとっての未読の数。
 /// `unanswered`（admin-web だけの項目）は呼んだのが担当コーチのときだけ出す（student-app の契約は変えない）。
+/// `student_display_name`（admin-web だけの項目）は一覧を担当コーチが呼び、生徒のアカウントが引けたときだけ出す。
 #[derive(Serialize)]
 pub struct MessageThreadJson {
     thread_id: String,
@@ -104,6 +106,8 @@ pub struct MessageThreadJson {
     unread_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     unanswered: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    student_display_name: Option<String>,
 }
 
 /// student-app・admin-web の `MessageThreadList`。
@@ -121,12 +125,13 @@ pub struct MessageListJson {
 
 /// `GET /message-threads`。認証したアカウントが当事者のスレッドを返す。担当コーチには未返信のスレッドを上に、
 /// 残りを最後の出来事の新しい順に（並べ方は [`ListMessageThreads`]）。
-pub async fn list_message_threads<T, G, A, P, C>(
-    State(state): State<Shared<T, G, A, P, C>>,
+pub async fn list_message_threads<T, N, G, A, P, C>(
+    State(state): State<Shared<T, N, G, A, P, C>>,
     account: AuthenticatedAccount,
 ) -> Result<Json<MessageThreadListJson>, ApiError>
 where
     T: MessageThreadRepository,
+    N: ThreadStudentDisplayNameLookup,
     G: ChatGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -143,20 +148,31 @@ where
         })?;
     Ok(Json(MessageThreadListJson {
         threads: threads
+            .threads
             .iter()
-            .map(|thread| thread_json(thread, account.account_id()))
-            .collect::<Result<_, _>>()?,
+            .map(|thread| {
+                let mut json = thread_json(thread, account.account_id())?;
+                if thread.coach_id() == account.account_id() {
+                    json.student_display_name = threads
+                        .student_display_names
+                        .get(&thread.student_id())
+                        .map(|name| name.as_str().to_string());
+                }
+                Ok(json)
+            })
+            .collect::<Result<_, ApiError>>()?,
     }))
 }
 
 /// `GET /message-threads/{thread_id}/messages`。スレッドの当事者がメッセージを送った順に読む（既読にはしない）。
-pub async fn list_messages<T, G, A, P, C>(
-    State(state): State<Shared<T, G, A, P, C>>,
+pub async fn list_messages<T, N, G, A, P, C>(
+    State(state): State<Shared<T, N, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(thread_id): Path<String>,
 ) -> Result<Json<MessageListJson>, ApiError>
 where
     T: MessageThreadRepository,
+    N: ThreadStudentDisplayNameLookup,
     G: ChatGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -187,14 +203,15 @@ where
 
 /// `POST /message-threads/{thread_id}/messages`。スレッドの当事者がメッセージ（本文かスタンプ）を送る。月額の生徒は
 /// 送り放題。
-pub async fn send_message<T, G, A, P, C>(
-    State(state): State<Shared<T, G, A, P, C>>,
+pub async fn send_message<T, N, G, A, P, C>(
+    State(state): State<Shared<T, N, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(thread_id): Path<String>,
     request: Result<Json<SendMessageRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<MessageJson>), ApiError>
 where
     T: MessageThreadRepository,
+    N: ThreadStudentDisplayNameLookup,
     G: ChatGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -226,13 +243,14 @@ where
 }
 
 /// `POST /message-threads/{thread_id}/read`。スレッドの当事者が、相手から届いたメッセージをすべて既読にする。
-pub async fn mark_message_thread_read<T, G, A, P, C>(
-    State(state): State<Shared<T, G, A, P, C>>,
+pub async fn mark_message_thread_read<T, N, G, A, P, C>(
+    State(state): State<Shared<T, N, G, A, P, C>>,
     account: AuthenticatedAccount,
     Path(thread_id): Path<String>,
 ) -> Result<Json<MessageThreadJson>, ApiError>
 where
     T: MessageThreadRepository,
+    N: ThreadStudentDisplayNameLookup,
     G: ChatGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
@@ -283,6 +301,7 @@ fn thread_json(thread: &MessageThread, reader: AccountId) -> Result<MessageThrea
             .transpose()?,
         unread_count: thread.unread_count_for(reader),
         unanswered: (thread.coach_id() == reader).then(|| thread.is_unanswered()),
+        student_display_name: None,
     })
 }
 
@@ -310,8 +329,8 @@ fn message_json(thread: &MessageThread, message: &Message) -> Result<MessageJson
 /// 機能のルーターと `merge` する（同じ検証器を渡す）。
 ///
 /// 役割で絞らず、スレッドの当事者かをユースケースが確かめる（生徒がチャットの送り放題を持たない送信だけが 403）。
-pub fn messaging_router<X, H, A, P, C, T>(
-    list_message_threads: ListMessageThreads<X>,
+pub fn messaging_router<X, N, H, A, P, C, T>(
+    list_message_threads: ListMessageThreads<X, N>,
     list_messages: ListMessages<X>,
     send_message: SendMessage<X, H, A, P, C>,
     mark_message_thread_read: MarkMessageThreadRead<X, C>,
@@ -319,6 +338,7 @@ pub fn messaging_router<X, H, A, P, C, T>(
 ) -> Router
 where
     X: MessageThreadRepository + 'static,
+    N: ThreadStudentDisplayNameLookup + 'static,
     H: ChatGate + 'static,
     A: AnalyticsSink + 'static,
     P: DomainEventPublisher + 'static,
@@ -329,15 +349,16 @@ where
     Router::new()
         .route(
             "/message-threads",
-            get(self::list_message_threads::<X, H, A, P, C>),
+            get(self::list_message_threads::<X, N, H, A, P, C>),
         )
         .route(
             "/message-threads/{thread_id}/messages",
-            get(self::list_messages::<X, H, A, P, C>).post(self::send_message::<X, H, A, P, C>),
+            get(self::list_messages::<X, N, H, A, P, C>)
+                .post(self::send_message::<X, N, H, A, P, C>),
         )
         .route(
             "/message-threads/{thread_id}/read",
-            post(self::mark_message_thread_read::<X, H, A, P, C>),
+            post(self::mark_message_thread_read::<X, N, H, A, P, C>),
         )
         .with_state(Arc::new(MessagingState {
             list_message_threads,
