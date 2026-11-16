@@ -30,7 +30,7 @@ index 3341311..fd7fda6 100644
              if preempted_for:
                  requeue_preempted(cur, job, preempted_for, (result or {}).get("cost_usd"))
              elif state == "failed" and (err or "").startswith("exit=") and net_transient(lines) and requeue_transient(cur, job):
-@@ -941,6 +947,42 @@ def enqueue_body_fix(cur, repo: str, corr: str, pr_url: str, pr_number: int, def
+@@ -941,6 +947,49 @@ def enqueue_body_fix(cur, repo: str, corr: str, pr_url: str, pr_number: int, def
      log("body_fix enqueued", pr_url, "job", jid)
  
  
@@ -56,13 +56,20 @@ index 3341311..fd7fda6 100644
 +    if rc == 1 and defects:
 +        entry = (gate.get("pending_entry") or "").strip()
 +        if entry:
-+            # 報告は切らずに全文を渡す（body_fix はこの evidence から本文を組み直すので、切ると切った分が本文に戻らない）。
-+            # 引き継ぎに残した全文の場所も添える
++            # 報告は body_fix の入力の形を変えずに 4000 字まで渡す。切るときは黙って切らず、切ったことと全文の場所を evidence の末尾に書く
++            # （全文は引き継ぎの jobs/<job>/body_gate.json の pending_entry に残してある）
 +            handoff = gate.get("handoff")
++            where = handoff or "引き継ぎの jobs/<job>/body_gate.json"
++            cut = len(entry) > 4000
++            evidence = "続きのジョブの報告を本文に書いていない（関所で外れたため）:\n" + (entry[:4000] if cut else entry)
++            hint = "この報告の全文を、## 見出しを ### 以下に下げて「## 工場の記録」の下に入れる"
++            if cut:
++                evidence += f"\n\n（報告は 4000 字で切った。全文は {where} の pending_entry にある）"
++                hint = f"{where} の pending_entry から報告の全文を戻し、" + hint
++            elif handoff:
++                evidence += f"\n\n（同じ全文を引き継ぎの {handoff} の pending_entry に残した）"
 +            defects.append({"rubric_id": defects[0].get("rubric_id"), "severity": "should", "location": "PR 本文 末尾",
-+                            "evidence": "続きのジョブの報告を本文に書いていない（関所で外れたため）:\n" + entry
-+                                        + (f"\n\n（同じ全文を引き継ぎの {handoff} の pending_entry に残した）" if handoff else ""),
-+                            "remediation_hint": "この報告の全文を、## 見出しを ### 以下に下げて「## 工場の記録」の下に入れる"})
++                            "evidence": evidence, "remediation_hint": hint})
 +        enqueue_body_fix(cur, repo, corr, pr_url, pr_number, defects)
 +        return
 +    stoppage.open_stoppage(cur, f"body_gate:{pr_url}", "human", f"PR 本文の関所が終了コード {rc} で本文を書かせなかった",

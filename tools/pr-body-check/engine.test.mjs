@@ -253,6 +253,8 @@ test("(6) 関所を配線した Engine の dispatcher は、外れた（rc 1）�
   assert.ok(pending.evidence.includes(first.gate.pending_entry.trim()), "書かなかった続きのジョブの報告の全文が body_fix に渡っていない");
   assert.ok(first.gate.handoff?.endsWith("/jobs/2800/body_gate.json"), "body_gate に引き継ぎの全文の場所がない");
   assert.ok(pending.evidence.includes(first.gate.handoff), "body_fix の指摘に引き継ぎの全文の場所がない");
+  assert.ok(!pending.evidence.includes("4000 字で切った"), "4000 字以内の報告に切った印を足した");
+  assert.ok(!pending.remediation_hint.includes("pending_entry"), "4000 字以内の報告で全文を戻す指示を足した");
   for (const rc of [2, 3]) {
     const r = bodyGate({ rc, body_fix: null, pending_entry: first.gate.pending_entry, handoff: first.gate.handoff });
     assert.deepEqual(r.jobs, [], `rc ${rc} で body_fix を積んだ`);
@@ -260,7 +262,7 @@ test("(6) 関所を配線した Engine の dispatcher は、外れた（rc 1）�
   }
 });
 
-test("(7) 関所を配線した Engine は、4000 字を超える続きのジョブの報告も切らずに body_gate と body_fix の指摘に渡す", { skip }, () => {
+test("(7) 関所を配線した Engine は、4000 字を超える続きのジョブの報告は、body_gate に全文を残し、body_fix の指摘には切った印と全文の場所を添えて 4000 字まで渡す", { skip }, () => {
   const long = ["## 概要", "長い報告の頭。", ...Array.from({ length: 300 }, (_, i) => `- 変えたこと ${i}: ${"あ".repeat(20)}`), "長い報告の終わり。"].join("\n");
   assert.ok(long.length > 4000);
   const gh = fakeGh(engineNewBody());
@@ -273,8 +275,10 @@ test("(7) 関所を配線した Engine は、4000 字を超える続きのジョ
   assert.ok(g.pending_entry.includes(long), "引き継ぎの body_gate.json に報告の全文がない");
   assert.equal(g.handoff, join(handoff, "jobs", "2950", "body_gate.json"));
   const pending = bodyGate(g).input.defects.at(-1);
-  assert.ok(pending.evidence.includes(long), "4000 字を超える報告が body_fix の指摘で切れた");
-  assert.ok(pending.evidence.includes(g.handoff));
+  assert.ok(pending.evidence.includes(long.slice(0, 4000)), "報告の先頭 4000 字が body_fix の指摘に渡っていない");
+  assert.ok(!pending.evidence.includes(long.slice(0, 4100)), "4000 字を超えて渡した");
+  assert.ok(pending.evidence.endsWith(`（報告は 4000 字で切った。全文は ${g.handoff} の pending_entry にある）`), "evidence の末尾に切った印と全文の場所がない");
+  assert.ok(pending.remediation_hint.includes(g.handoff) && pending.remediation_hint.includes("pending_entry"), "remediation_hint が全文を戻すよう指示していない");
 });
 
 /** Engine の PR_BODY で、途中終了した（未完了の印と Refs を持つドラフトの）PR の本文を組む。 */
