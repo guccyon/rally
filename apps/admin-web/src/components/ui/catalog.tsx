@@ -47,6 +47,10 @@ export const NOT_IN_ADMIN_WEB: {
     reason: "components.yaml の not_for に admin-web とある（見出しと「本部の画面へ戻る」）",
   },
   {
+    component: "navigation_bar",
+    reason: "components.yaml の not_for に admin-web とある（student-app の下のタブ）",
+  },
+  {
     component: "chip",
     reason: "components.yaml の not_for に admin-web とある（select を使う）",
   },
