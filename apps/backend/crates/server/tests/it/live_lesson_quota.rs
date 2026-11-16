@@ -66,6 +66,13 @@ async fn subscribed_student() -> Scenario {
 
 /// 2026-10-05（日本時間）に生徒を登録し、`request` で月額契約を開始した状態から始める。
 async fn subscribed_student_with(request: Value) -> Scenario {
+    let scenario = registered_student().await;
+    scenario.subscribe(request).await;
+    scenario
+}
+
+/// 2026-10-05（日本時間）に生徒を登録しただけ（月額契約の前）の状態から始める。
+async fn registered_student() -> Scenario {
     let clock = ManualClock::new(oct5_jst());
     let router = server::router_at(clock.clone());
     let coach = MockTokenService
@@ -87,9 +94,6 @@ async fn subscribed_student_with(request: Value) -> Scenario {
     .await;
     assert_eq!(status, StatusCode::CREATED, "{account}");
     let student = account["access_token"].as_str().unwrap().to_string();
-
-    let (status, body) = send(&router, post_json("/subscriptions", &student, request)).await;
-    assert_eq!(status, StatusCode::CREATED, "{body}");
     Scenario {
         router,
         clock,
@@ -99,8 +103,23 @@ async fn subscribed_student_with(request: Value) -> Scenario {
 }
 
 impl Scenario {
+    /// 生徒が `request` で月額契約を開始する。
+    async fn subscribe(&self, request: Value) {
+        let (status, body) = send(
+            &self.router,
+            post_json("/subscriptions", &self.student, request),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
     /// コーチが `starts_at`（RFC 3339）から 1 時間の枠を公開し、生徒がそれを予約する（確定前）。予約 ID を返す。
     async fn book(&self, starts_at: &str, ends_at: &str) -> String {
+        self.book_as(starts_at, ends_at, false).await
+    }
+
+    /// [`Self::book`] の予約を `is_trial`（true なら体験予約）で作る。
+    async fn book_as(&self, starts_at: &str, ends_at: &str, is_trial: bool) -> String {
         let (status, slot) = send(
             &self.router,
             post_json(
@@ -116,7 +135,7 @@ impl Scenario {
             post_json(
                 "/bookings",
                 &self.student,
-                json!({ "slot_id": slot["slot_id"], "is_trial": false }),
+                json!({ "slot_id": slot["slot_id"], "is_trial": is_trial }),
             ),
         )
         .await;
@@ -147,6 +166,29 @@ impl Scenario {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    /// `GET /bookings/me` で予約 `booking_id` の項目の（`cancel_consumes_quota`、`free_cancel_until`）。
+    async fn cancellation_preview(&self, booking_id: &str) -> (Value, Value) {
+        let (status, body) = send(
+            &self.router,
+            Request::get("/bookings/me")
+                .header(header::AUTHORIZATION, format!("Bearer {}", self.student))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let item = body["bookings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["booking"]["booking_id"] == booking_id)
+            .unwrap_or_else(|| panic!("{booking_id} が一覧にない: {body}"));
+        (
+            item["cancel_consumes_quota"].clone(),
+            item["free_cancel_until"].clone(),
+        )
     }
 
     /// `GET /entitlements/me` の `live_lesson_quota`。
@@ -371,5 +413,52 @@ async fn confirmed_booking_cancelled_23_hours_before_is_counted_once() {
         s.quota().await,
         quota("2026-10", 1),
         "確定で使った分のまま（同じ予約で 2 回は使わない）"
+    );
+}
+
+/// 月額契約の前に取って確定した体験予約は、月額契約のあとに開始の 24 時間前より後でキャンセルしても今月のビデオ通話の
+/// 回数を使わない。通常の予約の遅いキャンセルは今までどおり使う（#1798）。
+#[tokio::test]
+async fn cancelling_a_trial_booked_before_subscribing_keeps_the_quota() {
+    let s = registered_student().await;
+    // 2026-10-05T14:00:00Z 開始（登録の 23 時間後。開始まで 24 時間を切っている）
+    let trial = s
+        .book_as("2026-10-05T14:00:00Z", "2026-10-05T15:00:00Z", true)
+        .await;
+    let (status, body) = s.confirm(&trial).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    s.subscribe(
+        json!({ "sport": "tennis", "plan": "standard", "payment_method_token": "tok_mock" }),
+    )
+    .await;
+    let regular = s.book("2026-10-05T13:00:00Z", "2026-10-05T14:00:00Z").await;
+    let (status, body) = s.confirm(&regular).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(s.quota().await, quota("2026-10", 1));
+
+    assert_eq!(
+        s.cancellation_preview(&trial).await,
+        (json!(false), Value::Null),
+        "体験予約のキャンセルの確認に「枠を 1 回使います」を出さない"
+    );
+    assert_eq!(
+        s.cancellation_preview(&regular).await,
+        (json!(true), json!("2026-10-04T13:00:00Z")),
+        "通常の予約は境目を過ぎたので使う"
+    );
+
+    s.cancel(&trial).await;
+    assert_eq!(
+        s.quota().await,
+        quota("2026-10", 1),
+        "体験予約のキャンセルで回数は減らない"
+    );
+
+    s.cancel(&regular).await;
+    assert_eq!(
+        s.quota().await,
+        quota("2026-10", 1),
+        "通常の予約の遅いキャンセルは確定で使った分のまま"
     );
 }
