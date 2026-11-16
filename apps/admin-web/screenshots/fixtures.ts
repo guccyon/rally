@@ -1652,6 +1652,39 @@ export const FIXTURES: Fixture[] = [
     body: { announcement_drafts: [] } satisfies Schemas["AnnouncementDraftList"],
   },
   {
+    // 下書きの一覧（既定）。絞らない読み込みで、どの条件にも合わない応答は上の絞った 2 件が先に受ける。
+    method: "GET",
+    path: "/announcement-drafts",
+    body: {
+      announcement_drafts: [
+        {
+          announcement_draft_id: id("dddd", 1),
+          created_by: "99999999-9999-4999-8999-999999999999",
+          title: "冬の特別レッスンのご案内",
+          body: "12 月の特別レッスンの受付を始めます。",
+          sport: "tennis",
+          created_at: at(-72),
+          updated_at: at(-48),
+        },
+      ],
+    } satisfies Schemas["AnnouncementDraftList"],
+  },
+  {
+    // 「下書きに保存」（hq-announcement-drafts）。入力した題と本文を作った下書きとして返す。
+    method: "POST",
+    path: "/announcement-drafts",
+    status: 201,
+    body: {
+      announcement_draft_id: id("dddd", 2),
+      created_by: "99999999-9999-4999-8999-999999999999",
+      title: "年末年始の営業について",
+      body: "12月29日から1月3日は、チャットの返信が遅れます。",
+      sport: null,
+      created_at: at(0),
+      updated_at: at(0),
+    } satisfies Schemas["AnnouncementDraft"],
+  },
+  {
     // 送ったお知らせを題で探して見つからないとき（hq-announcements-search）。0 件の表示（語を含めた文言）を撮る。
     // 期間は既定（今日までの 7 日）のまま。既定の期間の `/announcements` より前に置く。
     method: "GET",
