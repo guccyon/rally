@@ -40,6 +40,7 @@ async fn run() -> Result<(), String> {
             let hints = LoginHint::load(&pool, &tokens)
                 .await
                 .map_err(|e| format!("アカウントを読めない: {e}"))?;
+            LoginHint::check_complete(&hints)?;
             let json: Vec<_> = hints.iter().map(LoginHint::to_json).collect();
             println!("{}", serde_json::Value::Array(json));
         }
