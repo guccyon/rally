@@ -1,0 +1,18 @@
+id: OV-010
+title: "期間・範囲を示す画面の注記は、起点と終点を文言に書く（「この 30 日間」のように期間を曖昧にしない）"
+state: shadow
+knowledge_stage: rubric
+confidentiality: product
+severity: should
+lessons:
+  - "github:guccyon/rally#563"
+  - "github:guccyon/rally#1619"
+signature: "judgment:aesthetic"
+check:
+  kind: rubric
+  text: >-
+    差分が画面に出す注記・見出し・ラベルの追加行で、数や件数の期間を「この 30 日間に入った予約の数です」のように起点と終点を書かずに示しているときは、読み手がどの期間か読み取れないので欠陥とする。
+    「今から 30 日前から今までに入った予約」のように起点と終点が文言から分かる差分や、期間の数え方を示さない注記は欠陥としない。
+eval_cases:
+  - { id: p1, polarity: positive, expect: fire, diff_ref: "file:rules/OV-010/positive-1.diff" }
+  - { id: n1, polarity: negative, expect: silent, diff_ref: "file:rules/OV-010/negative-1.diff" }
