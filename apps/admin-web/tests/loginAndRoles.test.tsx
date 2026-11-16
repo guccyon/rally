@@ -2,6 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import LoginPage from "@/app/page";
 import { LoginForm } from "@/components/LoginForm";
 import { RoleGate } from "@/components/RoleGate";
 import { HeadquartersHome } from "@/components/headquarters/HeadquartersHome";
@@ -39,7 +40,7 @@ describe("ログイン", () => {
 
     expect(getAccount).toHaveBeenCalledWith("mock.headquarters.x");
     expect(readSession()).toEqual({ role: "headquarters", token: "mock.headquarters.x" });
-    expect(push).toHaveBeenCalledWith("/headquarters");
+    expect(replace).toHaveBeenCalledWith("/headquarters");
   });
 
   test("コーチのトークンでも、ロールにコーチを選べば入れる", async () => {
@@ -48,7 +49,7 @@ describe("ログイン", () => {
     await login("コーチ", "mock.coach.22");
 
     expect(readSession()).toEqual({ role: "coach", token: "mock.coach.22" });
-    expect(push).toHaveBeenCalledWith("/coach");
+    expect(replace).toHaveBeenCalledWith("/coach");
   });
 
   test("本部を選んでコーチのトークンを入れると、コーチのものだと出して入れない", async () => {
@@ -60,7 +61,7 @@ describe("ログイン", () => {
       "このトークンはコーチのものです（本部のものではありません）。ロール「コーチ」を選んでログインしてください。",
     );
     expect(readSession()).toBeNull();
-    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   test("コーチを選んで本部のトークンを入れると、本部のものだと出して入れない", async () => {
@@ -70,7 +71,7 @@ describe("ログイン", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("このトークンは本部のものです");
     expect(readSession()).toBeNull();
-    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   test("生徒のトークンでは、管理画面に入れないと出して入れない", async () => {
@@ -82,7 +83,7 @@ describe("ログイン", () => {
       "このトークンは生徒のものです。生徒のトークンでは管理画面に入れません。",
     );
     expect(readSession()).toBeNull();
-    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   test("無効なトークン（401）なら、無効だと出して入れない", async () => {
@@ -97,7 +98,7 @@ describe("ログイン", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("トークンが無効です。");
     expect(readSession()).toBeNull();
-    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   test("通信に失敗したら、失敗した旨を出して保持しない", async () => {
@@ -110,7 +111,7 @@ describe("ログイン", () => {
       "ログインできませんでした。サーバーに接続できません。",
     );
     expect(readSession()).toBeNull();
-    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   test("確かめているあいだは「ログイン」を押せない", async () => {
@@ -128,7 +129,7 @@ describe("ログイン", () => {
     expect(getAccount).toHaveBeenCalledTimes(1);
 
     await act(async () => resolve(await accountOf("headquarters")()));
-    expect(push).toHaveBeenCalledWith("/headquarters");
+    expect(replace).toHaveBeenCalledWith("/headquarters");
   });
 
   test("トークンが空ならログインしない", async () => {
@@ -141,6 +142,41 @@ describe("ログイン", () => {
     expect(readSession()).toBeNull();
     expect(getAccount).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("トークンを入力してください。");
+  });
+});
+
+describe("入口", () => {
+  test("ロールの合うセッションがあれば、ログインの画面を出さずにそのロールのホームへ置き換えて移る", () => {
+    saveSession({ role: "coach", token: "mock.coach.22" });
+    render(<LoginPage />);
+
+    expect(screen.queryByText("Rally 管理画面にログイン")).not.toBeInTheDocument();
+    expect(screen.getByText("読み込み中…")).toBeInTheDocument();
+    expect(replace).toHaveBeenCalledWith("/coach");
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  test("本部のセッションなら本部のホームへ移る", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.1" });
+    render(<LoginPage />);
+
+    expect(replace).toHaveBeenCalledWith("/headquarters");
+  });
+
+  test("セッションがなければログインの画面を出す", () => {
+    render(<LoginPage />);
+
+    expect(screen.getByText("Rally 管理画面にログイン")).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  test("ログインすると、入口はログインの画面のまま残らずホームへ移る", async () => {
+    render(<LoginForm getAccount={accountOf("coach")} />);
+
+    await login("コーチ", "mock.coach.22");
+
+    expect(replace).toHaveBeenCalledWith("/coach");
+    expect(push).not.toHaveBeenCalled();
   });
 });
 

@@ -6,9 +6,8 @@ import { type FormEvent, useState } from "react";
 import { call, type Result } from "@/api/call";
 import { createApiClient, type Schemas } from "@/api/client";
 import { Button } from "@/components/ui/Button";
+import { ROLE_HOME_PATHS } from "@/session/rolePaths";
 import { ROLE_LABELS, ROLES, type Role, saveSession } from "@/session/session";
-
-const HOME: Record<Role, string> = { coach: "/coach", headquarters: "/headquarters" };
 
 export type GetAccount = (token: string) => Promise<Result<Schemas["Account"]>>;
 
@@ -65,7 +64,8 @@ export function LoginForm({ getAccount = getAccountByToken }: { getAccount?: Get
       return;
     }
     saveSession({ role, token: trimmed });
-    router.push(HOME[role]);
+    // ログインの画面を履歴に残さない（戻るでログインの画面に落ちない）。
+    router.replace(ROLE_HOME_PATHS[role]);
   }
 
   return (
