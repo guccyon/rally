@@ -63,10 +63,10 @@ index 9c35f8e..29231d6 100644
      cur.execute("insert into events(name, correlation_id, job_id, payload) values ('job.enqueued',%s,%s,%s)",
 diff --git a/orchestrator/dispatcher/continuation_config.py b/orchestrator/dispatcher/continuation_config.py
 new file mode 100644
-index 0000000..4d5e075
+index 0000000..e87c04c
 --- /dev/null
 +++ b/orchestrator/dispatcher/continuation_config.py
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,140 @@
 +"""製品の続きのジョブの線（製品の .factory-config/continuation.yaml の conflict）を読む（ADR 0016・0017 の追記。rally の知見 K-0010・K-0015）。
 +
 +製品は、既定ブランチとの衝突で積む続きのジョブの線を設定に書く。supervisor は既定ブランチの今の版を GitHub から、ワーカーは取り込んだ
@@ -88,6 +88,7 @@ index 0000000..4d5e075
 +import base64
 +import json
 +import sys
++import urllib.error
 +from pathlib import Path
 +
 +import yaml
@@ -98,41 +99,57 @@ index 0000000..4d5e075
 +                    "mechanical": {"paths": ["CHANGELOG.md"], "agent_tier": "none", "verify": None}, "agent_tier": None}
 +
 +
++class ContinuationConfigError(Exception):
++    """設定の形の誤り。field は誤った項目（conflict.max_attempts_per_pr など）、expected は求める形（int>=1 など）。文言は境界（conflict・main）で組む"""
++
++    def __init__(self, field: str, expected: str):
++        super().__init__(field, expected)
++        self.field = field
++        self.expected = expected
++
++
++def _describe(e: Exception) -> str:
++    """ログの 1 行に載せる誤りの中身"""
++    if isinstance(e, ContinuationConfigError):
++        return f"{e.field}: expected {e.expected}"
++    return repr(e)[:200]
++
++
 +def _int(v, name: str, low: int) -> int:
 +    if isinstance(v, bool) or not isinstance(v, int) or v < low:
-+        raise ValueError(f"conflict.{name} は {low} 以上の整数")
++        raise ContinuationConfigError(f"conflict.{name}", f"int>={low}")
 +    return v
 +
 +
 +def parse(text: str) -> dict:
-+    """設定の文字列から conflict の線を返す。conflict がなければ既定値。形が違えば ValueError"""
++    """設定の文字列から conflict の線を返す。conflict がなければ既定値。形が違えば ContinuationConfigError、YAML として読めなければ yaml.YAMLError"""
 +    data = yaml.safe_load(text) or {}
 +    if not isinstance(data, dict):
-+        raise ValueError("continuation.yaml が辞書でない")
++        raise ContinuationConfigError("(root)", "mapping")
 +    c = data.get("conflict")
 +    if c is None:
 +        return json.loads(json.dumps(DEFAULT_CONFLICT))
 +    if not isinstance(c, dict):
-+        raise ValueError("conflict が辞書でない")
++        raise ContinuationConfigError("conflict", "mapping")
 +    out = json.loads(json.dumps(DEFAULT_CONFLICT))
 +    if c.get("max_attempts_per_pr") is not None:
 +        out["max_attempts_per_pr"] = _int(c["max_attempts_per_pr"], "max_attempts_per_pr", 1)
 +    if c.get("on_limit") is not None:
 +        if c["on_limit"] not in ON_LIMIT:
-+            raise ValueError(f"conflict.on_limit は {', '.join(ON_LIMIT)} のどれか")
++            raise ContinuationConfigError("conflict.on_limit", "one of " + "|".join(ON_LIMIT))
 +        out["on_limit"] = c["on_limit"]
 +    if c.get("resume_session_until_attempt") is not None:
 +        out["resume_session_until_attempt"] = _int(c["resume_session_until_attempt"], "resume_session_until_attempt", 0)
 +    m = c.get("mechanical")
 +    if m is not None:
 +        if not isinstance(m, dict):
-+            raise ValueError("conflict.mechanical が辞書でない")
++            raise ContinuationConfigError("conflict.mechanical", "mapping")
 +        paths = m.get("paths", out["mechanical"]["paths"])
 +        if not isinstance(paths, list) or not all(isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in paths):
-+            raise ValueError("conflict.mechanical.paths はリポジトリの中の相対パスの列")
++            raise ContinuationConfigError("conflict.mechanical.paths", "list of relative paths in the repository")
 +        verify = m.get("verify")
 +        if verify is not None and (not isinstance(verify, str) or not verify or verify.startswith("/") or ".." in verify.split("/")):
-+            raise ValueError("conflict.mechanical.verify はリポジトリの中の相対パス")
++            raise ContinuationConfigError("conflict.mechanical.verify", "relative path in the repository")
 +        out["mechanical"] = {"paths": paths, "agent_tier": str(m.get("agent_tier") or "none"), "verify": verify}
 +    if c.get("agent_tier") is not None:
 +        out["agent_tier"] = str(c["agent_tier"])
@@ -140,16 +157,25 @@ index 0000000..4d5e075
 +
 +
 +def conflict(gh, repo: str, log=print) -> dict:
-+    """製品の既定ブランチの continuation.yaml の conflict の線。ない（404）・読めない・形が違うときは既定値（今までの振る舞い）"""
++    """製品の既定ブランチの continuation.yaml の conflict の線。ない（404）ときは黙って既定値（今までの振る舞い）。
++    取りに行けない（404 のほかの失敗）・形が違う・YAML として読めないときは、ログに分けて残して既定値にする（衝突の解消は止めない。
++    上限は continue.enqueued の記録で数えるので、次の周期で読めれば線に戻る）"""
 +    try:
 +        c = gh("GET", f"repos/{repo}/contents/{CONFIG_PATH}")
-+    except Exception:  # noqa: BLE001  設定のない製品は今までの振る舞い
++    except urllib.error.HTTPError as e:
++        if e.code != 404:
++            log("continuation.yaml fetch failed", repo, f"http {e.code}")
++        return parse("")
++    except Exception as e:  # noqa: BLE001  通信の失敗など。線は読めないが衝突の解消は止めない
++        log("continuation.yaml fetch failed", repo, _describe(e))
 +        return parse("")
 +    try:
 +        return parse(base64.b64decode(c["content"]).decode("utf-8"))
-+    except (ValueError, KeyError, TypeError, yaml.YAMLError) as e:
-+        log("continuation.yaml unreadable", repo, repr(e)[:200])
-+        return parse("")
++    except ContinuationConfigError as e:
++        log("continuation.yaml invalid", repo, _describe(e))
++    except (KeyError, TypeError, ValueError, yaml.YAMLError) as e:   # 中身の欠け・base64・UTF-8・YAML の読めなさ
++        log("continuation.yaml unreadable", repo, _describe(e))
++    return parse("")
 +
 +
 +def is_mechanical_path(conf: dict, path: str) -> bool:
@@ -165,8 +191,11 @@ index 0000000..4d5e075
 +    path = Path(argv[1]) / CONFIG_PATH
 +    try:
 +        out = parse(path.read_text(encoding="utf-8")) if path.is_file() else parse("")
-+    except (ValueError, OSError, UnicodeDecodeError, yaml.YAMLError) as e:
-+        print(f"continuation.yaml unreadable: {e}", file=sys.stderr)
++    except ContinuationConfigError as e:
++        print(f"continuation.yaml invalid: {_describe(e)}", file=sys.stderr)
++        out = parse("")
++    except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
++        print(f"continuation.yaml unreadable: {_describe(e)}", file=sys.stderr)
 +        out = parse("")
 +    if len(argv) == 4:
 +        files = argv[3].split()
@@ -426,6 +455,82 @@ index 219a12c..414e570 100644
      assert dispatcher.continue_target(cur, jid, REPO, 250) is None   # Issue の番号が合わない
  
  
+diff --git a/orchestrator/dispatcher/tests/test_continuation_config.py b/orchestrator/dispatcher/tests/test_continuation_config.py
+new file mode 100644
+index 0000000..a12dcd4
+--- /dev/null
++++ b/orchestrator/dispatcher/tests/test_continuation_config.py
+@@ -0,0 +1,70 @@
++"""製品の続きのジョブの線（continuation.yaml の conflict）の読み方（continuation_config.py）。DB は使わない"""
++import base64
++import os
++import sys
++import urllib.error
++
++import pytest
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
++import continuation_config as cc  # noqa: E402
++
++LINE = """conflict:
++  max_attempts_per_pr: 3
++  resume_session_until_attempt: 1
++  mechanical: {paths: [CHANGELOG.md, changelog.d/], verify: tools/changelog-check/check.mjs}
++  agent_tier: tier-large
++"""
++
++
++def contents(text: str):
++    return lambda method, path, body=None: {"content": base64.b64encode(text.encode()).decode()}
++
++
++def failing(exc: Exception):
++    def gh(method, path, body=None):
++        raise exc
++    return gh
++
++
++def test_parse_reads_the_line():
++    c = cc.parse(LINE)
++    assert (c["max_attempts_per_pr"], c["resume_session_until_attempt"], c["agent_tier"]) == (3, 1, "tier-large")
++    assert cc.is_mechanical_path(c, "changelog.d/7.md") and not cc.is_mechanical_path(c, "src/a.rs")
++
++
++@pytest.mark.parametrize("text, field", [
++    ("- a\n", "(root)"),
++    ("conflict: 3\n", "conflict"),
++    ("conflict: {max_attempts_per_pr: 0}\n", "conflict.max_attempts_per_pr"),
++    ("conflict: {max_attempts_per_pr: true}\n", "conflict.max_attempts_per_pr"),
++    ("conflict: {on_limit: retry}\n", "conflict.on_limit"),
++    ("conflict: {mechanical: {paths: [../x]}}\n", "conflict.mechanical.paths"),
++    ("conflict: {mechanical: {verify: /bin/sh}}\n", "conflict.mechanical.verify"),
++])
++def test_parse_raises_the_field_that_is_wrong(text, field):
++    with pytest.raises(cc.ContinuationConfigError) as e:
++        cc.parse(text)
++    assert e.value.field == field and e.value.expected
++
++
++def test_conflict_404_is_the_default_without_a_log():
++    logs = []
++    c = cc.conflict(failing(urllib.error.HTTPError("u", 404, "Not Found", {}, None)), "o/r", log=lambda *a: logs.append(a))
++    assert c == cc.parse("") and logs == []
++
++
++@pytest.mark.parametrize("gh, kind", [
++    (failing(urllib.error.HTTPError("u", 502, "Bad Gateway", {}, None)), "continuation.yaml fetch failed"),
++    (failing(OSError("timed out")), "continuation.yaml fetch failed"),
++    (contents("conflict: {max_attempts_per_pr: 0}\n"), "continuation.yaml invalid"),
++    (contents("conflict: [\n"), "continuation.yaml unreadable"),
++])
++def test_conflict_logs_other_failures_apart_and_falls_back(gh, kind):
++    logs = []
++    assert cc.conflict(gh, "o/r", log=lambda *a: logs.append(a)) == cc.parse("")
++    assert [l[0] for l in logs] == [kind]
++
++
++def test_conflict_reads_the_default_branch():
++    assert cc.conflict(contents(LINE), "o/r")["max_attempts_per_pr"] == 3
 diff --git a/orchestrator/dispatcher/tests/test_lock_wait.py b/orchestrator/dispatcher/tests/test_lock_wait.py
 index c30b813..d5590b0 100644
 --- a/orchestrator/dispatcher/tests/test_lock_wait.py
