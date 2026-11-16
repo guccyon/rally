@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { Schemas } from "@/api/client";
 import type { CoachApi } from "@/api/coach";
-import { CoachHome } from "@/components/coach/CoachHome";
+import { CoachHome, coachPath, initialViewFrom } from "@/components/coach/CoachHome";
 import { formatDateTime } from "@/components/labels";
 
 import { EMPTY_LESSON_STATS } from "./lessonStatsFixtures";
@@ -278,5 +278,70 @@ describe("コーチの対応待ち", () => {
 
     expect(await screen.findByRole("tab", { name: "対応待ち（未対応 3 件）" })).toBeInTheDocument();
     expect(screen.getByText("まだ読んでいないメッセージはありません。")).toBeInTheDocument();
+  });
+});
+
+describe("開いている画面を URL に残す（再読み込みで同じ画面を開く）", () => {
+  test("画面の URL は `?tab=` に画面の id を付け、対応待ちはクエリを付けない", () => {
+    expect(coachPath("tasks")).toBe("/coach");
+    expect(coachPath("slots")).toBe("/coach?tab=slots");
+    expect(coachPath("chat")).toBe("/coach?tab=chat");
+    expect(coachPath("notifications")).toBe("/coach?tab=notifications");
+  });
+
+  test("URL の `?tab=` から開く画面を読み、知らない値やないときは対応待ちにする", () => {
+    expect(initialViewFrom(new URLSearchParams("tab=slots"))).toBe("slots");
+    expect(initialViewFrom(new URLSearchParams("tab=profile"))).toBe("profile");
+    expect(initialViewFrom(new URLSearchParams("tab=notifications"))).toBe("notifications");
+    expect(initialViewFrom(new URLSearchParams("tab=unknown"))).toBe("tasks");
+    expect(initialViewFrom(new URLSearchParams(""))).toBe("tasks");
+  });
+
+  test("initialView の画面（予約枠）を選んだ状態で開く", async () => {
+    mockApi({
+      listMyCoachSlots: vi.fn<CoachApi["listMyCoachSlots"]>(async () => ({ ok: true, data: { slots: [] } })),
+      listMyLessonMenus: vi.fn<CoachApi["listMyLessonMenus"]>(async () => ({
+        ok: true,
+        data: { coach_id: COACH_ID, lesson_menus: [] },
+      })),
+      publishSlot: vi.fn(),
+      withdrawMySlot: vi.fn(),
+    });
+    render(<CoachHome token="mock.coach.x" initialView="slots" />);
+
+    expect(screen.getByRole("tab", { name: "予約枠" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "予約枠" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "対応待ち" })).not.toBeInTheDocument();
+    // 対応待ちのバッジは予約枠を開いていても数える
+    expect(await screen.findByRole("tab", { name: "対応待ち（未対応 4 件）" })).toBeInTheDocument();
+  });
+
+  test("タブ・お知らせ・対応待ちからの移動のたびに、開いた画面を onViewChange で知らせる", async () => {
+    mockApi({
+      listMyCoachSlots: vi.fn<CoachApi["listMyCoachSlots"]>(async () => ({ ok: true, data: { slots: [] } })),
+      listMyLessonMenus: vi.fn<CoachApi["listMyLessonMenus"]>(async () => ({
+        ok: true,
+        data: { coach_id: COACH_ID, lesson_menus: [] },
+      })),
+      publishSlot: vi.fn(),
+      withdrawMySlot: vi.fn(),
+      returnVideoReview: vi.fn(),
+    });
+    const onViewChange = vi.fn();
+    const user = userEvent.setup();
+    render(<CoachHome token="mock.coach.x" onViewChange={onViewChange} />);
+
+    await user.click(screen.getByRole("tab", { name: "予約枠" }));
+    expect(onViewChange).toHaveBeenLastCalledWith("slots");
+
+    await user.click(screen.getByRole("button", { name: /^お知らせ/ }));
+    expect(onViewChange).toHaveBeenLastCalledWith("notifications");
+
+    await user.click(tasksTab());
+    expect(onViewChange).toHaveBeenLastCalledWith("tasks");
+
+    const videos = await screen.findByRole("list", { name: "添削待ちの動画" });
+    await user.click(within(videos).getAllByRole("button", { name: "添削する" })[0]!);
+    expect(onViewChange).toHaveBeenLastCalledWith("videos");
   });
 });
