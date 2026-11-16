@@ -170,15 +170,20 @@ async fn three_students_book_a_slot_of_capacity_three_and_the_fourth_is_rejected
     assert_eq!(slot["capacity"], 3);
     assert_eq!(slot["remaining_seats"], 3);
 
-    // 3 人までは予約でき、残りの席が減る
+    // 3 人までは予約でき、残りの席が減る。押さえた生徒の検索には出ず、席が埋まると（未確定の予約でも）誰の検索にも出ない
     let mut bookings = Vec::new();
     for (i, student) in students[..3].iter().enumerate() {
         let (status, booking) = book(&router, student, &slot).await;
         assert_eq!(status, StatusCode::CREATED, "{booking}");
         bookings.push(booking);
-        let found = search(&router, student).await;
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0]["remaining_seats"], 3 - (i + 1));
+        assert!(search(&router, student).await.is_empty());
+        let found = search(&router, &students[3]).await;
+        if i < 2 {
+            assert_eq!(found.len(), 1);
+            assert_eq!(found[0]["remaining_seats"], 3 - (i + 1));
+        } else {
+            assert!(found.is_empty());
+        }
     }
     // 4 人目は満席で拒まれる
     let (status, body) = book(&router, &students[3], &slot).await;
@@ -215,9 +220,12 @@ async fn three_students_book_a_slot_of_capacity_three_and_the_fourth_is_rejected
     );
     let (status, body) = send(&router, "POST", &path, Some(&students[1]), Some(json!({}))).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let found = search(&router, &students[3]).await;
-    assert_eq!(found.len(), 1);
-    assert_eq!(found[0]["remaining_seats"], 1);
+    for student in [&students[3], &students[1]] {
+        let found = search(&router, student).await;
+        assert_eq!(found.len(), 1, "キャンセルした生徒の検索にも再び出る");
+        assert_eq!(found[0]["remaining_seats"], 1);
+    }
+    assert!(search(&router, &students[0]).await.is_empty());
     let (status, booking) = book(&router, &students[3], &slot).await;
     assert_eq!(status, StatusCode::CREATED, "{booking}");
 }

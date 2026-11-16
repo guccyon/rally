@@ -5,7 +5,7 @@
 use std::time::{Duration, SystemTime};
 
 use application::identity::AccountRepository;
-use application::scheduling::SlotRepository;
+use application::scheduling::{BookingRepository, SlotRepository};
 use application::{
     analytics::AnalyticsEvent,
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
@@ -37,7 +37,7 @@ use domain::{
     catalog::Sport,
     identity::{Account, AccountId, Email, Role},
     profile::{CoachBio, DisplayName},
-    scheduling::{Slot, SlotCapacity},
+    scheduling::{Booking, BookingId, Slot, SlotCapacity},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -91,6 +91,8 @@ struct App {
     lesson_menus: application::in_memory::InMemoryLessonMenuRepository,
     /// `POST /slots` と `GET /slots` の枠の保存先（API では公開できない過去の開始の枠を直接入れる）
     slots: InMemorySlotRepository,
+    /// 枠の保存先と共有する予約の保存先（検索から除く枠の予約を直接入れる）
+    bookings: InMemoryBookingRepository,
 }
 
 fn app() -> App {
@@ -292,6 +294,7 @@ fn app() -> App {
         accounts,
         lesson_menus,
         slots,
+        bookings,
     }
 }
 
@@ -867,6 +870,95 @@ async fn search_pages_through_results_with_next_cursor() {
     // limit の既定は 20
     let (_, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
     assert_eq!(item_ids(&body).len(), 5);
+}
+
+/// 生徒 `student` が枠 `slot_id` を予約した（未確定の）予約の ID。
+async fn reserve(app: &App, student: u128, slot_id: &str) -> BookingId {
+    let student = AccountId::from_u128(student);
+    let id = app.bookings.next_id();
+    app.bookings
+        .reserve(
+            slot_id_uuid::parse(slot_id).unwrap(),
+            student,
+            move |slot, existing| {
+                Booking::reserve(
+                    id,
+                    student,
+                    false,
+                    slot,
+                    existing,
+                    SystemTime::UNIX_EPOCH + NOW,
+                )
+            },
+        )
+        .await
+        .unwrap()
+        .id()
+}
+
+#[tokio::test]
+async fn search_excludes_full_slots_and_slots_held_by_the_calling_student() {
+    let app = app();
+    let publish_group = async |hour| {
+        let (status, body) = post_slots(
+            &app.router,
+            Some(COACH_A),
+            json!({ "sport": "tennis", "starts_at": nov1(hour), "ends_at": nov1(hour + 1), "capacity": 2 }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        body["slot_id"].as_str().unwrap().to_string()
+    };
+    // 10 時: ほかの生徒の未確定の予約で埋まった枠。11 時: 呼ぶ生徒が押さえたグループの枠。12 時・13 時: 空いている枠
+    let full = publish(&app.router, COACH_A, "tennis", 10).await;
+    let held = publish_group(11).await;
+    let free12 = publish(&app.router, COACH_A, "tennis", 12).await;
+    let free13 = publish(&app.router, COACH_A, "tennis", 13).await;
+    reserve(&app, 4, &full).await;
+    let held_booking = reserve(&app, 3, &held).await;
+
+    // 満席の枠と自分が押さえた枠は出ず、件数とカーソルは除いた後で数える
+    let (status, page1) = get_slots(&app.router, Some(STUDENT), "sport=tennis&limit=1").await;
+    assert_eq!(status, StatusCode::OK, "{page1}");
+    assert_student_app(status, &page1);
+    assert_eq!(item_ids(&page1), std::slice::from_ref(&free12));
+    let cursor = page1["next_cursor"].as_str().unwrap();
+    let (_, page2) = get_slots(
+        &app.router,
+        Some(STUDENT),
+        &format!("sport=tennis&limit=1&cursor={cursor}"),
+    )
+    .await;
+    assert_eq!(item_ids(&page2), std::slice::from_ref(&free13));
+    assert_eq!(page2["next_cursor"], Value::Null);
+
+    // ほかの生徒には押さえた枠が残りの席つきで出る。生徒以外（コーチ）は予約で絞らない。満席の枠は誰にも出ない
+    let (_, other) = get_slots(&app.router, Some("student:4"), "sport=tennis").await;
+    assert_eq!(
+        item_ids(&other),
+        [held.clone(), free12.clone(), free13.clone()]
+    );
+    assert_eq!(other["items"][0]["remaining_seats"], 1);
+    let (_, by_coach) = get_slots(&app.router, Some(COACH_B), "sport=tennis").await;
+    assert_eq!(item_ids(&by_coach), item_ids(&other));
+
+    // キャンセルすると再び出る
+    app.bookings
+        .update(held_booking, |booking, slot| {
+            booking
+                .cancel(
+                    AccountId::from_u128(3),
+                    slot,
+                    SystemTime::UNIX_EPOCH + NOW,
+                    true,
+                )
+                .map(|_| ())
+        })
+        .await
+        .unwrap();
+    let (_, body) = get_slots(&app.router, Some(STUDENT), "sport=tennis").await;
+    assert_eq!(item_ids(&body), [held, free12, free13]);
+    assert_eq!(body["items"][0]["remaining_seats"], 2);
 }
 
 #[tokio::test]
