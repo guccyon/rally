@@ -5,3 +5,8 @@ aggregates:
   - path: .factory-config/knowledge/INDEX.md
     compile: generate
     command: ref=$(grep -Ev '^[[:space:]]*(#|$)' .factory-config/engine.lock | head -1 | tr -d '[:space:]') && curl -fsSL -o "${TMPDIR:-/tmp}/knowledge_check.py" "https://raw.githubusercontent.com/guccyon/factory-engine/${ref}/core-gates/knowledge_check.py" && python3 "${TMPDIR:-/tmp}/knowledge_check.py" --repo . --index
+  # 知見の置き場の説明。readme.d/ の断片（1 断片 = 1 行）から作る生成物で、手で書き換えない。
+  # 直すときは断片を直して、下の command で作り直す。CI では同じ command の後に差分が出ないことを確かめる
+  - path: .factory-config/knowledge/README.md
+    compile: generate
+    command: python3 tools/knowledge-readme/build.py
