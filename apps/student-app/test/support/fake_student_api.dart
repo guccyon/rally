@@ -621,9 +621,23 @@ class FakeStudentApi implements StudentApi {
     );
   }
 
+  /// 入れておくと、次の 1 回の `getMyStudentProfile` だけは、これが完了するまで応答を返さず、完了した値が null でなければそれで失敗する
+  /// （トークンを確かめるあいだに、別のタブで次の人が登録したときを確かめる）
+  Completer<StudentApiException?>? nextProfileGate;
+
   @override
-  Future<Student> getMyStudentProfile() =>
-      _answer('getMyStudentProfile', () => student);
+  Future<Student> getMyStudentProfile() async {
+    final gate = nextProfileGate;
+    nextProfileGate = null;
+    if (gate != null) {
+      final failure = await gate.future;
+      if (failure != null) {
+        calls.add('getMyStudentProfile');
+        throw failure;
+      }
+    }
+    return _answer('getMyStudentProfile', () => student);
+  }
 
   @override
   Future<Student> updateMyStudentProfile(

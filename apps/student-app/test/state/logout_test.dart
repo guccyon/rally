@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rally_student_app/api/models.dart';
+import 'package:rally_student_app/api/student_api.dart';
 import 'package:rally_student_app/app.dart';
 import 'package:rally_student_app/device/local_media.dart';
 import 'package:rally_student_app/session/session_store.dart';
@@ -309,18 +310,38 @@ void main() {
       expect(api.calls, callsBefore);
     });
 
-    testWidgets('次の人が別のタブで登録しても、このタブに前の生徒は出ず、次の人の登録の結果は消さない', (tester) async {
+    /// このタブが次の人のホームになっている（前の生徒のトークン・スレッドは捨て、次の人の登録の結果は消さない。#1805）
+    void expectFollowedNextPerson(
+      ProviderContainer container,
+      MemorySessionStore store,
+    ) {
+      expect(find.text('中学生ゆうきさん、こんにちは'), findsOneWidget);
+      expect(find.text('山田さん、こんにちは'), findsNothing);
+      final state = container.read(studentFlowProvider);
+      expect(state.step, FlowStep.home);
+      expect(state.accessToken, nextPerson.accessToken);
+      expect(state.student!.studentId, nextPerson.student.studentId);
+      expect(container.read(chatProvider).thread, isNull);
+      expect(container.read(chatProvider).messages, isNull);
+      expect(store.read()!.accessToken, nextPerson.accessToken);
+    }
+
+    testWidgets('次の人が別のタブで登録したら、このタブに前の生徒は出ず次の人のホームになり、次の人の登録の結果は消さない', (
+      tester,
+    ) async {
       final store = savedStore();
       final api = FakeStudentApi();
       final container = await openThread(tester, api, store);
 
       store.replaceElsewhere(null);
       await tester.pumpAndSettle();
+      expectLoggedOut(container);
+      api.student = nextPerson.student;
       store.replaceElsewhere(nextPerson);
       await tester.pumpAndSettle();
 
-      expectLoggedOut(container);
-      expect(store.read()!.accessToken, nextPerson.accessToken);
+      expectFollowedNextPerson(container, store);
+      expect(api.calls, isNot(contains('registerAccount')));
     });
 
     testWidgets('ログアウトの知らせを受けずに次の人の登録だけが届いても、前の生徒のトークンを捨てて前の生徒として送れない', (
@@ -330,14 +351,81 @@ void main() {
       final api = FakeStudentApi();
       final container = await openThread(tester, api, store);
 
+      api.student = nextPerson.student;
       store.replaceElsewhere(nextPerson);
       await tester.pumpAndSettle();
 
-      expectLoggedOut(container);
-      expect(store.read()!.accessToken, nextPerson.accessToken);
-      // メッセージ欄はもうなく、送る操作もスレッドがないので送らない
+      expectFollowedNextPerson(container, store);
+      // 前の生徒のスレッドのメッセージ欄はもうなく、前の生徒として送らない
       expect(find.text('送信する'), findsNothing);
       expect(api.requests.whereType<SendMessageRequest>(), isEmpty);
+    });
+
+    testWidgets('登録の画面のままのタブも、別のタブで次の人が登録したら次の人のホームになる（#1805）', (tester) async {
+      final store = MemorySessionStore();
+      final api = FakeStudentApi()..student = nextPerson.student;
+      final container = await openApp(tester, api, store);
+      expect(find.text('アカウント登録'), findsOneWidget);
+
+      store.replaceElsewhere(nextPerson);
+      await tester.pumpAndSettle();
+
+      expectFollowedNextPerson(container, store);
+      expect(api.calls, isNot(contains('registerAccount')));
+    });
+
+    testWidgets('登録の画面のままのタブで登録を押しても、別のタブで先に登録した人がいれば登録せず、その人のホームにする（#1805）', (
+      tester,
+    ) async {
+      final store = MemorySessionStore();
+      final api = FakeStudentApi()..student = nextPerson.student;
+      final container = await openApp(tester, api, store);
+      // 知らせが届く前に、ほかのタブが登録の結果を残した
+      store.save(nextPerson);
+
+      await container
+          .read(studentFlowProvider.notifier)
+          .register(
+            email: 'k@example.com',
+            displayName: '夜QA k',
+            sport: Sport.tennis,
+          );
+      await tester.pumpAndSettle();
+
+      expectFollowedNextPerson(container, store);
+      expect(api.calls, isNot(contains('registerAccount')));
+    });
+
+    testWidgets('次の人のホームに切り替わったあとに前の生徒のトークンが 401 でも、次の人の登録の結果は消さない', (
+      tester,
+    ) async {
+      final store = MemorySessionStore();
+      final api = FakeStudentApi()..student = nextPerson.student;
+      final container = await openApp(tester, api, store);
+      final gate = Completer<StudentApiException?>();
+      api.nextProfileGate = gate;
+      store.replaceElsewhere(
+        SavedSession(
+          accessToken: Fixtures.registered.accessToken,
+          student: Fixtures.student,
+        ),
+      );
+      await tester.pump();
+      // 前の生徒のトークンを確かめているあいだに、次の人が別のタブで登録した
+      store.replaceElsewhere(nextPerson);
+      await tester.pumpAndSettle();
+      gate.complete(
+        const StudentApiException(
+          statusCode: 401,
+          error: ApiError(
+            code: ErrorCode.unauthorized,
+            message: 'unauthorized',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expectFollowedNextPerson(container, store);
     });
 
     testWidgets('ほかのタブが同じ生徒のまま残し直しただけ（表示名を変えたなど）なら、このタブはそのまま', (tester) async {

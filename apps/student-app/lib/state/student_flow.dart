@@ -509,26 +509,34 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   StudentApi get _api => ref.read(studentApiProvider);
 
   /// `registerAccount`。登録したらホームへ（ホームの欄を読んでおく）。
+  /// 押す前に同じブラウザーのほかのタブで別の人が登録していたら（端末に残した登録の結果がある）、登録はせず
+  /// その人のホームにする（[resumeSavedSession]）。登録すると残したものを置き換え、その人をログアウトさせるため（#1805）
   Future<void> register({
     required String email,
     required String displayName,
     required Sport sport,
-  }) => run(() async {
-    final response = await _api.registerAccount(
-      RegisterAccountRequest(
-        email: email,
-        displayName: displayName,
-        sport: sport,
-      ),
-    );
-    state = state.copyWith(
-      accessToken: response.accessToken,
-      student: response.student,
-      step: FlowStep.home,
-    );
-    _rememberSession();
-    await _loadHome();
-  });
+  }) async {
+    if (state.accessToken == null &&
+        ref.read(sessionStoreProvider).read() != null) {
+      return resumeSavedSession();
+    }
+    return run(() async {
+      final response = await _api.registerAccount(
+        RegisterAccountRequest(
+          email: email,
+          displayName: displayName,
+          sport: sport,
+        ),
+      );
+      state = state.copyWith(
+        accessToken: response.accessToken,
+        student: response.student,
+        step: FlowStep.home,
+      );
+      _rememberSession();
+      await _loadHome();
+    });
+  }
 
   /// 起動したときに、端末に残した登録の結果（[sessionStoreProvider]）があれば同じ生徒でホームから始める。
   /// 残していなければ登録の画面のまま。段・予約・通話セッションは残していないので、ホームの欄（と次にやること）は
@@ -545,12 +553,16 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     await run(() async {
       try {
         final student = await _api.getMyStudentProfile();
-        if (!ref.mounted) return;
+        // 読むあいだにほかのタブで次の人が登録し、このタブがその人に切り替わっていたら、前の生徒を書き戻さない（#1805）
+        if (!ref.mounted || state.accessToken != saved.accessToken) return;
         state = state.copyWith(student: student);
         _rememberSession();
       } on StudentApiException catch (e) {
         if (e.statusCode == 401) {
-          ref.read(sessionStoreProvider).clear();
+          if (!ref.mounted || state.accessToken != saved.accessToken) return;
+          final store = ref.read(sessionStoreProvider);
+          // ほかのタブが残し直した次の人の登録の結果は消さない
+          if (store.read()?.accessToken == saved.accessToken) store.clear();
           // 投げ直して、run が busy を外し、登録の画面に理由の文言（[errorMessageOf] の unauthorized）を出す。
           // 文言がないと、登録が消えたと思って新しいアカウントを作り直すおそれがある
           state = StudentFlowState(busy: true);
@@ -1240,14 +1252,14 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
   /// ほかのタブ（[SessionStore.changesElsewhere]）が残した登録の結果を変えた・消したとき。このタブの生徒のトークンが
   /// 残っていなければ（ログアウトした・次の人が登録した）、残したものには触らずに（次の人のものなので消さない）前の生徒の状態を捨てて
   /// 登録の画面にする。トークンも捨てるので、このタブから前の生徒として送れない。同じトークンのまま（表示名を変えたなど）なら何もしない。
-  /// 登録の画面のタブはそのまま（次の人のホームに切り替えない）
+  /// そのあと次の人の登録の結果が残っていれば、このタブも次の人のホームにする（[resumeSavedSession]。登録の画面のタブも同じ）。
+  /// 登録の画面のまま残すと、そこで別の人が登録して次の人の登録の結果を置き換え、次の人をログアウトさせるため（#1805）
   void _followSessionElsewhere() {
     final accessToken = state.accessToken;
-    if (accessToken == null) return;
-    if (ref.read(sessionStoreProvider).read()?.accessToken == accessToken) {
-      return;
-    }
-    _discardSession();
+    final saved = ref.read(sessionStoreProvider).read();
+    if (accessToken != null && saved?.accessToken == accessToken) return;
+    if (accessToken != null) _discardSession();
+    if (saved != null) resumeSavedSession();
   }
 
   /// 前の生徒の状態（トークン・生徒・予約・チャット・契約・お知らせなど）を捨てて登録の画面にする
