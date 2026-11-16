@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/models.dart';
 import '../state/student_flow.dart';
+import '../ui/character_count.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/sport_selector.dart';
 
@@ -15,6 +16,9 @@ class RegisterScreen extends ConsumerStatefulWidget {
 }
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
+  /// 表示名の入力欄の文字数の上限
+  static const _displayNameMaxLength = 50;
+
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _displayName = TextEditingController();
@@ -59,12 +63,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 validator: (value) =>
                     (value ?? '').contains('@') ? null : 'メールアドレスを入力してください',
               ),
-              TextFormField(
-                controller: _displayName,
-                decoration: const InputDecoration(labelText: '表示名'),
-                maxLength: 50,
-                validator: (value) =>
-                    (value ?? '').trim().isEmpty ? '表示名を入力してください' : null,
+              // 文字数の残りの読み上げを入力に合わせて作り直す
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _displayName,
+                builder: (context, value, _) => TextFormField(
+                  controller: _displayName,
+                  decoration: withCharacterCount(
+                    const InputDecoration(labelText: '表示名'),
+                    text: value.text,
+                    maxLength: _displayNameMaxLength,
+                  ),
+                  maxLength: _displayNameMaxLength,
+                  validator: (value) =>
+                      (value ?? '').trim().isEmpty ? '表示名を入力してください' : null,
+                ),
               ),
               const SizedBox(height: 8),
               const Text('習いたいスポーツ'),

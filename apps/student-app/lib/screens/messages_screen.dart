@@ -8,6 +8,7 @@ import '../api/models.dart';
 import '../state/chat.dart';
 import '../state/student_flow.dart';
 import '../ui/ai_feedback_card.dart';
+import '../ui/character_count.dart';
 import '../ui/flow_scaffold.dart';
 import '../ui/labels.dart';
 import '../ui/lesson_menu_picker.dart';
@@ -180,7 +181,11 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         const SizedBox(height: 16),
         TextField(
           controller: _body,
-          decoration: const InputDecoration(labelText: 'メッセージ'),
+          decoration: withCharacterCount(
+            const InputDecoration(labelText: 'メッセージ'),
+            text: _body.text,
+            maxLength: SendMessageRequest.maxBodyLength,
+          ),
           maxLength: SendMessageRequest.maxBodyLength,
           maxLines: 3,
           minLines: 1,
