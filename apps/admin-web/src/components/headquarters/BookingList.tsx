@@ -12,6 +12,7 @@ import { bookingLessonMenuLabel } from "@/components/coach/bookingLessonMenu";
 import { SPORT_LABELS, formatDay, formatTime, toJstDate } from "@/components/labels";
 
 import { bookingDetailPath } from "./BookingDetailHome";
+import { type BookingsQuery } from "./bookingsPath";
 import { BookingStatusBadge } from "./BookingStatusBadge";
 import { type Period, defaultPeriod, isPendingSoon, periodError } from "./bookingPeriod";
 import { BookingStudentPicker } from "./BookingStudentPicker";
@@ -99,13 +100,16 @@ export function BookingList({
   coachId,
   studentId,
   lessonMenuId,
+  initialPeriod,
 }: {
   api: Pick<HeadquartersApi, "listBookings" | "listStudents">;
   coachId?: string;
   studentId?: string;
   lessonMenuId?: string;
+  /** 開くときの期間（予約の詳細から戻ったとき）。なければ既定の期間。 */
+  initialPeriod?: Period;
 }) {
-  const [draft, setDraft] = useState<Period>(() => defaultPeriod(Date.now()));
+  const [draft, setDraft] = useState<Period>(() => initialPeriod ?? defaultPeriod(Date.now()));
   const [trialOnly, setTrialOnly] = useState(false);
   const [sport, setSport] = useState<Sport | "">("");
   // 一覧の「生徒」で選んだ生徒。選んでいなければ URL の生徒（`studentId`）のまま。
@@ -250,6 +254,7 @@ export function BookingList({
           trialOnly={state.trialOnly}
           sport={state.sport}
           byLessonMenu={lessonMenuId !== undefined}
+          detailFrom={{ coachId, studentId: activeStudentId, lessonMenuId, period: state.period }}
           bookings={state.bookings}
           now={state.now}
         />
@@ -259,12 +264,12 @@ export function BookingList({
 }
 
 /** 日ごとの予約の表の列。確定待ちのまま 24 時間以内に始まる予約は、状態のセルに文字のしるしを添える（行の面は highlightRow）。 */
-function bookingColumns(now: number): DataTableColumn<HeadquartersBooking>[] {
+function bookingColumns(now: number, detailFrom: BookingsQuery): DataTableColumn<HeadquartersBooking>[] {
   return [
     {
       header: "開始",
       cell: ({ booking }) => (
-        <Link href={bookingDetailPath(booking.booking_id)} className="text-primary underline">
+        <Link href={bookingDetailPath(booking.booking_id, detailFrom)} className="text-primary underline">
           {formatTime(booking.starts_at)}
         </Link>
       ),
@@ -292,6 +297,7 @@ function LoadedBookings({
   trialOnly,
   sport,
   byLessonMenu,
+  detailFrom,
   bookings,
   now,
 }: {
@@ -299,6 +305,7 @@ function LoadedBookings({
   trialOnly: boolean;
   sport: Sport | "";
   byLessonMenu: boolean;
+  detailFrom: BookingsQuery;
   bookings: HeadquartersBooking[];
   now: number;
 }) {
@@ -321,7 +328,7 @@ function LoadedBookings({
           </h3>
           <DataTable
             label={`${formatDay(day)} の予約`}
-            columns={bookingColumns(now)}
+            columns={bookingColumns(now, detailFrom)}
             rows={items}
             rowKey={(item) => item.booking.booking_id}
             highlightRow={(item) => isPendingSoon(item.booking, now)}

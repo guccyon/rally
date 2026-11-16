@@ -477,6 +477,24 @@ describe("画面への配置", () => {
     expect(screen.getByRole("link", { name: "予約の一覧へ戻る" })).toHaveAttribute("href", "/headquarters/bookings");
   });
 
+  test("絞り込みと期間を持って開いた予約の詳細からは、同じ絞り込みと期間の一覧へ戻れる", () => {
+    saveSession({ role: "headquarters", token: "mock.headquarters.x" });
+    const list = { studentId: "student-1", period: { from: "2026-11-10", to: "2026-11-16" } };
+    expect(bookingDetailPath(BOOKING_ID, list)).toBe(
+      `/headquarters/bookings/detail?booking_id=${BOOKING_ID}&student_id=student-1&from=2026-11-10&to=2026-11-16`,
+    );
+    render(
+      <RoleGate role="headquarters">
+        {(session) => <BookingDetailHome token={session.token} bookingId={BOOKING_ID} list={list} />}
+      </RoleGate>,
+    );
+
+    expect(screen.getByRole("link", { name: "予約の一覧へ戻る" })).toHaveAttribute(
+      "href",
+      "/headquarters/bookings?student_id=student-1&from=2026-11-10&to=2026-11-16",
+    );
+  });
+
   test("本部以外のロールでは画面に入れず、ログインしたまま理由と戻り道を出す", () => {
     saveSession({ role: "coach", token: "mock.coach.x" });
     render(
