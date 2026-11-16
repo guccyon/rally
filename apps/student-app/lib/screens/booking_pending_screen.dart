@@ -79,8 +79,22 @@ class BookingPendingScreen extends ConsumerWidget {
           : '予約の確定待ち',
       children: [
         Text(booking.isTrial ? '体験予約' : '予約'),
-        Text('開始: ${formatDateTime(booking.startsAt)}'),
-        if (menu != null) Text(bookingLessonMenuLabel(menu)),
+        // ホームの「次にやること」の確定待ちのカードと同じ形（日時を大きく、スポーツ・メニュー・コーチを控えめに）
+        Text(
+          switch (booking.endsAt) {
+            final end? => formatTimeRange(booking.startsAt, end),
+            null => formatDateTime(booking.startsAt),
+          },
+          style: RallyTypography.figureSm,
+        ),
+        Text(
+          [
+            if (booking.sport case final sport?) sportLabel(sport),
+            if (menu != null) bookingLessonMenuLabel(menu),
+            'コーチ: ${booking.coachDisplayName ?? '（名前を表示できません）'}',
+          ].join('・'),
+          style: RallyTypography.small.copyWith(color: RallyColors.textMuted),
+        ),
         Text('状態: ${bookingStatusLabel(booking.status)}'),
         const SizedBox(height: 16),
         if (cancelled) ...[
