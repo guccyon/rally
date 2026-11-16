@@ -10,6 +10,7 @@
 
 mod access_token_args;
 mod coach_plan;
+mod incomplete_hints;
 mod login_hint;
 mod retention;
 mod seed_args;
@@ -23,6 +24,7 @@ mod student_plan;
 
 pub use access_token_args::AccessTokenArgs;
 pub use coach_plan::CoachPlan;
+pub use incomplete_hints::IncompleteHints;
 pub use login_hint::LoginHint;
 pub use retention::Retention;
 pub use seed_args::SeedArgs;
