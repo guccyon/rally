@@ -9,6 +9,8 @@ import { BookingDetailHome, bookingDetailPath } from "@/components/headquarters/
 import { BookingList } from "@/components/headquarters/BookingList";
 import { saveSession } from "@/session/session";
 
+const noStudents = vi.fn<HeadquartersApi["listStudents"]>(async () => ({ ok: true, data: { students: [] } }));
+
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace }) }));
 
@@ -436,7 +438,7 @@ describe("画面への配置", () => {
         bookings: [{ booking: BOOKING, coach_display_name: "鈴木 コーチ", student_display_name: "山田 花子" }],
       },
     }));
-    render(<BookingList api={{ listBookings }} />);
+    render(<BookingList api={{ listStudents: noStudents, listBookings }} />);
 
     expect(await screen.findByRole("link", { name: "10:00" })).toHaveAttribute(
       "href",
