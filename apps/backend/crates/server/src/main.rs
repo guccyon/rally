@@ -2,9 +2,10 @@
 //! `ANALYTICS_SINK`（既定 `memory`。[`server::AnalyticsDestination`]）、通話基盤は `VIDEO_CALL_PROVIDER`（既定 `twilio`。
 //! [`server::VideoCallBackend`]）。
 //!
-//! アクセストークンは `ACCESS_TOKEN_SIGNING_KEY`（[`server::AccessTokenBackend`]）があれば署名付きにし、手で作った
-//! `mock.` のトークンや改ざんしたトークンを 401 にする。なければ署名なしのモック（ローカルの起動とテスト用）で、起動時に
-//! そのことを標準エラー出力に書く。鍵は秘密情報で、値はどこにも書き出さない。
+//! アクセストークンは `ACCESS_TOKEN_SIGNING_KEY`（[`server::AccessTokenBackend`]）の鍵で署名し、手で作った
+//! `mock.` のトークンや改ざんしたトークンを 401 にする。鍵がなければ起動しない（Issue #1785。ADR 0016）。署名なしのモックは
+//! `ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1` を渡したときだけ（ローカルの起動とテスト用）で、起動時にそのことを標準エラー出力に
+//! 書く。鍵は秘密情報で、値はどこにも書き出さない。
 //!
 //! `DATABASE_URL` があれば保存先を Postgres にし（[`server::app_with_postgres_and_access_tokens`]）、待ち受ける前に
 //! [`infra::run_migrations`] でマイグレーションを当てる。なければ保存先はインメモリ（[`server::app_with_access_tokens`]）。
@@ -16,7 +17,7 @@
 //! 触れる環境（staging）で QA が「翌日」をまたぐ流れを確かめるために、工場の shipper だけが渡す。本番では渡さない。
 //! 応答の `Date` ヘッダーもこの時計で付ける（[`server::with_server_date`]。画面が `Date` でサーバーの時刻に合わせるため）。
 //!
-//! 起動できないとき（設定の値が知らないもの・署名の鍵が短い・時計を進める秒数が 0 以上の整数でない・DB につなげない・マイグレーションを当てられない）は、原因を標準エラー出力に
+//! 起動できないとき（設定の値が知らないもの・署名の鍵がない（モックの opt-in もない）・署名の鍵が短い・時計を進める秒数が 0 以上の整数でない・DB につなげない・マイグレーションを当てられない）は、原因を標準エラー出力に
 //! 書いて 0 以外で終わる。
 
 use std::{env, process::ExitCode, time::Duration};
@@ -44,8 +45,9 @@ async fn run() -> Result<(), String> {
     if !tokens.is_signed() {
         // 標準出力の 1 行目は待ち受けのアドレス（起動を待つ側が読む）なので、知らせは標準エラー出力に書く
         eprintln!(
-            "access tokens are unsigned mock tokens ({} is not set)",
-            AccessTokenBackend::SIGNING_KEY_VAR
+            "access tokens are unsigned mock tokens ({} is not set, {}=1)",
+            AccessTokenBackend::SIGNING_KEY_VAR,
+            AccessTokenBackend::UNSIGNED_MOCK_OPT_IN_VAR
         );
     }
     let clock = clock_from(env::var("CLOCK_OFFSET_SECONDS").ok().as_deref())?;

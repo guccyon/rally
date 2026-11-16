@@ -1,8 +1,9 @@
 //! アクセストークンを発行する: `access-token --hints`・`access-token --account <アカウント ID>`
 //! （`apps/backend/README.md` の「認証」。staging の runbook）。
 //!
-//! 環境変数 `DATABASE_URL` の Postgres からアカウントの役割を読み、サーバーと同じ実装（`ACCESS_TOKEN_SIGNING_KEY` が
-//! あれば署名付き。[`infra::AccessTokenBackend`]）でトークンを発行して標準出力に書く。サーバーと同じ鍵を持つ
+//! 環境変数 `DATABASE_URL` の Postgres からアカウントの役割を読み、サーバーと同じ実装（`ACCESS_TOKEN_SIGNING_KEY` の鍵で
+//! 署名付き。[`infra::AccessTokenBackend`]）でトークンを発行して標準出力に書く。鍵がなく、署名なしのモックの opt-in
+//! （`ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1`）もなければ、サーバーと同じく失敗する（Issue #1785）。サーバーと同じ鍵を持つ
 //! backend のコンテナの中で動かす（鍵を外に出さない）。DB に書かない（マイグレーションも当てない）。
 
 use std::process::ExitCode;

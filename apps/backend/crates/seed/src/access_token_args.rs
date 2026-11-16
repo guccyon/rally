@@ -12,7 +12,7 @@ pub enum AccessTokenArgs {
 impl AccessTokenArgs {
     pub const USAGE: &'static str = "使い方: access-token --hints | access-token --account <アカウント ID>\n\
         環境変数 DATABASE_URL の Postgres にあるアカウントのアクセストークンを、サーバーと同じ実装で発行して標準出力に書く\n\
-        （ACCESS_TOKEN_SIGNING_KEY があれば署名付き、なければ署名なしのモック）。\n\
+        （ACCESS_TOKEN_SIGNING_KEY の鍵で署名付き。鍵がなければ失敗し、ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK=1 のときだけ署名なしのモック）。\n\
         --hints は本部 1 人とコーチ 3 人の [{\"label\": ..., \"value\": <トークン>}]、--account はそのアカウントの役割のトークン";
 
     /// プログラム名を除いた引数を読む。
