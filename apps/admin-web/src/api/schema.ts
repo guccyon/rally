@@ -2395,6 +2395,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/business-kpis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 事業の KPI の今の期間と前の期間（本部）
+         * @description 事業の KPI（`specs/analytics/kpi.yaml` の `kpis` の 6 つ。北極星 1 つと補助の 5 つ）を、kpi.yaml の順に、今の期間
+         *     （`current`）と 1 つ前の期間（`previous`）の値で 1 回の照会で返す。本部が事業の調子を 1 枚で確かめるのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403）。クエリはとらない。照会だけで、何も保存しない。
+         *
+         *     - 式は kpi.yaml の `formula` の 1 か所に従ってサーバーが数える。画面やクライアントで数え直さない。名前（`name`）は
+         *       kpi.yaml の `ja`、良い向き（`direction`）は kpi.yaml の `direction` のまま返す
+         *     - 期間は指標ごとに kpi.yaml の `window`（30 日）を `window_on` の時刻に当てる。`current` は集計した時刻
+         *       （`computed_at`）に終わる 1 つの期間（`first_lesson_retention_1m` は note のとおり、60 日目を観測し終えた生徒だけを
+         *       数えるため、集計した時刻の 60 日前に終わる期間）、`previous` はその直前の同じ長さの期間。範囲は値ごとに
+         *       `window_start`（含む）〜`window_end`（含まない）で返す
+         *     - 値が出せないときは `value` を null にし、`reason` に理由の種類（`code`）と、画面にそのまま出せる文（`message`）を
+         *       付ける。値が出せたときの `reason` は null
+         *     - **1 つの指標の集計が失敗しても 200 で返す。** 失敗した指標の値（`current` と `previous` の両方、または失敗した方）
+         *       だけを `value: null`・`reason.code: unavailable` にし、ほかの指標はそのまま返す（画面全体を壊さないため）。
+         *       5xx は、指標を 1 つも返せないとき（認証の確かめや応答そのものが組み立てられないとき）だけ
+         *     - 合成シードがなく母集団が空なら、6 つとも `value: null`・`reason.code: no_population` で返す（`kpis` は空にしない）
+         *
+         *     行動イベントは発火しない。
+         */
+        get: operations["getBusinessKpis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4122,6 +4159,73 @@ export interface components {
             notified_student_count: number;
             /** @description 取り下げた枠の数（予約のあった枠を含む） */
             withdrawn_slot_count: number;
+        };
+        /** @description 本部が見る事業の KPI（`getBusinessKpis`）。`specs/analytics/kpi.yaml` の 6 つを kpi.yaml の順に並べる */
+        BusinessKpis: {
+            /**
+             * Format: date-time
+             * @description 集計した時刻（`current` の期間の終わりの基準）
+             */
+            computed_at: string;
+            /** @description 指標（kpi.yaml の `kpis` の順。北極星は 1 つだけで、`north_star: true`）。値が出せない指標も省かずに載せる */
+            kpis: components["schemas"]["BusinessKpi"][];
+        };
+        /** @description 事業の KPI 1 つ。定義（式・期間・向き）は `specs/analytics/kpi.yaml` の同じ `id` の項目で、ここでは写さない */
+        BusinessKpi: {
+            /** @description kpi.yaml の `id`（例 `first_lesson_retention_1m`） */
+            id: string;
+            /** @description KPI の名前（kpi.yaml の `ja` のまま。例「初回レッスン後の 1 ヶ月継続率」） */
+            name: string;
+            /** @description 北極星か（kpi.yaml の `north_star`。6 つのうち 1 つだけ true） */
+            north_star: boolean;
+            /**
+             * @description 良い向き（kpi.yaml の `direction`。up_is_good は高いほど良い、down_is_good は低いほど良い）
+             * @enum {string}
+             */
+            direction: "up_is_good" | "down_is_good";
+            /**
+             * @description 値の単位。`ratio` は 0〜1 の割合、`variance` は割合の分散、`score` は 0〜100 の点、`hours` は時間、`days` は日（どれも小数）
+             * @enum {string}
+             */
+            unit: "ratio" | "variance" | "score" | "hours" | "days";
+            /** @description 何を数えたかの名詞（母集団の 1 行。例 予約枠充足率の「枠」、初回レッスン後の 1 ヶ月継続率の「生徒」） */
+            population_label: string;
+            /** @description 指標の見方の 1 文（任意。北極星にだけ付ければ足りる） */
+            description?: string;
+            current: components["schemas"]["BusinessKpiValue"];
+            previous: components["schemas"]["BusinessKpiValue"];
+        };
+        /** @description 事業の KPI 1 つの、1 つの期間の値。値が出せないときは `value` が null で、`reason` に理由がある */
+        BusinessKpiValue: {
+            /**
+             * Format: date-time
+             * @description 数えた範囲の始まり（含む）。kpi.yaml の `window_on` の時刻で当てる
+             */
+            window_start: string;
+            /**
+             * Format: date-time
+             * @description 数えた範囲の終わり（含まない）
+             */
+            window_end: string;
+            /** @description 値（単位は `BusinessKpi.unit`。丸めない）。出せないときは null */
+            value: number | null;
+            /** @description 値が出せない理由。`value` が null のときだけ付き、値があるときは null */
+            reason: components["schemas"]["BusinessKpiValueReason"] | null;
+        };
+        /** @description 事業の KPI の値が出せない理由 */
+        BusinessKpiValueReason: {
+            /**
+             * @description 理由の種類。
+             *     - `no_population`: 期間に母集団が 1 行もない（例 期間に終わったビデオ通話がない）
+             *     - `below_group_minimum`: 群ごとに数える指標で、件数の下限（kpi.yaml の `having count >= n`）を満たす群がない
+             *       （例 初回レッスンが 5 件以上のコーチがいない）
+             *     - `not_observable_yet`: 期間の母集団の観測がまだ終わっていない（例 60 日目まで見終えた生徒がまだいない）
+             *     - `unavailable`: 集計に失敗した（ほかの指標は返す）
+             * @enum {string}
+             */
+            code: "no_population" | "below_group_minimum" | "not_observable_yet" | "unavailable";
+            /** @description 画面にそのまま出せる理由の文（例「初回レッスンが 5 件以上のコーチがいないため、出せません。」） */
+            message: string;
         };
         /**
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
@@ -6032,6 +6136,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getBusinessKpis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 事業の KPI（kpi.yaml の順） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessKpis"];
                 };
             };
             401: components["responses"]["Unauthorized"];
