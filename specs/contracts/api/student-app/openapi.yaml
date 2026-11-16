@@ -167,7 +167,8 @@ paths:
         受付を止めているコーチ（admin-web の `suspendCoach`。glossary の coach_acceptance が停止中）の枠は返さない
         （`coach_id` でそのコーチを指定しても返さない。`limit` は除いた後の件数）。
         各枠には定員 `capacity`（1 はマンツーマン、2 以上はグループレッスン）と残りの席 `remaining_seats` を載せる。
-        未確定の予約で席が埋まった枠（`remaining_seats` が 0）も、確定するまでは返す（定員 1 の枠の今までの振る舞いと同じ）。
+        `remaining_seats` が 0 の枠（未確定の予約で席が埋まった枠を含む）と、呼んだ生徒が有効な予約（未確定か確定）を持つ枠は返さない
+        （どちらも予約できない枠。`limit` は除いた後の件数）。返す枠の `remaining_seats` はいつも 1 以上。
         各枠には、そのコーチの表示名 `coach_display_name` と自己紹介文 `coach_bio` を任意の項目として添える（自己紹介文を書いていないコーチは `coach_bio` を載せない）。
         各枠には、結びついたコーチのレッスンメニュー `lesson_menu`（ID・名前・1 回の時間。`SlotLessonMenu`）を必ず載せる。
         メニューのない枠と、結びついたメニューが公開中でなくなった枠は null。
@@ -1693,7 +1694,9 @@ components:
           type: integer
           minimum: 0
           maximum: 6
-          description: 残りの席（定員 − 有効な予約（未確定か確定）の数）。0 なら予約すると 409 `slot_already_booked`
+          description: |
+            残りの席（定員 − 有効な予約（未確定か確定）の数）。0 なら予約すると 409 `slot_already_booked`。
+            `searchSlots` は 0 の枠を返さないので、検索の結果ではいつも 1 以上
         coach_display_name:
           type: string
           minLength: 1
