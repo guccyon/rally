@@ -76,6 +76,9 @@ class FakeStudentApi implements StudentApi {
   /// `cancelBooking` でキャンセル済みにする）
   final List<MyBooking> myBookings;
 
+  /// 入れておくと、`listMyBookings` はこれが完了するまで応答を返さない（応答を待つあいだに画面が描き直されることを確かめる）
+  Completer<void>? myBookingsGate;
+
   /// `listMyBookings` の `trial_available`。サーバーと同じく、キャンセルされていない予約がなく、
   /// 受けたレッスン（[lessonCompletions]）もなければ true
   /// [trialAvailableAnswer] を入れていればそれを返す
@@ -272,14 +275,19 @@ class FakeStudentApi implements StudentApi {
   }
 
   @override
-  Future<MyBookingList> listMyBookings() => _answer(
-    'listMyBookings',
-    () => MyBookingList(
-      bookings: [...myBookings],
-      trialAvailable: omitTrialAvailable ? null : trialAvailable,
-      clockOffset: clockOffset,
-    ),
-  );
+  Future<MyBookingList> listMyBookings() {
+    Future<MyBookingList> answer() => _answer(
+      'listMyBookings',
+      () => MyBookingList(
+        bookings: [...myBookings],
+        trialAvailable: omitTrialAvailable ? null : trialAvailable,
+        clockOffset: clockOffset,
+      ),
+    );
+    // 門がなければ呼ばれた順のまま [calls] に残す（待つと、並べて読む欄の順が入れ替わる）
+    final gate = myBookingsGate;
+    return gate == null ? answer() : gate.future.then((_) => answer());
+  }
 
   @override
   Future<Booking> cancelBooking(String bookingId) =>

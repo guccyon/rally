@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -104,6 +107,89 @@ void main() {
     expect(container.read(subscriptionProvider).entitlement, isNull);
     // サーバーには何も送らない
     expect(api.calls, callsBefore);
+  });
+
+  group('予約の応答を待つあいだに画面が描き直されても（#1730）', () {
+    /// 「ログアウトする」の行を [kind]（マウス・タッチ）で押し、`listMyBookings` の応答を待つあいだに
+    /// 呼んでいる間の表示（進み具合の帯）を描いてから応答を返す（staging のように応答がフレームをまたぐ）
+    Future<void> tapLogoutAndAnswerLater(
+      WidgetTester tester,
+      FakeStudentApi api,
+      PointerDeviceKind kind,
+    ) async {
+      final gate = Completer<void>();
+      api.myBookingsGate = gate;
+      final row = find.text('ログアウトする');
+      await tester.ensureVisible(row);
+      await tester.tap(row, kind: kind);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+    }
+
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+      testWidgets('${kind.name}: 確かめが出て、「ログアウトする」で登録の画面になり、開き直しても前の生徒は出ない', (
+        tester,
+      ) async {
+        final store = savedStore();
+        final api = FakeStudentApi();
+        final container = await openApp(tester, api, store);
+        await openProfile(tester);
+
+        await tapLogoutAndAnswerLater(tester, api, kind);
+
+        expect(find.text('ログアウトしますか？'), findsOneWidget);
+        await tester.tap(confirmButton, kind: kind);
+        await tester.pumpAndSettle();
+
+        expect(find.text('アカウント登録'), findsOneWidget);
+        expect(find.text('山田さん、こんにちは'), findsNothing);
+        expect(container.read(studentFlowProvider).accessToken, isNull);
+        expect(store.raw, isNull);
+
+        // 別の人が同じブラウザーで開き直す
+        final next = FakeStudentApi();
+        final reopened = await openApp(tester, next, store);
+        expect(find.text('アカウント登録'), findsOneWidget);
+        expect(find.text('山田さん、こんにちは'), findsNothing);
+        expect(reopened.read(studentFlowProvider).accessToken, isNull);
+        expect(next.calls, isEmpty);
+      });
+    }
+
+    testWidgets('「やめる」を押せばプロフィールのまま', (tester) async {
+      final store = savedStore();
+      final api = FakeStudentApi();
+      final container = await openApp(tester, api, store);
+      await openProfile(tester);
+
+      await tapLogoutAndAnswerLater(tester, api, PointerDeviceKind.touch);
+      await tapText(tester, 'やめる');
+
+      expect(find.text('ログアウトしますか？'), findsNothing);
+      expect(container.read(studentFlowProvider).step, FlowStep.profile);
+      expect(store.read(), isNotNull);
+    });
+
+    testWidgets('確定待ちの予約があれば確かめに日時を書き、キャンセルしてから登録の画面にする', (tester) async {
+      final store = savedStore();
+      final api = FakeStudentApi();
+      await openApp(tester, api, store, now: Fixtures.now);
+      await openProfile(tester);
+
+      await tapLogoutAndAnswerLater(tester, api, PointerDeviceKind.touch);
+
+      expect(find.text('ログアウトしますか？'), findsOneWidget);
+      expect(find.textContaining('確定待ちの予約（'), findsOneWidget);
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+
+      expect(api.calls.last, 'cancelBooking');
+      expect(find.text('アカウント登録'), findsOneWidget);
+      expect(store.raw, isNull);
+    });
   });
 
   testWidgets('確かめのダイアログで「やめる」を押せば、ログアウトせずプロフィールのまま', (tester) async {
