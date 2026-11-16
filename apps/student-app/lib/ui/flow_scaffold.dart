@@ -129,19 +129,43 @@ class FlowScaffold extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (state.busy) const LinearProgressIndicator(),
-          if (state.errorMessage case final message? when showError)
-            Card(
-              color: Theme.of(context).colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(message),
-              ),
-            ),
+          // 呼んでいる間の表示と失敗の文言は、いつも先頭の 1 つの欄に入れる。出るときだけ足すと [children] の位置がずれ、
+          // 画面の欄が作り直されて、応答を待っていた欄の操作（ログアウトの確かめを出すなど）が続かなくなる（#1730）
+          _FlowStatus(
+            busy: state.busy,
+            errorMessage: showError ? state.errorMessage : null,
+          ),
           ...children,
         ],
       ),
       bottomNavigationBar: bottomBar,
+    );
+  }
+}
+
+/// 本文の先頭の欄。API を呼んでいる間は進み具合の帯を、直前の操作が失敗したらその文言を出す（どちらもなければ高さ 0）
+class _FlowStatus extends StatelessWidget {
+  const _FlowStatus({required this.busy, required this.errorMessage});
+
+  final bool busy;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (busy) const LinearProgressIndicator(),
+        if (errorMessage case final message?)
+          Card(
+            color: Theme.of(context).colorScheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(message),
+            ),
+          ),
+      ],
     );
   }
 }
