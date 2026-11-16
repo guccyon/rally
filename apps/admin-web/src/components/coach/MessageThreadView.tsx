@@ -63,7 +63,7 @@ function ReviewCard({
 }
 
 /**
- * 1 つのスレッドのメッセージ（listMessages。送った順）と送信の欄（sendMessage）。開いたら既読にする（markMessageThreadRead）。
+ * 1 つのスレッドのメッセージ（listMessages。送った順）と送信の欄（sendMessage）。開いたときだけ既読にする（markMessageThreadRead）。取り直しでは既読にしない（ADR 0007 決定 4）。
  * 本文のメッセージは送り手と一緒に、スタンプは絵柄を大きめに吹き出しなしで、生徒の添削の依頼とコーチの添削の返却はカードで
  * 出す。依頼のカードは、まだ返していない動画（listMyCoachVideos の添削待ち）なら「添削する」で「動画の添削」と同じ欄
  * （VideoReviewCommentForm）を開いて返す。送信の欄の「スタンプ」から 8 種類を選んで、本文の代わりに送れる。
@@ -93,15 +93,17 @@ export function MessageThreadView({
   const [busy, setBusy] = useState(false);
   const [pickingStamp, setPickingStamp] = useState(false);
 
-  // メッセージと動画を読み、読めたら既読にする。
-  const fetchThread = useCallback(async (): Promise<ThreadState> => {
+  // メッセージと動画を読む。`markRead` のときだけ（スレッドを開いたとき）、読めたら既読にする。
+  const fetchThread = useCallback(async (markRead: boolean): Promise<ThreadState> => {
     const [messages, videos] = await Promise.all([
       api.listMessages(threadId),
       api.listMyCoachVideos(),
     ]);
     if (!messages.ok) return { kind: "failed", message: messages.message };
-    const read = await api.markMessageThreadRead(threadId);
-    if (read.ok) onRead(read.data);
+    if (markRead) {
+      const read = await api.markMessageThreadRead(threadId);
+      if (read.ok) onRead(read.data);
+    }
     return {
       kind: "loaded",
       messages: messages.data.messages,
@@ -114,7 +116,7 @@ export function MessageThreadView({
   // 開いたときの読み込み。初期の状態が loading なので、ここでは結果だけを入れる。
   useEffect(() => {
     let active = true;
-    void fetchThread().then((next) => {
+    void fetchThread(true).then((next) => {
       if (active) setState(next);
     });
     return () => {
@@ -125,7 +127,7 @@ export function MessageThreadView({
   // 生徒から届いたメッセージでスレッドの一覧（最後のメッセージ・未読の数）も変わるので、一覧も取り直させる。
   async function onReload() {
     setBusy(true);
-    setState(await fetchThread());
+    setState(await fetchThread(false));
     await onChanged();
     setBusy(false);
   }
@@ -172,7 +174,7 @@ export function MessageThreadView({
         : `${studentName}に添削を返却しました。`,
     });
     // 返却のメッセージがスレッドに足され、動画は返却済みになるので、両方を取り直す。
-    setState(await fetchThread());
+    setState(await fetchThread(false));
     await onChanged();
   }
 

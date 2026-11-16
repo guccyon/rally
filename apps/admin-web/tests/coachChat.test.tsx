@@ -677,7 +677,8 @@ describe("コーチのチャット", () => {
 
     await user.click(screen.getByRole("button", { name: "新しいメッセージを確かめる" }));
     expect(api.listMessages).toHaveBeenCalledTimes(2);
-    expect(api.markMessageThreadRead).toHaveBeenCalledTimes(2);
+    // 確かめるだけでは既読にしない（開いたときの 1 回だけ）。
+    expect(api.markMessageThreadRead).toHaveBeenCalledTimes(1);
   });
 
   test("「新しいメッセージを確かめる」でスレッドの一覧も取り直し、最後のメッセージを新しくする", async () => {
@@ -702,7 +703,7 @@ describe("コーチのチャット", () => {
         data: {
           threads: [
             arrived
-              ? thread(THREAD_ID, STUDENT_ID, 0, studentStamp)
+              ? { ...thread(THREAD_ID, STUDENT_ID, 2, studentStamp), unanswered: true }
               : thread(THREAD_ID, STUDENT_ID, 0, null),
           ],
         },
@@ -731,7 +732,9 @@ describe("コーチのチャット", () => {
     expect(item).toHaveTextContent("スタンプ: 🙏 ありがとう");
     expect(item).toHaveTextContent(formatDateTime(studentStamp.sent_at));
     expect(item).not.toHaveTextContent("まだメッセージはありません");
-    expect(item).not.toHaveTextContent("未読");
+    expect(item).toHaveTextContent("未読 2 件");
+    expect(item).toHaveTextContent("未返信");
+    expect(api.markMessageThreadRead).toHaveBeenCalledTimes(1);
   });
 
   test("スレッドが 0 件ならその旨を出す", async () => {
