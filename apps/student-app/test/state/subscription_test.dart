@@ -244,7 +244,7 @@ void main() {
   });
 
   test(
-    '前面に戻ったとき、ホームでは受講権と次にやることを読み直し、読めなければ今月のビデオ通話の欄にだけ旨を出し、読めたら下ろす（#1606）',
+    '前面に戻ったとき、ホームでは受講権と自分の予約と次にやることを読み直し、読めなければ今月のビデオ通話の欄にだけ旨を出し、読めたら下ろす（#1606）',
     () async {
       final api = FakeStudentApi(
         failures: {'getMyEntitlement': Fixtures.unreachable},
@@ -261,7 +261,11 @@ void main() {
 
       await flow.refreshOnResume();
 
-      expect(api.calls, ['getMyEntitlement', 'getMyNextActions']);
+      expect(api.calls, [
+        'getMyEntitlement',
+        'listMyBookings',
+        'getMyNextActions',
+      ]);
       expect(container.read(studentFlowProvider).homeFailures, {
         HomeSection.threads,
         HomeSection.entitlement,

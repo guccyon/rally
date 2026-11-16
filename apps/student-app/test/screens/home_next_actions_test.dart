@@ -9,6 +9,7 @@ import 'package:rally_student_app/state/lesson_completions.dart';
 import 'package:rally_student_app/state/next_actions.dart';
 import 'package:rally_student_app/state/prejoin_check.dart';
 import 'package:rally_student_app/state/student_flow.dart';
+import 'package:rally_student_app/ui/components/booking_card.dart';
 import 'package:rally_student_app/ui/components/rally_button.dart';
 import 'package:rally_student_app/ui/components/rally_card.dart';
 import 'package:rally_student_app/ui/labels.dart';
@@ -344,6 +345,97 @@ void main() {
 
     expect(find.text('体験予約がまだ確定していません'), findsOneWidget);
     expect(find.text('内容を確かめて確定する'), findsOneWidget);
+  });
+
+  /// このタブを裏に回し、[changeElsewhere]（別のタブでの操作）のあとで前面に戻す
+  Future<void> switchTabAndBack(
+    WidgetTester tester,
+    void Function() changeElsewhere,
+  ) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    await tester.pump();
+    changeElsewhere();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+  }
+
+  Finder bookingCards() => find.byType(RallyBookingCard);
+
+  testWidgets(
+    '別のタブで確定済みの予約をキャンセルして戻ると、「これからの予約」からその予約が消え、「次にやること」とも食い違わない（#1729）',
+    (tester) async {
+      final api = FakeStudentApi(
+        myBookings: [pendingTrial(status: BookingStatus.confirmed)],
+        nextActions: [Fixtures.nextJoinLiveLesson],
+      );
+      await pumpHome(tester, api);
+      expect(
+        find.descendant(of: bookingCards(), matching: find.text('確定済み')),
+        findsOneWidget,
+      );
+
+      await switchTabAndBack(tester, () {
+        api.myBookings[0] = pendingTrial(status: BookingStatus.cancelled);
+        api.nextActions.clear();
+        api.calls.clear();
+      });
+
+      expect(api.calls, contains('listMyBookings'));
+      expect(bookingCards(), findsNothing);
+      expect(find.text('まだこれからの予約はありません。'), findsOneWidget);
+      expect(find.text('次にやること'), findsNothing);
+    },
+  );
+
+  testWidgets('別のタブで予約を確定して戻ると、「次にやること」と同じ予約が「これからの予約」に出る（#1729）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(myBookings: const []);
+    await pumpHome(tester, api);
+    expect(find.text('まだこれからの予約はありません。'), findsOneWidget);
+
+    await switchTabAndBack(tester, () {
+      api.myBookings.add(pendingTrial(status: BookingStatus.confirmed));
+      api.nextActions.add(Fixtures.nextJoinLiveLesson);
+    });
+
+    expect(find.text('次にやること'), findsOneWidget);
+    expect(find.text('まだこれからの予約はありません。'), findsNothing);
+    expect(
+      find.descendant(of: bookingCards(), matching: find.text('確定済み')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: bookingCards(),
+        matching: find.textContaining('コーチ: 山田 花子'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('前面に戻ったときに予約を読めなければ、「これからの予約」の欄にだけ旨を出し、読めたら下ろす（#1729）', (
+    tester,
+  ) async {
+    final api = FakeStudentApi(
+      myBookings: [pendingTrial(status: BookingStatus.confirmed)],
+      failures: {},
+    );
+    await pumpHome(tester, api);
+
+    await switchTabAndBack(
+      tester,
+      () => api.failures['listMyBookings'] = Fixtures.unreachable,
+    );
+
+    expect(find.text('予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。'), findsOneWidget);
+
+    await switchTabAndBack(tester, () => api.failures.remove('listMyBookings'));
+
+    expect(find.text('予約を読み込めませんでした。「ホームを更新する」でもう一度読み込めます。'), findsNothing);
+    expect(bookingCards(), findsOneWidget);
   });
 
   test('次の操作の状態は、その動画の完了の記録があるときだけ completesVideo', () {
