@@ -2,6 +2,7 @@
 //! モック（`MockVideoCallProvider`）で、予約は scheduling の保存先から読む。
 //!
 //! - 確定前の予約では開始できず（409）、確定すれば開始できる
+//! - 参加者は取得でコーチ・生徒の最初の入室時刻を読め、参加者でないアカウントには 404
 //! - 終了するとセッションが `ended` になり、通話の長さが記録される
 
 use std::time::{Duration, SystemTime};
@@ -30,6 +31,13 @@ async fn send(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
     (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+fn get(path: &str, token: &str) -> Request<Body> {
+    Request::get(path)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap()
 }
 
 fn post_json(path: &str, token: &str, body: Value) -> Request<Body> {
@@ -127,6 +135,30 @@ async fn a_confirmed_booking_can_be_started_and_ended() {
         "{session}"
     );
     let session_id = session["session_id"].as_str().unwrap();
+    assert_eq!(session["coach_joined_at"], "2026-11-01T10:00:00Z");
+
+    // 参加者は取得で入室の様子を読める。生徒はまだ入室していない（Issue #1654）
+    let (status, read) = send(
+        &router,
+        get(&format!("/live-lesson-sessions/{session_id}"), &student),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["coach_joined_at"], "2026-11-01T10:00:00Z");
+    assert_eq!(read["bookings"][0]["student_joined_at"], Value::Null);
+    assert_eq!(read["room_token"], Value::Null);
+    let stranger = MockTokenService
+        .issue(TokenClaims {
+            account_id: AccountId::from_u128(43),
+            role: Role::Student,
+        })
+        .into_string();
+    let (status, body) = send(
+        &router,
+        get(&format!("/live-lesson-sessions/{session_id}"), &stranger),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
 
     // 生徒が 45 分後に終了する
     clock.set(nov1_10() + Duration::from_secs(45 * 60));
