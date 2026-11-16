@@ -27,6 +27,7 @@ const MESSAGES: Record<Schemas["ErrorCode"], string> = {
   leave_preview_outdated:
     "期間の予約が確かめたあとに変わったため、お休みにできませんでした。予約も枠も変えていません。「期間の予約と枠を確かめる」で読み直してから、もう一度「お休みにする」を押してください。",
   coach_leave_overlaps: "この期間に重なるお休みがもうあります。期間を変えて確かめ直してください。",
+  email_already_registered: "このメールアドレスはすでに登録されています。別のメールアドレスを入れてください。",
 };
 
 const UNKNOWN = "エラーが発生しました。時間をおいてやり直してください。";

@@ -67,6 +67,8 @@ info:
     公開中のレッスンメニューの数・直近 30 日の動画添削の返却までの時間・返却待ちの動画添削の件数とそのうち 48 時間以上たった
     件数・直近 30 日にキャンセルされた予約の数・返信のないまま時間の過ぎたチャットのスレッドの数を 1 回で読む（`getCoachOverview`。
     コーチの稼働の相談でキャンセルの多さを、対応の遅れの相談で返事のないメッセージの多さを確かめる）。
+    本部はメールアドレス・表示名・提供スポーツ（1 つ以上）を送ってコーチを登録する（`registerCoach`。同じメールアドレスのアカウントがあれば
+    409 `email_already_registered`）。登録したコーチは `listCoaches` に載る。
     本部はプロフィール（自己紹介）に空の項目があるコーチを、空の項目の名前とともに、任意のスポーツで絞って読む（`listIncompleteCoachProfiles`。
     書きかけのコーチを見つけて声をかける）。
     本部は、始まったまま終了の記録がなく開始から一定の時間（既定 3 時間）が過ぎた通話セッションを、コーチを問わず（任意のコーチで
@@ -111,7 +113,7 @@ tags:
   - name: review
     description: 評価（コーチごとの評価の集計と一覧・本部が見る低い評価の一覧・コーチの評価への返信）
   - name: identity
-    description: アカウント（ログイン中の本人のアカウント・本部が見る生徒の一覧と生徒 1 人の利用の様子）
+    description: アカウント（ログイン中の本人のアカウント・本部が見る生徒の一覧と生徒 1 人の利用の様子・本部によるコーチの登録）
   - name: profile
     description: プロフィール（コーチの自己紹介文・本部が見るコーチの一覧・本部が見るプロフィールの書きかけのコーチの一覧）
   - name: messaging
@@ -816,6 +818,51 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    post:
+      operationId: registerCoach
+      summary: コーチの登録（本部）
+      description: |
+        本部がメールアドレス・表示名・提供スポーツ（1 つ以上）を送って、コーチの役割のアカウントを 1 つ作り、作ったコーチを
+        `listCoaches` の 1 件と同じ形で返す。本番の空の DB から事業を始めるとき、本部がコーチを画面から登録するのに使う。
+        本部の役割のトークンだけが呼べる（コーチ・生徒は 403。docs/adr/0008-backoffice-separation.md）。
+
+        - `email`: メールアドレス。すでにどれかのアカウント（生徒・コーチ・本部を問わない）のメールアドレスとして登録されて
+          いれば 409 `email_already_registered`（何も作らない）。比べるときは大文字・小文字を区別しない
+        - `display_name`: 表示名（1〜50 文字。文字数は Unicode のコードポイントで数える）
+        - `sports`: 提供スポーツ（`Sport` の値を 1 つ以上。同じ値を重ねない）。ゴルフも選べる
+        - 必須の項目がない・`email` がメールアドレスの形でない・`display_name` が 0 文字か 51 文字以上・`sports` が空の配列か
+          同じ値を含むか `Sport` の値でないものを含む・JSON でない本文は 422 `validation_failed`（何も作らない）
+        - 登録したコーチの受付の状態 `acceptance_status` は受付中 `accepting`、`recent_lesson_count` は 0。以後
+          `listCoaches` に載る
+        - 招待のメールは送らない。コーチは登録したメールアドレスでログインする（ログインの方式は変えない）
+
+        アカウントは identity の持ち物で、提供スポーツもアカウント（コーチ）に添えて identity が持つ。
+        本部の運営の操作で、KPI の入力でもないので行動イベントは発火しない（生徒の `registerAccount` の
+        `account.registered` は生徒の登録だけ）。
+      tags: [identity]
+      x-context: identity
+      x-analytics-events: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterCoachRequest"
+      responses:
+        "201":
+          description: 登録したコーチ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coach"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
 
@@ -3856,7 +3903,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、通話セッションが終了済み、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でないなど）
+      description: 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、通話セッションが終了済み、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でない、登録するコーチのメールアドレスがすでに登録されているなど）
       content:
         application/json:
           schema:
@@ -4404,6 +4451,28 @@ components:
           description: |
             照会した時刻の 30 日前（含む）から照会した時刻（含む）までに完了したレッスンの数（同期・非同期の合計。
             数え方は `listCoaches` の説明）
+
+    RegisterCoachRequest:
+      type: object
+      description: 本部によるコーチの登録（`registerCoach`）
+      required: [email, display_name, sports]
+      properties:
+        email:
+          type: string
+          format: email
+          description: コーチのメールアドレス（どのアカウントのメールアドレスとも重ならないこと。大文字・小文字は区別しない）
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: アカウントの表示名
+        sports:
+          type: array
+          description: 提供スポーツ（1 つ以上。同じ値を重ねない）
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Sport"
 
     CoachAcceptanceStatus:
       type: string
@@ -6436,6 +6505,7 @@ components:
         - announcement_already_withdrawn
         - leave_preview_outdated
         - coach_leave_overlaps
+        - email_already_registered
 
     Error:
       type: object

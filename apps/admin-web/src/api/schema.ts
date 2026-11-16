@@ -422,7 +422,27 @@ export interface paths {
          */
         get: operations["listCoaches"];
         put?: never;
-        post?: never;
+        /**
+         * コーチの登録（本部）
+         * @description 本部がメールアドレス・表示名・提供スポーツ（1 つ以上）を送って、コーチの役割のアカウントを 1 つ作り、作ったコーチを
+         *     `listCoaches` の 1 件と同じ形で返す。本番の空の DB から事業を始めるとき、本部がコーチを画面から登録するのに使う。
+         *     本部の役割のトークンだけが呼べる（コーチ・生徒は 403。docs/adr/0008-backoffice-separation.md）。
+         *
+         *     - `email`: メールアドレス。すでにどれかのアカウント（生徒・コーチ・本部を問わない）のメールアドレスとして登録されて
+         *       いれば 409 `email_already_registered`（何も作らない）。比べるときは大文字・小文字を区別しない
+         *     - `display_name`: 表示名（1〜50 文字。文字数は Unicode のコードポイントで数える）
+         *     - `sports`: 提供スポーツ（`Sport` の値を 1 つ以上。同じ値を重ねない）。ゴルフも選べる
+         *     - 必須の項目がない・`email` がメールアドレスの形でない・`display_name` が 0 文字か 51 文字以上・`sports` が空の配列か
+         *       同じ値を含むか `Sport` の値でないものを含む・JSON でない本文は 422 `validation_failed`（何も作らない）
+         *     - 登録したコーチの受付の状態 `acceptance_status` は受付中 `accepting`、`recent_lesson_count` は 0。以後
+         *       `listCoaches` に載る
+         *     - 招待のメールは送らない。コーチは登録したメールアドレスでログインする（ログインの方式は変えない）
+         *
+         *     アカウントは identity の持ち物で、提供スポーツもアカウント（コーチ）に添えて identity が持つ。
+         *     本部の運営の操作で、KPI の入力でもないので行動イベントは発火しない（生徒の `registerAccount` の
+         *     `account.registered` は生徒の登録だけ）。
+         */
+        post: operations["registerCoach"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2743,6 +2763,18 @@ export interface components {
              */
             recent_lesson_count: number;
         };
+        /** @description 本部によるコーチの登録（`registerCoach`） */
+        RegisterCoachRequest: {
+            /**
+             * Format: email
+             * @description コーチのメールアドレス（どのアカウントのメールアドレスとも重ならないこと。大文字・小文字は区別しない）
+             */
+            email: string;
+            /** @description アカウントの表示名 */
+            display_name: string;
+            /** @description 提供スポーツ（1 つ以上。同じ値を重ねない） */
+            sports: components["schemas"]["Sport"][];
+        };
         /**
          * @description glossary の coach_acceptance（コーチの受付）の状態。accepting: 受付中（新しい予約を受け付ける。一度も止めていない
          *     コーチもこれ）/ suspended: 停止中（本部が止めている。枠は生徒の検索とコーチを探す一覧に出ず、新しい予約を受けない。
@@ -4095,7 +4127,7 @@ export interface components {
          * @description 機械可読のエラー種別。値は追加しうる（クライアントは未知の値を汎用エラーとして扱う）。
          * @enum {string}
          */
-        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "slot_not_started" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn" | "leave_preview_outdated" | "coach_leave_overlaps";
+        ErrorCode: "unauthorized" | "forbidden" | "not_found" | "validation_failed" | "slot_overlaps" | "slot_has_active_booking" | "slot_already_started" | "slot_already_closed" | "slot_not_started" | "invalid_booking_state" | "invalid_session_state" | "invalid_video_state" | "review_payment_not_confirmed" | "chat_not_entitled" | "coach_already_suspended" | "coach_not_suspended" | "lesson_menu_unpublished_by_headquarters" | "lesson_menu_already_unpublished_by_headquarters" | "lesson_menu_not_unpublished_by_headquarters" | "lesson_review_not_low_rated" | "announcement_already_withdrawn" | "leave_preview_outdated" | "coach_leave_overlaps" | "email_already_registered";
         Error: {
             code: components["schemas"]["ErrorCode"];
             /** @description 人間向けの説明（表示用ではない） */
@@ -4130,7 +4162,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、通話セッションが終了済み、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でないなど） */
+        /** @description 現在の状態では実行できない（同じコーチの枠と期間が重なる、取り下げる枠に予約が入っている、添削が返却済み、予約が未確定、通話セッションが終了済み、コーチの受付がすでに停止中・停止中でない、レッスンメニューを本部が非公開にしている・していない、お知らせがすでに取り下げてある、対応済みにする評価が低い評価でない、登録するコーチのメールアドレスがすでに登録されているなど） */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -4460,6 +4492,34 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    registerCoach: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterCoachRequest"];
+            };
+        };
+        responses: {
+            /** @description 登録したコーチ */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Coach"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };
