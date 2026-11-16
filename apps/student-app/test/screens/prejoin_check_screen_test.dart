@@ -220,6 +220,49 @@ void main() {
     expect(media.calls.where((c) => c == 'openMic'), hasLength(1));
   });
 
+  testWidgets('試し音を鳴らせない作りの端末では、カメラやマイクがなくても「スピーカーは確かめられます」と案内しない', (
+    tester,
+  ) async {
+    await open(
+      tester,
+      media: FakeLocalMedia(
+        camera: MediaDeviceStatus.missing,
+        mic: MediaDeviceStatus.missing,
+        toneFails: true,
+        canPlayTestTone: false,
+      ),
+    );
+
+    expect(
+      find.text(
+        'この端末にカメラとマイクが見つかりません。\n'
+        'なくても、開始時刻から入室できます。',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('スピーカーは確かめられます'), findsNothing);
+  });
+
+  testWidgets('試し音を鳴らせる作りの端末では、カメラとマイクがないときに「スピーカーは確かめられます」と案内する', (
+    tester,
+  ) async {
+    await open(
+      tester,
+      media: FakeLocalMedia(
+        camera: MediaDeviceStatus.missing,
+        mic: MediaDeviceStatus.missing,
+      ),
+    );
+
+    expect(
+      find.text(
+        'この端末にカメラとマイクが見つかりません。スピーカーは確かめられます。\n'
+        'なくても、開始時刻から入室できます。',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('声を出すとバーが伸び、2 秒静かになると「まだ音が届いていません」に戻る。マイクを切るとマイクを止める', (
     tester,
   ) async {
