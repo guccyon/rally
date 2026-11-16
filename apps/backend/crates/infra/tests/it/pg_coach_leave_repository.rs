@@ -213,7 +213,7 @@ async fn a_student_cancel_is_read_back_as_the_student(pool: PgPool) {
     let bookings = PgBookingRepository::new(pool.clone());
     bookings
         .update(booking.id(), |booking, slot| {
-            booking.cancel(student, slot, at(2)).map(|_| ())
+            booking.cancel(student, slot, at(2), true).map(|_| ())
         })
         .await
         .unwrap();

@@ -16,11 +16,17 @@ impl CancellationPolicy {
 
     /// 予約 `booking` を `cancelled_at` にキャンセルしたときの判定。
     ///
-    /// 開始時刻の 24 時間前ちょうど、またはそれより後（開始後を含む）なら `consumes_quota: true`。
+    /// `has_live_lesson_quota` は生徒がビデオ通話の暦月の枠を持つか（[`Self::preview`] と同じ）。持たない生徒は
+    /// entitlement が回数を数えない（docs/adr/0005 の 6）ので、いつキャンセルしても `consumes_quota: false`。
+    /// 持つ生徒は、開始時刻の 24 時間前ちょうど、またはそれより後（開始後を含む）なら `consumes_quota: true`。
     /// 24 時間前より前なら `false`。予約の状態（確定前か確定済みか）・体験予約かは見ない。
-    pub fn decide(booking: &Booking, cancelled_at: SystemTime) -> CancellationDecision {
-        let consumes_quota =
-            Self::free_cancel_until(booking).is_none_or(|until| cancelled_at >= until);
+    pub fn decide(
+        booking: &Booking,
+        cancelled_at: SystemTime,
+        has_live_lesson_quota: bool,
+    ) -> CancellationDecision {
+        let consumes_quota = has_live_lesson_quota
+            && Self::free_cancel_until(booking).is_none_or(|until| cancelled_at >= until);
         CancellationDecision { consumes_quota }
     }
 
@@ -65,7 +71,7 @@ impl CancellationPolicy {
         }
         Some(if has_live_lesson_quota {
             CancellationPreview::with_boundary(
-                Self::decide(booking, now).consumes_quota,
+                Self::decide(booking, now, true).consumes_quota,
                 Self::preview_boundary(booking),
             )
         } else {
@@ -112,7 +118,7 @@ mod tests {
     }
 
     fn consumes_quota(before_start: Duration) -> bool {
-        CancellationPolicy::decide(&booking(), starts_at() - before_start).consumes_quota
+        CancellationPolicy::decide(&booking(), starts_at() - before_start, true).consumes_quota
     }
 
     #[test]
@@ -134,6 +140,25 @@ mod tests {
     }
 
     #[test]
+    fn a_student_without_the_live_lesson_quota_never_consumes_quota() {
+        // 受講権のない生徒は entitlement が回数を数えないので、開始の直前・開始後でも消費しない（見込みと同じ）
+        for cancelled_at in [
+            starts_at() - 25 * HOUR,
+            starts_at() - 24 * HOUR,
+            starts_at() - HOUR,
+            starts_at() + HOUR,
+        ] {
+            assert!(!CancellationPolicy::decide(&booking(), cancelled_at, false).consumes_quota);
+            assert_eq!(
+                CancellationPolicy::decide(&booking(), cancelled_at, false).consumes_quota,
+                CancellationPolicy::preview(&booking(), cancelled_at, false)
+                    .unwrap()
+                    .consumes_quota()
+            );
+        }
+    }
+
+    #[test]
     fn a_headquarters_cancel_never_consumes_quota() {
         // 生徒の都合でないので、開始の直前でも消費しない
         assert!(!CancellationPolicy::decide_for_headquarters(&booking()).consumes_quota);
@@ -143,7 +168,7 @@ mod tests {
     fn cancelling_at_or_after_start_consumes_quota() {
         assert!(consumes_quota(Duration::ZERO));
         assert!(
-            CancellationPolicy::decide(&booking(), starts_at() + HOUR).consumes_quota,
+            CancellationPolicy::decide(&booking(), starts_at() + HOUR, true).consumes_quota,
             "開始後のキャンセルも消費する"
         );
     }
@@ -215,7 +240,12 @@ mod tests {
         )
         .unwrap();
         booking
-            .cancel(AccountId::from_u128(1), &mut slot, SystemTime::UNIX_EPOCH)
+            .cancel(
+                AccountId::from_u128(1),
+                &mut slot,
+                SystemTime::UNIX_EPOCH,
+                true,
+            )
             .unwrap();
         for has_live_lesson_quota in [true, false] {
             assert_eq!(

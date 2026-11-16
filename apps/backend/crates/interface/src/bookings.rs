@@ -42,7 +42,7 @@ use crate::{
 pub struct BookingsState<B, J, M, G, A, P, C, K> {
     pub create_booking: CreateBooking<B, J, M, G, A, C>,
     pub confirm_booking: ConfirmBooking<B, G, A, P, C>,
-    pub cancel_booking: CancelBooking<B, A, P, C>,
+    pub cancel_booking: CancelBooking<B, G, A, P, C>,
     pub describe_booking: DescribeBooking<B, K>,
 }
 
@@ -267,7 +267,7 @@ pub(crate) fn booking_lesson_menu_body(menu: &BookingLessonMenu) -> BookingLesso
 pub fn bookings_router<B, J, M, G, A, P, C, K, T>(
     create_booking: CreateBooking<B, J, M, G, A, C>,
     confirm_booking: ConfirmBooking<B, G, A, P, C>,
-    cancel_booking: CancelBooking<B, A, P, C>,
+    cancel_booking: CancelBooking<B, G, A, P, C>,
     describe_booking: DescribeBooking<B, K>,
     tokens: T,
 ) -> Router

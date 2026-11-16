@@ -281,7 +281,7 @@ mod tests {
     async fn cancel(bookings: &InMemoryBookingRepository, booking: &Booking, hour: u64) {
         bookings
             .update(booking.id(), |booking, slot| {
-                booking.cancel(STUDENT, slot, at(hour)).map(|_| ())
+                booking.cancel(STUDENT, slot, at(hour), true).map(|_| ())
             })
             .await
             .unwrap();
@@ -518,7 +518,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 list.cancellations[&booking.id()].consumes_quota(),
-                CancellationPolicy::decide(&booking, at(now_hour)).consumes_quota
+                CancellationPolicy::decide(&booking, at(now_hour), true).consumes_quota
             );
         }
     }

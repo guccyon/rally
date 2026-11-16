@@ -19,7 +19,8 @@ pub trait QuotaGate: Send + Sync {
 
     /// `student_id` の生徒がビデオ通話の暦月の枠を持つか（月額の受講権があるか）。持たない生徒（受講権がない・
     /// ワンショット）の予約は、キャンセルしても回数を数えない（docs/adr/0005 の 6）。本人の予約の一覧
-    /// （[`super::ListMyBookings`]）が、キャンセルの見込みを出すときに呼ぶ。
+    /// （[`super::ListMyBookings`]）がキャンセルの見込みを出すときと、予約のキャンセル（[`super::CancelBooking`]）が
+    /// キャンセル規定の判定に渡すときに呼ぶ（見込みと実際の判定を同じにする。#1605）。
     fn has_live_lesson_quota(
         &self,
         student_id: AccountId,

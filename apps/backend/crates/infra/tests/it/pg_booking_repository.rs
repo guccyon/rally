@@ -94,7 +94,7 @@ async fn booking_round_trips_through_confirm_and_cancel(pool: PgPool) {
 
     let cancelled = bookings
         .update(booking.id(), |booking, slot| {
-            booking.cancel(student, slot, at(3)).map(|_| ())
+            booking.cancel(student, slot, at(3), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -120,7 +120,7 @@ async fn cancellation_decision_is_saved_and_missing_records_are_read_as_none(poo
         .update(booking.id(), |booking, slot| {
             booking.confirm(student, slot, at(2))?;
             // 開始（30 時）の 1 時間前。回数を消費する
-            booking.cancel(student, slot, at(29)).map(|_| ())
+            booking.cancel(student, slot, at(29), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -321,7 +321,7 @@ async fn group_slot_is_booked_when_all_seats_are_confirmed_and_reopens_on_cancel
     // 同じ生徒の 2 回目は拒む（満席でなくても）
     bookings
         .update(confirmed[1].id(), |booking, slot| {
-            booking.cancel(second, slot, at(3)).map(|_| ())
+            booking.cancel(second, slot, at(3), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -365,7 +365,7 @@ async fn slots_starting_between_reads_slots_of_any_status_and_their_bookings(poo
     let cancelled = reserve(&bookings, first, &start, false).await.unwrap();
     bookings
         .update(cancelled.id(), |booking, slot| {
-            booking.cancel(first, slot, at(2)).map(|_| ())
+            booking.cancel(first, slot, at(2), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -421,7 +421,9 @@ async fn bookings_cancelled_between_reads_only_bookings_cancelled_in_the_period(
         let booking = reserve(&bookings, student, &slot, false).await.unwrap();
         let booking = bookings
             .update(booking.id(), |booking, slot| {
-                booking.cancel(student, slot, cancelled_at).map(|_| ())
+                booking
+                    .cancel(student, slot, cancelled_at, true)
+                    .map(|_| ())
             })
             .await
             .unwrap();
@@ -455,7 +457,7 @@ async fn bookings_of_student_reads_own_bookings_of_any_status_with_their_slots(p
     let cancelled = reserve(&bookings, student, &early, false).await.unwrap();
     let cancelled = bookings
         .update(cancelled.id(), |booking, slot| {
-            booking.cancel(student, slot, at(2)).map(|_| ())
+            booking.cancel(student, slot, at(2), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -551,7 +553,7 @@ async fn last_booked_at_of_students_reads_the_latest_creation_of_any_status(pool
     let latest = book(student, support::open_slot(&pool, coach, 20, 21).await, 5).await;
     bookings
         .update(latest.id(), |booking, slot| {
-            booking.cancel(student, slot, at(6)).map(|_| ())
+            booking.cancel(student, slot, at(6), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -587,7 +589,7 @@ async fn bookings_of_coach_reads_bookings_of_own_slots_of_any_status(pool: PgPoo
     let cancelled = reserve(&bookings, other, &early, false).await.unwrap();
     let cancelled = bookings
         .update(cancelled.id(), |booking, slot| {
-            booking.cancel(other, slot, at(2)).map(|_| ())
+            booking.cancel(other, slot, at(2), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -669,7 +671,7 @@ async fn bookings_of_coach_starting_between_reads_only_own_bookings_starting_in_
     let cancelled = reserve(&bookings, other, &start, false).await.unwrap();
     bookings
         .update(cancelled.id(), |booking, slot| {
-            booking.cancel(other, slot, at(2)).map(|_| ())
+            booking.cancel(other, slot, at(2), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -965,7 +967,7 @@ async fn recent_bookings_of_lesson_menus_are_counted_per_menu(pool: PgPool) {
     let cancelled = book_menu(&bookings, student, &slot, Some(&popular), 500).await;
     bookings
         .update(cancelled.id(), |booking, slot| {
-            booking.cancel(student, slot, at(501)).map(|_| ())
+            booking.cancel(student, slot, at(501), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -1082,7 +1084,9 @@ async fn recent_bookings_of_students_are_counted_per_student(pool: PgPool) {
     let cancelled = book_menu(&bookings, cancelled_only, &slot, None, 500).await;
     bookings
         .update(cancelled.id(), |booking, slot| {
-            booking.cancel(cancelled_only, slot, at(501)).map(|_| ())
+            booking
+                .cancel(cancelled_only, slot, at(501), true)
+                .map(|_| ())
         })
         .await
         .unwrap();
@@ -1160,7 +1164,7 @@ async fn find_many_reads_the_asked_bookings_of_any_status(pool: PgPool) {
     .unwrap();
     let cancelled = bookings
         .update(second.id(), |booking, slot| {
-            booking.cancel(student, slot, at(3)).map(|_| ())
+            booking.cancel(student, slot, at(3), true).map(|_| ())
         })
         .await
         .unwrap();

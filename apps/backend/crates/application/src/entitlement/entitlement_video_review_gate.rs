@@ -7,7 +7,9 @@ use crate::{
     async_lesson::VideoReviewGate,
     clock::Clock,
     domain_event::DomainEventPublisher,
-    scheduling::{BookingRepository, CancelBooking, CancelBookingCommand, CancelBookingError},
+    scheduling::{
+        BookingRepository, CancelBooking, CancelBookingCommand, CancelBookingError, QuotaGate,
+    },
 };
 
 /// async-lesson の [`VideoReviewGate`] の entitlement による実装。生徒の体験の使用状況を照会し
@@ -18,20 +20,21 @@ use crate::{
 /// scheduling の [`CancelBooking`] で生徒のキャンセルとして解放する（スロットの席が戻り、境界間イベント
 /// `BookingCancelled` と行動イベント `booking.cancelled` も生徒がキャンセルしたときと同じく出る）。並行にキャンセル
 /// された予約は飛ばす。断るときは何も変えない。
-pub struct EntitlementVideoReviewGate<T, B, A, P, C> {
+pub struct EntitlementVideoReviewGate<T, B, G, A, P, C> {
     usage: T,
-    cancel: CancelBooking<B, A, P, C>,
+    cancel: CancelBooking<B, G, A, P, C>,
 }
 
-impl<T, B, A, P, C> EntitlementVideoReviewGate<T, B, A, P, C> {
-    pub fn new(usage: T, cancel: CancelBooking<B, A, P, C>) -> Self {
+impl<T, B, G, A, P, C> EntitlementVideoReviewGate<T, B, G, A, P, C> {
+    pub fn new(usage: T, cancel: CancelBooking<B, G, A, P, C>) -> Self {
         Self { usage, cancel }
     }
 }
 
-impl<T, B, A, P, C> EntitlementVideoReviewGate<T, B, A, P, C>
+impl<T, B, G, A, P, C> EntitlementVideoReviewGate<T, B, G, A, P, C>
 where
     B: BookingRepository,
+    G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
@@ -63,10 +66,11 @@ where
     }
 }
 
-impl<T, B, A, P, C> VideoReviewGate for EntitlementVideoReviewGate<T, B, A, P, C>
+impl<T, B, G, A, P, C> VideoReviewGate for EntitlementVideoReviewGate<T, B, G, A, P, C>
 where
     T: TrialUsageLookup,
     B: BookingRepository,
+    G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
@@ -126,6 +130,7 @@ mod tests {
             InMemoryVideoRepository,
         >,
         InMemoryBookingRepository,
+        EntitlementQuotaGate<InMemoryEntitlementRepository>,
         RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
         FixedClock,
@@ -214,9 +219,10 @@ mod tests {
                 .then(|| Video::submit(VideoId::from_u128(1), STUDENT, COACH, Sport::Tennis, NOW)),
         );
         let gate = EntitlementVideoReviewGate::new(
-            EntitlementTrialUsageLookup::new(entitlements, completions, videos),
+            EntitlementTrialUsageLookup::new(entitlements.clone(), completions, videos),
             CancelBooking::new(
                 bookings,
+                EntitlementQuotaGate::new(entitlements),
                 RecordingAnalyticsSink::default(),
                 RecordingDomainEventPublisher::default(),
                 FixedClock(NOW + HOUR),

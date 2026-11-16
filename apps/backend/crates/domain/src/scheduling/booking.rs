@@ -255,7 +255,8 @@ impl Booking {
 
     /// 予約した生徒 `student_id` が `now` にキャンセルし、キャンセル規定の判定を返す。
     ///
-    /// 判定は [`CancellationPolicy::decide`] だけが行う（回数の消費の実行は entitlement）。予約したスロット `slot` の
+    /// 判定は [`CancellationPolicy::decide`] だけが行う（回数の消費の実行は entitlement。`has_live_lesson_quota` は
+    /// 生徒がビデオ通話の暦月の枠を持つかで、entitlement が答えたものを渡す）。予約したスロット `slot` の
     /// 席を 1 つ空ける。確定済みならスロットを公開中（[`SlotStatus::Open`](super::SlotStatus::Open)）に戻す（[`Slot::release`]）。確定前なら
     /// スロットはもともと公開中で、押さえた席だけを空ける（[`Slot::release_hold`]）。
     /// 別の生徒なら [`SchedulingError::BookingOfAnotherStudent`]、キャンセル済みなら
@@ -266,11 +267,12 @@ impl Booking {
         student_id: AccountId,
         slot: &mut Slot,
         now: SystemTime,
+        has_live_lesson_quota: bool,
     ) -> Result<CancellationDecision, SchedulingError> {
         if student_id != self.student_id {
             return Err(SchedulingError::BookingOfAnotherStudent);
         }
-        let decision = CancellationPolicy::decide(self, now);
+        let decision = CancellationPolicy::decide(self, now, has_live_lesson_quota);
         self.cancel_as(BookingCanceller::Student, None, decision, slot, now)
     }
 
@@ -529,9 +531,9 @@ mod tests {
         booking.confirm(STUDENT, &mut slot, NOW).unwrap();
 
         // 開始（10 時）の 1 時間前。判定は CancellationPolicy と同じ
-        let decision = booking.cancel(STUDENT, &mut slot, at(9)).unwrap();
+        let decision = booking.cancel(STUDENT, &mut slot, at(9), true).unwrap();
 
-        assert_eq!(decision, CancellationPolicy::decide(&booking, at(9)));
+        assert_eq!(decision, CancellationPolicy::decide(&booking, at(9), true));
         assert!(decision.consumes_quota);
         assert_eq!(booking.status(), BookingStatus::Cancelled);
         assert_eq!(booking.cancelled_at(), Some(at(9)));
@@ -546,7 +548,7 @@ mod tests {
         assert_eq!(slot.remaining_seats(), 0);
 
         // 開始（100 時）の 99 時間前
-        let decision = booking.cancel(STUDENT, &mut slot, at(1)).unwrap();
+        let decision = booking.cancel(STUDENT, &mut slot, at(1), true).unwrap();
 
         assert!(!decision.consumes_quota);
         assert_eq!(booking.status(), BookingStatus::Cancelled);
@@ -563,12 +565,12 @@ mod tests {
         booking.confirm(STUDENT, &mut slot, at(1)).unwrap();
         assert_eq!(booking.cancelled_by(), None, "確定済み");
 
-        booking.cancel(STUDENT, &mut slot, at(2)).unwrap();
+        booking.cancel(STUDENT, &mut slot, at(2), true).unwrap();
         assert_eq!(booking.cancelled_by(), Some(BookingCanceller::Student));
 
         // 失敗したキャンセルは変えない
         let mut pending = reserve(2, OTHER_STUDENT, false, &mut slot, &[booking.clone()]).unwrap();
-        assert!(pending.cancel(STUDENT, &mut slot, at(3)).is_err());
+        assert!(pending.cancel(STUDENT, &mut slot, at(3), true).is_err());
         assert_eq!(pending.cancelled_by(), None);
 
         // 保存先から読み戻したキャンセル済みの予約も同じ
@@ -653,7 +655,9 @@ mod tests {
         let mut slot_a = slot(10, SlotStatus::Open);
         let mut by_student = reserve(1, STUDENT, false, &mut slot_a, &[]).unwrap();
         by_student.confirm(STUDENT, &mut slot_a, at(1)).unwrap();
-        by_student.cancel(STUDENT, &mut slot_a, at(9)).unwrap();
+        by_student
+            .cancel(STUDENT, &mut slot_a, at(9), true)
+            .unwrap();
         assert_eq!(by_student.cancel_reason(), None);
         let changes = by_student.status_changes();
         assert_eq!(changes.len(), 2);
@@ -823,7 +827,10 @@ mod tests {
             ),
         ] {
             let (before, slot_before) = (booking.clone(), slot.clone());
-            assert_eq!(booking.cancel(student, &mut slot, at(2)), Err(expected));
+            assert_eq!(
+                booking.cancel(student, &mut slot, at(2), true),
+                Err(expected)
+            );
             assert_eq!((booking, slot), (before, slot_before));
         }
     }
@@ -856,7 +863,7 @@ mod tests {
             let mut slot = slot(10, SlotStatus::Open);
             let mut booking = reserve(1, STUDENT, true, &mut slot, &[]).unwrap();
             if cancel {
-                booking.cancel(STUDENT, &mut slot, at(1)).unwrap();
+                booking.cancel(STUDENT, &mut slot, at(1), true).unwrap();
             } else {
                 booking.confirm(STUDENT, &mut slot, at(1)).unwrap();
             }
@@ -888,7 +895,9 @@ mod tests {
         }
         // キャンセルされた予約はスロットを確保しない
         let mut first_cancelled = first.clone();
-        first_cancelled.cancel(STUDENT, &mut slot, NOW).unwrap();
+        first_cancelled
+            .cancel(STUDENT, &mut slot, NOW, true)
+            .unwrap();
         reserve(2, OTHER_STUDENT, false, &mut slot, &[first_cancelled]).unwrap();
         // 別のスロットの予約は関係ない
         let mut fresh = self::slot(12, SlotStatus::Open);
@@ -938,7 +947,7 @@ mod tests {
         }
         assert_eq!(slot.status(), SlotStatus::Booked);
 
-        existing[0].cancel(STUDENT, &mut slot, at(2)).unwrap();
+        existing[0].cancel(STUDENT, &mut slot, at(2), true).unwrap();
         assert_eq!(slot.status(), SlotStatus::Open);
         assert_eq!(slot.remaining_seats(), 1);
         // 空いた席は別の生徒が予約できる
@@ -967,7 +976,9 @@ mod tests {
         .unwrap();
         // キャンセルした後なら同じ生徒がもう一度予約できる
         let mut first_cancelled = first;
-        first_cancelled.cancel(STUDENT, &mut slot, NOW).unwrap();
+        first_cancelled
+            .cancel(STUDENT, &mut slot, NOW, true)
+            .unwrap();
         reserve(4, STUDENT, false, &mut slot, &[first_cancelled]).unwrap();
     }
 
@@ -1206,7 +1217,7 @@ mod tests {
             [BookingStatusChange::new(BookingStatus::Confirmed, at(2))]
         );
 
-        booking.cancel(STUDENT, &mut slot, at(5)).unwrap();
+        booking.cancel(STUDENT, &mut slot, at(5), true).unwrap();
         let changes = booking.status_changes();
         assert_eq!(
             changes
@@ -1224,7 +1235,7 @@ mod tests {
     fn status_changes_of_a_booking_cancelled_before_confirmation_have_only_the_cancellation() {
         let mut slot = slot(10, SlotStatus::Open);
         let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
-        let decision = booking.cancel(STUDENT, &mut slot, at(3)).unwrap();
+        let decision = booking.cancel(STUDENT, &mut slot, at(3), true).unwrap();
         assert_eq!(
             booking.status_changes(),
             [BookingStatusChange::cancelled(
@@ -1357,7 +1368,7 @@ mod tests {
         let mut confirmed = booking.clone();
         confirmed.confirm(STUDENT, &mut slot, at(1)).unwrap();
         assert_eq!(confirmed.lesson_menu(), booking.lesson_menu());
-        confirmed.cancel(STUDENT, &mut slot, at(2)).unwrap();
+        confirmed.cancel(STUDENT, &mut slot, at(2), true).unwrap();
         assert_eq!(confirmed.lesson_menu(), booking.lesson_menu());
     }
 
@@ -1475,7 +1486,7 @@ mod tests {
         let mut slot = slot(10, SlotStatus::Open);
         let mut booking = reserve(1, STUDENT, false, &mut slot, &[]).unwrap();
         let before = booking.clone();
-        booking.cancel(STUDENT, &mut slot, at(8)).unwrap();
+        booking.cancel(STUDENT, &mut slot, at(8), true).unwrap();
         assert_eq!(booking.status(), BookingStatus::Cancelled);
         let coach = account(COACH, Role::Coach, &[Sport::Golf]);
         // キャンセルされた予約の一覧が使う。枠のスポーツ（テニス）でなく、キャンセルの前と同じくコーチの提供スポーツで決める

@@ -540,7 +540,7 @@ mod tests {
             })
         );
         let mut cancelled = pending.clone();
-        cancelled.cancel(STUDENT, &mut slot, NOW).unwrap();
+        cancelled.cancel(STUDENT, &mut slot, NOW, true).unwrap();
         assert_eq!(
             LiveLessonSession::start(SESSION, STUDENT, &cancelled, &[], None, at(600)),
             Err(DomainError::BookingNotConfirmed {

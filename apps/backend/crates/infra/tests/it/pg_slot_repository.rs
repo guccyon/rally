@@ -198,7 +198,7 @@ async fn capacity_and_remaining_seats_round_trip(pool: PgPool) {
 
     bookings
         .update(confirmed.id(), |booking, slot| {
-            booking.cancel(first, slot, at(1)).map(|_| ())
+            booking.cancel(first, slot, at(1), true).map(|_| ())
         })
         .await
         .unwrap();
@@ -511,7 +511,7 @@ async fn slots_of_coach_reads_own_slots_of_any_status(pool: PgPool) {
     let to_cancel = reserve(&cancelled).await.unwrap();
     bookings
         .update(to_cancel.id(), |booking, slot| {
-            booking.cancel(student, slot, at(1)).map(|_| ())
+            booking.cancel(student, slot, at(1), true).map(|_| ())
         })
         .await
         .unwrap();

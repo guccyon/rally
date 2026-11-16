@@ -103,7 +103,7 @@ mod tests {
         book(&bookings, OTHER_STUDENT, 2, 20).await;
         bookings
             .update(latest.id(), |booking, slot| {
-                booking.cancel(STUDENT, slot, at(40)).map(|_| ())
+                booking.cancel(STUDENT, slot, at(40), true).map(|_| ())
             })
             .await
             .unwrap();

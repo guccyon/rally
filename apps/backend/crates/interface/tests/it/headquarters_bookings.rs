@@ -501,7 +501,7 @@ async fn status_lists_only_bookings_in_those_statuses() {
     bookings
         .update(made[3].id(), |booking, slot| {
             booking
-                .cancel(student, slot, nov1(Duration::ZERO) - HOUR)
+                .cancel(student, slot, nov1(Duration::ZERO) - HOUR, true)
                 .map(|_| ())
         })
         .await
@@ -552,7 +552,7 @@ async fn trial_lists_only_trial_or_only_regular_bookings() {
     bookings
         .update(made[0].id(), |booking, slot| {
             booking
-                .cancel(student, slot, nov1(Duration::ZERO) - HOUR)
+                .cancel(student, slot, nov1(Duration::ZERO) - HOUR, true)
                 .map(|_| ())
         })
         .await

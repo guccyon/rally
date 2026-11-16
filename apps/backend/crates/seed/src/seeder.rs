@@ -124,6 +124,7 @@ where
         );
         let cancel = CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             events.clone(),
             clock.clone(),
