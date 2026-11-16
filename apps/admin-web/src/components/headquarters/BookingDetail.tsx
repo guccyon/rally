@@ -120,6 +120,9 @@ function StatusChangeCard({ change, slotStartsAt }: { change: BookingStatusChang
   );
 }
 
+/** 読み込みがこれより速く終わるときは読み込み中の文を出さない（CoachLeaveHome.tsx の FEEDBACK_DELAY_MS と同じ 300ms）。 */
+const FEEDBACK_DELAY_MS = 300;
+
 /**
  * 本部の「予約の詳細」。予約 1 件の生徒・コーチ・メニュー・枠の時刻・種類・今の状態と、状態が変わった記録を
  * getBooking で一度だけ読む。状態の記録は契約の正本どおり返った順（時刻の古い順）のまま、1 件 1 枚のカードで出し、
@@ -136,10 +139,17 @@ export function BookingDetail({
 }) {
   const [state, setState] = useState<State>(bookingId ? { kind: "loading" } : { kind: "not_found" });
 
+  const [slow, setSlow] = useState(false);
+
   useEffect(() => {
     if (!bookingId) return;
     let active = true;
+    setSlow(false);
+    const timer = setTimeout(() => {
+      if (active) setSlow(true);
+    }, FEEDBACK_DELAY_MS);
     void api.getBooking(bookingId).then((response) => {
+      clearTimeout(timer);
       if (!active) return;
       if (response.ok) setState({ kind: "loaded", detail: response.data });
       else if (response.code === "not_found") setState({ kind: "not_found" });
@@ -147,10 +157,13 @@ export function BookingDetail({
     });
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [api, bookingId]);
 
-  if (state.kind === "loading") return <SectionLoading message="予約の詳細を読み込んでいます…" />;
+  if (state.kind === "loading") {
+    return slow ? <SectionLoading message="予約の詳細を読み込んでいます…" /> : null;
+  }
   if (state.kind === "not_found") {
     return <ResultMessage result={{ ok: false, message: NOT_FOUND }} />;
   }

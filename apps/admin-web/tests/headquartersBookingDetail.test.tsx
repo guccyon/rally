@@ -136,13 +136,32 @@ function cardNamed(name: string) {
 }
 
 describe("本部の予約の詳細", () => {
-  test("読み込み中を出し、読めたら生徒・コーチ・メニュー・枠の時刻・種類・今の状態と、状態が変わった記録を API の順で出す", async () => {
+  test("読み込みが 300ms より速く終わるときは、読み込み中の文を出さない", async () => {
+    render(<BookingDetail api={{ getBooking: detailOf(DETAIL) }} bookingId={BOOKING_ID} />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await screen.findAllByRole("article");
+    expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument();
+  });
+
+  test("読み込みが 300ms を超えて続くときは、遅らせた後に role=status で読み込み中を出し、読めたら消す", async () => {
+    let resolve: (value: Awaited<ReturnType<HeadquartersApi["getBooking"]>>) => void = () => {};
+    const getBooking = vi.fn<HeadquartersApi["getBooking"]>(() => new Promise((done) => (resolve = done)));
+    render(<BookingDetail api={{ getBooking }} bookingId={BOOKING_ID} />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("予約の詳細を読み込んでいます…");
+
+    resolve({ ok: true, data: DETAIL });
+    await screen.findAllByRole("article");
+    expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument();
+  });
+
+  test("読めたら生徒・コーチ・メニュー・枠の時刻・種類・今の状態と、状態が変わった記録を API の順で出す", async () => {
     const getBooking = detailOf(DETAIL);
     render(<BookingDetail api={{ getBooking }} bookingId={BOOKING_ID} />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("予約の詳細を読み込んでいます…");
     await screen.findAllByRole("article");
-    expect(screen.queryByText("予約の詳細を読み込んでいます…")).not.toBeInTheDocument();
     expect(getBooking).toHaveBeenCalledWith(BOOKING_ID);
     expect(getBooking).toHaveBeenCalledTimes(1);
 
