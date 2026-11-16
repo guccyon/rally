@@ -215,6 +215,9 @@ class _WebLocalMedia implements LocalMedia {
   }
 
   @override
+  bool get canPlayTestTone => true;
+
+  @override
   bool get canOpenSettings => false;
 
   @override

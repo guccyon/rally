@@ -37,6 +37,9 @@ class _UnsupportedLocalMedia implements LocalMedia {
   void stopTestTone() {}
 
   @override
+  bool get canPlayTestTone => false;
+
+  @override
   bool get canOpenSettings => false;
 
   @override
