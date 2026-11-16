@@ -18,6 +18,9 @@ use crate::Unavailable;
 /// セッションに結び付いた予約（[`LiveLessonSession::bookings`]。グループレッスンでは人数分）のすべてについて
 /// 保存の時点でも守る（並行な開始が両方保存されないように。DB では `sessions_booking_id_key` と
 /// `session_bookings_booking_id_key`）。
+///
+/// 参加者ごとの最初の入室（[`LiveLessonSession::joins`]。Issue #1654）もセッションとともに保存し、読むときに戻す。
+/// 入室の記録がないセッション（入室を記録する前の版が始めたもの）は、記録のないまま読む。
 pub trait LiveLessonSessionRepository: Send + Sync {
     /// 新しいセッションの ID を払い出す。
     fn next_id(&self) -> SessionId;
@@ -57,14 +60,14 @@ pub trait LiveLessonSessionRepository: Send + Sync {
         student_id: Option<AccountId>,
     ) -> impl Future<Output = Result<Vec<LiveLessonSession>, Unavailable>> + Send;
 
-    /// 新しいセッションを、結び付いた予約とともに保存する。結び付いた予約のどれかのセッションがすでにあれば
+    /// 新しいセッションを、結び付いた予約と入室の記録とともに保存する。結び付いた予約のどれかのセッションがすでにあれば
     /// [`InsertSessionError::BookingAlreadyHasSession`]（何も保存しない）。
     fn insert(
         &self,
         session: LiveLessonSession,
     ) -> impl Future<Output = Result<(), InsertSessionError>> + Send;
 
-    /// `session_id` のセッションを読み、`update` に渡す。`update` が `Ok` なら保存して返す。
+    /// `session_id` のセッションを読み、`update` に渡す。`update` が `Ok` なら保存して返す（終了と、新しく記録した入室）。
     /// 読み取りから保存までを直列にする（並行な終了が両方保存されないように）。
     fn update<F>(
         &self,

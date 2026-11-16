@@ -3,6 +3,7 @@
 mod booking_lookup;
 mod end_live_lesson_session;
 mod end_live_lesson_session_by_headquarters;
+mod get_live_lesson_session;
 mod insert_session_error;
 mod list_live_lesson_sessions;
 mod list_overdue_live_lesson_sessions;
@@ -25,6 +26,9 @@ pub use end_live_lesson_session::{
 pub use end_live_lesson_session_by_headquarters::{
     EndLiveLessonSessionByHeadquarters, EndLiveLessonSessionByHeadquartersCommand,
     EndLiveLessonSessionByHeadquartersError,
+};
+pub use get_live_lesson_session::{
+    GetLiveLessonSession, GetLiveLessonSessionError, GetLiveLessonSessionQuery,
 };
 pub use insert_session_error::InsertSessionError;
 pub use list_live_lesson_sessions::{
