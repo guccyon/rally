@@ -1,0 +1,549 @@
+diff --git a/orchestrator/dispatcher/continuation.py b/orchestrator/dispatcher/continuation.py
+index 9c35f8e..29231d6 100644
+--- a/orchestrator/dispatcher/continuation.py
++++ b/orchestrator/dispatcher/continuation.py
+@@ -6,7 +6,8 @@
+ 
+ - 続ける理由: incomplete（途中終了。factoryctl rerun --continue）・conflict（衝突）・ci_failed（CI 落ち）・review_fix（検査の指摘）
+ - 合図ごとの上限: ci_failed と review_fix は同じ PR で CONTINUE_MAX 回まで（既定 2）。超えたら呼び出し側が人へ回す（停止・差し戻し）。
+-  conflict は head ごとに 1 回（ADR 0016。既定ブランチが進むたびに起き得るので回数では切らない）
++  conflict は head ごとに 1 回（ADR 0016。既定ブランチが進むたびに起き得るので回数では切らない）。製品が線（.factory-config/continuation.yaml の
++  conflict.max_attempts_per_pr）を書いていれば、エージェントで解いた回（agent_conflicts）がその数に達したら supervisor が積まない（continuation_config.py）
+ - ボリューム: チケットごとの Docker の名前付きボリューム（factory-ticket-<owner>-<repo>-<issue>）。中身はエージェントに依存しない形
+   （ticket.json と jobs/<job>/ の Markdown・JSON。書くのはワーカーの entrypoint.sh）。エージェントのセッション記録（claude --resume）は
+   agent/ の下の「あれば使う近道」で、なくても続きは作れる
+@@ -46,6 +47,16 @@ def attempts(cur, pr_url: str, reason: str) -> int:
+     return cur.fetchone()["n"]
+ 
+ 
++def agent_conflicts(cur, *, pr_url: str | None = None, corr: str | None = None) -> int:
++    """conflict の続きのジョブのうち、エージェントで解いた回（PR ごとか、チケットごと）。機械的に解いて終わった回（job.finished が succeeded で、
++    agent_tier が none か cost_usd が 0）は数えない。まだ終わっていない回は数える"""
++    cur.execute("select count(*) as n from events c where c.name='continue.enqueued' and c.payload->>'reason'='conflict' "
++                "and (%s::text is null or c.payload->>'pr_url'=%s) and (%s::text is null or c.correlation_id=%s) "
++                "and not exists (select 1 from events f where f.name='job.finished' and f.job_id=c.job_id and f.payload->>'state'='succeeded' "
++                "and (f.payload->>'agent_tier'='none' or f.payload->'cost_usd' = '0'::jsonb))", (pr_url, pr_url, corr, corr))
++    return int(cur.fetchone()["n"])
++
++
+ def pending(cur, pr_url: str, sha: str, reason: str | None = None) -> dict | None:
+     """その head の続きのジョブが待ち・実行中なら、その job.enqueued を返す（再起動・割り込みで積み直したジョブも carry_over で同じ形になる）"""
+     cur.execute("select e.payload, j.id as job_id, j.state from events e join jobs j on j.id=e.job_id where e.name='job.enqueued' "
+@@ -63,9 +74,11 @@ def carry_over(cur, job_id: int) -> dict:
+ 
+ 
+ def enqueue(cur, *, repo: str, pr_number: int, pr_url: str, branch: str, head_sha: str, reason: str, by: str,
+-            signal: dict | None = None, priority: int | None = None, limit: bool = True) -> int | str | None:
++            signal: dict | None = None, priority: int | None = None, limit: bool = True, tier: str | None = None,
++            conflict_files: list[str] | None = None) -> int | str | None:
+     """続きのジョブを積む。返り値は積んだジョブの id、上限に達したら "limit"、積まなかった（工場のブランチでない・
+-    同じ head で積み済み・同じ Issue のジョブが動いている）なら None。limit=False は上限で切らない（人が求めた直し）。動いているジョブがあるときは記録を残さないので、次の周期で積み直せる"""
++    同じ head で積み済み・同じ Issue のジョブが動いている）なら None。limit=False は上限で切らない（人が求めた直し）。動いているジョブがあるときは記録を残さないので、次の周期で積み直せる。
++    tier はエージェントの段の既定（なければ MODEL_TIER）。conflict_files は積む時点で衝突しているファイルで、空でなければ continue.enqueued に載せる（rally の知見 K-0014）"""
+     if reason not in REASONS:
+         raise ValueError(reason)
+     m = BRANCH_RE.match(branch or "")
+@@ -85,13 +98,14 @@ def enqueue(cur, *, repo: str, pr_number: int, pr_url: str, branch: str, head_sh
+     try:
+         cur.execute("insert into jobs(correlation_id, repo, issue_number, enqueued_by, model_tier, kind, ticket_id, priority) "
+                     "values (%s,%s,%s,%s,%s,'implement',%s,%s) returning id",
+-                    (corr, repo, issue, by, model_route.tier_for(cur, corr, os.environ.get("MODEL_TIER", "tier-large"), reason=reason),
++                    (corr, repo, issue, by, model_route.tier_for(cur, corr, tier or os.environ.get("MODEL_TIER", "tier-large"), reason=reason),
+                      t.get("id"), priority or t.get("priority") or 50))
+     except psycopg.errors.UniqueViolation:
+         return None   # 同じ Issue のジョブがすでに動いている
+     jid = cur.fetchone()["id"]
+-    cont = {"branch": branch, "pr_number": int(pr_number), "reason": reason}
+-    payload = {"pr_url": pr_url, "head_sha": head_sha, "reason": reason, "attempt": n + 1, "continue": cont, "by": by}
++    cont = {"branch": branch, "pr_number": int(pr_number), "reason": reason, "attempt": n + 1}
++    payload = {"pr_url": pr_url, "head_sha": head_sha, "reason": reason, "attempt": n + 1, "continue": cont, "by": by,
++               **({"conflict_files": sorted(set(conflict_files))} if conflict_files else {})}
+     cur.execute("insert into events(name, correlation_id, job_id, payload, dedupe_key) values ('continue.enqueued',%s,%s,%s,%s)",
+                 (corr, jid, Jsonb(payload), key))
+     cur.execute("insert into events(name, correlation_id, job_id, payload) values ('job.enqueued',%s,%s,%s)",
+diff --git a/orchestrator/dispatcher/continuation_config.py b/orchestrator/dispatcher/continuation_config.py
+new file mode 100644
+index 0000000..4d5e075
+--- /dev/null
++++ b/orchestrator/dispatcher/continuation_config.py
+@@ -0,0 +1,111 @@
++"""製品の続きのジョブの線（製品の .factory-config/continuation.yaml の conflict）を読む（ADR 0016・0017 の追記。rally の知見 K-0010・K-0015）。
++
++製品は、既定ブランチとの衝突で積む続きのジョブの線を設定に書く。supervisor は既定ブランチの今の版を GitHub から、ワーカーは取り込んだ
++チェックアウトの版を読む。形はこの 1 か所で決める（ワーカーは python3 continuation_config.py --repo . の JSON を読む）。
++
++- max_attempts_per_pr: 同じ PR の conflict の続きのジョブのうち、エージェントで解いた回の上限。機械的に解いた回（job.finished の
++  agent_tier が none か cost_usd が 0 で succeeded）は数えない。上限に達したら次の衝突では積まず、on_limit（stoppage = 停止 ci:）で人へ回す
++- resume_session_until_attempt: エージェントのセッションを引き継いでよい回（continue.enqueued の attempt）の上限。0 は引き継がない
++- mechanical.paths: 衝突したファイルがすべてこのパス（末尾が / ならその下）に当たるときは、両方の行を残して機械的に解く（git merge-file --union）
++- mechanical.verify: 機械的に解いた結果を確かめる製品の検査（リポジトリの根からのパス。node <verify> --base <既定ブランチ> --head <解いた結果>）。
++  終了コード 0 のときだけ機械的な解消にし、通らなければ（読めなかったときも）エージェントで解く
++- agent_tier: エージェントで解くときの段
++
++ファイルがない・読めない・形が違うときは、今までの Engine の振る舞い（回数で切らない、conflict では引き継がない、CHANGELOG.md だけを検査なしで
++機械的に解く）に戻す。
++"""
++from __future__ import annotations
++
++import base64
++import json
++import sys
++from pathlib import Path
++
++import yaml
++
++CONFIG_PATH = ".factory-config/continuation.yaml"
++ON_LIMIT = ("stoppage",)
++DEFAULT_CONFLICT = {"max_attempts_per_pr": None, "on_limit": "stoppage", "resume_session_until_attempt": 0,
++                    "mechanical": {"paths": ["CHANGELOG.md"], "agent_tier": "none", "verify": None}, "agent_tier": None}
++
++
++def _int(v, name: str, low: int) -> int:
++    if isinstance(v, bool) or not isinstance(v, int) or v < low:
++        raise ValueError(f"conflict.{name} は {low} 以上の整数")
++    return v
++
++
++def parse(text: str) -> dict:
++    """設定の文字列から conflict の線を返す。conflict がなければ既定値。形が違えば ValueError"""
++    data = yaml.safe_load(text) or {}
++    if not isinstance(data, dict):
++        raise ValueError("continuation.yaml が辞書でない")
++    c = data.get("conflict")
++    if c is None:
++        return json.loads(json.dumps(DEFAULT_CONFLICT))
++    if not isinstance(c, dict):
++        raise ValueError("conflict が辞書でない")
++    out = json.loads(json.dumps(DEFAULT_CONFLICT))
++    if c.get("max_attempts_per_pr") is not None:
++        out["max_attempts_per_pr"] = _int(c["max_attempts_per_pr"], "max_attempts_per_pr", 1)
++    if c.get("on_limit") is not None:
++        if c["on_limit"] not in ON_LIMIT:
++            raise ValueError(f"conflict.on_limit は {', '.join(ON_LIMIT)} のどれか")
++        out["on_limit"] = c["on_limit"]
++    if c.get("resume_session_until_attempt") is not None:
++        out["resume_session_until_attempt"] = _int(c["resume_session_until_attempt"], "resume_session_until_attempt", 0)
++    m = c.get("mechanical")
++    if m is not None:
++        if not isinstance(m, dict):
++            raise ValueError("conflict.mechanical が辞書でない")
++        paths = m.get("paths", out["mechanical"]["paths"])
++        if not isinstance(paths, list) or not all(isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in paths):
++            raise ValueError("conflict.mechanical.paths はリポジトリの中の相対パスの列")
++        verify = m.get("verify")
++        if verify is not None and (not isinstance(verify, str) or not verify or verify.startswith("/") or ".." in verify.split("/")):
++            raise ValueError("conflict.mechanical.verify はリポジトリの中の相対パス")
++        out["mechanical"] = {"paths": paths, "agent_tier": str(m.get("agent_tier") or "none"), "verify": verify}
++    if c.get("agent_tier") is not None:
++        out["agent_tier"] = str(c["agent_tier"])
++    return out
++
++
++def conflict(gh, repo: str, log=print) -> dict:
++    """製品の既定ブランチの continuation.yaml の conflict の線。ない（404）・読めない・形が違うときは既定値（今までの振る舞い）"""
++    try:
++        c = gh("GET", f"repos/{repo}/contents/{CONFIG_PATH}")
++    except Exception:  # noqa: BLE001  設定のない製品は今までの振る舞い
++        return parse("")
++    try:
++        return parse(base64.b64decode(c["content"]).decode("utf-8"))
++    except (ValueError, KeyError, TypeError, yaml.YAMLError) as e:
++        log("continuation.yaml unreadable", repo, repr(e)[:200])
++        return parse("")
++
++
++def is_mechanical_path(conf: dict, path: str) -> bool:
++    return any(path.startswith(p) if p.endswith("/") else path == p for p in conf["mechanical"]["paths"])
++
++
++def main(argv: list[str]) -> int:
++    """ワーカーが読む: python3 continuation_config.py --repo <チェックアウト> [--conflicts "<衝突したファイル> ..."]。conflict の線を JSON で出す
++    （読めなければ既定値と標準エラーの 1 行）。--conflicts を渡すと、それがすべて mechanical.paths に当たるか（1 件以上）を mechanical_only に出す"""
++    if len(argv) not in (2, 4) or argv[0] != "--repo" or (len(argv) == 4 and argv[2] != "--conflicts"):
++        print('usage: continuation_config.py --repo <dir> [--conflicts "<file> ..."]', file=sys.stderr)
++        return 2
++    path = Path(argv[1]) / CONFIG_PATH
++    try:
++        out = parse(path.read_text(encoding="utf-8")) if path.is_file() else parse("")
++    except (ValueError, OSError, UnicodeDecodeError, yaml.YAMLError) as e:
++        print(f"continuation.yaml unreadable: {e}", file=sys.stderr)
++        out = parse("")
++    if len(argv) == 4:
++        files = argv[3].split()
++        out["mechanical_only"] = bool(files) and all(is_mechanical_path(out, f) for f in files)
++    json.dump(out, sys.stdout, ensure_ascii=False)
++    print()
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
+diff --git a/orchestrator/dispatcher/dispatcher.py b/orchestrator/dispatcher/dispatcher.py
+index bbaa1ec..00a2b78 100644
+--- a/orchestrator/dispatcher/dispatcher.py
++++ b/orchestrator/dispatcher/dispatcher.py
+@@ -228,7 +228,8 @@ def continue_target(cur, job_id: int, repo: str, issue: int) -> dict | None:
+     if not m or int(m.group(1)) != issue or not str(c.get("pr_number") or "").isdigit() or c.get("reason") not in continuation.REASONS:
+         log("continue target rejected", job_id, c)
+         return None
+-    return {"branch": c["branch"], "pr_number": int(c["pr_number"]), "reason": c["reason"]}
++    return {"branch": c["branch"], "pr_number": int(c["pr_number"]), "reason": c["reason"],
++            "attempt": int(c["attempt"]) if str(c.get("attempt") or "").isdigit() else 0}   # その理由の何回目か（製品の線の引き継ぎの回。ワーカーの CONTINUE_ATTEMPT）
+ 
+ 
+ def provenance(repo: str, image: str) -> dict:
+@@ -517,7 +518,8 @@ def run_job(job: dict, reattaching: bool = False):
+                    *(["-e", f"MAX_BUDGET_USD={budget}"] if budget is not None else []),
+                    *gh_token_env(cur, job_id, kind, repo),   # ジョブのリポジトリだけに絞った短命のトークン（App のとき。ADR 0041）。一次調査には渡さない（GitHub は中継の inv_github で読む。ADR 0048）
+                     "-e", f"CLAUDE_CODE_OAUTH_TOKEN={ENV['CLAUDE_CODE_OAUTH_TOKEN']}",
+-                   *(["-e", f"CONTINUE_BRANCH={cont['branch']}", "-e", f"CONTINUE_PR={cont['pr_number']}", "-e", f"CONTINUE_REASON={cont['reason']}"] if cont else []),
++                   *(["-e", f"CONTINUE_BRANCH={cont['branch']}", "-e", f"CONTINUE_PR={cont['pr_number']}", "-e", f"CONTINUE_REASON={cont['reason']}",
++                      "-e", f"CONTINUE_ATTEMPT={cont['attempt']}"] if cont else []),
+                    *(["--entrypoint", "/usr/local/bin/clarify.sh"] if kind == "clarify" else []),
+                    *(["--entrypoint", "/usr/local/bin/inspect.sh", "-e", f"PR_URL=https://github.com/{repo}/pull/{issue}"] if kind == "inspect" else []),
+                    *(["-i", "--entrypoint", "/usr/local/bin/judge.sh", "-e", f"PR_URL=https://github.com/{repo}/pull/{issue}"] if kind == "judge" else []),
+diff --git a/orchestrator/dispatcher/supervisor.py b/orchestrator/dispatcher/supervisor.py
+index 08e3afd..3c770f6 100644
+--- a/orchestrator/dispatcher/supervisor.py
++++ b/orchestrator/dispatcher/supervisor.py
+@@ -52,6 +52,7 @@ from psycopg.types.json import Jsonb
+ import case
+ import committee
+ import continuation
++import continuation_config
+ import design
+ import desk_investigate
+ import drain
+@@ -283,9 +284,14 @@ def ci_failure_step(cur, p: dict, sha: str, mergeable_state: str | None = None,
+         return
+     if "pr.conflicted" in seen or mergeable_state == "dirty":   # 衝突（2026-10-31。これまでは何も起きず止まっていた）
+         cap = workflow_guard.capped(cur, p["corr"])
++        cur.execute("select payload from events where name='continue.limit_reached' and payload->>'pr_url'=%s and payload->>'reason'='conflict' "
++                    "and payload->>'head_sha'=%s order by id desc limit 1", (p["url"], sha))
++        lim = (cur.fetchone() or {}).get("payload")
+         stoppage.open_stoppage(cur, key, "ticket", "工場の PR が main と衝突している。検査と judge に進めない",
+-                               waiting_for=(f"衝突の解消が上限（{cap.get('cap')} 回）に当たり、待った後の 1 回でも衝突した（計 {cap.get('conflicts')} 回）。"
+-                                            "工場はもう解かない。builder が衝突を解くか、チケットを切り直すか、差し戻す") if cap else
++                               waiting_for=(f"衝突の解消が製品の線の上限（同じ PR でエージェントで解いた回 {lim.get('max')} 回。.factory-config/continuation.yaml）に"
++                                            "達した。工場はもう解かない。builder が衝突を解くか、チケットを切り直すか、差し戻す") if lim else
++                               (f"衝突の解消が上限（{cap.get('cap')} 回）に当たり、待った後の 1 回でも衝突した（計 {cap.get('conflicts')} 回）。"
++                                "工場はもう解かない。builder が衝突を解くか、チケットを切り直すか、差し戻す") if cap else
+                                "工場の衝突の解消が通らなかった。builder が衝突を解くか、差し戻す", correlation_id=p["corr"], detected_by="supervisor")
+     elif "pr.ci_failed" in seen:
+         stoppage.open_stoppage(cur, key, "ticket", f"工場の PR の CI が落ちた（{', '.join(seen['pr.ci_failed'].get('failed') or [])}）。検査と judge に進めない",
+@@ -333,6 +339,24 @@ def awaiting_decision(cur, url: str, pr: dict) -> bool:
+     return bool(d and d["t"] == "human_approve")
+ 
+ 
++def conflict_files(p: dict, pr: dict) -> list[str]:
++    """積む時点で衝突しているファイル（rally の知見 K-0014）。GitHub は衝突したファイルを教えないので、PR が変えたファイルと、共通の祖先から
++    既定ブランチが変えたファイルの重なりにする（衝突し得るファイル。ワーカーが取り込んで衝突したファイルは今までどおり conflict.files に残る）。
++    読めなければ空（continue.enqueued に載せない）"""
++    try:
++        mine: set[str] = set()
++        for page in range(1, 31):
++            got = gh("GET", f"repos/{p['repo']}/pulls/{p['number']}/files?per_page=100&page={page}") or []
++            mine |= {f["filename"] for f in got}
++            if len(got) < 100:
++                break
++        cmp = gh("GET", f"repos/{p['repo']}/compare/{pr['head']['sha']}...{pr['base']['ref']}") or {}
++        return sorted(mine & {f["filename"] for f in cmp.get("files") or []})
++    except Exception as e:  # noqa: BLE001  読めなくても衝突は解く（記録はワーカーのログから残る）
++        log("conflict files unreadable", p["url"], repr(e)[:200])
++        return []
++
++
+ def conflict_step(cur, p: dict, pr: dict):
+     """工場の PR が既定ブランチと衝突したら（同時に流した PR どうしの CHANGELOG など）、その PR のブランチで衝突を解く
+     続きのジョブを head ごとに 1 回積む。ワーカーは既定ブランチをマージコミットで取り込み、履歴は書き換えない。
+@@ -352,12 +376,25 @@ def conflict_step(cur, p: dict, pr: dict):
+         return   # この head はもう積んである（解いている途中か、解けなかった）。上限を数え直さない
+     # 衝突の解消の上限（ADR 0038 の順番 2）。チケットの合計で上限に当たったら、同じファイルに触るチケットが終わるまで待ち、
+     # 待ちの後に 1 回だけ解く。それでも衝突したら、もう解かない（ci_failure_step が人への停止を開く）。rally #1054 は 13 回解いていた
++    # 製品の線（.factory-config/continuation.yaml の conflict。rally の知見 K-0010）: 同じ PR でエージェントで解いた回が上限に達したら、もう積まない。
++    # 機械的に解いた回は数えない。上限の記録（continue.limit_reached）を残し、ci_failure_step が人への停止（ci:）を開く
++    conf = continuation_config.conflict(gh, p["repo"], log=log)
++    cap = conf["max_attempts_per_pr"]
++    if cap is not None:
++        n = continuation.agent_conflicts(cur, pr_url=p["url"])
++        if n >= cap:
++            record(cur, "continue.limit_reached", p["corr"], {"pr_url": p["url"], "head_sha": pr["head"]["sha"], "reason": "conflict", "max": cap,
++                                                              "attempts": n, "on_limit": conf["on_limit"], "source": "continuation.yaml"},
++                   f"continue.limit_reached:{p['url']}@{pr['head']['sha']}:conflict")
++            log("conflict fix capped", p["url"], f"{n}/{cap}")
++            return
+     gate = workflow_guard.conflict_gate(cur, p["corr"], p["url"], lambda: inflight_touched_files(cur))
+     if gate != "ok":
+         log("conflict fix held", p["url"], gate)
+         return
+     jid = continuation.enqueue(cur, repo=p["repo"], pr_number=p["number"], pr_url=p["url"], branch=pr["head"]["ref"],
+-                               head_sha=pr["head"]["sha"], reason="conflict", by="supervisor")
++                               head_sha=pr["head"]["sha"], reason="conflict", by="supervisor", tier=conf["agent_tier"],
++                               conflict_files=conflict_files(p, pr))
+     if isinstance(jid, int):
+         log("conflict fix enqueued", p["url"], "job", jid)
+ 
+diff --git a/orchestrator/dispatcher/tests/test_conflict.py b/orchestrator/dispatcher/tests/test_conflict.py
+index ad9038e..aa3678f 100644
+--- a/orchestrator/dispatcher/tests/test_conflict.py
++++ b/orchestrator/dispatcher/tests/test_conflict.py
+@@ -24,6 +24,15 @@ if URL:
+ REPO = "o/r"
+ 
+ 
++@pytest.fixture(autouse=True)
++def no_github(monkeypatch):
++    """製品の線（continuation.yaml）と衝突したファイルは GitHub から読む。ここでは読めない（今までの振る舞い）にする"""
++    def gh(method, path, body=None):
++        raise RuntimeError(f"404 {path}")
++    if URL:
++        monkeypatch.setattr(supervisor, "gh", gh)
++
++
+ @pytest.fixture()
+ def cur():
+     conn = psycopg.connect(URL, row_factory=dict_row, autocommit=True)
+@@ -54,7 +63,7 @@ def test_enqueues_once_per_head(cur):
+     assert len(rows) == 1
+     r = rows[0]
+     assert (r["issue_number"], r["kind"], r["ticket_id"], r["priority"]) == (249, "implement", t["id"], 70)
+-    assert r["c"] == {"branch": "factory/issue-249-job-273", "pr_number": 256, "reason": "conflict"}
++    assert r["c"] == {"branch": "factory/issue-249-job-273", "pr_number": 256, "reason": "conflict", "attempt": 1}
+     cur.execute("update jobs set state='failed'")
+     supervisor.conflict_step(cur, P, pr(sha="def"))   # 次の head ではまた積む
+     assert len(enqueued(cur)) == 2
+@@ -161,3 +170,80 @@ def test_no_conflict_fix_while_over_budget(cur, monkeypatch):
+     monkeypatch.setattr(supervisor, "over_budget", lambda c: None)
+     supervisor.conflict_step(cur, P, pr())
+     assert len(enqueued(cur)) == 1
++
++
++def product_gh(line: str, pr_files=("CHANGELOG.md",), base_files=("CHANGELOG.md",)):
++    """製品の既定ブランチの continuation.yaml と、PR・既定ブランチが変えたファイルを返す GitHub"""
++    import base64
++
++    def gh(method, path, body=None):
++        if path == f"repos/{REPO}/contents/.factory-config/continuation.yaml":
++            return {"content": base64.b64encode(line.encode()).decode()}
++        if path.startswith(f"repos/{REPO}/pulls/256/files"):
++            return [{"filename": f} for f in pr_files]
++        if path.startswith(f"repos/{REPO}/compare/"):
++            return {"files": [{"filename": f} for f in base_files]}
++        raise RuntimeError(f"404 {path}")
++    return gh
++
++
++def finish(cur, cost_usd: float):
++    """いちばん新しい続きのジョブを、cost_usd で終えたことにする（0 は機械的に解いた回）"""
++    from psycopg.types.json import Jsonb
++    cur.execute("select id from jobs where state='queued' order by id desc limit 1")
++    jid = cur.fetchone()["id"]
++    cur.execute("update jobs set state='succeeded' where id=%s", (jid,))
++    cur.execute("insert into events(name, correlation_id, job_id, payload) values ('job.finished',%s,%s,%s)",
++                (P["corr"], jid, Jsonb({"state": "succeeded", "cost_usd": cost_usd})))
++
++
++def test_product_line_caps_agent_conflicts_per_pr(cur, monkeypatch):
++    # 製品の線（rally の知見 K-0010）: 同じ PR でエージェントで解いた回が上限に達したら積まず、上限の記録を残して人への停止を開く
++    import stoppage
++    import workflow_guard
++    ops.upsert_ticket(cur, "github", f"{REPO}#249", REPO, title="D61", priority=70)
++    monkeypatch.setattr(supervisor, "gh", product_gh("conflict:\n  max_attempts_per_pr: 2\n"))
++    monkeypatch.setattr(workflow_guard, "ENFORCE", set())   # チケットの上限（ADR 0038）は test_workflow_guard.py で見る
++    for sha in ("a1", "a2"):
++        supervisor.conflict_step(cur, P, pr(sha=sha))
++        finish(cur, 1.95)
++    supervisor.conflict_step(cur, P, pr(sha="a3"))
++    assert len(enqueued(cur)) == 2
++    cur.execute("select payload from events where name='continue.limit_reached'")
++    lim = cur.fetchone()["payload"]
++    assert (lim["reason"], lim["max"], lim["attempts"], lim["head_sha"]) == ("conflict", 2, 2, "a3")
++    supervisor.ci_failure_step(cur, P, "a3", "dirty", pr(sha="a3"))
++    assert stoppage.open_keys(cur, f"ci:{P['url']}") != []
++
++
++def test_mechanical_resolutions_do_not_count(cur, monkeypatch):
++    # 機械的に解いた回（cost_usd が 0）は上限に数えない（議決 D-0023 の dissent）
++    import workflow_guard
++    ops.upsert_ticket(cur, "github", f"{REPO}#249", REPO, title="D61", priority=70)
++    monkeypatch.setattr(supervisor, "gh", product_gh("conflict:\n  max_attempts_per_pr: 1\n"))
++    monkeypatch.setattr(workflow_guard, "ENFORCE", set())
++    for sha in ("m1", "m2", "m3"):
++        supervisor.conflict_step(cur, P, pr(sha=sha))
++        finish(cur, 0)
++    supervisor.conflict_step(cur, P, pr(sha="g1"))
++    finish(cur, 1.95)
++    supervisor.conflict_step(cur, P, pr(sha="g2"))
++    assert len(enqueued(cur)) == 4
++    assert [r["c"]["attempt"] for r in enqueued(cur)] == [1, 2, 3, 4]
++
++
++def test_conflict_files_on_enqueue(cur, monkeypatch):
++    # 積む時点で衝突し得るファイル（PR と既定ブランチの両方が変えたファイル）を continue.enqueued に載せる（rally の知見 K-0014）
++    ops.upsert_ticket(cur, "github", f"{REPO}#249", REPO, title="D61", priority=70)
++    monkeypatch.setattr(supervisor, "gh", product_gh("", pr_files=("CHANGELOG.md", "src/a.rs"), base_files=("README.md", "CHANGELOG.md")))
++    supervisor.conflict_step(cur, P, {**pr(), "base": {"ref": "main"}})
++    cur.execute("select payload from events where name='continue.enqueued'")
++    assert cur.fetchone()["payload"]["conflict_files"] == ["CHANGELOG.md"]
++
++
++def test_no_conflict_files_when_unreadable(cur):
++    # 読めなければ載せない（空の列や null は出さない）。衝突は今までどおり解く
++    ops.upsert_ticket(cur, "github", f"{REPO}#249", REPO, title="D61", priority=70)
++    supervisor.conflict_step(cur, P, pr())
++    cur.execute("select payload from events where name='continue.enqueued'")
++    assert "conflict_files" not in cur.fetchone()["payload"]
+diff --git a/orchestrator/dispatcher/tests/test_continuation.py b/orchestrator/dispatcher/tests/test_continuation.py
+index 219a12c..414e570 100644
+--- a/orchestrator/dispatcher/tests/test_continuation.py
++++ b/orchestrator/dispatcher/tests/test_continuation.py
+@@ -69,7 +69,7 @@ def test_ci_failed_enqueues_with_signal_and_holds_back_the_stoppage(cur):
+     assert len(rows) == 1
+     p = rows[0]["payload"]
+     assert (rows[0]["issue_number"], rows[0]["kind"]) == (249, "implement")
+-    assert p["continue"] == {"branch": BRANCH, "pr_number": 256, "reason": "ci_failed"}
++    assert p["continue"] == {"branch": BRANCH, "pr_number": 256, "reason": "ci_failed", "attempt": 1}
+     assert p["input"] == {"head_sha": "abc", "failed": ["backend"]}
+     # 直している間は停止（ci:）を開かない（人に回さない）
+     supervisor.ci_failure_step(cur, P, "abc")
+@@ -96,7 +96,9 @@ def test_no_ci_failed_event_no_job(cur):
+     assert continues(cur) == []
+ 
+ 
+-def test_conflict_is_not_capped(cur):
++def test_conflict_is_not_capped(cur, monkeypatch):
++    # 製品の線（continuation.yaml の conflict.max_attempts_per_pr）がなければ回数では切らない（線があるときは test_conflict.py）
++    monkeypatch.setattr(supervisor, "gh", lambda method, path, body=None: (_ for _ in ()).throw(RuntimeError(f"404 {path}")))
+     for sha in ("c1", "c2", "c3"):
+         supervisor.conflict_step(cur, P, pr(sha=sha))
+         finish_all(cur, "succeeded")
+@@ -133,7 +135,7 @@ def test_carry_over_keeps_target_and_signal(cur):
+ def test_continue_target_accepts_new_reasons(cur):
+     jid = continuation.enqueue(cur, repo=REPO, pr_number=256, pr_url=P["url"], branch=BRANCH, head_sha="abc", reason="ci_failed",
+                                by="t", signal={"failed": []})
+-    assert dispatcher.continue_target(cur, jid, REPO, 249) == {"branch": BRANCH, "pr_number": 256, "reason": "ci_failed"}
++    assert dispatcher.continue_target(cur, jid, REPO, 249) == {"branch": BRANCH, "pr_number": 256, "reason": "ci_failed", "attempt": 1}
+     assert dispatcher.continue_target(cur, jid, REPO, 250) is None   # Issue の番号が合わない
+ 
+ 
+diff --git a/orchestrator/dispatcher/tests/test_lock_wait.py b/orchestrator/dispatcher/tests/test_lock_wait.py
+index c30b813..d5590b0 100644
+--- a/orchestrator/dispatcher/tests/test_lock_wait.py
++++ b/orchestrator/dispatcher/tests/test_lock_wait.py
+@@ -117,7 +117,7 @@ def test_rerun_keeps_a_continuation_a_continuation(cur, capsys):
+     cur.execute("select id from jobs where id > %s", (jid,))
+     new_id = cur.fetchone()["id"]
+     c = continuation.carry_over(cur, new_id)
+-    assert c["continue"] == {"branch": BRANCH, "pr_number": 429, "reason": "review_fix"}
++    assert c["continue"] == {"branch": BRANCH, "pr_number": 429, "reason": "review_fix", "attempt": 1}
+     assert c["input"] == {"defects": [{"rubric_id": "R1"}]} and c["pr_url"] == PR_URL and c["head_sha"] == "abc"
+     assert dispatcher.continue_target(cur, new_id, REPO, ISSUE)["branch"] == BRANCH
+     assert "continue " + BRANCH in capsys.readouterr().out
+diff --git a/orchestrator/dispatcher/workflow_guard.py b/orchestrator/dispatcher/workflow_guard.py
+index 06b075b..5199f42 100644
+--- a/orchestrator/dispatcher/workflow_guard.py
++++ b/orchestrator/dispatcher/workflow_guard.py
+@@ -25,6 +25,7 @@ import os
+ 
+ from psycopg.types.json import Jsonb
+ 
++import continuation
+ import serialize
+ import workflow_shadow
+ 
+@@ -32,9 +33,8 @@ ENFORCE = {x.strip() for x in os.environ.get("WORKFLOW_ENFORCE", "conflict,cost,
+ 
+ 
+ def conflicts(cur, corr: str) -> int:
+-    """チケットの衝突の解消の回数（head・PR をまたいだ合計）"""
+-    cur.execute("select count(*) as n from events where name='continue.enqueued' and correlation_id=%s and payload->>'reason'='conflict'", (corr,))
+-    return int(cur.fetchone()["n"])
++    """チケットの衝突の解消の回数（head・PR をまたいだ合計）。機械的に解いた回は数えない（エージェントを使っていない。rally の知見 K-0010）"""
++    return continuation.agent_conflicts(cur, corr=corr)
+ 
+ 
+ def last_conflict_files(cur, corr: str) -> list[str]:
+diff --git a/orchestrator/worker/entrypoint.sh b/orchestrator/worker/entrypoint.sh
+index 414de34..c2e12b8 100755
+--- a/orchestrator/worker/entrypoint.sh
++++ b/orchestrator/worker/entrypoint.sh
+@@ -2,7 +2,7 @@
+ # ワーカーの手順: 浅いクローン → エージェント（工程 implement）→ commit / push → PR → 結果を最終行に JSON で出す。
+ # エージェントの呼び出しは Engine の core-gates/agent_runner.py に集める（runner とモデルは definitions/agents.yaml。ADR 0010）。
+ # 環境変数: JOB_ID REPO ISSUE_NUMBER MODEL_TIER MAX_TURNS GH_TOKEN CLAUDE_CODE_OAUTH_TOKEN（任意: ENGINE_REPO ENGINE_REF）
+-# 続きのジョブ（任意）: CONTINUE_BRANCH CONTINUE_PR CONTINUE_REASON（incomplete | conflict | ci_failed | review_fix）。新しいブランチと PR を作らず、
++# 続きのジョブ（任意）: CONTINUE_BRANCH CONTINUE_PR CONTINUE_REASON（incomplete | conflict | ci_failed | review_fix）CONTINUE_ATTEMPT（その理由の何回目か）。新しいブランチと PR を作らず、
+ #   既存の工場の PR のブランチに既定ブランチを取り込んでから続ける。途中終了の続き（rerun --continue）、工場の PR どうしの衝突の解消、
+ #   CI 落ちの直し、検査役がマージ前に採用した指摘の直しに使う（ADR 0016・0017）。ci_failed と review_fix は合図の中身を標準入力の JSON で受ける
+ # 引き継ぎ（任意）: HANDOFF_DIR（チケットごとのボリューム）。作業の文脈をエージェントに依存しない形で残し、続きのジョブはそこから再開する（ADR 0017）
+@@ -126,15 +126,50 @@ if [ -n "${CONTINUE_BRANCH}" ]; then
+     fi
+   fi
+   SEEN_CONFLICTS="${CONFLICTS:-}"   # 機械的に解く前に衝突していたファイル。dispatcher が工程の信号（ADR 0027 の 3）に残す
+-  # 衝突の解消で、衝突が CHANGELOG.md の追記どうしだけ（または衝突がない）なら、エージェントを使わずに機械的に解く。
+-  # 同時に流した PR が同じ CHANGELOG に追記し合い、1 日に 345 回・$1,420 の衝突の解消が走った（2026-11-02）
++  # 衝突の解消で、衝突したファイルがすべて製品の線（.factory-config/continuation.yaml の conflict.mechanical.paths。なければ CHANGELOG.md）に
++  # 当たるなら、エージェントを使わずに両方の行を残して機械的に解く。同時に流した PR が同じ CHANGELOG に追記し合い、1 日に 345 回・$1,420 の
++  # 衝突の解消が走った（2026-11-02）。解いた結果は、製品の検査（mechanical.verify）に通ったときだけ機械的な解消にし、通らなければ衝突のまま
++  # エージェントに渡す（[Unreleased] を直接書き換えた PR の衝突を検査なしで解き続けた。rally の知見 K-0015）。線の読み方は continuation_config.py
+   if [ "${CONTINUE_REASON:-}" = "conflict" ]; then
+-    if [ "${CONFLICTS}" = "CHANGELOG.md " ]; then
+-      git show :1:CHANGELOG.md > /work/cl.base 2>/dev/null || : > /work/cl.base
+-      git show :2:CHANGELOG.md > /work/cl.ours && git show :3:CHANGELOG.md > /work/cl.theirs \
+-        && git merge-file --union /work/cl.ours /work/cl.base /work/cl.theirs \
+-        && cp /work/cl.ours CHANGELOG.md && git add CHANGELOG.md && MECHANICAL="CHANGELOG.md の追記どうしの衝突を、両方の行を残して機械的に解きました（エージェントは使っていません）。" \
+-        && CONFLICTS=""
++    CONT_CONF=$(python3 /work/engine/orchestrator/dispatcher/continuation_config.py --repo . --conflicts "${CONFLICTS}") || CONT_CONF='{}'
++    RESUME_UNTIL=$(jq -r '.resume_session_until_attempt // 0' <<<"${CONT_CONF}")
++    MECH_VERIFY=$(jq -r '.mechanical.verify // empty' <<<"${CONT_CONF}")
++    if [ "$(jq -r '.mechanical_only // false' <<<"${CONT_CONF}")" = "true" ]; then
++      # 解いた結果は一時の index に置き、検査に通るまで作業ツリーと index（衝突の状態）は変えない
++      rm -rf /work/cl.d && mkdir -p /work/cl.d && cp "$(git rev-parse --git-path index)" /work/cl.index
++      MECH_OK=1
++      MECH_N=0
++      for f in ${CONFLICTS}; do
++        MECH_N=$((MECH_N + 1))
++        git show ":1:${f}" > /work/cl.d/base 2>/dev/null || : > /work/cl.d/base   # 同じ名前の断片を両方が足した（add/add）ときは共通の祖先がない
++        if git show ":2:${f}" > "/work/cl.d/${MECH_N}" 2>/dev/null && git show ":3:${f}" > /work/cl.d/theirs 2>/dev/null \
++            && git merge-file --union "/work/cl.d/${MECH_N}" /work/cl.d/base /work/cl.d/theirs \
++            && GIT_INDEX_FILE=/work/cl.index git update-index --add --cacheinfo "100644,$(git hash-object -w "/work/cl.d/${MECH_N}"),${f}"; then
++          :
++        else
++          MECH_OK=0   # 片方が消した衝突などは両方の行を残せない
++          break
++        fi
++      done
++      MECH_RC=0
++      if [ "${MECH_OK}" = 1 ] && [ -n "${MECH_VERIFY}" ]; then
++        MECH_HEAD=$(git commit-tree "$(GIT_INDEX_FILE=/work/cl.index git write-tree)" -p HEAD -p MERGE_HEAD -m "mechanical conflict resolution") || MECH_RC=2
++        if [ "${MECH_RC}" = 0 ] && [ -f "${MECH_VERIFY}" ]; then
++          node "${MECH_VERIFY}" --base "origin/${DEFAULT_BRANCH}" --head "${MECH_HEAD}" > /work/cl.verify 2>&1 || MECH_RC=$?
++        else
++          MECH_RC=2   # 検査が読めないときも通らない扱い
++        fi
++        [ "${MECH_RC}" = 0 ] || echo "[worker] mechanical resolution rejected by ${MECH_VERIFY} (rc=${MECH_RC}); the agent resolves the conflict"
++      fi
++      if [ "${MECH_OK}" = 1 ] && [ "${MECH_RC}" = 0 ]; then
++        MECH_N=0
++        for f in ${CONFLICTS}; do
++          MECH_N=$((MECH_N + 1))
++          cp "/work/cl.d/${MECH_N}" "${f}" && git add -- "${f}"
++        done
++        MECHANICAL="衝突したファイル（${CONFLICTS% }）は製品が機械的に解くと決めたもの（.factory-config/continuation.yaml）だけなので、両方の行を残して機械的に解きました（エージェントは使っていません${MECH_VERIFY:+。${MECH_VERIFY} の検査に通りました}）。"
++        CONFLICTS=""
++      fi
+     elif [ -z "${CONFLICTS}" ]; then
+       MECHANICAL="既定ブランチを衝突なく取り込みました（エージェントは使っていません）。"
+     fi
+@@ -326,9 +361,10 @@ fi
+ set +e
+ # 作業中の合図（会話の記録が進んだら 1 行）は fd 3 からコンテナの出力へ。出力が止まったと誤って知らせないため（2026-11-01）
+ # 衝突の解消は前のジョブの会話を引き継がない（--state-dir を渡さない）。引き継ぐと長い履歴を毎回読み込み、CHANGELOG の 1 行の衝突でも 1 回 $10 を超えた（2026-11-02）。
++# 製品が引き継いでよい回（continuation.yaml の conflict.resume_session_until_attempt）を決めていれば、その回（CONTINUE_ATTEMPT）までは引き継ぐ。
+ # 前のジョブの報告は previous-jobs.md で渡している
+ STATE_ARGS=()
+-[ -n "${HANDOFF_DIR}" ] && [ "${CONTINUE_REASON:-}" != "conflict" ] && STATE_ARGS=(--state-dir "${HANDOFF_DIR}/agent")
++[ -n "${HANDOFF_DIR}" ] && { [ "${CONTINUE_REASON:-}" != "conflict" ] || [ "${CONTINUE_ATTEMPT:-0}" -ge 1 -a "${CONTINUE_ATTEMPT:-0}" -le "${RESUME_UNTIL:-0}" ]; } && STATE_ARGS=(--state-dir "${HANDOFF_DIR}/agent")
+ if [ -n "${MECHANICAL:-}" ]; then
+   CLAUDE_OUT=$(jq -nc --arg o "${MECHANICAL}" '{output:$o, cost_usd:0, num_turns:0, usage:{}, resumed:false}')
+   CLAUDE_RC=0

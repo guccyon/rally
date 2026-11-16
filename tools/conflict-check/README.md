@@ -236,9 +236,10 @@ python3 -B tools/conflict-check/events.py --events conflict-record-events.json -
 |---|---|
 | (0) | 取り出す関数と手順がすべて Engine にある。名前や置き場が変わったら落ちる |
 | (1) | エージェントで解いた回が上限（3 回）を超えた衝突では続きのジョブを積まず、衝突の停止（`ci:`）を開いて人の判断待ちにする。上限までは tier-large で積み、停止は開かない。機械的に解いた回は 6 回続いても数えず、停止を開かない |
-| (2) | 2 回目以降の conflict の続きのジョブはセッションを引き継がない |
+| (2) | 2 回目以降の conflict の続きのジョブはセッションを引き継がない。引き継いでよい回（`resume_session_until_attempt`）は線から読み、その回までは引き継ぐ（読まない Engine では todo。Issue #1663） |
 | (3) | `CHANGELOG.md` だけの衝突、`changelog.d/` を含む CHANGELOG だけの衝突はエージェントを使わずに解く（衝突も衝突の印も残らず、K-0002 の検査に通る）。解いた結果が検査に通らなければエージェントに渡す。ほかのファイルも衝突したらエージェントに渡す |
 | (4) | `watch.py` の `apply` を `stoppage.py` の本物の `open_stoppage`（`psycopg` の `Jsonb` を差し替え、通知はログだけ）に渡し、C-0005 のイベント列で `ci:` の停止を category `ticket` で 1 つ開き、もう一度回しても開き直さない（議決 `D-0030`、Issue #1034） |
+| (5) | 積む時点の `continue.enqueued` に、衝突したファイル（`conflict_files`）を `conflict-files.yaml` の形で載せる（知見 `K-0014`。載せない Engine では todo。Issue #1663） |
 
 - Engine のチェックアウトは環境変数 `ENGINE_DIR` で渡す（なければリポジトリの隣の `../engine`）。どちらもなければ飛ばす。ただし `ENGINE_DIR` を渡したときと CI（`CI=true`）では飛ばさずに落とす（`tools/sendback-check/engine.test.mjs` と同じ。議決 `D-0011`）
 - 偽の cursor が知らない問い合わせが来たとき、取り出した手順が落ちたときも落ちる（黙って通さない）
@@ -262,6 +263,21 @@ python3 -B tools/conflict-check/engine_harness.py --check /path/to/factory-engin
 | 機械的に解いた結果を K-0002 の検査で確かめる | 外れる。両方の行を残して解いたら、検査にかけずにそのまま機械的な解消にする（`[Unreleased]` を直接書き換えていた PR でも） | (3) の検査に通らない衝突は `todo` |
 
 建設者が Engine を線に合わせる（`continuation.enqueue` か `conflict_step` に `max_attempts_per_pr` の上限を入れて、超えたら積まずに `ci_failure_step` の停止に任せる。数えるのはエージェントで解いた回だけ。`entrypoint.sh` の機械的な解消を `mechanical.paths` に広げ、解いた結果を `mechanical.verify` の検査にかけて、通らなければ衝突の状態に戻してエージェントに渡す）。そのあと `test_engine.py` の `legacy_supervisor`・`legacy_worker`・`legacy_unverified` と `todo_while_legacy` の呼び出しを消す。Engine がこの設定を読む配線（今は値を Engine 側の定数に写すことになる）も建設者が決める。
+
+### Engine が線を読む差分（`engine/continuation-config.patch`）
+
+知見 `K-0010`・`K-0015`・`K-0014` の担保（知見の委員会の週 1 の定例 2026-W46 の決定、Issue #1663。解決策の種類は config）。Engine は別のリポジトリなので、Engine が `.factory-config/continuation.yaml` の `conflict` を読む差分を `engine/continuation-config.patch` に置いた。差分の土台は Engine の `main`（`ea188bb`。`workflow_guard.py` のある版）で、今の `ENGINE_REF`（`ad5c659`）には当たらない。
+
+- `orchestrator/dispatcher/continuation_config.py`（新しいファイル）: 線の形をこの 1 か所で読む。supervisor は既定ブランチの版を GitHub から、ワーカーは取り込んだチェックアウトの版を `python3 continuation_config.py --repo . --conflicts "<衝突したファイル>"` で読む。ない・読めない・形が違うときは今までの振る舞い（回数で切らない・引き継がない・`CHANGELOG.md` だけを検査なしで機械的に解く）
+- 回数の上限（`K-0010`）: `supervisor.py` の `conflict_step` が、同じ PR でエージェントで解いた回（`continuation.agent_conflicts`。`job.finished` が succeeded で `agent_tier` が `none` か `cost_usd` が 0 の回は数えない）が `max_attempts_per_pr` に達したら積まずに `continue.limit_reached`（reason=conflict）を残し、`ci_failure_step` がその文で人への停止（`ci:`）を開く。チケットの合計の上限（`workflow_guard.conflicts`、ADR 0038）も機械的に解いた回を数えないようにした
+- 引き継ぎ: `continue` に `attempt` を足し、dispatcher がワーカーに `CONTINUE_ATTEMPT` を渡す。`entrypoint.sh` は conflict の続きのジョブでは `resume_session_until_attempt` の回までだけ `--state-dir` を渡す
+- 機械的な解消（`K-0010`・`K-0015`）: 衝突したファイルがすべて `mechanical.paths` に当たるとき、両方の行を残して解いた結果を一時の index で組み（作業ツリーと衝突の状態は変えない）、`mechanical.verify` に `--base origin/<既定ブランチ> --head <解いた結果>` でかけて、終了コード 0 のときだけ機械的な解消にする。通らない・読めないときは衝突のままエージェントに渡す
+- 積む時点の衝突したファイル（`K-0014`）: `conflict_step` が、PR が変えたファイル（`pulls/<n>/files`）と共通の祖先から既定ブランチが変えたファイル（`compare`）の重なりを `continue.enqueued` の `conflict_files` に載せる（衝突し得るファイル。読めない・重なりがないときは載せない）。`pr.conflicted` と `handoff.saved` に載せる分（`engine/conflict-files.patch` の定義）は含めていない
+- Engine のテスト（`tests/test_conflict.py`・`test_continuation.py`・`test_lock_wait.py`）も同じ差分で直した（Postgres の `TEST_DATABASE_URL` が要るので、このリポジトリでは走らせていない）
+
+`test_engine.py` の `PatchedEngineTest` が、`ENGINE_DIR` の Engine の写しにこの差分を当てて（もう入っていればそのまま）、`EngineTest` と同じテストを todo なしで走らせる。差分が当たらなければ落ちる。`EngineTest` の `test_2_引き継いでよい回は線から読む` と `test_5_積む時点のcontinue_enqueuedに衝突したファイルを載せる` は、今の Engine の形のときだけ todo。`engine_harness.py` は、Engine の `main` の `conflict_step` が呼ぶ `workflow_guard` を差し替える（チケットの合計の上限はいつも積んでよいとし、同じ PR の線だけを見る）。
+
+建設者が差分を Engine に当てて `.factory-config/engine.lock`（`ENGINE_REF`）を上げたら、`legacy_supervisor`・`legacy_worker`・`legacy_unverified`・`legacy_resume`・`legacy_files` と `todo_while_legacy` の呼び出しを消し、3 つの知見の issue 1663 の解決策を `wired: true` にする。それまでは `wired: false`・`verified: false`。
 
 ### CI への組み込み
 
