@@ -72,6 +72,15 @@ class HttpStudentApi implements StudentApi {
   );
 
   @override
+  Future<LiveLessonSession> getLiveLessonSession(String sessionId) async =>
+      LiveLessonSession.fromJson(
+        await _send(
+          'GET',
+          '/live-lesson-sessions/${Uri.encodeComponent(sessionId)}',
+        ),
+      );
+
+  @override
   Future<LiveLessonSession> endLiveLessonSession(String sessionId) async =>
       LiveLessonSession.fromJson(
         await _send(

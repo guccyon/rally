@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/error_message.dart';
@@ -431,6 +433,10 @@ final clockProvider = Provider<DateTime Function()>(
   (ref) => ref.watch(serverClockProvider).now,
 );
 
+/// コーチの入室を待つあいだ（[LiveLessonSession.awaitingCoach]）に通話セッションを取り直す間隔（`getLiveLessonSession`）。
+/// 待機から通話中への切り替えはこの間隔ぶん遅れる。値はここ 1 か所で持つ（ADR 0015）
+const liveLessonAwaitingCoachRefetchInterval = Duration(seconds: 5);
+
 final studentFlowProvider =
     NotifierProvider<StudentFlowNotifier, StudentFlowState>(
       StudentFlowNotifier.new,
@@ -454,7 +460,42 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
         .changesElsewhere
         .listen((_) => _followSessionElsewhere());
     ref.onDispose(changes.cancel);
+    ref.onDispose(() => _awaitingCoachRefetch?.cancel());
     return _initial;
+  }
+
+  /// コーチの入室待ちのあいだの次の取り直し（[_followCoachJoin]）
+  Timer? _awaitingCoachRefetch;
+
+  /// 持っている通話セッションがコーチの入室待ちなら、[liveLessonAwaitingCoachRefetchInterval] のあとに取り直す。
+  /// 応答を受けてから次を決めるので、取り直しは重ならない。待機でなくなったら（コーチの入室・通話の終了・別のセッション・
+  /// 状態を捨てた）止める。取り直しに失敗しても文言は出さず、待機のまま次の間隔で取り直す
+  void _followCoachJoin() {
+    _awaitingCoachRefetch?.cancel();
+    final waiting = state.session;
+    if (waiting == null || !waiting.awaitingCoach) return;
+    _awaitingCoachRefetch = Timer(
+      liveLessonAwaitingCoachRefetchInterval,
+      () async {
+        bool stillWaiting() =>
+            ref.mounted &&
+            state.session?.sessionId == waiting.sessionId &&
+            state.session!.awaitingCoach;
+        if (!stillWaiting()) return;
+        try {
+          final session = await _api.getLiveLessonSession(waiting.sessionId);
+          if (!stillWaiting()) return;
+          // 取り直しは画面の操作ではないので、出ている失敗の文言は消さない
+          state = state.copyWith(
+            session: session,
+            errorMessage: state.errorMessage,
+          );
+        } on StudentApiException {
+          // 待機のまま次の間隔で取り直す
+        }
+        if (stillWaiting()) _followCoachJoin();
+      },
+    );
   }
 
   StudentApi get _api => ref.read(studentApiProvider);
@@ -937,15 +978,17 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     state = state.copyWith(step: FlowStep.videoSubmit);
   }
 
-  /// `startLiveLessonSession`（映像はモックなので接続はしない）
+  /// `startLiveLessonSession`（映像はモックなので接続はしない）。コーチの入室待ちなら取り直しを始める（[_followCoachJoin]）
   Future<void> startCall() => run(() async {
     final session = await _api.startLiveLessonSession(
       StartLiveLessonSessionRequest(bookingId: state.booking!.bookingId),
     );
     state = state.copyWith(session: session);
+    _followCoachJoin();
   });
 
   /// 入室前チェックの「入室する」（`startLiveLessonSession`）。通ったらビデオ通話へ移って true を返す。
+  /// コーチの入室待ちなら取り直しを始める（[_followCoachJoin]）。
   /// 応答の前に入室前チェックから戻っていたら応答を捨てる（段を移さない）。失敗の文言は [StudentFlowState.errorMessage]
   /// 409 `slot_not_started`（サーバーの時刻ではまだ開始前）なら、その応答の Date で時計のずれを合わせ直す（入室は繰り返し送らない）。
   Future<bool> joinLiveLesson() async {
@@ -964,6 +1007,7 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
       }
       if (!ref.mounted || state.step != FlowStep.prejoinCheck) return;
       state = state.copyWith(session: session, step: FlowStep.liveLesson);
+      _followCoachJoin();
       joined = true;
     });
     return joined;

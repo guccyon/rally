@@ -816,6 +816,8 @@ class LiveLessonSession {
     this.endedAt,
     this.durationSec,
     this.roomToken,
+    this.coachJoinedAt,
+    this.bookings = const [],
   });
 
   final String sessionId;
@@ -830,6 +832,16 @@ class LiveLessonSession {
   /// 通話に参加するためのトークン（Gen1 はモック）。終了後は null
   final String? roomToken;
 
+  /// コーチが最初にこのセッションに入室した時刻。コーチがまだ入室していない（と、入室を記録する前に始まったセッション）は null
+  final DateTime? coachJoinedAt;
+
+  /// セッションに結び付いた予約（先頭は開始した予約）。応答に載っていなければ空
+  final List<LiveLessonSessionBooking> bookings;
+
+  /// コーチの入室を待っているか（通話中で、コーチの入室の記録がない）。待機のあいだは取り直して入室を知る（ADR 0015）
+  bool get awaitingCoach =>
+      status == LiveLessonSessionStatus.inProgress && coachJoinedAt == null;
+
   factory LiveLessonSession.fromJson(Map<String, dynamic> json) =>
       LiveLessonSession(
         sessionId: json['session_id'] as String,
@@ -841,6 +853,33 @@ class LiveLessonSession {
         endedAt: _dateTimeOrNull(json['ended_at']),
         durationSec: json['duration_sec'] as int?,
         roomToken: json['room_token'] as String?,
+        coachJoinedAt: _dateTimeOrNull(json['coach_joined_at']),
+        bookings: [
+          for (final e in json['bookings'] as List<dynamic>? ?? const [])
+            LiveLessonSessionBooking.fromJson(e as Map<String, dynamic>),
+        ],
+      );
+}
+
+/// `LiveLessonSessionBooking`
+class LiveLessonSessionBooking {
+  const LiveLessonSessionBooking({
+    required this.bookingId,
+    required this.studentId,
+    this.studentJoinedAt,
+  });
+
+  final String bookingId;
+  final String studentId;
+
+  /// この予約の生徒が最初にこのセッションに入室した時刻。まだ入室していなければ null
+  final DateTime? studentJoinedAt;
+
+  factory LiveLessonSessionBooking.fromJson(Map<String, dynamic> json) =>
+      LiveLessonSessionBooking(
+        bookingId: json['booking_id'] as String,
+        studentId: json['student_id'] as String,
+        studentJoinedAt: _dateTimeOrNull(json['student_joined_at']),
       );
 }
 
