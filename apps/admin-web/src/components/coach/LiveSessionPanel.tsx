@@ -42,13 +42,20 @@ function splitBookings(bookings: CoachBooking[], now: number) {
   return { upcoming, past };
 }
 
+function scrollIntoViewOnce(row: HTMLTableRowElement | null) {
+  row?.scrollIntoView?.({ block: "center" });
+}
+
 function BookingTable({
   label,
   bookings,
   renderAction,
+  highlightId,
 }: {
   label: string;
   bookings: CoachBooking[];
+  /** お知らせから開いた予約（その行を目立たせて画面に見せる） */
+  highlightId?: string;
   renderAction?: (item: CoachBooking) => ReactNode;
 }) {
   return (
@@ -64,7 +71,12 @@ function BookingTable({
       </thead>
       <tbody>
         {bookings.map((item) => (
-          <tr key={item.booking.booking_id} className="border-t">
+          <tr
+            key={item.booking.booking_id}
+            ref={item.booking.booking_id === highlightId ? scrollIntoViewOnce : undefined}
+            aria-current={item.booking.booking_id === highlightId ? "true" : undefined}
+            className={`border-t ${item.booking.booking_id === highlightId ? "bg-surface font-semibold" : ""}`}
+          >
             <td className="py-1">
               {formatDateTime(item.slot.starts_at)}〜{formatDateTime(item.slot.ends_at)}
             </td>
@@ -131,14 +143,18 @@ function SessionSummary({
  * 通話中の画面に戻って終了できる。
  * 時刻の判断は端末の時計ではなくサーバーに合わせた時計で行う。一覧を読んだ応答の Date ヘッダーでずれを決め、入室で 409 slot_not_started が
  * 返ったらその応答の Date で合わせ直す（入室は繰り返し送らない）。Date が読めなければ端末の時計のまま。
+ * `initialBookingId`（お知らせのリマインドの booking_id）があれば、一覧のその予約の行を目立たせて（aria-current）画面に見せる。
  * media はブラウザーのカメラ・マイク・スピーカー（テストでは作り物に差し替える）。
  */
 export function LiveSessionPanel({
   api,
   media = browserLocalMedia,
+  initialBookingId,
 }: {
   api: Pick<CoachApi, "listMyCoachBookings" | "startLiveLessonSession" | "endLiveLessonSession">;
   media?: LocalMedia;
+  /** お知らせから開いた予約。一覧のその行を目立たせる（終わった予約なら折りたたみを開く） */
+  initialBookingId?: string;
 }) {
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [session, setSession] = useState<Schemas["LiveLessonSession"] | null>(null);
@@ -340,15 +356,16 @@ export function LiveSessionPanel({
                 label="これからの予約"
                 bookings={list.upcoming}
                 renderAction={renderAction}
+                highlightId={initialBookingId}
               />
             )}
           </div>
           {list.past.length > 0 && (
-            <details>
+            <details open={list.past.some((item) => item.booking.booking_id === initialBookingId) || undefined}>
               <summary className="cursor-pointer font-semibold">
                 終わった予約（{list.past.length} 件）
               </summary>
-              <BookingTable label="終わった予約" bookings={list.past} />
+              <BookingTable label="終わった予約" bookings={list.past} highlightId={initialBookingId} />
             </details>
           )}
         </>

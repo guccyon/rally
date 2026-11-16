@@ -252,6 +252,17 @@ export const SCREENS: Screen[] = [
       await page.getByRole("button", { name: /^お知らせ/ }).click();
     },
   },
+  {
+    id: "coach-notification-reminder",
+    title: "コーチ: お知らせのリマインドから予約を開く",
+    role: "coach",
+    path: "/coach",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^お知らせ/ }).click();
+      await page.getByRole("button", { name: /レッスンの開始 1 時間前です/ }).click();
+      await page.getByRole("table", { name: "これからの予約" }).waitFor();
+    },
+  },
   { id: "hq-home", title: "本部: ホーム", role: "headquarters", path: "/headquarters" },
   { id: "hq-slot-supply", title: "本部: 予約枠の需給", role: "headquarters", path: "/headquarters/slot-supply" },
   {
