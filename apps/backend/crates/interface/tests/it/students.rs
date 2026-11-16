@@ -432,7 +432,9 @@ async fn recent_booking_count_leaves_out_cancelled_bookings() {
     }
     bookings
         .update(made[0].id(), |booking, slot| {
-            booking.cancel(MONTHLY_STUDENT, slot, at(11)).map(|_| ())
+            booking
+                .cancel(MONTHLY_STUDENT, slot, at(11), true)
+                .map(|_| ())
         })
         .await
         .unwrap();

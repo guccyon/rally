@@ -272,6 +272,7 @@ fn app() -> App {
         ),
         CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             events.clone(),
             clock.clone(),
@@ -347,6 +348,7 @@ fn app() -> App {
                 ),
                 CancelBooking::new(
                     bookings.clone(),
+                    EntitlementQuotaGate::new(entitlements.clone()),
                     analytics.clone(),
                     events.clone(),
                     clock.clone(),

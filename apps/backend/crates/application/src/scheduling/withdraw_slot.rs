@@ -227,6 +227,9 @@ mod tests {
             .unwrap();
         CancelBooking::new(
             bookings.clone(),
+            crate::entitlement::EntitlementQuotaGate::new(
+                crate::in_memory::InMemoryEntitlementRepository::default(),
+            ),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             FixedClock(NOW),

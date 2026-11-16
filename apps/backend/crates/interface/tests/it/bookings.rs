@@ -240,7 +240,13 @@ fn app_with_entitlements(
             events.clone(),
             clock,
         ),
-        CancelBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
+        CancelBooking::new(
+            bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
+            analytics.clone(),
+            events.clone(),
+            clock,
+        ),
         application::scheduling::DescribeBooking::new(
             bookings.clone(),
             application::profile::ProfileCoachDisplayNameLookup::new(accounts.clone()),
@@ -277,7 +283,7 @@ fn app_with_entitlements(
             events.clone(),
             clock,
         ),
-        GetEntitlement::new(entitlements, clock),
+        GetEntitlement::new(entitlements.clone(), clock),
         StartLiveLessonSession::new(
             InMemoryLiveLessonSessionRepository::default(),
             SchedulingBookingLookup::new(InMemoryBookingRepository::new(
@@ -302,7 +308,13 @@ fn app_with_entitlements(
             FixedAiFeedbackGenerator,
             EntitlementVideoReviewGate::new(
                 trial_usage,
-                CancelBooking::new(bookings.clone(), analytics.clone(), events.clone(), clock),
+                CancelBooking::new(
+                    bookings.clone(),
+                    EntitlementQuotaGate::new(entitlements.clone()),
+                    analytics.clone(),
+                    events.clone(),
+                    clock,
+                ),
             ),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
@@ -1120,7 +1132,8 @@ fn cancelled_consumes_quota(app: &App) -> bool {
 
 #[tokio::test]
 async fn cancelling_a_confirmed_booking_23_hours_before_reopens_the_slot_and_consumes_quota() {
-    let app = app_with([slot_starting_in(23, 23)]);
+    // 回数を消費するのはビデオ通話の暦月の枠を持つ（月額契約の）生徒だけ
+    let app = app_with_monthly([slot_starting_in(23, 23)]);
     let booking_id = create(&app.router, STUDENT, 23, false).await;
     post_confirm(&app.router, Some(STUDENT), &booking_id).await;
     assert_eq!(slot_status(&app, 23), SlotStatus::Booked);
@@ -1248,6 +1261,20 @@ async fn cancelling_25_hours_before_does_not_consume_quota() {
 }
 
 #[tokio::test]
+async fn cancelling_23_hours_before_without_a_monthly_entitlement_does_not_consume_quota() {
+    // 受講権のない生徒は entitlement が回数を数えないので、本人の予約の一覧の cancel_consumes_quota と同じく
+    // 開始の 24 時間前より後のキャンセルでも回数を使わない（#1605）
+    let app = app_with([slot_starting_in(23, 23)]);
+    let booking_id = create(&app.router, STUDENT, 23, false).await;
+    post_confirm(&app.router, Some(STUDENT), &booking_id).await;
+
+    let (status, body) = post_cancel(&app.router, Some(STUDENT), &booking_id, None).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!cancelled_consumes_quota(&app));
+}
+
+#[tokio::test]
 async fn cancelling_a_pending_booking_keeps_the_slot_open() {
     let app = app_with([slot_starting_in(23, 23)]);
     let booking_id = create(&app.router, STUDENT, 23, true).await;
@@ -1259,7 +1286,10 @@ async fn cancelling_a_pending_booking_keeps_the_slot_open() {
     assert_eq!(body["status"], "cancelled");
     assert_eq!(body["confirmed_at"], Value::Null);
     assert_eq!(slot_status(&app, 23), SlotStatus::Open);
-    assert!(cancelled_consumes_quota(&app));
+    assert!(
+        !cancelled_consumes_quota(&app),
+        "月額契約の前の生徒は開始の 23 時間前でも回数を使わない"
+    );
     // キャンセルした体験予約は初回に数えないので、もう一度体験予約できる
     create(&app.router, STUDENT, 23, true).await;
 }

@@ -123,6 +123,7 @@ fn router(settings: InMemoryNotificationSettingsRepository) -> Router {
         ),
         CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(entitlements.clone()),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,

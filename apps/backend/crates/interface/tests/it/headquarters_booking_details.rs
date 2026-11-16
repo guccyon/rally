@@ -197,7 +197,7 @@ async fn headquarters_reads_a_booking_with_its_slot_and_status_changes() {
     bookings
         .update(booking.id(), |booking, slot| {
             booking
-                .cancel(AccountId::from_u128(3), slot, nov1(2 * HOUR))
+                .cancel(AccountId::from_u128(3), slot, nov1(2 * HOUR), true)
                 .map(|_| ())
         })
         .await

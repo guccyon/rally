@@ -377,7 +377,9 @@ mod tests {
         let cancelled = book(&bookings, OTHER_STUDENT, 4, created).await;
         bookings
             .update(cancelled.id(), |booking, slot| {
-                booking.cancel(OTHER_STUDENT, slot, at(1, 1)).map(|_| ())
+                booking
+                    .cancel(OTHER_STUDENT, slot, at(1, 1), true)
+                    .map(|_| ())
             })
             .await
             .unwrap();
@@ -611,7 +613,7 @@ mod tests {
             .unwrap();
         bookings
             .update(id_of(3), |booking, slot| {
-                booking.cancel(STUDENT, slot, at(1, 1)).map(|_| ())
+                booking.cancel(STUDENT, slot, at(1, 1), true).map(|_| ())
             })
             .await
             .unwrap();
@@ -729,7 +731,7 @@ mod tests {
         // キャンセルした体験予約も体験予約のまま
         bookings
             .update(trial.id(), |booking, slot| {
-                booking.cancel(STUDENT, slot, at(1, 1)).map(|_| ())
+                booking.cancel(STUDENT, slot, at(1, 1), true).map(|_| ())
             })
             .await
             .unwrap();
@@ -825,7 +827,9 @@ mod tests {
         }
         bookings
             .update(trial.id(), |booking, slot| {
-                booking.cancel(OTHER_STUDENT, slot, at(1, 1)).map(|_| ())
+                booking
+                    .cancel(OTHER_STUDENT, slot, at(1, 1), true)
+                    .map(|_| ())
             })
             .await
             .unwrap();
@@ -985,7 +989,9 @@ mod tests {
         // キャンセルされた予約もメニューの写しのまま出る
         bookings
             .update(cancelled.id(), |booking, slot| {
-                booking.cancel(OTHER_STUDENT, slot, at(1, 1)).map(|_| ())
+                booking
+                    .cancel(OTHER_STUDENT, slot, at(1, 1), true)
+                    .map(|_| ())
             })
             .await
             .unwrap();

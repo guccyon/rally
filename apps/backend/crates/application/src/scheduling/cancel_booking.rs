@@ -6,7 +6,7 @@ use domain::{
 };
 use uuid::Uuid;
 
-use super::{BookingRepository, UpdateBookingError};
+use super::{BookingRepository, QuotaGate, UpdateBookingError};
 use crate::{
     Unavailable,
     analytics::{AnalyticsEvent, AnalyticsSink},
@@ -35,26 +35,30 @@ pub enum CancelBookingError {
 ///
 /// 予約とそのスロットを読み、domain の [`Booking::cancel`] でキャンセルして（確定済みならスロットを
 /// `open` に戻す）、両方を保存する。回数を消費するかはキャンセル規定（domain の `CancellationPolicy`）が
-/// 判定し、ここでは判定しない。保存したら判定を載せた境界間イベント `BookingCancelled` を発行し、行動イベント
+/// 判定し、ここでは判定しない。判定に渡す「生徒がビデオ通話の枠を持つか」は、本人の予約の一覧の見込みと同じく
+/// entitlement に問い合わせる（[`QuotaGate::has_live_lesson_quota`]。持たない生徒のキャンセルは回数を使わない）。保存したら判定を載せた境界間イベント `BookingCancelled` を発行し、行動イベント
 /// `booking.cancelled` を 1 回発火する。拒否・保存の失敗ではどちらも出さない。受講権の消費は entitlement が
 /// `BookingCancelled` を購読して行う。
-pub struct CancelBooking<B, A, P, C> {
+pub struct CancelBooking<B, G, A, P, C> {
     bookings: B,
+    quota: G,
     analytics: A,
     events: P,
     clock: C,
 }
 
-impl<B, A, P, C> CancelBooking<B, A, P, C>
+impl<B, G, A, P, C> CancelBooking<B, G, A, P, C>
 where
     B: BookingRepository,
+    G: QuotaGate,
     A: AnalyticsSink,
     P: DomainEventPublisher,
     C: Clock,
 {
-    pub fn new(bookings: B, analytics: A, events: P, clock: C) -> Self {
+    pub fn new(bookings: B, quota: G, analytics: A, events: P, clock: C) -> Self {
         Self {
             bookings,
+            quota,
             analytics,
             events,
             clock,
@@ -66,11 +70,17 @@ where
         command: CancelBookingCommand,
     ) -> Result<Booking, CancelBookingError> {
         let now = self.clock.now();
+        let has_live_lesson_quota = self
+            .quota
+            .has_live_lesson_quota(command.student_id)
+            .await
+            .map_err(CancelBookingError::Unavailable)?;
         let mut decision: Option<CancellationDecision> = None;
         let booking = self
             .bookings
             .update(command.booking_id, |booking, slot| {
-                decision = Some(booking.cancel(command.student_id, slot, now)?);
+                decision =
+                    Some(booking.cancel(command.student_id, slot, now, has_live_lesson_quota)?);
                 Ok(())
             })
             .await
@@ -141,6 +151,10 @@ mod tests {
 
     use domain::{
         catalog::Sport,
+        entitlement::{
+            Entitlement, EntitlementId, LiveLessonQuota, SubscriptionId, SubscriptionPlan,
+            YearMonth,
+        },
         scheduling::{BookingStatus, Slot, SlotId, SlotStatus},
     };
 
@@ -158,6 +172,7 @@ mod tests {
 
     type UseCase = CancelBooking<
         InMemoryBookingRepository,
+        EntitlementQuotaGate<InMemoryEntitlementRepository>,
         RecordingAnalyticsSink,
         RecordingDomainEventPublisher,
         FixedClock,
@@ -175,9 +190,36 @@ mod tests {
         CREATED_AT + 100 * HOUR
     }
 
-    /// 公開中のスロットを 1 つ置き、生徒がそれを予約した状態（`confirm` なら確定済み）から始め、
-    /// 開始の `before_start` 前にキャンセルするユースケースを返す。
+    /// `STUDENT` の月額（standard）の受講権（ビデオ通話の暦月の枠を持つ）。
+    fn monthly() -> Entitlement {
+        Entitlement::monthly(
+            EntitlementId::from_u128(100),
+            STUDENT,
+            Sport::Tennis,
+            SubscriptionId::from_u128(200),
+            LiveLessonQuota::restore(
+                SubscriptionPlan::Standard,
+                YearMonth::new(1970, 1).unwrap(),
+                [],
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// 月額の受講権のある生徒で [`use_case_with`] する。
     async fn use_case(confirm: bool, before_start: Duration) -> (UseCase, Booking) {
+        use_case_with(confirm, before_start, [monthly()]).await
+    }
+
+    /// 公開中のスロットを 1 つ置き、受講権 `entitlements` の生徒がそれを予約した状態（`confirm` なら確定済み）から
+    /// 始め、開始の `before_start` 前にキャンセルするユースケースを返す。
+    async fn use_case_with(
+        confirm: bool,
+        before_start: Duration,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+    ) -> (UseCase, Booking) {
+        let entitlements = InMemoryEntitlementRepository::with_entitlements(entitlements);
         let slots = InMemorySlotRepository::with_slots([Slot::publish(
             SLOT,
             COACH,
@@ -220,6 +262,7 @@ mod tests {
         }
         let use_case = CancelBooking::new(
             bookings,
+            EntitlementQuotaGate::new(entitlements),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             FixedClock(starts_at() - before_start),
@@ -366,6 +409,7 @@ mod tests {
 
         let use_case = CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             RecordingAnalyticsSink::default(),
             RecordingDomainEventPublisher::default(),
             FixedClock(starts_at() - 48 * HOUR),
@@ -414,6 +458,40 @@ mod tests {
                 use_case.bookings().slots().all()[0].status(),
                 SlotStatus::Open
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_without_the_live_lesson_quota_never_consumes_quota() {
+        // 受講権がない・ワンショットだけの生徒は、開始の 24 時間前より後でも回数を使わない（本人の予約の一覧の
+        // cancel_consumes_quota と同じ判定）
+        let one_shot =
+            Entitlement::one_shot(EntitlementId::from_u128(101), STUDENT, Sport::Golf, 1).unwrap();
+        for entitlements in [vec![], vec![one_shot]] {
+            for (confirm, before_start) in
+                [(true, 23 * HOUR), (false, 23 * HOUR), (true, 25 * HOUR)]
+            {
+                let (use_case, booking) =
+                    use_case_with(confirm, before_start, entitlements.clone()).await;
+                let cancelled = use_case
+                    .execute(command(STUDENT, booking.id()))
+                    .await
+                    .unwrap();
+                assert!(
+                    !consumes_quota(&use_case),
+                    "確定済み {confirm}・開始の {before_start:?} 前"
+                );
+                assert_eq!(
+                    cancelled
+                        .status_changes()
+                        .last()
+                        .and_then(|change| change.cancellation_decision()),
+                    Some(CancellationDecision {
+                        consumes_quota: false
+                    }),
+                    "getBooking が返す判定も同じ"
+                );
+            }
         }
     }
 

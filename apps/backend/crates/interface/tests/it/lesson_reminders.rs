@@ -228,7 +228,7 @@ impl Fixture {
                 if by_headquarters {
                     booking.cancel_by_headquarters(slot, now).map(|_| ())
                 } else {
-                    booking.cancel(student, slot, now).map(|_| ())
+                    booking.cancel(student, slot, now, true).map(|_| ())
                 }
             })
             .await

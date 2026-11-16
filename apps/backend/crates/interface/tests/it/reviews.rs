@@ -187,6 +187,7 @@ fn app(reviews: InMemoryLessonReviewRepository) -> Router {
         ),
         CancelBooking::new(
             bookings.clone(),
+            EntitlementQuotaGate::new(InMemoryEntitlementRepository::default()),
             analytics.clone(),
             RecordingDomainEventPublisher::default(),
             clock,

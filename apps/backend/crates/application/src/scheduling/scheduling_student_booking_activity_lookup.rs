@@ -109,7 +109,7 @@ mod tests {
     async fn cancel(bookings: &InMemoryBookingRepository, booking: &Booking, hour: u64) {
         bookings
             .update(booking.id(), |booking, slot| {
-                booking.cancel(STUDENT, slot, at(hour)).map(|_| ())
+                booking.cancel(STUDENT, slot, at(hour), true).map(|_| ())
             })
             .await
             .unwrap();

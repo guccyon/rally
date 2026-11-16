@@ -111,7 +111,7 @@ mod tests {
         let cancelled = confirm(&bookings, &cancelled).await;
         bookings
             .update(cancelled.id(), |booking, slot| {
-                booking.cancel(OTHER_STUDENT, slot, at(1)).map(|_| ())
+                booking.cancel(OTHER_STUDENT, slot, at(1), true).map(|_| ())
             })
             .await
             .unwrap();

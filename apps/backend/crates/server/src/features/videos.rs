@@ -6,7 +6,10 @@
 use application::{
     async_lesson::{GetVideoReview, ReturnVideoReview, SubmitVideo},
     catalog::CatalogLessonMenuLookup,
-    entitlement::{EntitlementReviewGate, EntitlementTrialUsageLookup, EntitlementVideoReviewGate},
+    entitlement::{
+        EntitlementQuotaGate, EntitlementReviewGate, EntitlementTrialUsageLookup,
+        EntitlementVideoReviewGate,
+    },
     scheduling::CancelBooking,
 };
 use axum::Router;
@@ -29,6 +32,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
                 ),
                 CancelBooking::new(
                     ports.bookings(),
+                    EntitlementQuotaGate::new(ports.entitlements()),
                     ports.analytics(),
                     ports.events(),
                     ports.clock(),

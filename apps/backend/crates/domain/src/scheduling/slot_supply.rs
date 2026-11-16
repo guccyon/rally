@@ -261,7 +261,7 @@ mod tests {
         ];
         let mut cancelled = booking(10, 7, &slots[0]);
         cancelled
-            .cancel(AccountId::from_u128(7), &mut slots[0].clone(), at(0))
+            .cancel(AccountId::from_u128(7), &mut slots[0].clone(), at(0), true)
             .unwrap();
         let bookings = [
             // 同じ生徒の 2 件目は数えない。キャンセルした予約も数える

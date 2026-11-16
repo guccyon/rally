@@ -336,7 +336,7 @@ mod tests {
             if let Some(at) = cancelled_at {
                 repository
                     .update(booking.id(), |booking, slot| {
-                        booking.cancel(STUDENT, slot, at).map(|_| ())
+                        booking.cancel(STUDENT, slot, at, true).map(|_| ())
                     })
                     .await
                     .unwrap();

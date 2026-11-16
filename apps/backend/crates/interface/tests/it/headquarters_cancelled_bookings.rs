@@ -135,7 +135,9 @@ async fn book(
     };
     bookings
         .update(booking.id(), |booking, slot| {
-            booking.cancel(student, slot, cancelled_at).map(|_| ())
+            booking
+                .cancel(student, slot, cancelled_at, true)
+                .map(|_| ())
         })
         .await
         .unwrap()
@@ -475,7 +477,9 @@ async fn book_with_menu(
         .unwrap();
     bookings
         .update(booking.id(), |booking, slot| {
-            booking.cancel(student, slot, cancelled_at).map(|_| ())
+            booking
+                .cancel(student, slot, cancelled_at, true)
+                .map(|_| ())
         })
         .await
         .unwrap()

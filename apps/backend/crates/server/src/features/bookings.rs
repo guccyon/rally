@@ -36,6 +36,7 @@ pub(super) fn router<P: Ports>(ports: &P) -> Router {
         ),
         CancelBooking::new(
             ports.bookings(),
+            EntitlementQuotaGate::new(ports.entitlements()),
             ports.analytics(),
             ports.events(),
             ports.clock(),
