@@ -1,7 +1,7 @@
 //! `PgLiveLessonSessionRepository`（`live_lesson.sessions`）の検証。開始・終了の往復と、同じ予約の 2 つ目の拒否と、
 //! 本部が見る、終わっていないまま時間の過ぎたセッションの読み取り（通話中で、ある時刻までに開始したもの。コーチで絞る）と、期間とコーチ・生徒で
 //! 見るセッションの記録の読み取り（ある期間に開始したもの。コーチ・生徒で絞る）と、本部が終わらせたセッション
-//! （`session_headquarters_ends`）の往復。
+//! （`session_headquarters_ends`）の往復と、参加者ごとの最初の入室（`session_participants`）の往復。
 //!
 //! Postgres が要るので既定では走らない（`#[ignore]`）。`DATABASE_URL` を設定して
 //! `cargo test -p infra -- --include-ignored` で走らせる。
@@ -629,4 +629,96 @@ async fn a_participant_end_written_by_an_older_version_wins_over_the_headquarter
     assert_eq!(found.ended_at(), Some(at(7)));
     assert_eq!(found.quality(), Some(quality));
     assert_eq!(found.ended_by_headquarters(), None);
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn joins_round_trip_and_rejoining_keeps_the_first_time(pool: PgPool) {
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    let booking = support::new_confirmed_booking(&pool).await;
+    let session = LiveLessonSession::start(
+        sessions.next_id(),
+        booking.student_id(),
+        &booking,
+        &[],
+        None,
+        at(10),
+    )
+    .unwrap();
+    sessions.insert(session.clone()).await.unwrap();
+    let found = sessions.find(session.id()).await.unwrap().unwrap();
+    assert_eq!(found.joined_at(booking.student_id()), Some(at(10)));
+    assert_eq!(found.coach_joined_at(), None, "コーチはまだ入室していない");
+
+    let joined = sessions
+        .update(session.id(), |s| {
+            s.join(booking.coach_id(), &booking, at(11))
+        })
+        .await
+        .unwrap();
+    assert_eq!(joined.coach_joined_at(), Some(at(11)));
+    assert_eq!(
+        sessions.find(session.id()).await.unwrap(),
+        Some(joined.clone())
+    );
+
+    // 入り直しても最初の時刻のまま
+    for account in [booking.coach_id(), booking.student_id()] {
+        sessions
+            .update(session.id(), |s| s.join(account, &booking, at(12)))
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        sessions.find_by_booking(booking.id()).await.unwrap(),
+        Some(joined.clone())
+    );
+
+    // 終了しても入室の記録は残る
+    let ended = sessions
+        .update(session.id(), |s| {
+            s.end(booking.coach_id(), at(13), support::quality())
+        })
+        .await
+        .unwrap();
+    assert_eq!(ended.coach_joined_at(), Some(at(11)));
+    assert_eq!(sessions.find(session.id()).await.unwrap(), Some(ended));
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn a_session_without_participant_rows_reads_without_join_times(pool: PgPool) {
+    // 入室を記録する前の版が始めたセッション（session_participants に行がない）
+    let sessions = PgLiveLessonSessionRepository::new(pool.clone());
+    let booking = support::new_confirmed_booking(&pool).await;
+    let session = LiveLessonSession::start(
+        sessions.next_id(),
+        booking.coach_id(),
+        &booking,
+        &[],
+        None,
+        at(10),
+    )
+    .unwrap();
+    sessions.insert(session.clone()).await.unwrap();
+    sqlx::query("DELETE FROM live_lesson.session_participants")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let found = sessions.find(session.id()).await.unwrap().unwrap();
+    assert!(found.joins().is_empty());
+    assert_eq!(found.coach_joined_at(), None);
+    assert_eq!(found.joined_at(booking.student_id()), None);
+
+    // 記録の後の入室からは記録する
+    let joined = sessions
+        .update(session.id(), |s| {
+            s.join(booking.student_id(), &booking, at(11))
+        })
+        .await
+        .unwrap();
+    assert_eq!(joined.joined_at(booking.student_id()), Some(at(11)));
+    assert_eq!(joined.coach_joined_at(), None);
+    assert_eq!(sessions.find(session.id()).await.unwrap(), Some(joined));
 }
