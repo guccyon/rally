@@ -3456,6 +3456,13 @@ export interface components {
             /** @description 通話に参加するためのトークン（Twilio Video 相当。Gen1 はモック）。終了後は null */
             room_token?: string | null;
             /**
+             * Format: date-time
+             * @description コーチが最初にこのセッションに入室した時刻（コーチが `startLiveLessonSession` を呼んで通話に入った最初の時刻。
+             *     コーチが開始したセッションでは `started_at` と同じ）。入り直しても最初の時刻のまま変わらない。
+             *     コーチがまだ入室していないときと、入室を記録する前に始まったセッションは null か載らない。Issue #1654
+             */
+            coach_joined_at?: string | null;
+            /**
              * @description セッションに結び付いた予約の一覧。先頭は開始した予約（`booking_id` / `student_id` と同じ）。
              *     マンツーマンの枠では 1 件、グループレッスンの枠では通話を始めたときに確定していた予約の数だけ。
              *     完了したレッスン（`recordLessonCompletion`）は、この予約（生徒）ごとに 1 つ
@@ -3468,6 +3475,13 @@ export interface components {
             booking_id: string;
             /** Format: uuid */
             student_id: string;
+            /**
+             * Format: date-time
+             * @description この予約の生徒が最初にこのセッションに入室した時刻（生徒が `startLiveLessonSession` を呼んで通話に入った最初の時刻）。
+             *     入り直しても最初の時刻のまま変わらない。生徒がまだ入室していないときと、入室を記録する前に始まったセッションは
+             *     null か載らない。Issue #1654
+             */
+            student_joined_at?: string | null;
         };
         /** @description 本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧（対象・並べ方は `listOverdueLiveLessonSessions` の説明） */
         OverdueLiveLessonSessionList: {
