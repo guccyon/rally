@@ -299,4 +299,9 @@ void main() {
       '10月28日 15時30分までなら、ビデオ通話の枠を使わずにキャンセルできます。',
     );
   });
+
+  test('文字数の残りの読み上げは「残り 〇 文字」', () {
+    expect(remainingCharactersLabel(2000), '残り 2000 文字');
+    expect(remainingCharactersLabel(0), '残り 0 文字');
+  });
 }
