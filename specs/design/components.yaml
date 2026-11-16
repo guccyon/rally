@@ -298,12 +298,12 @@ components:
   - id: data_table
     ja: 表
     lifecycle: trial
-    use: admin-web で、同じ項目を持つものを列で見比べる（本部の一覧）
+    use: admin-web で、同じ項目を持つものを列で見比べる（本部の予約・生徒・コーチ・レッスンメニュー・通話品質の一覧など）
     not_for: student-app と、項目が 3 つまで → list_row。操作が 2 つ以上 → card。詳細 → detail の型
-    parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）, sort（table_sort。任意）, note（value_note。任意）]
+    parts: [wrapper（横に動く包み）, table, header_cell（th）, cell（td）, row, row_highlight（任意）, select_cell（selectable だけ）, sort（table_sort。任意）, note（value_note。任意）]
     variants:
       text: {align: left, wrap: しない, note: 日時・名前・状態・種類など短い値}
-      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合。単位も同じセルに 1 行（「12 件」）。指標の値は kpi_figure の cell（0.9.0）}
+      numeric: {align: right, wrap: しない, numerals: tnum, note: 件数・割合・品質スコア。単位も同じセルに 1 行（「12 件」）。指標の値は kpi_figure の cell（0.9.0）}
       long_text: {align: left, wrap: 文節で折る（word-break auto-phrase）, min_width: 12em, max_width: 40em, note: 一言・題など文の列だけ}
     style:
       wrapper: {overflow_x: auto, max_width: 100%, container: background}
@@ -311,16 +311,23 @@ components:
       header_cell: {type: small 700, color: text_muted, divider: primary の 2px（下）}
       cell: {type: small, color: text, padding: sm 8px（列のあいだ md 16px）, min_height_px: 48, vertical_align: middle, divider: border の 1px（上）}
       edge: 先頭のセルの左と最後のセルの右の padding は 0
-      row_highlight: {container: danger.container, note: 確定待ちのまま 24 時間以内に始まる予約。status_tag の urgent と一緒に}
+      row_highlight: {container: danger.container, note: 確定待ちのまま 24 時間以内に始まる予約だけ。status_tag の urgent と一緒に}
+      selectable: {note: 行を 1 つ選び詳細を表の横か下に出す表（0.12.0）, select_cell: 名前の列の button の text, first_cell: 左 sm 8px}
+      selected: {container: primary_container, mark: 先頭のセルの左に primary の 4px の線（左 xs 4px）, note: 1 つだけ。row_highlight より優先}
+      selected_contrast: "primary_container の上で text 15.15・text_muted 5.12・danger.fg 4.89・warning.fg と success.fg 4.31（点だけ）・border_strong 3.26・focus_ring 3.63"
       link: primary の文字と下線（開始の日時など 1 列だけ）
     states:
+      default: 上の style
+      pressed: link と select_cell は button の text の押下（primary_container の面）
+      disabled: 行は無効にしない。選べない行は select_cell を出さず名前の字だけ
+      selected: selectable の表で選んだ行（上の style）。aria-selected="true"
       narrow: 幅に収まらないときは wrapper だけが横に動く。列は細くせず、セルは折り返さない
-      loading: 表を出さず、loading の section_text
+      loading: 表を出さず、loading の section_text。選んだ行の詳細を読むあいだは詳細の欄に section_text
       empty: 表を出さず、empty_state（section）
-      error: 表を出さず、notice の inline（danger）
-    behavior: 並べ方は API が返した順のまま（見出しで変えるときは table_sort で API から読み直す）。行全体を押せるようにはしない（詳細へは link のセルから）
+      error: 表を出さず、notice の inline（danger）。詳細だけ読めないときは詳細の欄に notice
+    behavior: 並べ方は API が返した順のまま（低品質を先に並べるのも API で。見出しで変えるときは table_sort で API から読み直す）。行全体を押せるようにはしない（link か select_cell から）
     wording: 見出しは名詞で短く（「開始」「状態」「コーチ」）。名前を出せないときは「（名前を表示できません）」、値がないときは「—」、値の注記は value_note
-    a11y: table に aria-label、th に scope="col"。横に動く wrapper は role="region"・aria-label・tabindex="0" と focus_ring 2px
+    a11y: table に aria-label、th に scope="col"。select_cell は「山田 花子を選ぶ」と読む。横に動く wrapper は role="region"・aria-label・tabindex="0" と focus_ring 2px
     rules:
       - level: should
         statement: セルは単語の途中で折り返さない。折り返してよいのは long_text の列だけ
@@ -338,6 +345,14 @@ components:
         statement: 本部の一覧の画面は content_width_px の wide に置き、表を reading の枠に押し込まない
         why: 表が縮むと列が折り返して読めない（#896）
         check: design_inspector
+      - level: should
+        statement: row_highlight は急ぎの予約の行だけに使い、低品質などほかの行は並び順と列と status_tag で示す
+        why: 赤い面が増えると、本部がすぐ動くべき予約を見落とす（#1465）
+        check: deterministic
+      - level: should
+        statement: 選んだ行は面の色だけでなく先頭の 4px の線と aria-selected で示す
+        why: 色の見分けが難しい人も読み上げでも、どの行の詳細かが分かる
+        check: design_inspector
       - level: may
         statement: 横に動くとき、先頭の列を左に固定してよい（面は background）
         why: どの行かが分かる
@@ -348,6 +363,8 @@ components:
     preview:
       - label: "PC 幅（wide）と急ぎの行"
         html: '<div class="pv tblw"><div class="tbl-wrap"><table class="tbl type-small" aria-label="10/28（水）の予約"><thead><tr><th scope="col">開始</th><th scope="col">状態</th><th scope="col">コーチ</th><th scope="col">レッスンメニュー</th></tr></thead><tbody><tr class="hl"><td><span class="lnk">9:00</span></td><td><span class="tag"><i class="d d-warning"></i>確定待ち</span> <span class="tag tag-urgent"><i class="d d-danger"></i>開始まで 24 時間以内</span></td><td>佐藤 健</td><td>バッティングの基本（30 分）</td></tr></tbody></table></div></div>'
+      - label: "selectable（選んだ行・数字の列）"
+        html: '<div class="pv dlw"><div class="tbl-wrap"><table class="tbl sel type-small" aria-label="コーチごとの通話品質（直近 30 日）"><thead><tr><th scope="col">コーチ</th><th scope="col" class="num">品質スコア</th><th scope="col">通話品質</th><th scope="col" class="num">ビデオ通話</th></tr></thead><tbody><tr><td><span class="pick">佐藤 健</span></td><td class="num">62</td><td><span class="tag"><i class="d d-danger"></i>低品質</span></td><td class="num">14 回</td></tr><tr class="on" aria-selected="true"><td><span class="pick">山田 花子</span></td><td class="num">74</td><td><span class="tag"><i class="d d-warning"></i>やや低い</span></td><td class="num">9 回</td></tr></tbody></table></div></div>'
 
   - id: table_sort
     ja: 表の並べ替え
@@ -504,11 +521,19 @@ components:
   - id: status_tag
     ja: 状態のタグ
     lifecycle: trial
-    use: 予約・動画添削・スロットの状態を出す（呼び名は glossary の states）
-    colors: 予約は booking_state、スロットは slot_state の対応で色を選ぶ
+    use: 予約・動画添削・スロット・通話品質の状態を出す（呼び名は glossary の states）
+    colors: 予約は booking_state、スロットは slot_state（tokens.yaml）、通話品質は下の call_quality_state の対応で色を選ぶ
+    call_quality_state:   # 通話品質の 4 つの値と色（0.12.0。#1465）。キー・境の点は契約で決まるまで仮
+      low: danger         # 低品質
+      fair: warning       # low と ok のあいだ（「やや低い」）
+      ok: neutral         # 80 以上（「問題なし」）
+      no_data: neutral    # 指標がない（「指標なし」）。点数は「—」
+    call_quality_rule: danger は low だけ。値を足すときは warning か neutral にし、新しい色を足さない
     parts: [dot, label]
     style: {container: なし（0.5.0）, dot: "8px。status.*.fg（neutral は border_strong）", label: "small 700。text（neutral は text_muted）", gap: xs}
     variants: {default: 点と字, urgent: data_table の急ぎの行だけ。字も danger.fg}
+    states: {default: 点と字, pressed: 押せない, disabled: 使わない, loading: 置き場の loading に任せる, error: 置かず「—」}
+    call_quality: 低品質も default。urgent にしない。品質スコアは別の列か字で添える
     rules:
       - level: must
         statement: 状態は色だけでなく、glossary の呼び名の文字を出す
@@ -524,6 +549,8 @@ components:
     preview:
       - label: "スロットの状態（slot_state: open・booked・closed）"
         html: '<div class="pv tags"><span class="tag type-small"><i class="d d-info"></i>公開中</span><span class="tag type-small"><i class="d d-success"></i>予約済み</span><span class="tag type-small muted"><i class="d d-neutral"></i>終了</span></div>'
+      - label: "通話品質（call_quality_state）"
+        html: '<div class="pv w tags"><span class="tag type-small"><i class="d d-danger"></i>低品質</span><span class="tag type-small"><i class="d d-warning"></i>やや低い</span><span class="tag type-small muted"><i class="d d-neutral"></i>問題なし</span><span class="tag type-small muted"><i class="d d-neutral"></i>指標なし</span></div>'
 
   - id: score_panel
     ja: スコアの面
@@ -932,3 +959,5 @@ preview_css: |
   .tbl .num{text-align:right;font-variant-numeric:tabular-nums}.tbl-wrap:focus-visible{outline:2px solid var(--color-focus-ring);outline-offset:2px}.pv .ord{margin:0 0 var(--space-sm);color:var(--color-text-muted)}.pv .tnote{margin-top:var(--space-sm);color:var(--color-text-muted)}
   .srt{display:inline-flex;align-items:center;gap:var(--space-xs);min-height:48px}.srt i{font-style:normal;width:16px;text-align:center;color:var(--color-text-muted)}.tbl th.cur,.tbl th.cur .srt i{color:var(--color-text)}.tbl th.prs{background:var(--color-primary-container)}.tbl.off th{color:var(--color-text-muted)}.nl{color:var(--color-text-muted);margin-right:var(--space-xs)}
   .notice+.ord{margin-top:var(--space-sm)}
+  .tbl.sel td:first-child{padding-left:var(--space-sm)}.tbl .pick{color:var(--color-primary);font-weight:700;text-decoration:underline 2px;text-underline-offset:4px}
+  .tbl tr.on td{background:var(--color-primary-container)}.tbl tr.on td:first-child{border-left:4px solid var(--color-primary);padding-left:var(--space-xs)}

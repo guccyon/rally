@@ -22,7 +22,7 @@ import { StatusTag } from "./StatusTag";
 import { TextArea, TextField } from "./TextField";
 import { Timeline, type TimelineEvent } from "./Timeline";
 import { ValueNote } from "./ValueNote";
-import { SLOT_STATE_STATUS, type Status } from "./status";
+import { CALL_QUALITY_STATE_STATUS, SLOT_STATE_STATUS, type Status } from "./status";
 
 /**
  * カタログの 1 枠。component・variant・state は specs/design/components.yaml の id とキー（対応はテストで確かめる）。
@@ -102,6 +102,16 @@ const SLOT_STATE_EXAMPLES: {
   { state: "booked", label: "予約済み" },
   { state: "closed", label: "終了" },
 ];
+
+/** 通話品質の状態（glossary の call_quality_score.states）の呼び名。色は components.yaml の status_tag.call_quality_state。 */
+type CallQualityState = keyof typeof CALL_QUALITY_STATE_STATUS;
+
+const CALL_QUALITY_LABELS: Record<CallQualityState, string> = {
+  low: "低品質",
+  fair: "やや低い",
+  ok: "問題なし",
+  no_data: "指標なし",
+};
 
 /** 期間の見本（日付の欄と誤りの型）。上限は契約の 31 日。 */
 const MAX_DAYS = 31;
@@ -291,6 +301,30 @@ const NOTED_SUPPLY_COLUMNS: DataTableColumn<NotedSupplyRow>[] = [
         `${row.rate}%`
       ),
   },
+];
+
+/** 行を選ぶ表の見本（data_table の selectable）。低品質を先に並べるのは API（ここでは渡した順のまま）。 */
+type CallQualityRow = {
+  coach: string;
+  score: number | null;
+  state: CallQualityState;
+  calls: number;
+};
+
+const CALL_QUALITY_ROWS: CallQualityRow[] = [
+  { coach: "佐藤 健", score: 62, state: "low", calls: 14 },
+  { coach: "山田 花子", score: 74, state: "fair", calls: 9 },
+  { coach: "鈴木 一郎", score: null, state: "no_data", calls: 0 },
+];
+
+const CALL_QUALITY_COLUMNS: DataTableColumn<CallQualityRow>[] = [
+  { header: "コーチ", cell: (row) => row.coach },
+  { header: "品質スコア", variant: "numeric", cell: (row) => (row.score === null ? "—" : row.score) },
+  {
+    header: "通話品質",
+    cell: (row) => <StatusTag label={CALL_QUALITY_LABELS[row.state]} status={CALL_QUALITY_STATE_STATUS[row.state]} />,
+  },
+  { header: "ビデオ通話", variant: "numeric", cell: (row) => `${row.calls} 回` },
 ];
 
 /** 表の見本の枠。Section と同じく面で囲わない（0.5.0）。narrow は幅 360px。 */
@@ -629,6 +663,12 @@ export const CATALOG: CatalogEntry[] = [
     example: `slot_state ${state}`,
     render: () => <StatusTag label={label} status={SLOT_STATE_STATUS[state]} />,
   })),
+  ...(Object.keys(CALL_QUALITY_LABELS) as CallQualityState[]).map((state) => ({
+    component: "status_tag",
+    variant: "default",
+    example: `call_quality_state ${state}`,
+    render: () => <StatusTag label={CALL_QUALITY_LABELS[state]} status={CALL_QUALITY_STATE_STATUS[state]} />,
+  })),
   {
     component: "status_tag",
     variant: "urgent",
@@ -742,6 +782,27 @@ export const CATALOG: CatalogEntry[] = [
           rows={[{ ...PENDING_BOOKING, id: "b0", start: "9:00", urgent: true }, CONFIRMED_BOOKING]}
           rowKey={(row) => row.id}
           highlightRow={(row) => row.urgent === true}
+        />
+      </TableFrame>
+    ),
+  },
+  {
+    component: "data_table",
+    variant: "numeric",
+    state: "selected",
+    render: () => (
+      <TableFrame>
+        <DataTable
+          label="コーチごとの通話品質（直近 30 日）"
+          columns={CALL_QUALITY_COLUMNS}
+          rows={CALL_QUALITY_ROWS}
+          rowKey={(row) => row.coach}
+          selection={{
+            selected: "山田 花子",
+            onSelect: noop,
+            name: (row) => row.coach,
+            canSelect: (row) => row.calls > 0,
+          }}
         />
       </TableFrame>
     ),
