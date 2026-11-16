@@ -219,6 +219,7 @@ docker compose -p rally-staging -f deploy/compose.yaml exec backend access-token
 docker compose -p rally-staging -f deploy/compose.yaml exec backend access-token --account <アカウント ID>
 ```
 
+- `--hints` は本部 1 人とコーチ 3 人がそろっていないと、足りない役割と件数を標準エラーに書いて失敗する（終了コード 1。本部のない手がかりを出荷しない）。直し方は staging の DB をシードから入れ直すこと
 - 生徒は今までどおり、生徒アプリで登録（`POST /accounts`）すれば署名付きのトークンを受け取る。合成シードの生徒になるときは、`identity.accounts` で ID を引いて `--account` で作る
 - 合成シード（`seed`）はユースケースを直接呼び、トークンを使わないので、鍵があってもなくても今までどおり書ける
 - ローカル（`cargo run -p server`）で鍵を試すときは、自分で作った使い捨ての値（例: `openssl rand -base64 48`）を `ACCESS_TOKEN_SIGNING_KEY` に渡し、`cargo run -p seed --bin access-token -- --hints` にも同じ値を渡す。その値を staging・本番に使い回さない

@@ -1,4 +1,5 @@
 use application::identity::{TokenClaims, TokenIssuer, account_id_uuid};
+use domain::identity::Role;
 use infra::identity_values::role_from_value;
 use sqlx::{PgPool, types::Uuid};
 
@@ -7,6 +8,7 @@ use sqlx::{PgPool, types::Uuid};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginHint {
     pub label: String,
+    pub role: Role,
     pub value: String,
 }
 
@@ -35,10 +37,31 @@ impl LoginHint {
                 });
                 Ok(Self {
                     label,
+                    role,
                     value: token.into_string(),
                 })
             })
             .collect()
+    }
+
+    /// 手がかりが本部 1 人とコーチ 3 人そろっているか確かめる。欠けていれば、足りない役割と件数、直し方を `Err` で返す
+    /// （本部の手がかりがないまま出荷すると、本部の画面に入れない。Issue #1677）。
+    pub fn check_complete(hints: &[Self]) -> Result<(), String> {
+        let count = |role| hints.iter().filter(|h| h.role == role).count();
+        let missing: Vec<String> = [(Role::Headquarters, 1, "本部"), (Role::Coach, 3, "コーチ")]
+            .into_iter()
+            .filter_map(|(role, need, name)| {
+                let found = count(role);
+                (found < need).then(|| format!("{name}が {need} 人必要なのに {found} 人"))
+            })
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        Err(format!(
+            "ログインの手がかりが足りない: {}。DB に本部とコーチのアカウントがない。staging はシードから入れ直す（apps/backend/README.md の「staging でトークンを作る」）",
+            missing.join("、")
+        ))
     }
 
     /// 1 つのアカウントのトークンを、DB にある役割で発行する（登録のないアカウントなら `None`）。
