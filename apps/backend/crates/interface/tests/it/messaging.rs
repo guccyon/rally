@@ -172,6 +172,28 @@ struct App {
     entitlements: InMemoryEntitlementRepository,
 }
 
+/// 表示名を引けるアカウント（生徒 1「あおき」・生徒 3「みどり」）。生徒 2 のアカウントはない。
+async fn student_accounts() -> InMemoryAccountRepository {
+    let accounts = InMemoryAccountRepository::default();
+    for (id, name) in [(1, "あおき"), (3, "みどり")] {
+        accounts
+            .insert(
+                Account::new(
+                    AccountId::from_u128(id),
+                    Email::new(format!("student{id}@example.com")).unwrap(),
+                    DisplayName::new(name).unwrap(),
+                    Role::Student,
+                    vec![Sport::Tennis],
+                    SystemTime::UNIX_EPOCH,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+    accounts
+}
+
 /// 生徒 1（月額）とコーチ 9 のスレッド 100、生徒 2（受講権なし）とコーチ 9 のスレッド 101、生徒 3 とコーチ 7 の
 /// スレッド 102（[`review_thread`]）を置く。現在時刻はスレッドを開いた 2026-10-26 10:00 の 1 分後。
 async fn app() -> App {
@@ -364,6 +386,7 @@ async fn app() -> App {
         ListMessageThreads::new(
             threads.clone(),
             application::profile::ProfileCoachDisplayNameLookup::new(accounts),
+            application::profile::ProfileStudentDisplayNameLookup::new(student_accounts().await),
         ),
         ListMessages::new(threads.clone()),
         SendMessage::new(
@@ -888,6 +911,42 @@ async fn the_coach_sees_unanswered_threads_first_until_replying() {
     // 生徒の一覧（student-app の契約）には載せない
     let (_, body) = app.list_threads(Some(STUDENT)).await;
     assert!(body["threads"][0].get("unanswered").is_none(), "{body}");
+}
+
+#[tokio::test]
+async fn the_coach_sees_the_student_display_names_and_the_student_does_not() {
+    let app = app().await;
+    let thread = thread_path(THREAD);
+    let trial = thread_path(TRIAL_THREAD);
+
+    // 生徒のアカウントが引けるスレッドには表示名が入り、引けない生徒（アカウントがない）のスレッドには載せない
+    let (status, body) = app.list_threads(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let names: Vec<(Value, Option<Value>)> = body["threads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            (
+                t["thread_id"].clone(),
+                t.get("student_display_name").cloned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [(json!(thread), Some(json!("あおき"))), (json!(trial), None)]
+    );
+
+    let (_, body) = app.list_threads(Some(REVIEW_COACH)).await;
+    assert_eq!(body["threads"][0]["student_display_name"], "みどり");
+
+    // 生徒の一覧の応答は変わらない（表示名の項目を足さない）
+    let (_, body) = app.list_threads(Some(STUDENT)).await;
+    assert!(
+        body["threads"][0].get("student_display_name").is_none(),
+        "{body}"
+    );
 }
 
 #[tokio::test]

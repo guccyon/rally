@@ -1,8 +1,14 @@
-use std::{cmp::Reverse, collections::BTreeSet};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use domain::{identity::AccountId, messaging::MessageThread};
 
-use super::{MessageThreadList, MessageThreadRepository, ThreadCoachDisplayNameLookup};
+use super::{
+    MessageThreadList, MessageThreadRepository, ThreadCoachDisplayNameLookup,
+    ThreadStudentDisplayNameLookup,
+};
 use crate::Unavailable;
 
 /// スレッドの一覧の入力。`account_id` は認証したアカウント。
@@ -30,20 +36,26 @@ pub enum ListMessageThreadsError {
 ///
 /// アカウントが生徒のスレッドには、担当コーチの今の表示名（[`ThreadCoachDisplayNameLookup`]）を引いて添える
 /// （どのコーチとのスレッドか分かるように）。担当コーチが呼んだときのスレッドのコーチは自分なので引かない。
-pub struct ListMessageThreads<T, D> {
+///
+/// 担当コーチとして呼んだとき（コーチ側のスレッドがあるとき）だけ、そのスレッドの生徒の表示名
+/// （[`ThreadStudentDisplayNameLookup`]）を引いて添える。アカウントが引けない生徒は載せない。生徒が呼んだときは引かない。
+pub struct ListMessageThreads<T, D, S> {
     threads: T,
     coach_names: D,
+    student_names: S,
 }
 
-impl<T, D> ListMessageThreads<T, D>
+impl<T, D, S> ListMessageThreads<T, D, S>
 where
     T: MessageThreadRepository,
     D: ThreadCoachDisplayNameLookup,
+    S: ThreadStudentDisplayNameLookup,
 {
-    pub fn new(threads: T, coach_names: D) -> Self {
+    pub fn new(threads: T, coach_names: D, student_names: S) -> Self {
         Self {
             threads,
             coach_names,
+            student_names,
         }
     }
 
@@ -75,16 +87,30 @@ where
             .map(MessageThread::coach_id)
             .collect();
         let coach_display_names = if coach_ids.is_empty() {
-            Default::default()
+            BTreeMap::new()
         } else {
             self.coach_names
                 .find_coach_display_names(&coach_ids)
                 .await
                 .map_err(ListMessageThreadsError::Unavailable)?
         };
+        let student_ids: BTreeSet<AccountId> = threads
+            .iter()
+            .filter(|thread| thread.coach_id() == query.account_id)
+            .map(MessageThread::student_id)
+            .collect();
+        let student_display_names = if student_ids.is_empty() {
+            BTreeMap::new()
+        } else {
+            self.student_names
+                .find_student_display_names(&student_ids)
+                .await
+                .map_err(ListMessageThreadsError::Unavailable)?
+        };
         Ok(MessageThreadList {
             threads,
             coach_display_names,
+            student_display_names,
         })
     }
 }
@@ -109,6 +135,23 @@ mod tests {
     const OTHER_STUDENT: AccountId = AccountId::from_u128(2);
     const COACH: AccountId = AccountId::from_u128(7);
     const OTHER_COACH: AccountId = AccountId::from_u128(8);
+
+    /// `STUDENT` の表示名だけを知っている。
+    #[derive(Clone, Copy)]
+    struct Names;
+
+    impl ThreadStudentDisplayNameLookup for Names {
+        async fn find_student_display_names(
+            &self,
+            student_ids: &BTreeSet<AccountId>,
+        ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+            Ok(student_ids
+                .iter()
+                .filter(|id| **id == STUDENT)
+                .map(|id| (*id, DisplayName::new("あおき").unwrap()))
+                .collect())
+        }
+    }
 
     fn at(minute: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(minute * 60)
@@ -160,8 +203,8 @@ mod tests {
 
     fn use_case(
         threads: InMemoryMessageThreadRepository,
-    ) -> ListMessageThreads<InMemoryMessageThreadRepository, RecordingLookup> {
-        ListMessageThreads::new(threads, RecordingLookup::default())
+    ) -> ListMessageThreads<InMemoryMessageThreadRepository, RecordingLookup, Names> {
+        ListMessageThreads::new(threads, RecordingLookup::default(), Names)
     }
 
     #[tokio::test]
@@ -184,9 +227,22 @@ mod tests {
         ]));
         let list = |account_id| use_case.execute(ListMessageThreadsQuery { account_id });
 
-        assert_eq!(ids(&list(STUDENT).await.unwrap()), [10, 11]);
+        let as_student = list(STUDENT).await.unwrap();
+        assert_eq!(ids(&as_student), [10, 11]);
+        // 生徒が呼んだときは表示名を引かない
+        assert!(as_student.student_display_names.is_empty());
         // 最後の出来事が同じなら ID の順
-        assert_eq!(ids(&list(COACH).await.unwrap()), [10, 12]);
+        let as_coach = list(COACH).await.unwrap();
+        assert_eq!(ids(&as_coach), [10, 12]);
+        // 引けない生徒（OTHER_STUDENT）は載せない
+        assert_eq!(
+            as_coach
+                .student_display_names
+                .iter()
+                .map(|(id, name)| (*id, name.as_str()))
+                .collect::<Vec<_>>(),
+            [(STUDENT, "あおき")]
+        );
         assert!(
             list(AccountId::from_u128(99))
                 .await
@@ -207,6 +263,7 @@ mod tests {
                 thread(12, OTHER_STUDENT, COACH, 20),
             ]),
             lookup.clone(),
+            Names,
         );
 
         let list = use_case
@@ -237,6 +294,7 @@ mod tests {
                 thread(11, OTHER_STUDENT, COACH, 10),
             ]),
             lookup.clone(),
+            Names,
         );
 
         for account_id in [COACH, AccountId::from_u128(99)] {

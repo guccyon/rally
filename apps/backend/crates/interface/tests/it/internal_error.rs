@@ -50,6 +50,13 @@ impl AccountRepository for BrokenRepository {
         Err(Unavailable::new(REASON))
     }
 
+    async fn find_by_email(
+        &self,
+        _email: &domain::identity::Email,
+    ) -> Result<Option<Account>, Unavailable> {
+        Err(Unavailable::new(REASON))
+    }
+
     async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
         Err(Unavailable::new(REASON))
     }
@@ -249,6 +256,9 @@ async fn storage_failure_is_500_internal_without_the_reason() {
         application::messaging::ListMessageThreads::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),
             application::profile::ProfileCoachDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
+            application::profile::ProfileStudentDisplayNameLookup::new(
                 application::in_memory::InMemoryAccountRepository::default(),
             ),
         ),

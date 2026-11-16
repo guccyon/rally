@@ -14,7 +14,7 @@ use domain::{
     entitlement::{
         Entitlement, EntitlementError, EntitlementId, Subscription, SubscriptionId, TrialUsage,
     },
-    identity::{Account, AccountId},
+    identity::{Account, AccountId, Email, LoginCode, LoginCodeChallenge},
     lesson::{LessonCompletion, LessonCompletionId},
     live_lesson::{ConnectionQuality, LiveLessonSession, SessionId},
     matching::FavoriteCoach,
@@ -46,7 +46,10 @@ use crate::{
         EntitlementRepository, InsertEntitlementError, TrialUsageLookup, UpdateEntitlementError,
         entitlement_id_uuid, subscription_id_uuid,
     },
-    identity::{AccountRepository, InsertAccountError, account_id_uuid},
+    identity::{
+        AccountRepository, InsertAccountError, LoginCodeRepository, LoginCodeSender,
+        account_id_uuid,
+    },
     lesson::{LessonCompletionRepository, RecordCompletionError, lesson_completion_id_uuid},
     live_lesson::{
         InsertSessionError, LiveLessonSessionRepository, UpdateSessionError, VideoCallProvider,
@@ -71,13 +74,16 @@ use crate::{
     },
 };
 
-/// [`AccountRepository`] と profile の [`CoachProfileRepository`] のインメモリ実装（Postgres の実装と同じく、
-/// コーチの自己紹介文もアカウントと同じ保存先に持つ）。ID は UUID v4。複製は同じ中身を共有する。
+/// [`AccountRepository`] と profile の [`CoachProfileRepository`] と [`LoginCodeRepository`] のインメモリ実装（Postgres の
+/// 実装と同じく、コーチの自己紹介文とログインの確認コードもアカウントと同じ保存先に持つ）。ID は UUID v4。複製は同じ中身を
+/// 共有する。
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryAccountRepository {
     accounts: Arc<Mutex<Vec<Account>>>,
     /// コーチの自己紹介文。書いていないコーチは持たない（空として読む）
     coach_bios: Arc<Mutex<BTreeMap<AccountId, CoachBio>>>,
+    /// ログインの確認コード。キーは `Email::normalized`
+    login_codes: Arc<Mutex<BTreeMap<String, LoginCodeChallenge>>>,
 }
 
 impl InMemoryAccountRepository {
@@ -117,6 +123,17 @@ impl AccountRepository for InMemoryAccountRepository {
             .unwrap()
             .iter()
             .find(|a| a.id() == id)
+            .cloned())
+    }
+
+    async fn find_by_email(&self, email: &Email) -> Result<Option<Account>, Unavailable> {
+        let email = email.normalized();
+        Ok(self
+            .accounts
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|a| a.email().normalized() == email)
             .cloned())
     }
 
@@ -946,6 +963,102 @@ impl EntitlementRepository for InMemoryEntitlementRepository {
         update(&mut next).map_err(UpdateEntitlementError::Rejected)?;
         *entitlement = next.clone();
         Ok(next)
+    }
+}
+
+impl LoginCodeRepository for InMemoryAccountRepository {
+    async fn find_login_code(
+        &self,
+        email: &Email,
+    ) -> Result<Option<LoginCodeChallenge>, Unavailable> {
+        Ok(self
+            .login_codes
+            .lock()
+            .unwrap()
+            .get(&email.normalized())
+            .cloned())
+    }
+
+    async fn save_login_code(&self, challenge: LoginCodeChallenge) -> Result<(), Unavailable> {
+        self.login_codes
+            .lock()
+            .unwrap()
+            .insert(challenge.email().normalized(), challenge);
+        Ok(())
+    }
+
+    async fn record_failed_login_code_attempt(
+        &self,
+        challenge: &LoginCodeChallenge,
+    ) -> Result<(), Unavailable> {
+        let mut login_codes = self.login_codes.lock().unwrap();
+        if let Some(stored) = login_codes.get_mut(&challenge.email().normalized())
+            && is_same_login_code(stored, challenge)
+        {
+            *stored = LoginCodeChallenge::restore(
+                stored.email().clone(),
+                stored.account_id(),
+                stored.code().clone(),
+                stored.issued_at(),
+                stored.failed_attempts() + 1,
+            );
+        }
+        Ok(())
+    }
+
+    async fn consume_login_code(
+        &self,
+        challenge: &LoginCodeChallenge,
+    ) -> Result<bool, Unavailable> {
+        let mut login_codes = self.login_codes.lock().unwrap();
+        let key = challenge.email().normalized();
+        let same = login_codes
+            .get(&key)
+            .is_some_and(|stored| is_same_login_code(stored, challenge));
+        if same {
+            login_codes.remove(&key);
+        }
+        Ok(same)
+    }
+}
+
+/// 同じときに送った同じコードか（間に送り直されていないか）。
+fn is_same_login_code(stored: &LoginCodeChallenge, read: &LoginCodeChallenge) -> bool {
+    stored.issued_at() == read.issued_at() && stored.code() == read.code()
+}
+
+/// 送った確認コードを記録する [`LoginCodeSender`]（テスト用）。複製は同じ記録を共有する。
+#[derive(Debug, Clone, Default)]
+pub struct RecordingLoginCodeSender {
+    sent: Arc<Mutex<Vec<(Email, LoginCode)>>>,
+}
+
+impl RecordingLoginCodeSender {
+    /// 送ったメールアドレスとコード（送った順）。
+    pub fn sent(&self) -> Vec<(Email, LoginCode)> {
+        self.sent.lock().unwrap().clone()
+    }
+
+    /// `email`（大文字小文字を区別しない）に最後に送ったコード。
+    pub fn last_code_to(&self, email: &str) -> Option<LoginCode> {
+        let email = email.to_lowercase();
+        self.sent
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(to, _)| to.normalized() == email)
+            .map(|(_, code)| code.clone())
+    }
+}
+
+impl LoginCodeSender for RecordingLoginCodeSender {
+    async fn send(&self, email: &Email, code: &LoginCode) -> Result<(), Unavailable> {
+        self.sent
+            .lock()
+            .unwrap()
+            .push((email.clone(), code.clone()));
+        Ok(())
     }
 }
 

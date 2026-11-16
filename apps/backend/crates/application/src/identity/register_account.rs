@@ -268,6 +268,13 @@ mod tests {
             Err(Unavailable::new("connection refused"))
         }
 
+        async fn find_by_email(
+            &self,
+            _email: &domain::identity::Email,
+        ) -> Result<Option<Account>, Unavailable> {
+            Err(Unavailable::new("connection refused"))
+        }
+
         async fn list_coaches(&self) -> Result<Vec<Account>, Unavailable> {
             Err(Unavailable::new("connection refused"))
         }

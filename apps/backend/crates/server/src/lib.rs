@@ -22,7 +22,9 @@ use application::{
     catalog::LessonMenuRepository,
     clock::{Clock, SystemClock},
     entitlement::{EntitlementRepository, LiveLessonQuotaSubscriber},
-    identity::{AccountRepository, TokenIssuer, TokenVerifier},
+    identity::{
+        AccountRepository, LoginCodeRepository, LoginCodeSender, TokenIssuer, TokenVerifier,
+    },
     in_memory::{
         InMemoryAccountRepository, InMemoryAnnouncementDraftRepository,
         InMemoryAnnouncementRepository, InMemoryBookingRepository,
@@ -51,12 +53,12 @@ use application::{
 };
 use axum::Router;
 use infra::{
-    InMemoryDomainEventBus, MockPushSender, PgAccountRepository, PgAnnouncementDraftRepository,
-    PgAnnouncementRepository, PgBookingRepository, PgCoachAcceptanceRepository,
-    PgEntitlementRepository, PgFavoriteCoachRepository, PgLessonCompletionRepository,
-    PgLessonMenuRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
-    PgMessageThreadRepository, PgNotificationRepository, PgNotificationSettingsRepository,
-    PgSlotRepository, PgVideoRepository,
+    InMemoryDomainEventBus, MockLoginCodeMailer, MockPushSender, PgAccountRepository,
+    PgAnnouncementDraftRepository, PgAnnouncementRepository, PgBookingRepository,
+    PgCoachAcceptanceRepository, PgEntitlementRepository, PgFavoriteCoachRepository,
+    PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
+    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationRepository,
+    PgNotificationSettingsRepository, PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -161,6 +163,10 @@ pub fn router() -> Router {
 /// 予約の保存先から読む（`SchedulingLessonReminderTargetLookup`）。ルーターだけを返すこの関数たちは定期の処理を捨てる
 /// （`main` は [`app_with_access_tokens`]・[`app_with_postgres_and_access_tokens`] で両方を受け取って回す）。
 ///
+/// 生徒のログイン（`POST /login-codes`・`POST /sessions`。ADR 0012）は、確認コードをアカウントの保存先に持ち（送り直しの待ち・
+/// 期限・間違いの上限は domain の `LoginCodeChallenge`）、生徒のアカウントのメールアドレスにだけ、メールの送信のモック
+/// （`MockLoginCodeMailer`。標準出力に書く）でコードを送る。
+///
 /// 保存先をすべて Postgres にした組み立ては [`router_with_postgres`]。
 pub fn router_at<C>(clock: C) -> Router
 where
@@ -216,6 +222,7 @@ where
         MockPushSender::new(),
         video,
         tokens,
+        MockLoginCodeMailer::new(),
     )
 }
 
@@ -233,6 +240,27 @@ where
         push,
         VideoCallBackend::default(),
         AccessTokenBackend::default(),
+        MockLoginCodeMailer::new(),
+    )
+    .router
+}
+
+/// [`router_with_analytics`] の生徒のログインの確認コードのメールの送り先を `mailer` に替えたルーター（テストが送ったコードを
+/// 読むのに使う）。
+pub fn router_with_login_code_mailer<C, A, O>(clock: C, analytics: A, mailer: O) -> Router
+where
+    C: Clock + Clone + 'static,
+    A: AnalyticsSink + Clone + 'static,
+    O: LoginCodeSender + Clone + 'static,
+{
+    compose(
+        in_memory_repositories(),
+        clock,
+        analytics,
+        MockPushSender::new(),
+        VideoCallBackend::default(),
+        AccessTokenBackend::default(),
+        mailer,
     )
     .router
 }
@@ -367,6 +395,7 @@ where
         MockPushSender::new(),
         video,
         tokens,
+        MockLoginCodeMailer::new(),
     )
 }
 
@@ -413,16 +442,17 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
 /// ポートの実装をまとめて渡す。アクセストークンは本部・コーチ・生徒のどの機能にも同じ `tokens` を渡す。レッスンのリマインドの
 /// 定期の処理も同じ保存先・時計・送り先で組み立てる。
 #[allow(clippy::type_complexity)]
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V, T>(
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V, T, O>(
     repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
     clock: C,
     analytics: A,
     push: P,
     video: V,
     tokens: T,
+    login_code_mailer: O,
 ) -> App
 where
-    R: AccountRepository + CoachProfileRepository + Clone + 'static,
+    R: AccountRepository + CoachProfileRepository + LoginCodeRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
     B: BookingRepository + CoachLeaveRepository + Clone + 'static,
     E: EntitlementRepository + Clone + 'static,
@@ -443,6 +473,7 @@ where
     P: PushSender + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
     T: TokenIssuer + TokenVerifier + Clone + 'static,
+    O: LoginCodeSender + Clone + 'static,
 {
     let events = InMemoryDomainEventBus::new((
         LiveLessonQuotaSubscriber::new(repositories.entitlements.clone()),
@@ -471,6 +502,7 @@ where
         push,
         events,
         tokens,
+        login_code_mailer,
     });
     App::new(router, reminders)
 }

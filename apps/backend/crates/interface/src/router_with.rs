@@ -21,7 +21,7 @@ use application::{
     },
     messaging::{
         ChatGate, ListMessageThreads, ListMessages, MarkMessageThreadRead, MessageThreadRepository,
-        SendMessage, ThreadCoachDisplayNameLookup,
+        SendMessage, ThreadCoachDisplayNameLookup, ThreadStudentDisplayNameLookup,
     },
     notification::{
         GetNotificationSettings, NotificationSettingsRepository, UpdateNotificationSettings,
@@ -76,6 +76,7 @@ pub fn router_with<
     Vg,
     X,
     Xc,
+    Nm,
     H,
     O,
     N,
@@ -109,7 +110,7 @@ pub fn router_with<
     return_video_review: ReturnVideoReview<W, Q, A, P, C>,
     list_coach_videos: ListCoachVideos<W, F>,
     record_lesson_completion: RecordLessonCompletion<L, W, M, A, P, C>,
-    list_message_threads: ListMessageThreads<X, Xc>,
+    list_message_threads: ListMessageThreads<X, Xc, Nm>,
     list_messages: ListMessages<X>,
     send_message: SendMessage<X, H, A, P, C>,
     mark_message_thread_read: MarkMessageThreadRead<X, C>,
@@ -144,6 +145,7 @@ where
     Vg: VideoReviewGate + 'static,
     X: MessageThreadRepository + 'static,
     Xc: ThreadCoachDisplayNameLookup + 'static,
+    Nm: ThreadStudentDisplayNameLookup + 'static,
     H: ChatGate + 'static,
     O: CompletedLessonLookup + 'static,
     N: LessonReviewRepository + 'static,

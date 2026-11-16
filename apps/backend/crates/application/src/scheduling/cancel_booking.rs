@@ -36,7 +36,7 @@ pub enum CancelBookingError {
 /// 予約とそのスロットを読み、domain の [`Booking::cancel`] でキャンセルして（確定済みならスロットを
 /// `open` に戻す）、両方を保存する。回数を消費するかはキャンセル規定（domain の `CancellationPolicy`）が
 /// 判定し、ここでは判定しない。判定に渡す「生徒がビデオ通話の枠を持つか」は、本人の予約の一覧の見込みと同じく
-/// entitlement に問い合わせる（[`QuotaGate::has_live_lesson_quota`]。持たない生徒のキャンセルは回数を使わない）。保存したら判定を載せた境界間イベント `BookingCancelled` を発行し、行動イベント
+/// entitlement に問い合わせる（[`QuotaGate::has_live_lesson_quota`]。持たない生徒のキャンセルと、体験予約のキャンセルは回数を使わない）。保存したら判定を載せた境界間イベント `BookingCancelled` を発行し、行動イベント
 /// `booking.cancelled` を 1 回発火する。拒否・保存の失敗ではどちらも出さない。受講権の消費は entitlement が
 /// `BookingCancelled` を購読して行う。
 pub struct CancelBooking<B, G, A, P, C> {
@@ -212,9 +212,20 @@ mod tests {
         use_case_with(confirm, before_start, [monthly()]).await
     }
 
-    /// 公開中のスロットを 1 つ置き、受講権 `entitlements` の生徒がそれを予約した状態（`confirm` なら確定済み）から
-    /// 始め、開始の `before_start` 前にキャンセルするユースケースを返す。
+    /// 通常の予約で [`use_case_of`] する。
     async fn use_case_with(
+        confirm: bool,
+        before_start: Duration,
+        entitlements: impl IntoIterator<Item = Entitlement>,
+    ) -> (UseCase, Booking) {
+        use_case_of(false, confirm, before_start, entitlements).await
+    }
+
+    /// 公開中のスロットを 1 つ置き、受講権のない生徒がそれを予約した状態（`is_trial` なら体験予約、`confirm` なら
+    /// 確定済み）から始め、キャンセルの時点では受講権 `entitlements` を持つ生徒が開始の `before_start` 前に
+    /// キャンセルするユースケースを返す。
+    async fn use_case_of(
+        is_trial: bool,
         confirm: bool,
         before_start: Duration,
         entitlements: impl IntoIterator<Item = Entitlement>,
@@ -241,7 +252,7 @@ mod tests {
         .execute(CreateBookingCommand {
             student_id: STUDENT,
             slot_id: SLOT,
-            is_trial: false,
+            is_trial,
         })
         .await
         .unwrap();
@@ -492,6 +503,33 @@ mod tests {
                     "getBooking が返す判定も同じ"
                 );
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_trial_booking_after_subscribing_never_consumes_quota() {
+        // 月額契約の前に取った体験予約は、月額契約して枠を持ったあとに開始の 24 時間前より後でキャンセルしても
+        // 回数を使わない（#1798）
+        for (confirm, before_start) in [(true, 23 * HOUR), (false, 23 * HOUR), (true, 25 * HOUR)] {
+            let (use_case, trial) = use_case_of(true, confirm, before_start, [monthly()]).await;
+            assert!(trial.is_trial());
+            let cancelled = use_case
+                .execute(command(STUDENT, trial.id()))
+                .await
+                .unwrap();
+            assert!(
+                !consumes_quota(&use_case),
+                "確定済み {confirm}・開始の {before_start:?} 前"
+            );
+            assert_eq!(
+                cancelled
+                    .status_changes()
+                    .last()
+                    .and_then(|change| change.cancellation_decision()),
+                Some(CancellationDecision {
+                    consumes_quota: false
+                })
+            );
         }
     }
 

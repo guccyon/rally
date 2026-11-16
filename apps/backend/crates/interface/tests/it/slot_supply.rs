@@ -313,6 +313,9 @@ fn app_with_accounts(
             application::profile::ProfileCoachDisplayNameLookup::new(
                 application::in_memory::InMemoryAccountRepository::default(),
             ),
+            application::profile::ProfileStudentDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
         ),
         application::messaging::ListMessages::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),

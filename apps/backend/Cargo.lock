@@ -22,6 +22,7 @@ name = "application"
 version = "0.1.0"
 dependencies = [
  "domain",
+ "rand",
  "serde_yaml",
  "time",
  "tokio",

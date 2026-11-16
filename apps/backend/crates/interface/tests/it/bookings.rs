@@ -347,6 +347,9 @@ fn app_with_entitlements(
             application::profile::ProfileCoachDisplayNameLookup::new(
                 application::in_memory::InMemoryAccountRepository::default(),
             ),
+            application::profile::ProfileStudentDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
         ),
         application::messaging::ListMessages::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),
@@ -1496,9 +1499,10 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
         assert_eq!(item["booking"]["coach_display_name"], "たなか", "{item}");
     }
     assert_eq!(items[2]["booking"]["ends_at"], "2026-11-01T11:00:00Z");
-    // 月額契約の生徒で、境目（開始の 24 時間前）の前なので、キャンセルできる予約は枠を使わない。キャンセル済みは null
+    // 月額契約の生徒で、境目（開始の 24 時間前）の前なので、キャンセルできる通常の予約は枠を使わない。キャンセル済みは null
     // （体験を使った後も通常の予約を作れるよう月額契約の生徒にしている。受講権のない生徒は
-    // bookings_of_students_without_the_monthly_entitlement_never_consume_the_quota）
+    // bookings_of_students_without_the_monthly_entitlement_never_consume_the_quota）。月額契約の前に取った体験予約は
+    // 月額契約の後も回数を使わず境目もない（#1798）
     assert_eq!(
         items
             .iter()
@@ -1507,7 +1511,7 @@ async fn student_lists_own_bookings_newest_slot_first_including_cancelled_ones()
         [
             (&Value::Null, &Value::Null),
             (&json!(false), &json!("2026-10-31T11:00:00Z")),
-            (&json!(false), &json!("2026-10-31T10:00:00Z")),
+            (&json!(false), &Value::Null),
         ]
     );
     // 照会では何も発火しない

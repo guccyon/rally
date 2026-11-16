@@ -7,7 +7,9 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     entitlement::EntitlementRepository,
-    identity::{AccountRepository, TokenIssuer, TokenVerifier},
+    identity::{
+        AccountRepository, LoginCodeRepository, LoginCodeSender, TokenIssuer, TokenVerifier,
+    },
     lesson::LessonCompletionRepository,
     live_lesson::{LiveLessonSessionRepository, VideoCallProvider},
     matching::FavoriteCoachRepository,
@@ -27,7 +29,11 @@ use application::{
 ///
 /// 型を関連型にまとめて、機能ごとの組み立ての関数が型引数を 1 つ（`P: Ports`）だけ取ればよいようにする。
 pub(crate) trait Ports {
-    type Accounts: AccountRepository + CoachProfileRepository + Clone + 'static;
+    type Accounts: AccountRepository
+        + CoachProfileRepository
+        + LoginCodeRepository
+        + Clone
+        + 'static;
     type Slots: SlotRepository + Clone + 'static;
     type Bookings: BookingRepository + CoachLeaveRepository + Clone + 'static;
     type Entitlements: EntitlementRepository + Clone + 'static;
@@ -49,6 +55,7 @@ pub(crate) trait Ports {
     type Push: PushSender + Clone + 'static;
     type Events: DomainEventPublisher + Clone + 'static;
     type Tokens: TokenIssuer + TokenVerifier + Clone + 'static;
+    type LoginCodeMailer: LoginCodeSender + Clone + 'static;
 
     fn accounts(&self) -> Self::Accounts;
     fn slots(&self) -> Self::Slots;
@@ -78,4 +85,6 @@ pub(crate) trait Ports {
     fn events(&self) -> Self::Events;
     /// アクセストークンの発行・検証（本部・コーチ・生徒のどの機能も同じものを使う）。
     fn tokens(&self) -> Self::Tokens;
+    /// 生徒のログインの確認コードのメールの送り先。
+    fn login_code_mailer(&self) -> Self::LoginCodeMailer;
 }

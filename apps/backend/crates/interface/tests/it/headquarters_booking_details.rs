@@ -187,7 +187,8 @@ fn uri(booking: &Booking) -> String {
 async fn headquarters_reads_a_booking_with_its_slot_and_status_changes() {
     let admin = support::Contract::load("admin-web");
     let bookings = InMemoryBookingRepository::new(slots());
-    let booking = book(&bookings, 3, 1, true).await;
+    // 通常の予約（体験予約のキャンセルは回数を使わない。#1798）
+    let booking = book(&bookings, 3, 1, false).await;
     bookings
         .update(booking.id(), |booking, slot| {
             booking.confirm(AccountId::from_u128(3), slot, nov1(HOUR))
@@ -215,7 +216,7 @@ async fn headquarters_reads_a_booking_with_its_slot_and_status_changes() {
                 "slot_id": "00000000-0000-0000-0000-000000000001",
                 "student_id": "00000000-0000-0000-0000-000000000003",
                 "coach_id": "00000000-0000-0000-0000-00000000002a",
-                "is_trial": true,
+                "is_trial": false,
                 "status": "cancelled",
                 "starts_at": "2026-11-01T01:00:00Z",
                 "created_at": "2026-10-31T15:00:00Z",
