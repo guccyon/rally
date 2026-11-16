@@ -21,11 +21,13 @@ pub struct SearchSlotsQuery {
     pub limit: NonZeroUsize,
     /// 前のページの `next_cursor`
     pub cursor: Option<SlotCursor>,
+    /// 呼んだ生徒。あればその生徒が有効な予約（未確定か確定）を持つ枠を除く（生徒以外の呼び出しは `None`）
+    pub student_id: Option<AccountId>,
 }
 
 /// スロットの検索のユースケース（student-app の `searchSlots`）。
 ///
-/// 公開中でまだ予約されていない枠（受付を止めているコーチの枠は除く）を、スポーツ・コーチ・開始時刻の期間で絞り、
+/// 公開中で残りの席がある枠（受付を止めているコーチの枠と、呼んだ生徒が有効な予約を持つ枠は除く）を、スポーツ・コーチ・開始時刻の期間で絞り、
 /// （開始時刻, スロット ID）の昇順でページに分けて返す。ページに出るコーチの紹介（表示名と自己紹介文）は
 /// profile に問い合わせて（[`CoachIntroductionLookup`]）添える。ページの枠に結びついたレッスンメニュー（名前と時間）は
 /// catalog に問い合わせて（[`LessonMenuLookup`]）、公開中のものだけを添える。
@@ -63,6 +65,7 @@ where
                 starts_after: query.starts_after.unwrap_or_else(|| self.clock.now()),
                 starts_before: query.starts_before,
                 after: query.cursor,
+                held_by: query.student_id,
                 limit: limit + 1,
             })
             .await?;
@@ -115,14 +118,17 @@ mod tests {
             LessonMenuName,
         },
         profile::{CoachBio, DisplayName},
-        scheduling::{Slot, SlotId, SlotStatus},
+        scheduling::{Booking, Slot, SlotId, SlotStatus},
     };
 
     use super::*;
     use crate::{
         catalog::CatalogLessonMenuLookup,
-        in_memory::{FixedClock, InMemoryLessonMenuRepository, InMemorySlotRepository},
-        scheduling::{CoachAcceptanceRepository, CoachIntroduction},
+        in_memory::{
+            FixedClock, InMemoryBookingRepository, InMemoryLessonMenuRepository,
+            InMemorySlotRepository,
+        },
+        scheduling::{BookingRepository, CoachAcceptanceRepository, CoachIntroduction},
     };
 
     /// 受付を止める・再開する本部のアカウント。
@@ -184,6 +190,7 @@ mod tests {
             starts_before: None,
             limit: NonZeroUsize::new(limit).unwrap(),
             cursor: None,
+            student_id: None,
         }
     }
 
@@ -397,6 +404,86 @@ mod tests {
         // ちょうど割り切れるときは、最後のページに次のカーソルがない
         let page = use_case.execute(query(4)).await.unwrap();
         assert_eq!((ids(&page).len(), page.next_cursor), (4, None));
+    }
+
+    #[tokio::test]
+    async fn leaves_out_full_slots_and_slots_held_by_the_student_before_the_limit() {
+        const STUDENT: AccountId = AccountId::from_u128(30);
+        const OTHER_STUDENT: AccountId = AccountId::from_u128(31);
+        let group = |id: u128, hour| {
+            Slot::restore(
+                SlotId::from_u128(id),
+                COACH,
+                Sport::Tennis,
+                at(hour),
+                at(hour + 1),
+                SlotStatus::Open,
+                domain::scheduling::SlotSeats::restore(
+                    domain::scheduling::SlotCapacity::new(2).unwrap(),
+                    0,
+                    0,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let slots = InMemorySlotRepository::with_slots([
+            // ほかの生徒の未確定の予約で埋まる枠
+            slot(1, COACH, Sport::Tennis, 11, SlotStatus::Open),
+            // 生徒が押さえるグループの枠
+            group(2, 12),
+            slot(3, COACH, Sport::Tennis, 13, SlotStatus::Open),
+            slot(4, COACH, Sport::Tennis, 14, SlotStatus::Open),
+        ]);
+        let bookings = InMemoryBookingRepository::new(slots.clone());
+        let reserve = async |student, slot: u128| {
+            let id = bookings.next_id();
+            bookings
+                .reserve(SlotId::from_u128(slot), student, move |slot, existing| {
+                    Booking::reserve(id, student, false, slot, existing, at(0))
+                })
+                .await
+                .unwrap()
+        };
+        reserve(OTHER_STUDENT, 1).await;
+        let held = reserve(STUDENT, 2).await;
+        let use_case = SearchSlots::new(
+            slots,
+            menus([]),
+            RecordingLookup::default(),
+            FixedClock(at(10)),
+        );
+        let as_student = |limit| SearchSlotsQuery {
+            student_id: Some(STUDENT),
+            ..query(limit)
+        };
+
+        // 件数とカーソルは除いた後で数える
+        let first = use_case.execute(as_student(1)).await.unwrap();
+        assert_eq!(ids(&first), [3]);
+        let second = use_case
+            .execute(SearchSlotsQuery {
+                cursor: first.next_cursor,
+                ..as_student(1)
+            })
+            .await
+            .unwrap();
+        assert_eq!((ids(&second), second.next_cursor), (vec![4], None));
+
+        // 生徒を渡さなければ予約では絞らない（満席の枠はいつも出ない）
+        let page = use_case.execute(query(20)).await.unwrap();
+        assert_eq!(ids(&page), [2, 3, 4]);
+        assert_eq!(page.items[0].remaining_seats(), 1);
+
+        // キャンセルすると再び出る
+        bookings
+            .update(held.id(), |booking, slot| {
+                booking.cancel(STUDENT, slot, at(1), true).map(|_| ())
+            })
+            .await
+            .unwrap();
+        let page = use_case.execute(as_student(20)).await.unwrap();
+        assert_eq!(ids(&page), [2, 3, 4]);
     }
 
     #[tokio::test]

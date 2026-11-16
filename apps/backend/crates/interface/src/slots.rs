@@ -123,10 +123,11 @@ pub struct AdminWebSlotBody {
     lesson_menu: Option<Option<SlotLessonMenuBody>>,
 }
 
-/// `GET /slots`。認証した利用者なら誰でも呼べる。
+/// `GET /slots`。認証した利用者なら誰でも呼べる。呼んだのが生徒なら、その生徒が有効な予約を持つ枠を除く
+/// （生徒以外の呼び出しでは絞らない）。
 pub async fn search_slots<S, J, I, A, C>(
     State(state): State<Shared<S, J, I, A, C>>,
-    _account: AuthenticatedAccount,
+    account: AuthenticatedAccount,
     params: Result<Query<SearchSlotsParams>, QueryRejection>,
 ) -> Result<Json<SlotPageBody>, ApiError>
 where
@@ -164,6 +165,7 @@ where
             .as_deref()
             .map(slot_cursor_from_contract)
             .transpose()?,
+        student_id: (account.role() == Role::Student).then(|| account.account_id()),
     };
 
     let page = state
