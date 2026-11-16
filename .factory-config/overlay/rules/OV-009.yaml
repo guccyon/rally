@@ -1,6 +1,6 @@
 id: OV-009
 title: "README・docstring・コメントに書く議決の番号を、記録の decided_by（委員会の記録の id）とそろえる（起票時の番号を議決として書かない）"
-state: shadow
+state: adopted
 knowledge_stage: rubric
 confidentiality: product
 severity: should
