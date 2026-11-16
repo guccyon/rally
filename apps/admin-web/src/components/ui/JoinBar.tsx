@@ -1,5 +1,5 @@
 import { Button } from "./Button";
-import { countdownAnnouncement, formatCountdown } from "./countdown";
+import { formatCountdown, useCountdownAnnouncement } from "./countdown";
 import { Notice } from "./Notice";
 
 // 入室の帯（specs/design/components.yaml の join_bar。0.7.0）。画面の下に固定する操作の帯（z_order の sticky_bar）。
@@ -35,6 +35,7 @@ export function JoinBar({
   /** 左に置く secondary のボタン（1 つまで） */
   secondaryAction?: { label: string; onClick: () => void };
 }) {
+  const announcement = useCountdownAnnouncement(remainingSeconds);
   const before = remainingSeconds > 0;
   const countdown = before ? formatCountdown(remainingSeconds) : null;
   const reasonText =
@@ -55,7 +56,7 @@ export function JoinBar({
         </div>
         <p className="text-sm text-text-muted">{reasonText}</p>
         <span role="status" className="sr-only">
-          {countdownAnnouncement(remainingSeconds)}
+          {announcement}
         </span>
         {error && <Notice message={error} status="danger" />}
         <div className="flex flex-wrap justify-end gap-2">
