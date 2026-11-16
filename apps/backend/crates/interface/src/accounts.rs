@@ -1,4 +1,5 @@
-//! `POST /accounts`（OpenAPI の `registerAccount`）。student-app の生徒の登録。
+//! `POST /accounts`（OpenAPI の `registerAccount`）。student-app の生徒の登録。登録済みのメールアドレスの 409 には
+//! ログインへの案内 `login_guidance` を載せる。
 
 use std::sync::Arc;
 
@@ -33,11 +34,20 @@ pub struct RegisterAccountRequest {
     sport: String,
 }
 
-/// OpenAPI の `RegisterAccountResponse`。
+/// OpenAPI の `RegisterAccountResponse`（`createSession` の `CreateSessionResponse` も同じ形）。
 #[derive(Serialize)]
 pub struct RegisterAccountResponse {
     student: StudentBody,
     access_token: String,
+}
+
+impl RegisterAccountResponse {
+    pub(crate) fn new(student: StudentBody, access_token: String) -> Self {
+        Self {
+            student,
+            access_token,
+        }
+    }
 }
 
 /// OpenAPI の `Student`。
@@ -67,6 +77,7 @@ where
     let Json(request) =
         request.map_err(|rejection| ApiError::validation_failed(rejection.body_text()))?;
     let sport = student_app_sport(&request.sport)?;
+    let email = request.email.clone();
 
     let account = state
         .register_account
@@ -79,10 +90,12 @@ where
         .await
         .map_err(|error| match error {
             RegisterAccountError::Invalid(error) => ApiError::from(error),
+            // 登録し直そうとした生徒を、同じメールアドレスでのログインへ案内する（ADR 0012 の決定 2）
             RegisterAccountError::EmailAlreadyRegistered => ApiError::conflict(
                 "email_already_registered",
                 "このメールアドレスはすでに登録されている",
-            ),
+            )
+            .with_login_guidance(email),
             RegisterAccountError::Unavailable(error) => ApiError::internal(error),
         })?;
 

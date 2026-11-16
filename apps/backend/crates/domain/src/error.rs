@@ -13,6 +13,8 @@ pub enum DomainError {
     DisplayNameQueryTooLong { max: usize },
     /// メールアドレスの形が不正
     InvalidEmail,
+    /// ログインの確認コードが 6 桁の数字でない
+    InvalidLoginCode,
     /// 役割とスポーツの組み合わせが不正（生徒は 1 つ、コーチは 1 つ以上、本部はなし）
     RoleAttributeMismatch {
         role: crate::identity::Role,

@@ -27,6 +27,7 @@ mod pg_lesson_completion_repository;
 mod pg_lesson_menu_repository;
 mod pg_lesson_review_repository;
 mod pg_live_lesson_session_repository;
+mod pg_login_code_repository;
 mod pg_message_thread_repository;
 mod pg_notification_repository;
 mod pg_notification_settings_repository;

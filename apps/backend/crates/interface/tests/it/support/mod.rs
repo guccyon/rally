@@ -152,6 +152,12 @@ impl Contract {
                         }),
                         "{at}: uri でない {s}"
                     ),
+                    // `@` の前後が空でない最小の形（domain の `Email` と同じ程度）
+                    Some("email") => assert!(
+                        s.split_once('@')
+                            .is_some_and(|(local, domain)| !local.is_empty() && !domain.is_empty()),
+                        "{at}: email でない {s}"
+                    ),
                     Some(other) => panic!("{at}: 検査できない format {other}"),
                     None => {}
                 }

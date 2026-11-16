@@ -37,6 +37,7 @@ pub(crate) fn domain_error(error: &DomainError) -> String {
             format!("表示名の検索語は {max} 文字まで")
         }
         DomainError::InvalidEmail => "メールアドレスの形が不正".to_string(),
+        DomainError::InvalidLoginCode => "確認コードは 6 桁の数字".to_string(),
         DomainError::CoachBioTooLong { max } => format!("自己紹介文は {max} 文字まで"),
         DomainError::RoleAttributeMismatch { role, sports } => {
             format!("{}にスポーツ {sports} 個は持てない", role_label(*role))
@@ -228,6 +229,10 @@ mod tests {
         assert_eq!(
             domain_error(&DomainError::InvalidEmail),
             "メールアドレスの形が不正"
+        );
+        assert_eq!(
+            domain_error(&DomainError::InvalidLoginCode),
+            "確認コードは 6 桁の数字"
         );
         assert_eq!(
             domain_error(&DomainError::CoachBioTooLong { max: 400 }),

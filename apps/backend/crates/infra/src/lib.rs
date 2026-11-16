@@ -1,4 +1,4 @@
-//! インフラ層。application のポートを Postgres とモックの外部連携（トークン（モックと署名付き）・境界間イベント・通話基盤・動画の保存先・AI の一次フィードバック・プッシュ通知・行動トラッキング）で実装する。
+//! インフラ層。application のポートを Postgres とモックの外部連携（トークン（モックと署名付き）・ログインの確認コードのメール・境界間イベント・通話基盤・動画の保存先・AI の一次フィードバック・プッシュ通知・行動トラッキング）で実装する。
 //!
 //! 依存してよいのは domain と application（docs/adr/0003-backend-layers.md）。
 
@@ -17,6 +17,7 @@ mod logging_domain_event_publisher;
 pub mod messaging_values;
 mod mock_ai_feedback_generator;
 mod mock_alt_video_call_provider;
+mod mock_login_code_mailer;
 mod mock_push_sender;
 mod mock_token;
 mod mock_video_call_provider;
@@ -35,6 +36,7 @@ mod pg_lesson_completion_repository;
 mod pg_lesson_menu_repository;
 mod pg_lesson_review_repository;
 mod pg_live_lesson_session_repository;
+mod pg_login_code_repository;
 mod pg_message_thread_repository;
 mod pg_notification_repository;
 mod pg_notification_settings_repository;
@@ -55,6 +57,7 @@ pub use invalid_signing_key::InvalidSigningKey;
 pub use logging_domain_event_publisher::LoggingDomainEventPublisher;
 pub use mock_ai_feedback_generator::MockAiFeedbackGenerator;
 pub use mock_alt_video_call_provider::MockAltVideoCallProvider;
+pub use mock_login_code_mailer::MockLoginCodeMailer;
 pub use mock_push_sender::MockPushSender;
 pub use mock_token::MockTokenService;
 pub use mock_video_call_provider::MockVideoCallProvider;
