@@ -84,12 +84,16 @@ class MyBookingsScreen extends ConsumerWidget {
   }
 
   /// キャンセルしてよいかを確かめ、よければ `cancelBooking`。
-  /// 今キャンセルすると今月のビデオ通話の枠を使うなら、そのことを添える
+  /// 今キャンセルすると今月のビデオ通話の枠を使うなら、そのことを添える。
+  /// すばやい二度押しの 2 回目（画面の読み上げや Web 版のセマンティクスの要素からの押下は、開いたダイアログの下のボタンにも届く）は、
+  /// もう確認が上に出ているので何もしない。2 枚目を重ねると、1 枚目でキャンセルしたあとに残った 2 枚目が
+  /// 409 invalid_booking_state を返し、自分の操作のあとなのに状態が変わったと知らせてしまう（#1583）
   Future<void> _confirmCancel(
     BuildContext context,
     WidgetRef ref,
     MyBooking item,
   ) async {
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
     final notifier = ref.read(studentFlowProvider.notifier);
     final usesQuota = notifier.cancellationUsesQuota(item);
     final confirmed = await showDialog<bool>(
