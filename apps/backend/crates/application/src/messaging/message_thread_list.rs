@@ -7,6 +7,9 @@ use domain::{identity::AccountId, messaging::MessageThread, profile::DisplayName
 pub struct MessageThreadList {
     /// スレッド（並べ方は [`super::ListMessageThreads`]）
     pub threads: Vec<MessageThread>,
+    /// 呼んだアカウントが生徒のスレッドの担当コーチの表示名（コーチの ID ごと）。引けないコーチは含まない。
+    /// 呼んだアカウントが担当コーチのスレッドのコーチ（自分）は引かない
+    pub coach_display_names: BTreeMap<AccountId, DisplayName>,
     /// 呼んだアカウントが担当コーチのスレッドの生徒の表示名（生徒の ID ごと）。引けない生徒と、生徒が呼んだときは含まない
     pub student_display_names: BTreeMap<AccountId, DisplayName>,
 }

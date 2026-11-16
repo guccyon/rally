@@ -1125,7 +1125,9 @@ paths:
         スレッドは予約が確定したときに、その生徒とコーチの組に 1 つ開く（境界間イベント `BookingConfirmed` を
         messaging が購読する。Gen1 は matching がないので、確定した予約のコーチを担当コーチとみなす）。
         `unread_count` は呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数。
-        admin-web の `listMessageThreads`（コーチ）と同じ操作・同じ形。
+        `coach_display_name` はスレッドの担当コーチの今のアカウントの表示名（一覧を返すときに引く。コーチのアカウントが
+        引けないスレッドでは項目ごと省く）。
+        admin-web の `listMessageThreads`（コーチ）と同じ操作。形は同じだが、`coach_display_name` は student-app だけの項目。
       tags: [messaging]
       x-context: messaging
       responses:
@@ -2870,6 +2872,13 @@ components:
           type: integer
           minimum: 0
           description: 呼んだアカウントにとっての未読（相手から届いてまだ読んでいない）メッセージの数
+        coach_display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: |
+            担当コーチの今のアカウントの表示名（`listMessageThreads` だけが返す）。コーチのアカウントが引けないときと、
+            `listMessageThreads` 以外の応答（`markMessageThreadRead`）では省く
 
     MessageThreadList:
       type: object

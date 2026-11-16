@@ -19,7 +19,8 @@ use crate::{
 /// review の [`ReviewedCoachDisplayNameLookup`]（本部が見る低い評価の一覧）と identity の
 /// [`StudentActivityCoachDisplayNameLookup`]（本部が見る生徒 1 人の利用の様子）と live-lesson の
 /// [`SessionCoachDisplayNameLookup`]（本部が見る、終わっていないまま時間の過ぎた通話セッションの一覧）と messaging の
-/// [`ThreadCoachDisplayNameLookup`]（本部が見る、返信のないまま時間の過ぎたスレッドの一覧）の profile による実装。
+/// [`ThreadCoachDisplayNameLookup`]（本部が見る、返信のないまま時間の過ぎたスレッドの一覧と、生徒が見るスレッドの一覧）の
+/// profile による実装。
 /// アカウントの保存先（データは当面 identity の表）から読むだけで、何も変えない。
 ///
 /// コーチでないアカウントと、ないアカウントは結果に含めない。

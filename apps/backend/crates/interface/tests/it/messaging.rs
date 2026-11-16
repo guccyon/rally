@@ -1,6 +1,6 @@
 //! `/message-threads` の統合テスト。student-app（生徒）と admin-web（コーチ）の `listMessageThreads`・
 //! `listMessages`・`sendMessage`・`markMessageThreadRead` のレスポンスの形を OpenAPI のスキーマで検査し、
-//! 送信 → 一覧 → 既読の一連・行動イベント `message.sent`・月額の生徒が送り放題で受講権を消費しないこと・
+//! 送信 → 一覧 → 既読の一連・生徒の一覧に担当コーチの表示名が載ること（引けなければ載らない）・行動イベント `message.sent`・月額の生徒が送り放題で受講権を消費しないこと・
 //! 受講権のない生徒の 403・当事者でないアカウントの 404・422 / 401 と、メッセージの種類（本文・添削依頼・添削の返却・
 //! スタンプ）とシステムが流したメッセージの返し方を確かめる。
 
@@ -88,11 +88,14 @@ impl TokenVerifier for FakeTokens {
 const STUDENT: &str = "student:1";
 /// 受講権のない（月額契約の前の）生徒
 const TRIAL_STUDENT: &str = "student:2";
+/// アカウントのあるコーチ（表示名は [`COACH_DISPLAY_NAME`]）
 const COACH: &str = "coach:9";
+const COACH_DISPLAY_NAME: &str = "たなかコーチ";
 const OTHER_COACH: &str = "coach:8";
 const HEADQUARTERS: &str = "headquarters:5";
 /// 添削依頼・添削の返却が流れたスレッドの生徒とコーチ
 const REVIEW_STUDENT: &str = "student:3";
+/// アカウントが引けないコーチ（一覧に表示名が載らない）
 const REVIEW_COACH: &str = "coach:7";
 
 /// 生徒 1 とコーチ 9 のスレッド
@@ -194,6 +197,21 @@ async fn student_accounts() -> InMemoryAccountRepository {
 /// 生徒 1（月額）とコーチ 9 のスレッド 100、生徒 2（受講権なし）とコーチ 9 のスレッド 101、生徒 3 とコーチ 7 の
 /// スレッド 102（[`review_thread`]）を置く。現在時刻はスレッドを開いた 2026-10-26 10:00 の 1 分後。
 async fn app() -> App {
+    let accounts = InMemoryAccountRepository::default();
+    accounts
+        .insert(
+            Account::new(
+                account_id(COACH),
+                Email::new("coach9@example.com").unwrap(),
+                DisplayName::new(COACH_DISPLAY_NAME).unwrap(),
+                Role::Coach,
+                vec![Sport::Tennis],
+                SystemTime::UNIX_EPOCH,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
     let analytics = RecordingAnalyticsSink::default();
     let events = RecordingDomainEventPublisher::default();
     let clock = ManualClock::new(minutes(1));
@@ -367,6 +385,7 @@ async fn app() -> App {
         ),
         ListMessageThreads::new(
             threads.clone(),
+            application::profile::ProfileCoachDisplayNameLookup::new(accounts),
             application::profile::ProfileStudentDisplayNameLookup::new(student_accounts().await),
         ),
         ListMessages::new(threads.clone()),
@@ -684,6 +703,38 @@ async fn the_student_and_the_coach_exchange_messages_and_read_them() {
             },
         ]
     );
+}
+
+#[tokio::test]
+async fn the_student_sees_the_display_name_of_the_coach_when_the_account_is_found() {
+    let app = app().await;
+
+    // コーチのアカウントがあるスレッドには、今の表示名が載る
+    let (status, body) = app.list_threads(Some(STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["threads"][0]["coach_display_name"], COACH_DISPLAY_NAME);
+
+    // コーチのアカウントが引けないスレッドでは項目ごと載らない
+    let (status, body) = app.list_threads(Some(REVIEW_STUDENT)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["threads"].as_array().unwrap().len(), 1);
+    assert!(
+        body["threads"][0].get("coach_display_name").is_none(),
+        "{body}"
+    );
+
+    // admin-web（コーチ）の一覧の形は変わらない（自分の表示名は載らない）
+    let (status, body) = app.list_threads(Some(COACH)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["threads"].as_array().unwrap().len(), 2);
+    for thread in body["threads"].as_array().unwrap() {
+        assert!(thread.get("coach_display_name").is_none(), "{thread}");
+    }
+
+    // 既読の応答には載せない（一覧だけの項目）
+    let (status, body) = app.mark_read(Some(STUDENT), &thread_path(THREAD)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.get("coach_display_name").is_none(), "{body}");
 }
 
 #[tokio::test]

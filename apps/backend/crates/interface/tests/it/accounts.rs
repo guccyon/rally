@@ -215,6 +215,9 @@ fn app() -> App {
         ),
         application::messaging::ListMessageThreads::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),
+            application::profile::ProfileCoachDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
             application::profile::ProfileStudentDisplayNameLookup::new(
                 application::in_memory::InMemoryAccountRepository::default(),
             ),
