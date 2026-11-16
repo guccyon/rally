@@ -8,7 +8,7 @@ use domain::{identity::AccountId, profile::DisplayName};
 use crate::Unavailable;
 
 /// messaging が profile にスレッドのコーチの表示名を問い合わせるポート（本部が見る、返信のないまま時間の過ぎた
-/// スレッドの一覧で、スレッドに担当コーチの表示名を添える）。
+/// スレッドの一覧と、生徒が見るスレッドの一覧で、スレッドに担当コーチの表示名を添える）。
 ///
 /// 表示名の持ち主は profile で、messaging は読むだけ。実装は [`crate::profile::ProfileCoachDisplayNameLookup`]。
 pub trait ThreadCoachDisplayNameLookup: Send + Sync {

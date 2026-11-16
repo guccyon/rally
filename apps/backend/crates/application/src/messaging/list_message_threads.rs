@@ -1,8 +1,8 @@
-use std::cmp::Reverse;
+use std::{cmp::Reverse, collections::BTreeSet};
 
 use domain::{identity::AccountId, messaging::MessageThread};
 
-use super::MessageThreadRepository;
+use super::{MessageThreadList, MessageThreadRepository, ThreadCoachDisplayNameLookup};
 use crate::Unavailable;
 
 /// スレッドの一覧の入力。`account_id` は認証したアカウント。
@@ -27,22 +27,30 @@ pub enum ListMessageThreadsError {
 /// 3. 同じならスレッド ID の順
 ///
 /// 生徒が呼んだとき（未返信はコーチから見たもの）と未返信のスレッドがないときは、最後の出来事の新しい順だけになる。
-pub struct ListMessageThreads<T> {
+///
+/// アカウントが生徒のスレッドには、担当コーチの今の表示名（[`ThreadCoachDisplayNameLookup`]）を引いて添える
+/// （どのコーチとのスレッドか分かるように）。担当コーチが呼んだときのスレッドのコーチは自分なので引かない。
+pub struct ListMessageThreads<T, D> {
     threads: T,
+    coach_names: D,
 }
 
-impl<T> ListMessageThreads<T>
+impl<T, D> ListMessageThreads<T, D>
 where
     T: MessageThreadRepository,
+    D: ThreadCoachDisplayNameLookup,
 {
-    pub fn new(threads: T) -> Self {
-        Self { threads }
+    pub fn new(threads: T, coach_names: D) -> Self {
+        Self {
+            threads,
+            coach_names,
+        }
     }
 
     pub async fn execute(
         &self,
         query: ListMessageThreadsQuery,
-    ) -> Result<Vec<MessageThread>, ListMessageThreadsError> {
+    ) -> Result<MessageThreadList, ListMessageThreadsError> {
         let mut threads = self
             .threads
             .list_for(query.account_id)
@@ -60,15 +68,39 @@ where
                 thread.id(),
             )
         });
-        Ok(threads)
+
+        let coach_ids: BTreeSet<AccountId> = threads
+            .iter()
+            .filter(|thread| thread.student_id() == query.account_id)
+            .map(MessageThread::coach_id)
+            .collect();
+        let coach_display_names = if coach_ids.is_empty() {
+            Default::default()
+        } else {
+            self.coach_names
+                .find_coach_display_names(&coach_ids)
+                .await
+                .map_err(ListMessageThreadsError::Unavailable)?
+        };
+        Ok(MessageThreadList {
+            threads,
+            coach_display_names,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, SystemTime};
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, Mutex},
+        time::{Duration, SystemTime},
+    };
 
-    use domain::messaging::{MessageBody, MessageContent, MessageId, MessageThreadId};
+    use domain::{
+        messaging::{MessageBody, MessageContent, MessageId, MessageThreadId},
+        profile::DisplayName,
+    };
 
     use super::*;
     use crate::in_memory::InMemoryMessageThreadRepository;
@@ -98,8 +130,38 @@ mod tests {
             .unwrap();
     }
 
-    fn ids(threads: &[MessageThread]) -> Vec<u128> {
-        threads.iter().map(|t| t.id().as_u128()).collect()
+    fn ids(list: &MessageThreadList) -> Vec<u128> {
+        list.threads.iter().map(|t| t.id().as_u128()).collect()
+    }
+
+    fn name(value: &str) -> DisplayName {
+        DisplayName::new(value).unwrap()
+    }
+
+    /// `COACH` の表示名だけを知っていて（`OTHER_COACH` はアカウントが引けない）、問い合わせた ID を記録する。
+    #[derive(Clone, Default)]
+    struct RecordingLookup {
+        asked: Arc<Mutex<Vec<BTreeSet<AccountId>>>>,
+    }
+
+    impl ThreadCoachDisplayNameLookup for RecordingLookup {
+        async fn find_coach_display_names(
+            &self,
+            coach_ids: &BTreeSet<AccountId>,
+        ) -> Result<BTreeMap<AccountId, DisplayName>, Unavailable> {
+            self.asked.lock().unwrap().push(coach_ids.clone());
+            Ok(coach_ids
+                .iter()
+                .filter(|id| **id == COACH)
+                .map(|id| (*id, name("たなか")))
+                .collect())
+        }
+    }
+
+    fn use_case(
+        threads: InMemoryMessageThreadRepository,
+    ) -> ListMessageThreads<InMemoryMessageThreadRepository, RecordingLookup> {
+        ListMessageThreads::new(threads, RecordingLookup::default())
     }
 
     #[tokio::test]
@@ -114,7 +176,7 @@ mod tests {
                 at(30),
             )
             .unwrap();
-        let use_case = ListMessageThreads::new(InMemoryMessageThreadRepository::with_threads([
+        let use_case = use_case(InMemoryMessageThreadRepository::with_threads([
             talked,
             thread(11, STUDENT, OTHER_COACH, 20),
             thread(12, OTHER_STUDENT, COACH, 20),
@@ -125,7 +187,66 @@ mod tests {
         assert_eq!(ids(&list(STUDENT).await.unwrap()), [10, 11]);
         // 最後の出来事が同じなら ID の順
         assert_eq!(ids(&list(COACH).await.unwrap()), [10, 12]);
-        assert!(list(AccountId::from_u128(99)).await.unwrap().is_empty());
+        assert!(
+            list(AccountId::from_u128(99))
+                .await
+                .unwrap()
+                .threads
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_student_gets_the_display_names_of_the_coaches_that_can_be_found() {
+        let lookup = RecordingLookup::default();
+        let use_case = ListMessageThreads::new(
+            InMemoryMessageThreadRepository::with_threads([
+                thread(10, STUDENT, COACH, 0),
+                // OTHER_COACH はアカウントが引けない
+                thread(11, STUDENT, OTHER_COACH, 10),
+                thread(12, OTHER_STUDENT, COACH, 20),
+            ]),
+            lookup.clone(),
+        );
+
+        let list = use_case
+            .execute(ListMessageThreadsQuery {
+                account_id: STUDENT,
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&list), [11, 10]);
+        assert_eq!(
+            list.coach_display_names,
+            BTreeMap::from([(COACH, name("たなか"))]),
+            "引けないコーチは含めない"
+        );
+        assert_eq!(
+            *lookup.asked.lock().unwrap(),
+            [BTreeSet::from([COACH, OTHER_COACH])],
+            "一覧のコーチを重ねずに 1 回で問い合わせる"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_coach_and_accounts_without_threads_do_not_ask_for_display_names() {
+        let lookup = RecordingLookup::default();
+        let use_case = ListMessageThreads::new(
+            InMemoryMessageThreadRepository::with_threads([
+                thread(10, STUDENT, COACH, 0),
+                thread(11, OTHER_STUDENT, COACH, 10),
+            ]),
+            lookup.clone(),
+        );
+
+        for account_id in [COACH, AccountId::from_u128(99)] {
+            let list = use_case
+                .execute(ListMessageThreadsQuery { account_id })
+                .await
+                .unwrap();
+            assert!(list.coach_display_names.is_empty(), "{account_id:?}");
+        }
+        assert!(lookup.asked.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -153,13 +274,14 @@ mod tests {
             quiet,
             others,
         ]);
-        let use_case = ListMessageThreads::new(repository.clone());
+        let use_case = use_case(repository.clone());
         let list = |account_id| use_case.execute(ListMessageThreadsQuery { account_id });
 
         let threads = list(COACH).await.unwrap();
         assert_eq!(ids(&threads), [11, 10, 12, 13]);
         assert_eq!(
             threads
+                .threads
                 .iter()
                 .map(MessageThread::is_unanswered)
                 .collect::<Vec<_>>(),
@@ -186,7 +308,7 @@ mod tests {
             .unwrap();
         let threads = list(COACH).await.unwrap();
         assert_eq!(ids(&threads), [11, 10, 12, 13]);
-        assert!(!threads[1].is_unanswered());
+        assert!(!threads.threads[1].is_unanswered());
         // 生徒がまた送ると上に戻る
         repository
             .update(MessageThreadId::from_u128(12), |thread| {

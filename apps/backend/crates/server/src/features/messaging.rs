@@ -1,9 +1,11 @@
 //! 生徒と担当コーチのチャット（`/message-threads`）。送信は entitlement
-//! にチャットを送ってよいかを問い合わせる（`EntitlementChatGate`。照会だけで回数を消費しない）。
+//! にチャットを送ってよいかを問い合わせる（`EntitlementChatGate`。照会だけで回数を消費しない）。一覧は生徒のスレッドに
+//! 担当コーチの表示名をアカウントの保存先から読んで添える（`ProfileCoachDisplayNameLookup`）。
 
 use application::{
     entitlement::EntitlementChatGate,
     messaging::{ListMessageThreads, ListMessages, MarkMessageThreadRead, SendMessage},
+    profile::ProfileCoachDisplayNameLookup,
 };
 use axum::Router;
 
@@ -11,7 +13,10 @@ use crate::ports::Ports;
 
 pub(super) fn router<P: Ports>(ports: &P) -> Router {
     interface::messaging_router(
-        ListMessageThreads::new(ports.threads()),
+        ListMessageThreads::new(
+            ports.threads(),
+            ProfileCoachDisplayNameLookup::new(ports.accounts()),
+        ),
         ListMessages::new(ports.threads()),
         SendMessage::new(
             ports.threads(),

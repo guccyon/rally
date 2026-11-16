@@ -284,6 +284,9 @@ fn router(now: SystemTime) -> Router {
         ),
         application::messaging::ListMessageThreads::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),
+            application::profile::ProfileCoachDisplayNameLookup::new(
+                application::in_memory::InMemoryAccountRepository::default(),
+            ),
         ),
         application::messaging::ListMessages::new(
             application::in_memory::InMemoryMessageThreadRepository::default(),
