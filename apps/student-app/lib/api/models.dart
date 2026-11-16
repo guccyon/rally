@@ -806,7 +806,8 @@ class StartSubscriptionResponse {
 
 /// `LiveLessonSession`
 class LiveLessonSession {
-  const LiveLessonSession({
+  /// [bookings] は書き換えられない写しにして持つ（`fromJson` でもコンストラクタで直接作っても、作った後に一覧を変えさせない）
+  LiveLessonSession({
     required this.sessionId,
     required this.bookingId,
     required this.studentId,
@@ -817,8 +818,8 @@ class LiveLessonSession {
     this.durationSec,
     this.roomToken,
     this.coachJoinedAt,
-    this.bookings = const [],
-  });
+    List<LiveLessonSessionBooking> bookings = const [],
+  }) : bookings = List.unmodifiable(bookings);
 
   final String sessionId;
   final String bookingId;

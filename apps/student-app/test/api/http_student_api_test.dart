@@ -275,6 +275,10 @@ void main() {
       'duration_sec': null,
       'coach_joined_at': '2026-10-28T03:02:00Z',
     }).getLiveLessonSession('ls1');
+    expect(
+      () => waiting.bookings.add(waiting.bookings.single),
+      throwsUnsupportedError,
+    );
     expect(joined.coachJoinedAt, DateTime.utc(2026, 10, 28, 3, 2));
     expect(joined.awaitingCoach, isFalse);
     // 入室の項目のない（古いサーバーの）応答は、コーチの入室の記録がないものとして読む
