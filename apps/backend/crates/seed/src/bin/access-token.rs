@@ -7,6 +7,7 @@
 
 use std::process::ExitCode;
 
+use domain::identity::Role;
 use infra::AccessTokenBackend;
 use seed::{AccessTokenArgs, LoginHint};
 use sqlx::PgPool;
@@ -40,7 +41,20 @@ async fn run() -> Result<(), String> {
             let hints = LoginHint::load(&pool, &tokens)
                 .await
                 .map_err(|e| format!("アカウントを読めない: {e}"))?;
-            LoginHint::check_complete(&hints)?;
+            LoginHint::check_complete(&hints).map_err(|e| {
+                let missing: Vec<String> = e
+                    .shortfalls
+                    .iter()
+                    .map(|(role, need, found)| {
+                        let name = if *role == Role::Headquarters { "本部" } else { "コーチ" };
+                        format!("{name}が {need} 人必要なのに {found} 人")
+                    })
+                    .collect();
+                format!(
+                    "ログインの手がかりが足りない: {}。DB に本部とコーチのアカウントがない。staging はシードから入れ直す（apps/backend/README.md の「staging でトークンを作る」）",
+                    missing.join("、")
+                )
+            })?;
             let json: Vec<_> = hints.iter().map(LoginHint::to_json).collect();
             println!("{}", serde_json::Value::Array(json));
         }

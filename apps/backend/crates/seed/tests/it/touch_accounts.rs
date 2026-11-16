@@ -250,7 +250,5 @@ async fn the_login_hints_are_incomplete_without_a_headquarters(pool: PgPool) {
         .ok();
     let hints = LoginHint::load(&pool, &tokens).await.unwrap();
     let err = LoginHint::check_complete(&hints).unwrap_err();
-    assert!(err.contains("本部が 1 人必要なのに 0 人"), "{err}");
-    assert!(err.contains("シードから入れ直す"), "{err}");
-    assert!(!err.contains("コーチが"), "{err}");
+    assert_eq!(err.shortfalls, vec![(Role::Headquarters, 1, 0)]);
 }
