@@ -236,6 +236,9 @@ class IosLocalMedia implements LocalMedia {
   }
 
   @override
+  bool get canPlayTestTone => true;
+
+  @override
   bool get canOpenSettings => true;
 
   @override

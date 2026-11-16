@@ -116,7 +116,8 @@ class _PrejoinCheckScreenState extends ConsumerState<PrejoinCheckScreen> {
           ],
         ),
         const SizedBox(height: RallySpacing.md),
-        if (_deviceNotice(check) case final notice?) ...[
+        if (_deviceNotice(check, canPlayTone: media.canPlayTestTone)
+            case final notice?) ...[
           Notice(message: notice, status: RallyStatus.warning),
           const SizedBox(height: RallySpacing.sm),
           if (_denied(check) && media.canOpenSettings)
@@ -233,8 +234,9 @@ bool _denied(PrejoinCheckState check) =>
     check.camera == MediaDeviceStatus.denied ||
     check.mic == MediaDeviceStatus.denied;
 
-/// 端末の知らせ（許可を断られた・ないときだけ）。断ったものとないものを分けて書き、入室は止めないことを添える
-String? _deviceNotice(PrejoinCheckState check) {
+/// 端末の知らせ（許可を断られた・ないときだけ）。断ったものとないものを分けて書き、入室は止めないことを添える。
+/// 確かめられるものにスピーカーを挙げるのは、試し音を鳴らせる作り（[canPlayTone]）のときだけ（#1545）
+String? _deviceNotice(PrejoinCheckState check, {required bool canPlayTone}) {
   bool denied(MediaDeviceStatus? s) => s == MediaDeviceStatus.denied;
   bool missing(MediaDeviceStatus? s) => s == MediaDeviceStatus.missing;
   final lines = <String>[
@@ -245,11 +247,17 @@ String? _deviceNotice(PrejoinCheckState check) {
     else if (denied(check.mic))
       'マイクが使えません。端末の設定で許可すると確かめられます。',
     if (missing(check.camera) && missing(check.mic))
-      'この端末にカメラとマイクが見つかりません。スピーカーは確かめられます。'
+      canPlayTone
+          ? 'この端末にカメラとマイクが見つかりません。スピーカーは確かめられます。'
+          : 'この端末にカメラとマイクが見つかりません。'
     else if (missing(check.camera))
-      'この端末にカメラが見つかりません。マイクとスピーカーは確かめられます。'
+      canPlayTone
+          ? 'この端末にカメラが見つかりません。マイクとスピーカーは確かめられます。'
+          : 'この端末にカメラが見つかりません。マイクは確かめられます。'
     else if (missing(check.mic))
-      'この端末にマイクが見つかりません。カメラとスピーカーは確かめられます。',
+      canPlayTone
+          ? 'この端末にマイクが見つかりません。カメラとスピーカーは確かめられます。'
+          : 'この端末にマイクが見つかりません。カメラは確かめられます。',
   ];
   if (lines.isEmpty) return null;
   // 届かないものは断ったものに合わせて言う（片方だけ断った人に、事実と違う案内を出さない）

@@ -45,6 +45,10 @@ abstract class LocalMedia {
   /// 鳴っている試し音を止める
   void stopTestTone();
 
+  /// 試し音を鳴らせる作りか（Web 版・iOS 版は鳴らせる。端末の部品がない Android などは鳴らせない）。
+  /// 鳴らせない作りでは、入室前チェックが「スピーカーは確かめられます」と案内しない
+  bool get canPlayTestTone;
+
   /// 端末のこのアプリの設定を開けるか（Web 版のブラウザーは開けない。iOS 版は開ける）
   bool get canOpenSettings;
 
