@@ -34,8 +34,9 @@ services:
       # （.factory-config/ship.yaml の touch.clock_env。factory-engine の ADR 0028 の scenario_time）。本番には渡さないので 0 のまま
       CLOCK_OFFSET_SECONDS: ${CLOCK_OFFSET_SECONDS:-0}
       # アクセストークンの署名の鍵（秘密情報。Issue #1593）。値はリポジトリに置かず、環境ごとに人（提供元）が用意した置き場から
-      # shipper の環境変数で渡す。渡さなければ空で、backend は署名なしのモックのトークンで動く（apps/backend の README の「認証」）
-      ACCESS_TOKEN_SIGNING_KEY: ${ACCESS_TOKEN_SIGNING_KEY:-}
+      # shipper の環境変数で渡す。渡さなければ compose が起動を止める（署名なしのモックで黙って動かさない。Issue #1785・ADR 0016）。
+      # 署名なしのモックの opt-in（ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK）はローカルとテストだけのもので、ここでは渡さない
+      ACCESS_TOKEN_SIGNING_KEY: ${ACCESS_TOKEN_SIGNING_KEY:?ACCESS_TOKEN_SIGNING_KEY（アクセストークンの署名の鍵）を渡す。apps/backend の README の「認証と認可」}
     depends_on:
       postgres: { condition: service_healthy }
     ports:

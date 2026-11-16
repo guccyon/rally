@@ -5,7 +5,7 @@ use infra::identity_values::role_from_value;
 use sqlx::{PgPool, types::Uuid};
 
 /// 触れる環境（staging）のログインの手がかり 1 件（`.factory-config/ship.yaml` の `touch.accounts`）。`value` はその
-/// アカウントのアクセストークンで、サーバーと同じ実装（`ACCESS_TOKEN_SIGNING_KEY` があれば署名付き）で発行する。
+/// アカウントのアクセストークンで、サーバーと同じ実装（`ACCESS_TOKEN_SIGNING_KEY` の鍵で署名付き）で発行する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginHint {
     pub label: String,
