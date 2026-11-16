@@ -46,6 +46,7 @@ mod slot_supply;
 mod slots;
 mod startup;
 mod student_activity;
+mod student_login;
 mod student_next_actions;
 mod student_profile;
 mod students;

@@ -1,13 +1,17 @@
-//! identity のユースケースとポート（登録・本人のアカウントの照会・本部が見る生徒の一覧と生徒 1 人の利用の様子・認証）。
+//! identity のユースケースとポート（登録・ログインの確認コードの発行と確認（ADR 0012）・本人のアカウントの照会・本部が見る生徒の一覧と生徒 1 人の利用の様子・認証）。
 //! 表示名・自己紹介文を扱うユースケースは [`crate::profile`]。
 
 pub mod account_id_uuid;
+mod create_session;
 mod get_account;
 mod get_student_activity;
 mod list_students;
 mod list_students_query;
+mod login_code_repository;
+mod login_code_sender;
 mod register_account;
 mod repository;
+mod request_login_code;
 mod student_activity;
 mod student_activity_coach_display_name_lookup;
 mod student_booking_activity;
@@ -28,12 +32,16 @@ mod student_video_activity;
 mod student_video_activity_lookup;
 mod token;
 
+pub use create_session::{CreateSession, CreateSessionCommand, CreateSessionError};
 pub use get_account::GetAccount;
 pub use get_student_activity::{GetStudentActivity, GetStudentActivityError};
 pub use list_students::ListStudents;
 pub use list_students_query::ListStudentsQuery;
+pub use login_code_repository::LoginCodeRepository;
+pub use login_code_sender::LoginCodeSender;
 pub use register_account::{RegisterAccount, RegisterAccountCommand, RegisterAccountError};
 pub use repository::{AccountRepository, InsertAccountError};
+pub use request_login_code::{RequestLoginCode, RequestLoginCodeError};
 pub use student_activity::StudentActivity;
 pub use student_activity_coach_display_name_lookup::StudentActivityCoachDisplayNameLookup;
 pub use student_booking_activity::StudentBookingActivity;

@@ -46,6 +46,7 @@ mod slot_withdrawals;
 mod slots;
 mod student_activity;
 mod student_announcements;
+mod student_login;
 mod student_next_actions;
 mod students;
 mod subscription_plans;

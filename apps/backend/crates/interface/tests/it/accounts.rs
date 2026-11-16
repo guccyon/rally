@@ -397,7 +397,7 @@ async fn invalid_input_is_422_validation_failed_without_emitting() {
 }
 
 #[tokio::test]
-async fn duplicate_email_is_409_email_already_registered() {
+async fn duplicate_email_is_409_email_already_registered_with_login_guidance() {
     let app = app();
     let (status, _) =
         post_accounts(&app.router, request("taro@example.com", "たろう", "tennis")).await;
@@ -409,5 +409,10 @@ async fn duplicate_email_is_409_email_already_registered() {
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_contract(status, &body);
     assert_eq!(body["code"], "email_already_registered");
+    // 登録のリクエストのメールアドレスのまま、ログインの 1 段目へ案内する（ADR 0012 の決定 2）
+    assert_eq!(
+        body["login_guidance"],
+        json!({"email": "Taro@Example.com", "request_login_code_path": "/login-codes"})
+    );
     assert_eq!(app.analytics.events().len(), 1);
 }

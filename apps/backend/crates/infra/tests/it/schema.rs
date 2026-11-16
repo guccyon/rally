@@ -120,6 +120,7 @@ async fn migrations_create_core_tables(pool: PgPool) {
             "identity.accounts",
             "identity.coach_sports",
             "identity.coaches",
+            "identity.login_codes",
             "live_lesson.lesson_completions",
             "live_lesson.session_bookings",
             "live_lesson.session_headquarters_ends",
@@ -170,6 +171,62 @@ async fn accounts_distinguish_student_coach_and_headquarters(pool: PgPool) {
     assert_eq!(
         (code.as_str(), constraint.as_str()),
         (UNIQUE_VIOLATION, "accounts_email_key")
+    );
+}
+
+#[ignore = "Postgres が要る（DATABASE_URL）"]
+#[sqlx::test(migrator = "infra::MIGRATOR")]
+async fn login_codes_are_one_per_email_for_students_or_nobody(pool: PgPool) {
+    let student = student(&pool).await;
+    let coach = coach(&pool).await;
+    let insert = |email: &'static str, account_id: Option<String>, code: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO identity.login_codes (email_key, email, account_id, code, issued_at)
+                 VALUES (lower($1), $1, $2::uuid, $3, now())",
+            )
+            .bind(email)
+            .bind(account_id)
+            .bind(code)
+            .execute(&pool)
+            .await
+        }
+    };
+
+    insert("Taro@example.com", Some(student), "012345")
+        .await
+        .unwrap();
+    // 生徒のアカウントのないメールアドレスは account_id なし
+    insert("nobody@example.com", None, "123456").await.unwrap();
+    assert_eq!(
+        violation(insert("TARO@example.com", None, "123456").await),
+        (UNIQUE_VIOLATION.into(), "login_codes_pkey".into())
+    );
+    assert_eq!(
+        violation(insert("coach@example.com", Some(coach), "123456").await),
+        (
+            FOREIGN_KEY_VIOLATION.into(),
+            "login_codes_account_fkey".into()
+        )
+    );
+    for code in ["12345", "1234567", "12345a"] {
+        assert_eq!(
+            violation(insert("hanako@example.com", None, code).await),
+            (CHECK_VIOLATION.into(), "login_codes_code_check".into()),
+            "{code}"
+        );
+    }
+    assert_eq!(
+        violation(
+            sqlx::query(
+                "INSERT INTO identity.login_codes (email_key, email, code, issued_at)
+                 VALUES ('hanako@example.com', 'jiro@example.com', '123456', now())",
+            )
+            .execute(&pool)
+            .await
+        ),
+        (CHECK_VIOLATION.into(), "login_codes_email_key_check".into())
     );
 }
 

@@ -1,4 +1,4 @@
-//! [`Ports`] の実装。集約ごとの保存先と、時計・行動トラッキング・通話基盤・境界間イベントの発行先・アクセストークンをまとめて持つ。
+//! [`Ports`] の実装。集約ごとの保存先と、時計・行動トラッキング・通話基盤・境界間イベントの発行先・アクセストークン・確認コードのメールの送り先をまとめて持つ。
 
 use application::{
     analytics::AnalyticsSink,
@@ -7,7 +7,9 @@ use application::{
     clock::Clock,
     domain_event::DomainEventPublisher,
     entitlement::EntitlementRepository,
-    identity::{AccountRepository, TokenIssuer, TokenVerifier},
+    identity::{
+        AccountRepository, LoginCodeRepository, LoginCodeSender, TokenIssuer, TokenVerifier,
+    },
     lesson::LessonCompletionRepository,
     live_lesson::{LiveLessonSessionRepository, VideoCallProvider},
     matching::FavoriteCoachRepository,
@@ -27,7 +29,7 @@ use crate::{Repositories, ports::Ports};
 
 /// 保存先（[`Repositories`]）と、保存先のほかのポートの実装。
 #[allow(clippy::type_complexity)]
-pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T> {
+pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T, O> {
     pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
     pub(crate) clock: C,
     pub(crate) analytics: A,
@@ -35,12 +37,13 @@ pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A,
     pub(crate) push: P,
     pub(crate) events: D,
     pub(crate) tokens: T,
+    pub(crate) login_code_mailer: O,
 }
 
-impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T> Ports
-    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T>
+impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T, O> Ports
+    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T, O>
 where
-    R: AccountRepository + CoachProfileRepository + Clone + 'static,
+    R: AccountRepository + CoachProfileRepository + LoginCodeRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
     B: BookingRepository + CoachLeaveRepository + Clone + 'static,
     E: EntitlementRepository + Clone + 'static,
@@ -62,6 +65,7 @@ where
     P: PushSender + Clone + 'static,
     D: DomainEventPublisher + Clone + 'static,
     T: TokenIssuer + TokenVerifier + Clone + 'static,
+    O: LoginCodeSender + Clone + 'static,
 {
     type Accounts = R;
     type Slots = S;
@@ -85,6 +89,7 @@ where
     type Push = P;
     type Events = D;
     type Tokens = T;
+    type LoginCodeMailer = O;
 
     fn accounts(&self) -> R {
         self.repositories.accounts.clone()
@@ -172,5 +177,9 @@ where
 
     fn tokens(&self) -> T {
         self.tokens.clone()
+    }
+
+    fn login_code_mailer(&self) -> O {
+        self.login_code_mailer.clone()
     }
 }
