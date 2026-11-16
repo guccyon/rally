@@ -299,4 +299,19 @@ enforcement:
       decided_by: committee:D-0141
       wired: false
       verified: false
+    - kind: config
+      what: >-
+        知見の委員会の週 1 の定例（2026-W46）の決定（解決策の種類は config）。K-0010 の線を Engine が読む同じ差分
+        tools/conflict-check/engine/continuation-config.patch に、積む時点で衝突したファイルを載せる分を含めた。supervisor の conflict_step が
+        PR が変えたファイル（pulls/<n>/files）と共通の祖先から既定ブランチが変えたファイル（compare）の重なりを continuation.enqueue に渡し、
+        空でなければ continue.enqueued の conflict_files（conflict-files.yaml の paths の形）に載せる（読めなければ載せず、空の列も null も出さない）。
+        GitHub は衝突したファイルを教えないので、これは衝突し得るファイルで、ワーカーが取り込んで衝突したファイルは今までどおり conflict.files に残る。
+        test_engine.py の test_5 で、載せた列が conflict-files.yaml の形に合うことを確かめた。pr.conflicted と handoff.saved に載せるのは含めていない。
+        tools/conflict-check/engine/continuation-config.patch は Engine の main（ea188bb）に当たり、test_engine.py の PatchedEngineTest が
+        差分を当てた写しで線のテストを todo なしで通すことを確かめた。ワーカーは Engine を変えられないので、差分を Engine に当てて
+        .factory-config/engine.lock（ENGINE_REF）を上げるのは建設者で、それまで wired: false。効き目は上げた後の窓のイベント列で確かめる（verified: false）
+      issue: 1663
+      at: 2026-11-16
+      wired: false
+      verified: false
 decided_by: committee:D-0049

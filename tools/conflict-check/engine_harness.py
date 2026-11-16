@@ -4,11 +4,16 @@ test_engine.py から呼ぶ。policy.py の線（参照の実装）ではなく�
 
 - supervisor（積む側）: orchestrator/dispatcher/supervisor.py の conflict_step・ci_failure_step と、continuation.py（enqueue・attempts・pending）。
   同じ PR が head ごとに衝突し続ける流れ（C-0005 の PR #659）を周期ごとに回し、積んだ続きのジョブ（attempt・model_tier）と、開いた停止を返す。
-  積んだ続きのジョブの解き方（エージェントか機械的か）は job.finished の agent_tier・cost_usd に残す（--resolved。既定は agent）
+  積んだ続きのジョブの解き方（エージェントか機械的か）は job.finished の agent_tier・cost_usd に残す（--resolved。既定は agent）。
+  製品の線は GitHub の偽物が .factory-config/continuation.yaml（このリポジトリの写し）として返す（Engine の continuation_config.py が読む。
+  engine/continuation-config.patch）。チケットの合計の上限（workflow_guard.py、ADR 0038）は差し替えて、いつも積んでよいとする
+  （同じ PR の線だけを見る）。積んだ continue.enqueued に衝突したファイル（conflict_files。知見 K-0014）が載ったかも返す
 - worker（解く側）: orchestrator/worker/entrypoint.sh の、衝突を機械的に解く手順（SEEN_CONFLICTS= から「[worker] continue」の echo の前まで）。
-  一時の git リポジトリで本物の衝突を起こしてから動かし、残った衝突と、エージェントを使わなかったか（MECHANICAL）と、
-  機械的に解いた結果が policy.py の verify_mechanical（K-0002 の check.mjs）に通ったか（verified）を返す
-- worker（引き継ぎ）: entrypoint.sh の STATE_ARGS の行。conflict の続きのジョブでエージェントに --state-dir（セッションの引き継ぎ）を渡すかを返す
+  一時の git リポジトリ（このリポジトリの continuation.yaml と tools/changelog-check/ を写す）で本物の衝突を起こしてから動かし、残った衝突と、
+  エージェントを使わなかったか（MECHANICAL）と、機械的に解いた結果が policy.py の verify_mechanical（K-0002 の check.mjs）に通ったか（verified）と、
+  手順が読んだ引き継ぎの回の上限（RESUME_UNTIL。読まない Engine では空）を返す
+- worker（引き継ぎ）: entrypoint.sh の STATE_ARGS の行。conflict の続きのジョブの 1〜3 回目（CONTINUE_ATTEMPT。RESUME_UNTIL は線の値）で
+  エージェントに --state-dir（セッションの引き継ぎ）を渡すかを返す
 - watch（見張り）: watch.py の apply を、orchestrator/dispatcher/stoppage.py の本物の open_stoppage に渡して動かす（議決 D-0030・Issue #1034）。
   イベント列から開いた停止と、同じイベント列でもう一度回したときに開き直したか（同じ key は開き直さない）を返す
 - finished（記録の欄）: orchestrator/dispatcher/dispatcher.py が、ワーカーを動かし終えたジョブに出す job.finished（cost_usd を持つもの）の
@@ -33,6 +38,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,6 +56,12 @@ STOPPAGE = "orchestrator/dispatcher/stoppage.py"
 DISPATCHER = "orchestrator/dispatcher/dispatcher.py"
 ENTRYPOINT = "orchestrator/worker/entrypoint.sh"
 SUPERVISOR_FUNCTIONS = ["conflict_step", "ci_failure_step"]
+SUPERVISOR_OPTIONAL = ["record", "conflict_files"]   # あれば取り出す（conflict_files は engine/continuation-config.patch で足す）
+CONTINUATION_CONFIG = "orchestrator/dispatcher/continuation_config.py"
+ROOT = Path(__file__).resolve().parents[2]
+PRODUCT_CONFIG = ROOT / ".factory-config" / "continuation.yaml"
+PR_FILES = ["CHANGELOG.md", "src/app.txt"]       # PR が変えたファイル（GitHub の偽物の pulls/<n>/files）
+BASE_FILES = ["CHANGELOG.md", "README.md"]      # 共通の祖先から既定ブランチが変えたファイル（compare）。重なりは CHANGELOG.md
 CONTINUATION_FUNCTIONS = ["enqueue", "attempts", "pending"]
 STOPPAGE_FUNCTIONS = ["open_stoppage"]
 MECHANICAL_START = 'SEEN_CONFLICTS="${CONFLICTS:-}"'
@@ -117,6 +129,18 @@ class FakeCursor:
             url, reason = params
             self._rows = [{"n": sum(1 for e in self.events if e["name"] == "continue.enqueued"
                                     and e["payload"].get("pr_url") == url and e["payload"].get("reason") == reason)}]
+        elif sql.startswith("select count(*) as n from events c where c.name='continue.enqueued' and c.payload->>'reason'='conflict'"):
+            url, corr = params[0], params[2]
+            done = {e["job_id"] for e in self.events if e["name"] == "job.finished" and e["payload"].get("state") == "succeeded"
+                    and (e["payload"].get("agent_tier") == "none" or e["payload"].get("cost_usd") == 0)}
+            self._rows = [{"n": sum(1 for e in self.events if e["name"] == "continue.enqueued" and e["payload"].get("reason") == "conflict"
+                                    and (url is None or e["payload"].get("pr_url") == url) and (corr is None or e["correlation_id"] == corr)
+                                    and e["job_id"] not in done)}]
+        elif sql.startswith("select payload from events where name='continue.limit_reached'"):
+            url, sha = params
+            self._rows = [{"payload": e["payload"]} for e in reversed(self.events) if e["name"] == "continue.limit_reached"
+                          and e["payload"].get("pr_url") == url and e["payload"].get("reason") == "conflict"
+                          and e["payload"].get("head_sha") == sha][:1]
         elif sql.startswith("select id, priority from tickets"):
             self._rows = [{"id": 1, "priority": 50}]
         elif "from events e join jobs j on j.id=e.job_id where e.name='job.enqueued'" in sql:
@@ -148,10 +172,11 @@ def _need(engine: Path, rel: str) -> Path:
     return engine / rel
 
 
-def _functions(path: Path, names: list[str], namespace: dict) -> dict:
-    """ファイルから、名前で指した関数の定義だけを取り出して namespace で動かす"""
+def _functions(path: Path, names: list[str], namespace: dict, optional: tuple[str, ...] = ()) -> dict:
+    """ファイルから、名前で指した関数の定義だけを取り出して namespace で動かす。optional の関数はあれば取り出す"""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    found = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names}
+    found = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in [*names, *optional]}
+    names = [*names, *[n for n in optional if n in found]]
     missing = sorted(set(names) - set(found))
     if missing:
         raise SystemExit(f"Engine の {path.name} に {', '.join(missing)} がない（関数の名前が変わったら engine_harness.py を合わせる）")
@@ -179,6 +204,33 @@ def load_continuation(engine: Path):
     if missing:
         raise SystemExit(f"Engine の {CONTINUATION} に {', '.join(missing)} がない（関数の名前が変わったら engine_harness.py を合わせる）")
     return continuation
+
+
+def load_continuation_config(engine: Path):
+    """製品の線を読む continuation_config.py（engine/continuation-config.patch で足す）。yaml だけに依存するのでそのまま読み込む。なければ None"""
+    if not (engine / CONTINUATION_CONFIG).is_file():
+        return None
+    path = str(engine / "orchestrator/dispatcher")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    import continuation_config
+    return continuation_config
+
+
+def product_gh(calls: list[dict]):
+    """GitHub の偽物。製品の線（このリポジトリの continuation.yaml）と、PR と既定ブランチが変えたファイルを返す。ほかは空"""
+    import base64
+
+    def gh(method, path, body=None):
+        calls.append({"method": method, "path": path})
+        if path == f"repos/{REPO}/contents/.factory-config/continuation.yaml":
+            return {"content": base64.b64encode(PRODUCT_CONFIG.read_bytes()).decode()}
+        if path.startswith(f"repos/{REPO}/pulls/659/files"):
+            return [{"filename": f} for f in PR_FILES]
+        if path.startswith(f"repos/{REPO}/compare/"):
+            return {"files": [{"filename": f} for f in BASE_FILES]}
+        return {}
+    return gh
 
 
 def _block(text: str, start: str, end: str) -> str:
@@ -214,28 +266,32 @@ def supervisor(engine: Path, heads: int, resolved: str = "agent") -> dict:
     stoppages: list[dict] = []
     gh_calls: list[dict] = []
     ns = {
-        "__name__": "engine_harness_scope", "re": re, "continuation": continuation, "CONFLICT_FIX": True,
+        "__name__": "engine_harness_scope", "re": re, "continuation": continuation, "CONFLICT_FIX": True, "Jsonb": Jsonb,
+        "continuation_config": load_continuation_config(engine),
+        "workflow_guard": types.SimpleNamespace(conflict_gate=lambda *a, **k: "ok", waiting=lambda *a, **k: False, capped=lambda *a, **k: None),
         "over_budget": lambda cur: False, "awaiting_decision": lambda cur, url, pr: False, "log": lambda *a, **k: None,
         "stoppage": types.SimpleNamespace(open_stoppage=lambda cur, key, *a, **k: stoppages.append({"key": key, "open": True, **k}),
                                           close_stoppage=lambda cur, key, *a, **k: stoppages.append({"key": key, "open": False, **k}),
                                           open_keys=lambda *a, **k: []),
-        "gh": lambda method, path, body=None: gh_calls.append({"method": method, "path": path}) or {},
+        "gh": product_gh(gh_calls),
     }
-    _functions(_need(engine, SUPERVISOR), SUPERVISOR_FUNCTIONS, ns)
+    _functions(_need(engine, SUPERVISOR), SUPERVISOR_FUNCTIONS, ns, tuple(SUPERVISOR_OPTIONAL))
     cur = FakeCursor()
     p = {"repo": REPO, "number": 659, "url": PR_URL, "corr": f"github:{REPO}#648"}
     cycles = []
     for i in range(1, heads + 1):
         sha = f"head{i}"
         cur.add_event("pr.conflicted", {"pr_url": PR_URL, "head_sha": sha}, dedupe_key=f"pr.conflicted:{PR_URL}@{sha}")
-        pr = {"head": {"sha": sha, "ref": BRANCH, "repo": {"full_name": REPO}}, "mergeable_state": "dirty", "labels": []}
+        pr = {"head": {"sha": sha, "ref": BRANCH, "repo": {"full_name": REPO}}, "base": {"ref": "main"}, "mergeable_state": "dirty", "labels": []}
         before_jobs, before_stop = len(cur.jobs), len(stoppages)
         ns["conflict_step"](cur, p, pr)
         ns["ci_failure_step"](cur, p, sha, "dirty", pr)
         new_jobs = cur.jobs[before_jobs:]
         cont = {e["job_id"]: e["payload"] for e in cur.events if e["name"] == "continue.enqueued"}
         cycles.append({"head_sha": sha, "enqueued": [{"attempt": cont.get(j["id"], {}).get("attempt"), "reason": cont.get(j["id"], {}).get("reason"),
-                                                      "model_tier": j.get("model_tier")} for j in new_jobs],
+                                                      "model_tier": j.get("model_tier"),
+                                                      **({"conflict_files": cont[j["id"]]["conflict_files"]}
+                                                         if "conflict_files" in cont.get(j["id"], {}) else {})} for j in new_jobs],
                        "stoppages": stoppages[before_stop:]})
         for j in new_jobs:
             cur.add_event("job.finished", {"state": "succeeded", **RESOLVED[resolved]}, job_id=j["id"])
@@ -331,6 +387,9 @@ def conflicted_repo(root: Path, files: list[str], changelog: str = "direct") -> 
     (repo / "changelog.d/10.md").write_text("### 追加\n- 断片の行（#10）\n", encoding="utf-8")
     (repo / "src").mkdir()
     (repo / "src/app.txt").write_text("value = 1\n", encoding="utf-8")
+    (repo / ".factory-config").mkdir()
+    shutil.copy(PRODUCT_CONFIG, repo / ".factory-config/continuation.yaml")   # Engine が読む製品の線
+    shutil.copytree(ROOT / "tools/changelog-check", repo / "tools/changelog-check")   # 線の mechanical.verify
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "base")
     _git(repo, "checkout", "-q", "-b", "pr")
@@ -355,6 +414,7 @@ def conflicted_repo(root: Path, files: list[str], changelog: str = "direct") -> 
     _git(repo, "checkout", "-q", "main")
     change("main")
     _git(repo, "checkout", "-q", "pr")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "main")   # 手順は origin/${DEFAULT_BRANCH} に対して確かめる
     _git(repo, "merge", "--no-edit", "-q", "main", check=False)
     return repo
 
@@ -369,10 +429,11 @@ def worker(engine: Path, files: list[str], changelog: str = "direct") -> dict:
         script = ("set -euo pipefail\n"
                   'CONFLICTS=$(git diff --name-only --diff-filter=U | tr \'\\n\' \' \')\n'
                   'BEFORE="${CONFLICTS}"\n'
-                  + block.replace("/work/cl.", f"{root}/cl.") +
-                  'jq -nc --arg before "${BEFORE}" --arg conflicts "${CONFLICTS}" --arg mechanical "${MECHANICAL:-}" '
-                  "'{before: $before, conflicts: $conflicts, mechanical: $mechanical}'\n")
-        env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(root), "CONTINUE_REASON": "conflict", "RENUMBERED": "", "MECHANICAL": ""}
+                  + block.replace("/work/cl.", f"{root}/cl.").replace("/work/engine/", f"{engine.resolve()}/") +
+                  'jq -nc --arg before "${BEFORE}" --arg conflicts "${CONFLICTS}" --arg mechanical "${MECHANICAL:-}" --arg resume_until "${RESUME_UNTIL:-}" '
+                  "'{before: $before, conflicts: $conflicts, mechanical: $mechanical, resume_until: $resume_until}'\n")
+        env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(root), "CONTINUE_REASON": "conflict", "RENUMBERED": "", "MECHANICAL": "",
+               "DEFAULT_BRANCH": "main"}
         p = subprocess.run(["bash", "-c", script], cwd=repo, env=env, capture_output=True, text=True)
         if p.returncode != 0:
             raise SystemExit(f"entrypoint.sh の衝突を解く手順が落ちた（{p.returncode}）: {p.stderr[-500:]}")
@@ -386,20 +447,24 @@ def worker(engine: Path, files: list[str], changelog: str = "direct") -> dict:
             verified = v["ok"]
         return {"before": sorted(out["before"].split()), "conflicts": sorted(out["conflicts"].split()),
                 "agent": not out["mechanical"], "mechanical": out["mechanical"], "markers": markers,
-                "unmerged": unmerged, "verified": verified}
+                "unmerged": unmerged, "verified": verified, "resume_until": out["resume_until"]}
 
 
 def resume(engine: Path) -> dict:
-    """entrypoint.sh の STATE_ARGS の行を、conflict の続きのジョブ（ボリュームあり）の環境で動かし、--state-dir を渡すかを返す"""
+    """entrypoint.sh の STATE_ARGS の行を、conflict の続きのジョブ（ボリュームあり）の 1〜3 回目の環境で動かし、--state-dir を渡すかを返す。
+    RESUME_UNTIL は衝突を解く手順が線から読む値（worker の resume_until で確かめる）を、ここでは線の値で渡す。conflict は 2 回目"""
     script = "set -euo pipefail\n" + state_args_lines(engine) + 'printf "%s\\n" "${STATE_ARGS[@]+"${STATE_ARGS[@]}"}"\n'
-    out = {}
-    for reason in ("conflict", "ci_failed"):
-        p = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin", "HANDOFF_DIR": "/handoff", "CONTINUE_REASON": reason},
+    until = str(policy.load()["resume_session_until_attempt"])
+
+    def run(reason: str, attempt: int) -> dict:
+        p = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin", "HANDOFF_DIR": "/handoff", "CONTINUE_REASON": reason,
+                                                        "CONTINUE_ATTEMPT": str(attempt), "RESUME_UNTIL": until},
                            capture_output=True, text=True)
         if p.returncode != 0:
             raise SystemExit(f"entrypoint.sh の STATE_ARGS の行が落ちた（{p.returncode}）: {p.stderr[-500:]}")
-        out[reason] = {"state_args": p.stdout.split(), "resumes": "--state-dir" in p.stdout.split()}
-    return out
+        return {"state_args": p.stdout.split(), "resumes": "--state-dir" in p.stdout.split()}
+    return {"conflict": run("conflict", 2), "ci_failed": run("ci_failed", 1),
+            "conflict_by_attempt": {str(a): run("conflict", a) for a in (1, 2, 3)}}
 
 
 def check(engine: Path) -> dict:
