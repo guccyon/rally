@@ -29,7 +29,7 @@ steps:
     sees: "開始時刻の前は「開始時刻になると入室できます」と開始時刻（残りの時間）が出て、入室のボタンは押せない。開始時刻になると入室のボタンが押せるようになる"
   - where: "student-app 入室前チェック"
     do: "「入室する」を押す"
-    sees: "ビデオ通話の画面に移り、通話セッションが始まる（startLiveLessonSession）。映像の欄に「コーチと通話中です」と、映像が表示されなくても故障ではないことが出る（開発者向けの語は出ない）。チェックで選んだカメラ・マイクの入・切がそのまま引き継がれている"
+    sees: "ビデオ通話の画面に移り、通話セッションが始まる（startLiveLessonSession）。コーチがまだ入室していなければ、映像の欄に「コーチを待っています」と、コーチが入室すると通話が始まることが出る。待っているあいだは一定の間隔で通話セッションを取り直し（getLiveLessonSession）、コーチの入室を知ったら「コーチと通話中です」と、映像が表示されなくても故障ではないことに変わる。コーチが先に入室していれば最初から「コーチと通話中です」が出る（開発者向けの語は出ない）。チェックで選んだカメラ・マイクの入・切がそのまま引き継がれている"
 must_not:
   - "開始時刻より前に通話セッションを始める（#921。開始時刻より前の startLiveLessonSession は 409 slot_not_started で、画面も開始時刻の前は入室のボタンを押せなくする）"
   - "入室前チェックのために通話サービス（Twilio Video など）につなぐ、または接続情報（room_token）を取る"
@@ -39,6 +39,8 @@ must_not:
   - "画面を開いたまま開始時刻を過ぎても入室のボタンが押せるようにならない（開き直さないと入れない）"
   - "環境（開発・デモ・本番）ごとに 5 分前・開始時刻の決まりを変える"
   - "5 分という値を画面ごと・場所ごとに書き散らす（値は 1 か所の定数で持つ。glossary の prejoin_check）"
+  - "コーチがまだ入室していないのに「コーチと通話中です」と出す（#1654。coach_joined_at が null のあいだは待機を出す）"
+  - "コーチの入室を待っていないとき（コーチが入室済み・通話の終了後）にも通話セッションを取り直し続ける（取り直しは待機のあいだだけ。間隔は 1 か所の定数。ADR 0015）"
 touches:
   apps: [student-app]
   contexts: [live-lesson, scheduling]
@@ -46,11 +48,14 @@ touches:
   operations:
     - student-app.listMyBookings
     - student-app.startLiveLessonSession
+    - student-app.getLiveLessonSession
 origin:
-  issues: ["guccyon/rally#1039", "guccyon/rally#899", "guccyon/rally#921", "guccyon/rally#1009", "guccyon/rally#1544"]
+  issues: ["guccyon/rally#1039", "guccyon/rally#899", "guccyon/rally#921", "guccyon/rally#1009", "guccyon/rally#1544", "guccyon/rally#1654"]
   note: "窓口の相談 2（依頼者 builder）。Google Meet の入室前の体験を手本にする。通話はモックのまま、カメラ・マイク・スピーカーは端末の本物を使う"
   retro: false
 known_gaps:
+  - step: 6
+    note: "コーチの入室は取り直しで知るので、待機から「コーチと通話中です」への切り替えは取り直しの間隔（生徒アプリの liveLessonAwaitingCoachRefetchInterval。5 秒）ぶん遅れることがある。取り直しに失敗しても文言は出さず、待機のまま次の間隔で取り直す（ADR 0015）"
   - step: 5
     note: "開始時刻と開ける時刻は、サーバーに合わせた時計（端末の時計に、listMyBookings の応答の Date ヘッダーから出したずれを足したもの。#1315）で判断する。Date は秒までなので、サーバーより 1 秒以内遅れて押せるようになることがある。Date を読めないとき（応答にない・別のオリジンから呼んでいる）は端末の時計のままで、端末の時計が進んでいると押してから 409 slot_not_started の文言（#1009）で知る。そのときはその応答の Date でずれを合わせ直し、残り時間の表示に戻る（入室は繰り返し送らない）"
   - step: 2

@@ -10,6 +10,8 @@ import '../ui/theme/rally_tokens.dart';
 
 /// 通話への参加（`startLiveLessonSession` / `endLiveLessonSession`）。
 /// 通話基盤は Gen1 ではモックなので、映像の代わりに枠だけを出す。
+/// 通話中でもコーチがまだ入室していなければ（[LiveLessonSession.awaitingCoach]）「コーチを待っています」と出し、
+/// 取り直し（student_flow.dart）でコーチの入室を知ったら「コーチと通話中です」に変える（ADR 0015）。
 /// 入室前チェックから入ったときは、そこで決めたカメラ・マイクの入・切を枠の下に 1 行出す（端末のカメラ・マイクは入室で止めている）。
 class LiveLessonScreen extends ConsumerWidget {
   const LiveLessonScreen({super.key});
@@ -20,6 +22,7 @@ class LiveLessonScreen extends ConsumerWidget {
     final notifier = ref.read(studentFlowProvider.notifier);
     final session = state.session;
     final inProgress = session?.status == LiveLessonSessionStatus.inProgress;
+    final awaitingCoach = session?.awaitingCoach ?? false;
     final carried = ref.watch(prejoinCheckProvider.select((s) => s.carried));
     return FlowScaffold(
       title: 'ビデオ通話',
@@ -28,12 +31,17 @@ class LiveLessonScreen extends ConsumerWidget {
           height: 180,
           color: Colors.black87,
           alignment: Alignment.center,
-          child: Text(
-            inProgress
-                ? 'コーチと通話中です\n映像が表示されなくても、故障ではありません'
-                : '「通話を開始する」を押すと、コーチと通話できます',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white),
+          child: Semantics(
+            liveRegion: true,
+            child: Text(
+              awaitingCoach
+                  ? 'コーチを待っています\nコーチが入室すると、通話が始まります'
+                  : inProgress
+                  ? 'コーチと通話中です\n映像が表示されなくても、故障ではありません'
+                  : '「通話を開始する」を押すと、コーチと通話できます',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ),
         if (carried != null) ...[

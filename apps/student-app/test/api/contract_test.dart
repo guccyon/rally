@@ -109,6 +109,7 @@ void main() {
         'cancelBooking',
         'listMyVideos',
         'startLiveLessonSession',
+        'getLiveLessonSession',
         'endLiveLessonSession',
         'submitVideo',
         'getVideoReview',
@@ -145,6 +146,28 @@ void main() {
       ((schemas[schema] as YamlMap)['properties'] as YamlMap).keys
           .cast<String>()
           .toList();
+
+  test('通話セッションの項目が契約と一致する（getLiveLessonSession ほか）', () {
+    // LiveLessonSession.fromJson / LiveLessonSessionBooking.fromJson が読む項目
+    expect(propertiesOf('LiveLessonSession'), [
+      'session_id',
+      'booking_id',
+      'student_id',
+      'coach_id',
+      'status',
+      'started_at',
+      'ended_at',
+      'duration_sec',
+      'room_token',
+      'coach_joined_at',
+      'bookings',
+    ]);
+    expect(propertiesOf('LiveLessonSessionBooking'), [
+      'booking_id',
+      'student_id',
+      'student_joined_at',
+    ]);
+  });
 
   test('NotificationKind が契約の通知の種類（NotificationSettings の真偽値の項目）と一致する', () {
     final kinds = NotificationKind.values.map((e) => e.wire).toList();
