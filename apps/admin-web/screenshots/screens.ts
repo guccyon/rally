@@ -866,18 +866,11 @@ export const SCREENS: Screen[] = [
     path: "/headquarters/bookings/detail?booking_id=44440010-0000-4000-8000-000000000000",
     open: bookingDetailLoaded,
   },
-  ...(
-    [
-      ["confirmed", "確定だけ"],
-      ["student", "生徒のキャンセル"],
-      ["coach-leave", "コーチのお休みのキャンセル"],
-      ["legacy", "記録のない古いキャンセル"],
-    ] as const
-  ).map(([state, label], index) => ({
+  ...HQ_BOOKING_DETAIL_STATES.map(({ state, label, bookingId }) => ({
     id: `hq-booking-detail-${state}`,
     title: `本部: 予約の詳細（${label}）`,
     role: "headquarters" as const,
-    path: `/headquarters/bookings/detail?booking_id=${HQ_BOOKING_DETAIL_STATES[index]!.bookingId}`,
+    path: `/headquarters/bookings/detail?booking_id=${bookingId}`,
     open: bookingDetailLoaded,
   })),
   {
