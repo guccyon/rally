@@ -338,6 +338,43 @@ void main() {
       expect(find.text('体験予約する'), findsNothing);
     });
 
+    testWidgets('409 slot_already_booked なら文言を残したまま検索を読み直し、取られた枠が一覧から消える', (
+      tester,
+    ) async {
+      final api = FakeStudentApi(
+        failures: {
+          'createBooking': const StudentApiException(
+            statusCode: 409,
+            error: ApiError(
+              code: ErrorCode.slotAlreadyBooked,
+              message: 'slot already booked',
+            ),
+          ),
+        },
+      );
+      final container = await pumpScreen(
+        tester,
+        const SlotSearchScreen(),
+        api: api,
+        initial: registered,
+      );
+
+      await tapText(tester, 'テニス');
+      expect(find.text('体験予約する'), findsOneWidget);
+      // 押す前に別の生徒に取られた（サーバーの一覧からは消える）
+      api.slots.clear();
+      await tapText(tester, '体験予約する');
+
+      expect(
+        find.text('このスロットはすでに予約されました。別のスロットを選んでください。'),
+        findsOneWidget,
+      );
+      expect(api.calls.where((c) => c == 'searchSlots').length, 2);
+      expect(container.read(studentFlowProvider).slots, isEmpty);
+      expect(find.text('体験予約する'), findsNothing);
+      expect(container.read(studentFlowProvider).step, FlowStep.slotSearch);
+    });
+
     testWidgets('通常の予約が 403 live_lesson_not_entitled なら文言と「月額契約へ進む」を出し、押すと月額契約の画面へ', (
       tester,
     ) async {

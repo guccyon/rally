@@ -840,7 +840,8 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
 
   /// `createBooking`。サーバーの判定で体験予約できれば体験予約（[StudentFlowState.canBookTrial]）、できなければ通常の予約。
   /// 作成直後は pending なので確定待ちへ。409 `trial_already_used`（読んだ予約が古かった）なら、失敗の文言を出したうえで
-  /// 自分の予約を読み直し、ボタンを通常の予約に切り替える
+  /// 自分の予約を読み直し、ボタンを通常の予約に切り替える。
+  /// 409 `slot_already_booked`（先に取られた）なら、失敗の文言を出したうえで検索を読み直し、その枠を一覧から外す
   /// 自分の予約をまだ読めていない（[StudentFlowState.canBookTrial] が null）ときは、先に自分の予約を読んでから決める
   /// （読めなければ失敗の文言を出して予約を作らない。予約の件数からは数え直さない）
   Future<void> bookSlot(Slot slot) => run(() async {
@@ -854,6 +855,9 @@ class StudentFlowNotifier extends Notifier<StudentFlowState> {
     } on StudentApiException catch (e) {
       if (e.error?.code == ErrorCode.trialAlreadyUsed) {
         await _refreshMyBookingsQuietly();
+      } else if (e.error?.code == ErrorCode.slotAlreadyBooked) {
+        // 先に取られた枠を一覧から外すため、今のスポーツ・コーチで検索を読み直す（文言は run が残す）
+        await _search(state.searchSport ?? state.student!.sport);
       }
       rethrow;
     }
