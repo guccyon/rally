@@ -37,6 +37,11 @@ services:
       # shipper の環境変数で渡す。渡さなければ compose が起動を止める（署名なしのモックで黙って動かさない。Issue #1785・ADR 0016）。
       # 署名なしのモックの opt-in（ACCESS_TOKEN_ALLOW_UNSIGNED_MOCK）はローカルとテストだけのもので、ここでは渡さない
       ACCESS_TOKEN_SIGNING_KEY: ${ACCESS_TOKEN_SIGNING_KEY:?ACCESS_TOKEN_SIGNING_KEY（アクセストークンの署名の鍵）を渡す。apps/backend の README の「認証と認可」}
+      # 本部の事業の KPI（GET /business-kpis）の式の正本。イメージは apps/backend だけで作るので、リポジトリの kpi.yaml を
+      # 読み取り専用でつなぐ（式を写さない。apps/backend の README の「analytics: 本部が見る事業の KPI」）
+      KPI_SPEC_PATH: /etc/rally/kpi.yaml
+    volumes:
+      - ../specs/analytics/kpi.yaml:/etc/rally/kpi.yaml:ro
     depends_on:
       postgres: { condition: service_healthy }
     ports:

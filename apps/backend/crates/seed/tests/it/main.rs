@@ -3,5 +3,6 @@
 //! テストのファイルを足したら、ここにも `mod` を足す（名前の順）。
 
 mod access_token_command;
+mod business_kpis;
 mod slot_supply;
 mod touch_accounts;

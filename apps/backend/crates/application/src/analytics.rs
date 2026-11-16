@@ -1,8 +1,42 @@
 //! 行動イベント（specs/analytics/events.yaml）を発火するポート。
 //!
 //! Gen1 の行動トラッキングはモック。発火の失敗でユースケースを失敗させないので、戻り値はない。
+//!
+//! KPI の式（specs/analytics/kpi.yaml）の評価と、本部が見る事業の KPI（[`GetBusinessKpis`]）もここに置く。式は kpi.yaml の
+//! 1 か所にだけあり、[`KpiFormula`] は書き方（kpi.yaml の冒頭）を読むだけで、個々の式を持たない。
 
 use std::{future::Future, time::SystemTime};
+
+mod business_kpi;
+mod business_kpi_value;
+mod business_kpis;
+mod get_business_kpis;
+mod kpi_attribute;
+mod kpi_definition;
+mod kpi_direction;
+mod kpi_evaluation;
+mod kpi_event;
+mod kpi_event_source;
+mod kpi_formula;
+mod kpi_spec;
+mod kpi_spec_source;
+mod kpi_unavailable_reason;
+mod kpi_windowed_formula;
+
+pub use business_kpi::BusinessKpi;
+pub use business_kpi_value::BusinessKpiValue;
+pub use business_kpis::BusinessKpis;
+pub use get_business_kpis::GetBusinessKpis;
+pub use kpi_attribute::KpiAttribute;
+pub use kpi_definition::KpiDefinition;
+pub use kpi_direction::KpiDirection;
+pub use kpi_event::KpiEvent;
+pub use kpi_event_source::KpiEventSource;
+pub use kpi_formula::KpiFormula;
+pub use kpi_spec::KpiSpec;
+pub use kpi_spec_source::KpiSpecSource;
+pub use kpi_unavailable_reason::KpiUnavailableReason;
+pub use kpi_windowed_formula::KpiWindowedFormula;
 
 use domain::{
     async_lesson::{VideoId, VideoReviewId},

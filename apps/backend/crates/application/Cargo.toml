@@ -9,7 +9,8 @@ publish.workspace = true
 domain.workspace = true
 uuid.workspace = true
 time.workspace = true
+# KPI の式の正本（specs/analytics/kpi.yaml）を照会のたびに読む（analytics::KpiSpec）
+serde_yaml.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
-serde_yaml.workspace = true

@@ -17,14 +17,14 @@ mod ports;
 pub use app::{App, LESSON_REMINDER_INTERVAL};
 
 use application::{
-    analytics::AnalyticsSink,
+    analytics::{AnalyticsSink, KpiEventSource},
     async_lesson::VideoRepository,
     catalog::LessonMenuRepository,
     clock::{Clock, SystemClock},
     entitlement::{EntitlementRepository, LiveLessonQuotaSubscriber},
     identity::{AccountRepository, TokenIssuer, TokenVerifier},
     in_memory::{
-        InMemoryAccountRepository, InMemoryAnnouncementDraftRepository,
+        FixedKpiEvents, InMemoryAccountRepository, InMemoryAnnouncementDraftRepository,
         InMemoryAnnouncementRepository, InMemoryBookingRepository,
         InMemoryCoachAcceptanceRepository, InMemoryEntitlementRepository,
         InMemoryFavoriteCoachRepository, InMemoryLessonCompletionRepository,
@@ -53,10 +53,10 @@ use axum::Router;
 use infra::{
     InMemoryDomainEventBus, MockPushSender, PgAccountRepository, PgAnnouncementDraftRepository,
     PgAnnouncementRepository, PgBookingRepository, PgCoachAcceptanceRepository,
-    PgEntitlementRepository, PgFavoriteCoachRepository, PgLessonCompletionRepository,
-    PgLessonMenuRepository, PgLessonReviewRepository, PgLiveLessonSessionRepository,
-    PgMessageThreadRepository, PgNotificationRepository, PgNotificationSettingsRepository,
-    PgSlotRepository, PgVideoRepository,
+    PgEntitlementRepository, PgFavoriteCoachRepository, PgKpiEventSource,
+    PgLessonCompletionRepository, PgLessonMenuRepository, PgLessonReviewRepository,
+    PgLiveLessonSessionRepository, PgMessageThreadRepository, PgNotificationRepository,
+    PgNotificationSettingsRepository, PgSlotRepository, PgVideoRepository,
 };
 use sqlx::PgPool;
 
@@ -256,6 +256,7 @@ fn in_memory_repositories() -> Repositories<
     InMemoryFavoriteCoachRepository,
     InMemoryAnnouncementRepository,
     InMemoryAnnouncementDraftRepository,
+    FixedKpiEvents,
 > {
     let slots = InMemorySlotRepository::default();
     Repositories {
@@ -275,6 +276,7 @@ fn in_memory_repositories() -> Repositories<
         favorite_coaches: InMemoryFavoriteCoachRepository::default(),
         announcements: InMemoryAnnouncementRepository::default(),
         announcement_drafts: InMemoryAnnouncementDraftRepository::default(),
+        kpi_events: FixedKpiEvents::default(),
     }
 }
 
@@ -360,7 +362,8 @@ where
             lesson_menus: PgLessonMenuRepository::new(pool.clone()),
             favorite_coaches: PgFavoriteCoachRepository::new(pool.clone()),
             announcements: PgAnnouncementRepository::new(pool.clone()),
-            announcement_drafts: PgAnnouncementDraftRepository::new(pool),
+            announcement_drafts: PgAnnouncementDraftRepository::new(pool.clone()),
+            kpi_events: PgKpiEventSource::new(pool),
         },
         clock,
         analytics,
@@ -390,7 +393,7 @@ where
 
 /// 集約ごとの保存先。予約の保存先はスロットの保存先と同じ中身を読み書きする。コーチの受付の保存先も、スロットの検索と
 /// 予約の作成が読むのと同じ中身を読み書きする。
-struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
+struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, Y> {
     accounts: R,
     slots: S,
     bookings: B,
@@ -407,14 +410,16 @@ struct Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F> {
     favorite_coaches: G,
     announcements: H,
     announcement_drafts: F,
+    /// KPI の集計が読む行動イベント（インメモリはイベントなし。Postgres は業務の表から組み立てる）
+    kpi_events: Y,
 }
 
 /// 保存先のほかの組み立て（インメモリと Postgres で共通）。境界間イベントのバスを作り、機能ごとの組み立て（[`features`]）に
 /// ポートの実装をまとめて渡す。アクセストークンは本部・コーチ・生徒のどの機能にも同じ `tokens` を渡す。レッスンのリマインドの
 /// 定期の処理も同じ保存先・時計・送り先で組み立てる。
 #[allow(clippy::type_complexity)]
-fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, P, V, T>(
-    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
+fn compose<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, Y, C, A, P, V, T>(
+    repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, Y>,
     clock: C,
     analytics: A,
     push: P,
@@ -438,6 +443,7 @@ where
     G: FavoriteCoachRepository + Clone + 'static,
     H: AnnouncementRepository + Clone + 'static,
     F: AnnouncementDraftRepository + Clone + 'static,
+    Y: KpiEventSource + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     P: PushSender + Clone + 'static,

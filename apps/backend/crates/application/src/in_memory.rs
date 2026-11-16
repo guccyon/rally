@@ -34,7 +34,7 @@ use domain::{
 
 use crate::{
     Unavailable,
-    analytics::{AnalyticsEvent, AnalyticsSink},
+    analytics::{AnalyticsEvent, AnalyticsSink, KpiEvent, KpiEventSource, KpiSpecSource},
     async_lesson::{
         AiFeedbackGenerator, AiFeedbackRequest, UpdateVideoError, VideoRepository, VideoReviewGate,
         VideoStorage, video_id_uuid, video_review_id_uuid,
@@ -235,6 +235,57 @@ impl RecordingAnalyticsSink {
 impl AnalyticsSink for RecordingAnalyticsSink {
     async fn emit(&self, event: AnalyticsEvent) {
         self.events.lock().unwrap().push(event);
+    }
+}
+
+/// 決まった行動イベントを返す [`KpiEventSource`]。`failing` のイベント名は読めない（[`Unavailable`]）。既定は
+/// イベントなし（KPI はどれも母集団がない）。
+#[derive(Debug, Clone, Default)]
+pub struct FixedKpiEvents {
+    events: Arc<Vec<KpiEvent>>,
+    failing: Arc<BTreeSet<String>>,
+}
+
+impl FixedKpiEvents {
+    pub fn new(events: impl IntoIterator<Item = KpiEvent>) -> Self {
+        Self {
+            events: Arc::new(events.into_iter().collect()),
+            failing: Arc::default(),
+        }
+    }
+
+    /// `name` のイベントを読めなくする。
+    pub fn failing(self, name: &str) -> Self {
+        let mut failing = (*self.failing).clone();
+        failing.insert(name.to_string());
+        Self {
+            failing: Arc::new(failing),
+            ..self
+        }
+    }
+}
+
+impl KpiEventSource for FixedKpiEvents {
+    async fn events(&self, name: &str) -> Result<Vec<KpiEvent>, Unavailable> {
+        if self.failing.contains(name) {
+            return Err(Unavailable::new(format!("{name} を読めない")));
+        }
+        Ok(self
+            .events
+            .iter()
+            .filter(|event| event.name() == name)
+            .cloned()
+            .collect())
+    }
+}
+
+/// 決まった kpi.yaml の中身を返す [`KpiSpecSource`]。
+#[derive(Debug, Clone)]
+pub struct FixedKpiSpec(pub Arc<str>);
+
+impl KpiSpecSource for FixedKpiSpec {
+    async fn kpi_yaml(&self) -> Result<String, Unavailable> {
+        Ok(self.0.to_string())
     }
 }
 

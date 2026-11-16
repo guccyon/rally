@@ -1,7 +1,7 @@
 //! [`Ports`] の実装。集約ごとの保存先と、時計・行動トラッキング・通話基盤・境界間イベントの発行先・アクセストークンをまとめて持つ。
 
 use application::{
-    analytics::AnalyticsSink,
+    analytics::{AnalyticsSink, KpiEventSource},
     async_lesson::VideoRepository,
     catalog::LessonMenuRepository,
     clock::Clock,
@@ -27,8 +27,8 @@ use crate::{Repositories, ports::Ports};
 
 /// 保存先（[`Repositories`]）と、保存先のほかのポートの実装。
 #[allow(clippy::type_complexity)]
-pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T> {
-    pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F>,
+pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, Y, C, A, V, P, D, T> {
+    pub(crate) repositories: Repositories<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, Y>,
     pub(crate) clock: C,
     pub(crate) analytics: A,
     pub(crate) video_call: V,
@@ -37,8 +37,8 @@ pub(crate) struct Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A,
     pub(crate) tokens: T,
 }
 
-impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T> Ports
-    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, C, A, V, P, D, T>
+impl<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, Y, C, A, V, P, D, T> Ports
+    for Assembly<R, S, B, E, L, W, M, X, N, Z, K, J, Q, G, H, F, Y, C, A, V, P, D, T>
 where
     R: AccountRepository + CoachProfileRepository + Clone + 'static,
     S: SlotRepository + Clone + 'static,
@@ -56,6 +56,7 @@ where
     G: FavoriteCoachRepository + Clone + 'static,
     H: AnnouncementRepository + Clone + 'static,
     F: AnnouncementDraftRepository + Clone + 'static,
+    Y: KpiEventSource + Clone + 'static,
     C: Clock + Clone + 'static,
     A: AnalyticsSink + Clone + 'static,
     V: VideoCallProvider + Clone + 'static,
@@ -79,6 +80,7 @@ where
     type FavoriteCoaches = G;
     type Announcements = H;
     type AnnouncementDrafts = F;
+    type KpiEvents = Y;
     type Clock = C;
     type Analytics = A;
     type VideoCall = V;
@@ -148,6 +150,10 @@ where
 
     fn announcement_drafts(&self) -> F {
         self.repositories.announcement_drafts.clone()
+    }
+
+    fn kpi_events(&self) -> Y {
+        self.repositories.kpi_events.clone()
     }
 
     fn clock(&self) -> C {

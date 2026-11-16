@@ -497,7 +497,7 @@ docker compose -p rally-staging -f deploy/compose.yaml exec backend access-token
 
 ## 行動イベントの配信先（モック）と発火の網羅
 
-行動イベントは `specs/analytics/events.yaml` が正で、KPI の式（セマンティック層）は `specs/analytics/kpi.yaml` の 1 か所に置く。バックエンドは式を持たず、生の属性を発火するだけ。
+行動イベントは `specs/analytics/events.yaml` が正で、KPI の式（セマンティック層）は `specs/analytics/kpi.yaml` の 1 か所に置く。バックエンドは式を持たず、生の属性を発火するだけ（本部の `GET /business-kpis` は kpi.yaml を照会のたびに読んで評価する。下の「analytics: 本部が見る事業の KPI」）。
 
 - 発火はポート `application::analytics::AnalyticsSink`。配信先は `server` が環境変数で選ぶ（`server::AnalyticsDestination`）。知らない `ANALYTICS_SINK` の値では起動しない
 
@@ -525,6 +525,20 @@ curl -s 'http://127.0.0.1:9090/rally-analytics?list-type=2'   # 書かれたオ�
 - テスト: `crates/infra/tests/it/analytics_event_payload.rs`（全イベントの属性が events.yaml の `required` とちょうど一致すること・形・共通の任意属性は値が分かるときだけ付き、どのイベントの `required` にもないこと）、`crates/infra/tests/it/analytics_common_attributes.rs`（環境変数から共通の任意属性を読むこと）、`crates/infra/tests/it/object_store_analytics_sink.rs`（インメモリのストアと偽の S3 で、1 行ずつ書くこと・パス形式の PUT・止まった配信先で数秒で戻ること）、`crates/server/tests/it/analytics_destination.rs`（環境変数での切り替えと、`POST /accounts` で `account.registered` が偽の S3 に届く一周。版の環境変数があれば `release_id` / `app_version` が付くこと）
 - 発火の網羅: `crates/application/tests/it/analytics_emission.rs` がソースを静的に読み、events.yaml の全イベントに発火するユースケースがあることを、テストの中の対応表（イベント名 → `AnalyticsEvent` の変種 → ユースケースとファイル）で確かめる。イベントを足したら表に 1 行足す。表にない `emit` も落とす
 - セマンティック層: `crates/application/tests/it/kpi_semantic_layer.rs` が kpi.yaml を読み、6 つの KPI の式が events.yaml にある名前（イベント名と `required` の属性）と語彙だけを参照し、`inputs` が式の読むイベントと一致すること、events.yaml の `kpi` がその KPI の `inputs` に入っていることを確かめる。CI は `apps/backend` に変更があるときだけ走るので、specs/ だけを変えたら手元で `cargo test -p application` を走らせる
+
+## analytics: 本部が見る事業の KPI（Issue #1495）
+
+- `GET /business-kpis`（admin-web の `getBusinessKpis`）: 本部だけが呼べる（`require_role(&[Role::Headquarters])`。コーチ・生徒は 403、トークンがなければ 401）。kpi.yaml の 6 指標を kpi.yaml の順に、今の期間 `current` と前の期間 `previous` の値で返す。照会だけで、行動イベントは発火しない
+- 式は kpi.yaml の 1 か所だけ: `application::analytics::GetBusinessKpis` が照会のたびに正本を読み（ポート `KpiSpecSource`。infra の `FileKpiSpec`）、書き方（kpi.yaml の冒頭）の評価器 `KpiFormula`（`kpi_formula.rs`・`kpi_evaluation.rs`）で数える。評価器は個々の式を持たず、Rust にも SQL にも式を写さない
+- 期間: `window`（30 日）を `window_on` の時刻に当てる。母集団の行から先を見る式（`f.occurred_at + days(60)`）は、その日数を観測し終えた行だけを数えるため、両方の期間をその日数だけ前にずらす（継続率と、それを群ごとに数える分散は 90〜60 日前と 120〜90 日前）
+- 値が出せない期間は `value: null` と `reason`（`no_population`・`below_group_minimum`・`not_observable_yet`・`unavailable`）。参照するイベントを読めない・式を評価できない指標だけを `unavailable` にして 200 で返す。kpi.yaml を読めない（どの指標も返せない）ときだけ 500。単位・母集団の名詞・理由の文は interface の `business_kpi_text`
+- 行動イベント: Gen1 は行動ログを貯めていないので、Postgres の組み立てでは業務の表から events.yaml の `required` の属性の行を組み立てる（infra の `PgKpiEventSource`。ポート `KpiEventSource`）。インメモリの組み立てはイベントなし（6 つとも `no_population`）
+
+  | 環境変数 | 意味 |
+  |---|---|
+  | `KPI_SPEC_PATH` | kpi.yaml の置き場所。ないか空ならリポジトリの中の `specs/analytics/kpi.yaml`（手元とテスト）。出荷用のイメージは `apps/backend` だけで作るので、`deploy/compose.yaml` がリポジトリの kpi.yaml を `/etc/rally/kpi.yaml` に読み取り専用でつないで渡す |
+
+- テスト: `crates/application/src/analytics/kpi_formula.rs`（書き方の読み取り）、`crates/interface/tests/it/business_kpis.rs`（kpi.yaml の正本で 6 指標の値・期間・順・契約の形、イベントがないと 6 つとも `no_population`、観測し終えていない `not_observable_yet`、群の下限の `below_group_minimum`、1 つのイベントが読めないとその指標だけ `unavailable` で 200、コーチ・生徒は 403・トークンなしは 401）、`crates/seed/tests/it/business_kpis.rs`（合成シードの種 42 で 6 指標の今と前に値が出ること。Postgres。`--include-ignored`）
 
 ## 合成シード
 

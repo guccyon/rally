@@ -1,7 +1,7 @@
 //! 機能ごとの組み立て（`features`）が受け取る、ポートの実装の一覧。
 
 use application::{
-    analytics::AnalyticsSink,
+    analytics::{AnalyticsSink, KpiEventSource},
     async_lesson::VideoRepository,
     catalog::LessonMenuRepository,
     clock::Clock,
@@ -43,6 +43,7 @@ pub(crate) trait Ports {
     type FavoriteCoaches: FavoriteCoachRepository + Clone + 'static;
     type Announcements: AnnouncementRepository + Clone + 'static;
     type AnnouncementDrafts: AnnouncementDraftRepository + Clone + 'static;
+    type KpiEvents: KpiEventSource + Clone + 'static;
     type Clock: Clock + Clone + 'static;
     type Analytics: AnalyticsSink + Clone + 'static;
     type VideoCall: VideoCallProvider + Clone + 'static;
@@ -68,6 +69,8 @@ pub(crate) trait Ports {
     fn announcements(&self) -> Self::Announcements;
     /// 本部が書きかけで残したお知らせの下書き。
     fn announcement_drafts(&self) -> Self::AnnouncementDrafts;
+    /// KPI の集計が読む行動イベント。
+    fn kpi_events(&self) -> Self::KpiEvents;
     fn clock(&self) -> Self::Clock;
     fn analytics(&self) -> Self::Analytics;
     /// 通話基盤。

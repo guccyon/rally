@@ -7,6 +7,7 @@ mod accounts;
 mod announcement_drafts;
 mod announcements;
 mod bookings;
+mod business_kpis;
 mod coach_acceptances;
 mod coach_bookings;
 mod coach_leaves;
@@ -67,6 +68,7 @@ pub(crate) fn router<P: Ports>(ports: &P) -> Router {
         .merge(announcement_drafts::router(ports))
         .merge(announcements::router(ports))
         .merge(bookings::router(ports))
+        .merge(business_kpis::router(ports))
         .merge(coach_acceptances::router(ports))
         .merge(coach_bookings::router(ports))
         .merge(coach_leaves::router(ports))

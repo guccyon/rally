@@ -7,6 +7,7 @@ mod announcement_drafts;
 mod announcements;
 mod auth;
 mod bookings;
+mod business_kpis;
 mod coach_acceptances;
 mod coach_leaves;
 mod coach_overviews;
